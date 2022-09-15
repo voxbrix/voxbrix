@@ -1,0 +1,29 @@
+[package]
+name = "voxbrix_client"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-executor = "1.4"
+futures-lite = "1.12"
+blocking = "1.2"
+flume = "0.10"
+async-oneshot = "0.5"
+async-io = "1.8"
+rayon = "1.5"
+async-fs = "1.6"
+either = "1.8"
+winit = "0.26"
+wgpu = "0.13"
+bytemuck = { version = "1", features = ["derive"] }
+image = { version = "0.24", default-features = false, features = ["png"] }
+nalgebra-glm = { version = "0.17", default-features = false, features = ["std"] }
+anyhow = "1.0"
+serde = { version = "1.0", default-features = false, features = ["std", "derive"] } 
+bitmask = "0.5"
+parking_lot = "0.12"
+ron = "0.7"
+log = "0.4"
+env_logger = "0.9"
