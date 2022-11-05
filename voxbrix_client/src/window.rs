@@ -3,10 +3,11 @@ use anyhow::{
     Error,
     Result,
 };
-use async_oneshot::Sender as OneshotSender;
-use flume::Sender;
+use flume::{
+    Receiver,
+    Sender,
+};
 use log::info;
-use parking_lot::Mutex;
 use wgpu::{
     Backends,
     Instance,
@@ -31,28 +32,45 @@ pub enum WindowEvent {
     Shutdown,
 }
 
+pub struct WindowHandle {
+    pub instance: Instance,
+    pub surface: Surface,
+    pub size: PhysicalSize<u32>,
+    pub event_rx: Receiver<Event>,
+    // event_tx: Sender<WindowEvent>,
+    //  this should be implemented in a separate "proxy" thread
+    //  that will pull events out of async channel and send them
+    //  via send_event()
+    //  EventLoopProxy should not be directly passed to
+    //  the main event loop, because send_event() method
+    //  may be blocking
+}
+
 pub fn create_window(
     backends: Backends,
-    mut surface_tx: OneshotSender<(
-        Instance,
-        Surface,
-        PhysicalSize<u32>,
-        Mutex<EventLoopProxy<WindowEvent>>,
-    )>,
-    event_tx: Sender<Event>,
+    handle_tx: Sender<WindowHandle>,
+    event_proxy_tx: Sender<EventLoopProxy<WindowEvent>>,
 ) -> Result<()> {
     let event_loop = EventLoop::with_user_event();
+
+    event_proxy_tx
+        .send(event_loop.create_proxy())
+        .map_err(|_| Error::msg("event proxy channel is closed"))?;
+
     let window = WindowBuilder::new().build(&event_loop)?;
 
     let instance = Instance::new(backends);
     let surface = unsafe { instance.create_surface(&window) };
-    surface_tx
-        .send((
+
+    let (event_tx, event_rx) = flume::bounded(32);
+
+    handle_tx
+        .send(WindowHandle {
             instance,
             surface,
-            window.inner_size(),
-            Mutex::new(event_loop.create_proxy()),
-        ))
+            size: window.inner_size(),
+            event_rx,
+        })
         .map_err(|_| Error::msg("surface channel is closed"))?;
 
     window.set_cursor_grab(true)?;
