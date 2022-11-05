@@ -1,10 +1,10 @@
 use async_executor::LocalExecutor;
+use event_loop::EventLoop;
 use futures_lite::future;
 use log::{
     error,
     info,
 };
-use parking_lot::Mutex;
 use std::{
     panic::{
         self,
@@ -12,26 +12,19 @@ use std::{
     },
     thread,
 };
-use wgpu::{
-    Backends,
-    Instance,
-    Surface,
-};
+use wgpu::Backends;
 use window::WindowEvent;
-use winit::{
-    dpi::PhysicalSize,
-    event_loop::EventLoopProxy,
-};
+use winit::event_loop::EventLoopProxy;
 
 mod camera;
 mod component;
 mod entity;
 mod event_loop;
 mod linear_algebra;
+mod manager;
 mod system;
 mod vertex;
 mod window;
-mod manager;
 
 #[macro_export]
 macro_rules! unblock {
@@ -67,44 +60,44 @@ fn main() {
         print_panic_info(panic_info);
     }));
 
-    let (surface_tx, surface_rx) = async_oneshot::oneshot::<(
-        Instance,
-        Surface,
-        PhysicalSize<u32>,
-        Mutex<EventLoopProxy<WindowEvent>>,
-    )>();
-    let (window_event_tx, window_event_rx) = flume::bounded(32);
+    let (window_tx, window_rx) = flume::bounded(1);
+    let (event_proxy_tx, event_proxy_rx) = flume::bounded::<EventLoopProxy<WindowEvent>>(1);
 
     let backends = Backends::VULKAN;
 
     thread::spawn(move || {
-        let rt = LocalExecutor::new();
-        future::block_on(rt.run(async move {
-            match surface_rx.await {
-                Err(_) => {
-                    error!("unable to receive surface");
-                },
-                Ok((instance, surface, surface_size, panic_window_tx)) => {
-                    let window_tx = panic_window_tx.lock().clone();
+        let result = std::panic::catch_unwind(move || {
+            let rt = LocalExecutor::new();
+            future::block_on(rt.run(async move {
+                match window_rx.recv_async().await {
+                    Err(_) => {
+                        error!("unable to receive window handle");
+                    },
+                    Ok(window) => {
+                        let event_loop = EventLoop { window };
+                        if let Err(err) = event_loop.run().await {
+                            error!("event loop ended with error: {:?}", err);
+                        }
+                    },
+                }
+            }))
+        });
 
-                    panic::set_hook(Box::new(move |panic_info| {
-                        print_panic_info(panic_info);
-                        let _ = panic_window_tx.lock().send_event(WindowEvent::Shutdown);
-                    }));
+        if let Err(err) = result {
+            error!("event loop panicked: {:?}", err);
+        }
 
-                    if let Err(err) =
-                        event_loop::run(instance, surface, surface_size, window_event_rx).await
-                    {
-                        error!("event loop ended with error: {:?}", err);
-                    }
-
-                    let _ = window_tx.send_event(WindowEvent::Shutdown);
-                },
-            }
-        }))
+        match event_proxy_rx.recv() {
+            Ok(tx) => {
+                let _ = tx.send_event(WindowEvent::Shutdown);
+            },
+            Err(_) => {
+                error!("unable to receive window proxy to send shutdown");
+            },
+        }
     });
 
-    if let Err(err) = window::create_window(backends, surface_tx, window_event_tx) {
+    if let Err(err) = window::create_window(backends, window_tx, event_proxy_tx) {
         error!("unable to create window: {:?}", err);
     }
 }

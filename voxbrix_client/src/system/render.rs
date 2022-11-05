@@ -1,5 +1,4 @@
 // use image::GenericImageView;
-use crate::linear_algebra::Mat4;
 use crate::{
     camera::{
         Camera,
@@ -26,6 +25,7 @@ use crate::{
         block_class::BlockClass,
         chunk::Chunk,
     },
+    linear_algebra::Mat4,
     vertex::Vertex,
 };
 use anyhow::Result;
