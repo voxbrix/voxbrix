@@ -1,46 +1,51 @@
-use std::{
-    mem,
-    slice,
-    ops::Deref,
-    net::UdpSocket,
-    io::{
-        Error as StdIoError,
-        ErrorKind as StdIoErrorKind,
-        Cursor,
-        Read,
-        Write,
-    },
-    time::Duration,
-    net::SocketAddr,
-    rc::Rc,
+use super::{
+    seek_read,
+    seek_write,
+    AsSlice,
+    Channel,
+    Id,
+    Sequence,
+    Type,
+    // 508 - channel(16) - sender(16) - assign_id(16)
+    MAX_DATA_SIZE,
+
+    MAX_PACKET_SIZE,
+    NEW_CONNECTION_ID,
+
+    SERVER_ID,
 };
 use async_io::{
     Async,
     Timer,
 };
-use integer_encoding::{VarIntReader, VarIntWriter};
+use futures_lite::future::FutureExt;
+use integer_encoding::{
+    VarIntReader,
+    VarIntWriter,
+};
 use local_channel::mpsc::{
     Receiver as ChannelRx,
     Sender as ChannelTx,
 };
-use futures_lite::future::FutureExt;
-use super::{
-    AsSlice,
-    Id,
-    Sequence,
-    Channel,
-    Type,
-    seek_read,
-    seek_write,
-    MAX_PACKET_SIZE,
-    NEW_CONNECTION_ID,
-
-    // 508 - channel(16) - sender(16) - assign_id(16)
-    MAX_DATA_SIZE,
-
-    SERVER_ID,
-};
 use log::warn;
+use std::{
+    io::{
+        Cursor,
+        Error as StdIoError,
+        ErrorKind as StdIoErrorKind,
+        Read,
+        Write,
+    },
+    mem,
+    net::{
+        SocketAddr,
+        UdpSocket,
+    },
+    ops::Deref,
+    rc::Rc,
+    slice,
+    time::Duration,
+};
 
 pub struct Client {
     transport: Async<UdpSocket>,
@@ -77,10 +82,10 @@ impl Client {
 
         transport.send(write_cursor.slice()).await?;
 
-        let id = loop {          
+        let id = loop {
             let len = transport.recv(&mut buf).await?;
-            
-            let mut read_cursor = Cursor::new(&buf[..len]);
+
+            let mut read_cursor = Cursor::new(&buf[.. len]);
 
             let sender: usize = seek_read!(read_cursor.read_varint(), "sender");
 
@@ -120,7 +125,6 @@ impl Client {
         };
 
         Ok((sender, receiver))
-
     }
 }
 
@@ -138,15 +142,16 @@ impl<T> Receiver<T>
 where
     T: Deref<Target = Async<UdpSocket>>,
 {
-
-    pub async fn recv<'a>(&mut self, buf: &'a mut Vec<u8>) -> Result<(Channel, &'a mut [u8]), StdIoError> {
-
+    pub async fn recv<'a>(
+        &mut self,
+        buf: &'a mut Vec<u8>,
+    ) -> Result<(Channel, &'a mut [u8]), StdIoError> {
         loop {
             buf.resize(MAX_PACKET_SIZE, 0);
 
             let len = self.transport.recv(buf).await?;
 
-            let mut read_cursor = Cursor::new(&buf[..len]);
+            let mut read_cursor = Cursor::new(&buf[.. len]);
 
             let sender: usize = seek_read!(read_cursor.read_varint(), "sender");
 
@@ -167,7 +172,7 @@ where
                 },
                 Type::PING => {
                     let sequence: u16 = seek_read!(read_cursor.read_varint(), "sequence");
-                    
+
                     let mut write_cursor = Cursor::new(self.buffer.as_mut());
 
                     seek_write!(write_cursor.write_varint(self.id), "sender");
@@ -207,7 +212,7 @@ where
                             self.split_buffer.clear();
                             self.split_channel = None;
 
-                            return Ok((channel, buf))
+                            return Ok((channel, buf));
                         }
                     }
                 },
@@ -259,7 +264,6 @@ where
     T: Deref<Target = Async<UdpSocket>>,
 {
     pub async fn send_unreliable(&self, channel: usize, data: &[u8]) -> Result<(), StdIoError> {
-
         let mut buffer = [0u8; MAX_PACKET_SIZE];
 
         let mut write_cursor = Cursor::new(buffer.as_mut());
@@ -267,7 +271,8 @@ where
         write_cursor.write_varint(self.id).unwrap();
         write_cursor.write_varint(Type::UNRELIABLE).unwrap();
         write_cursor.write_varint(channel).unwrap();
-        write_cursor.write_all(&data)
+        write_cursor
+            .write_all(&data)
             .map_err(|_| StdIoErrorKind::OutOfMemory)?;
 
         self.transport.send(write_cursor.slice()).await?;
@@ -275,7 +280,12 @@ where
         Ok(())
     }
 
-    async fn send_reliable_one(&mut self, channel: usize, data: &[u8], packet_type: u8) -> Result<(), StdIoError> {
+    async fn send_reliable_one(
+        &mut self,
+        channel: usize,
+        data: &[u8],
+        packet_type: u8,
+    ) -> Result<(), StdIoError> {
         loop {
             let mut write_cursor = Cursor::new(self.buffer.as_mut());
 
@@ -283,7 +293,8 @@ where
             write_cursor.write_varint(packet_type).unwrap();
             write_cursor.write_varint(channel).unwrap();
             write_cursor.write_varint(self.sequence).unwrap();
-            write_cursor.write_all(data)
+            write_cursor
+                .write_all(data)
                 .map_err(|_| StdIoErrorKind::OutOfMemory)?;
 
             self.transport.send(write_cursor.slice()).await?;
@@ -296,10 +307,12 @@ where
                 }
 
                 Err(StdIoErrorKind::BrokenPipe.into())
-            }.or(async {
+            }
+            .or(async {
                 Timer::after(Duration::from_secs(1)).await;
                 Err(StdIoErrorKind::TimedOut.into())
-            }).await;
+            })
+            .await;
 
             match result {
                 Ok(()) => {
@@ -313,17 +326,21 @@ where
     }
 
     pub async fn send_reliable(&mut self, channel: usize, data: &[u8]) -> Result<(), StdIoError> {
-
         let mut start = 0;
 
         while data.len() - start > MAX_DATA_SIZE {
-
-            self.send_reliable_one(channel, &data[start .. start + MAX_DATA_SIZE], Type::RELIABLE_SPLIT).await?;
+            self.send_reliable_one(
+                channel,
+                &data[start .. start + MAX_DATA_SIZE],
+                Type::RELIABLE_SPLIT,
+            )
+            .await?;
 
             start += MAX_DATA_SIZE;
-        } 
+        }
 
-        self.send_reliable_one(channel, &data[start ..], Type::RELIABLE).await?;
+        self.send_reliable_one(channel, &data[start ..], Type::RELIABLE)
+            .await?;
 
         Ok(())
     }

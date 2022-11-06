@@ -1,47 +1,52 @@
-use std::{
-    mem,
-    slice,
-    net::{
-        UdpSocket,
-        SocketAddr,
-    },
-    io::{
-        Error as StdIoError,
-        ErrorKind as StdIoErrorKind,
-        Cursor,
-        Read,
-        Write,
-    },
-    collections::VecDeque,
-    time::Duration,
+use super::{
+    seek_read,
+    seek_write,
+    AsSlice,
+    Buffer,
+    Channel,
+    Id,
+    Packet,
+    Sequence,
+    Type,
+    MAX_DATA_SIZE,
+    MAX_PACKET_SIZE,
+    SERVER_ID,
 };
-use async_io::{Async, Timer};
-use integer_encoding::{VarIntReader, VarIntWriter};
+use async_io::{
+    Async,
+    Timer,
+};
+use futures_lite::future::FutureExt;
+use integer_encoding::{
+    VarIntReader,
+    VarIntWriter,
+};
 use local_channel::mpsc::{
     Receiver as ChannelRx,
     Sender as ChannelTx,
 };
-use futures_lite::future::FutureExt;
 use log::warn;
-
-use super::{
-    AsSlice,
-    seek_read,
-    seek_write,
-    Type,
-    SERVER_ID,
-    MAX_PACKET_SIZE,
-    MAX_DATA_SIZE,
-    Id,
-    Sequence,
-    Channel,
-    Buffer,
-    Packet,
+use std::{
+    collections::VecDeque,
+    io::{
+        Cursor,
+        Error as StdIoError,
+        ErrorKind as StdIoErrorKind,
+        Read,
+        Write,
+    },
+    mem,
+    net::{
+        SocketAddr,
+        UdpSocket,
+    },
+    slice,
+    time::Duration,
 };
 
-//pub type Packet = Vec<u8>;
+// pub type Packet = Vec<u8>;
 
-//pub type Data = Vec<u8>;
+// pub type Data = Vec<u8>;
 
 struct TypedBuffer {
     sender: Id,
@@ -52,25 +57,28 @@ struct TypedBuffer {
 async fn stream_send_ack(
     peer: Id,
     sequence: Sequence,
-    transport: &mut ChannelTx<(Id, Buffer, ChannelTx<Result<(), StdIoError>>)>
+    transport: &mut ChannelTx<(Id, Buffer, ChannelTx<Result<(), StdIoError>>)>,
 ) -> Result<(), StdIoError> {
     let mut buffer = [0; MAX_PACKET_SIZE];
 
     let mut cursor = Cursor::new(buffer.as_mut());
-    
-    cursor.write_varint(SERVER_ID)
+
+    cursor
+        .write_varint(SERVER_ID)
         .map_err(|_| StdIoErrorKind::OutOfMemory)?;
-    cursor.write_varint(Type::ACKNOWLEDGE)
+    cursor
+        .write_varint(Type::ACKNOWLEDGE)
         .map_err(|_| StdIoErrorKind::OutOfMemory)?;
-    cursor.write_varint(sequence)
+    cursor
+        .write_varint(sequence)
         .map_err(|_| StdIoErrorKind::OutOfMemory)?;
 
     let stop = cursor.position() as usize;
 
     let (result_tx, mut result_rx) = local_channel::mpsc::channel();
 
-    transport.send(
-        (
+    transport
+        .send((
             peer,
             Buffer {
                 buffer,
@@ -78,15 +86,16 @@ async fn stream_send_ack(
                 stop,
             },
             result_tx,
-        )
-    ).map_err(|_| StdIoErrorKind::BrokenPipe)?;
+        ))
+        .map_err(|_| StdIoErrorKind::BrokenPipe)?;
 
-    result_rx.recv().await
+    result_rx
+        .recv()
+        .await
         .ok_or_else(|| StdIoErrorKind::BrokenPipe)??;
-    
+
     Ok(())
 }
-
 
 pub struct StreamSender {
     peer: Id,
@@ -97,7 +106,6 @@ pub struct StreamSender {
 
 impl StreamSender {
     pub async fn send_unreliable(&self, channel: usize, data: &[u8]) -> Result<(), StdIoError> {
-
         let mut buffer = [0; MAX_PACKET_SIZE];
 
         let mut cursor = Cursor::new(buffer.as_mut());
@@ -111,8 +119,8 @@ impl StreamSender {
 
         let (result_tx, mut result_rx) = local_channel::mpsc::channel();
 
-        self.transport.send(
-            (
+        self.transport
+            .send((
                 self.peer,
                 Buffer {
                     buffer,
@@ -120,16 +128,23 @@ impl StreamSender {
                     stop,
                 },
                 result_tx,
-            )
-        ).map_err(|_| StdIoErrorKind::BrokenPipe)?;
+            ))
+            .map_err(|_| StdIoErrorKind::BrokenPipe)?;
 
-        result_rx.recv().await
+        result_rx
+            .recv()
+            .await
             .ok_or_else(|| StdIoErrorKind::BrokenPipe)??;
 
         Ok(())
     }
 
-    async fn send_reliable_one(&mut self, channel: usize, data: &[u8], packet_type: u8) -> Result<(), StdIoError> {
+    async fn send_reliable_one(
+        &mut self,
+        channel: usize,
+        data: &[u8],
+        packet_type: u8,
+    ) -> Result<(), StdIoError> {
         loop {
             let mut buffer = [0; MAX_PACKET_SIZE];
 
@@ -145,8 +160,8 @@ impl StreamSender {
 
             let (result_tx, mut result_rx) = local_channel::mpsc::channel();
 
-            self.transport.send(
-                (
+            self.transport
+                .send((
                     self.peer,
                     Buffer {
                         buffer,
@@ -154,10 +169,12 @@ impl StreamSender {
                         stop,
                     },
                     result_tx,
-                )
-            ).map_err(|_| StdIoErrorKind::BrokenPipe)?;
+                ))
+                .map_err(|_| StdIoErrorKind::BrokenPipe)?;
 
-            result_rx.recv().await
+            result_rx
+                .recv()
+                .await
                 .ok_or_else(|| StdIoErrorKind::BrokenPipe)??;
 
             let result: Result<_, StdIoError> = async {
@@ -168,10 +185,12 @@ impl StreamSender {
                 }
 
                 Err(StdIoErrorKind::BrokenPipe.into())
-            }.or(async {
+            }
+            .or(async {
                 Timer::after(Duration::from_secs(1)).await;
                 Err(StdIoErrorKind::TimedOut.into())
-            }).await;
+            })
+            .await;
 
             match result {
                 Ok(()) => {
@@ -185,17 +204,21 @@ impl StreamSender {
     }
 
     pub async fn send_reliable(&mut self, channel: usize, data: &[u8]) -> Result<(), StdIoError> {
-
         let mut start = 0;
 
         while data.len() - start > MAX_DATA_SIZE {
-
-            self.send_reliable_one(channel, &data[start .. start + MAX_DATA_SIZE], Type::RELIABLE_SPLIT).await?;
+            self.send_reliable_one(
+                channel,
+                &data[start .. start + MAX_DATA_SIZE],
+                Type::RELIABLE_SPLIT,
+            )
+            .await?;
 
             start += MAX_DATA_SIZE;
-        } 
+        }
 
-        self.send_reliable_one(channel, &data[start ..], Type::RELIABLE).await?;
+        self.send_reliable_one(channel, &data[start ..], Type::RELIABLE)
+            .await?;
 
         Ok(())
     }
@@ -210,10 +233,16 @@ pub struct StreamReceiver {
 }
 
 impl StreamReceiver {
-
     pub async fn recv<'a>(&mut self) -> Result<(Channel, Packet), StdIoError> {
         loop {
-            let TypedBuffer { sender, packet_type, mut packet } = self.transport_receiver.recv().await
+            let TypedBuffer {
+                sender,
+                packet_type,
+                mut packet,
+            } = self
+                .transport_receiver
+                .recv()
+                .await
                 .ok_or_else(|| StdIoErrorKind::BrokenPipe)?;
 
             let mut read_cursor = Cursor::new(packet.as_ref());
@@ -246,12 +275,16 @@ impl StreamReceiver {
                             return Ok((channel, packet.into()));
                         } else {
                             let offset = read_cursor.position() as usize;
-                                
-                            self.split_buffer.extend_from_slice(&packet.as_ref()[offset ..]);
+
+                            self.split_buffer
+                                .extend_from_slice(&packet.as_ref()[offset ..]);
 
                             self.split_channel = None;
 
-                            return Ok((channel, mem::replace(&mut self.split_buffer, Vec::new()).into()));
+                            return Ok((
+                                channel,
+                                mem::replace(&mut self.split_buffer, Vec::new()).into(),
+                            ));
                         }
                     }
                 },
@@ -275,7 +308,8 @@ impl StreamReceiver {
                         self.sequence += 1;
                         let offset = read_cursor.position() as usize;
 
-                        self.split_buffer.extend_from_slice(&packet.as_ref()[offset ..]);
+                        self.split_buffer
+                            .extend_from_slice(&packet.as_ref()[offset ..]);
                     }
                 },
                 _ => {},
@@ -302,7 +336,7 @@ impl Clients {
             free_ids: VecDeque::new(),
         }
     }
-    
+
     fn get(&self, id: Id) -> Option<&Client> {
         self.clients.get(id)?.as_ref()
     }
@@ -371,9 +405,13 @@ impl Server {
         loop {
             let next: Result<_, StdIoError> = async {
                 Ok(ServerPacket::Out(self.out_queue.recv().await.unwrap())) // [1]
-            }.race(async {
-                Ok(ServerPacket::In(self.transport.recv_from(&mut self.receive_buffer).await?))
-            }).await;
+            }
+            .race(async {
+                Ok(ServerPacket::In(
+                    self.transport.recv_from(&mut self.receive_buffer).await?,
+                ))
+            })
+            .await;
 
             match next? {
                 ServerPacket::In((len, addr)) => {
@@ -405,23 +443,21 @@ impl Server {
 
                             self.transport.send_to(write_cursor.slice(), addr).await?;
 
-                            return Ok(
-                                (
-                                    StreamSender {
-                                        peer: id,
-                                        sequence: 0,
-                                        ack_receiver,
-                                        transport: self.out_queue_sender.clone(),
-                                    },
-                                    StreamReceiver {
-                                        sequence: 0,
-                                        split_buffer: Vec::new(),
-                                        split_channel: None,
-                                        transport_sender: self.out_queue_sender.clone(),
-                                        transport_receiver: in_queue_rx,
-                                    }
-                                )
-                            );
+                            return Ok((
+                                StreamSender {
+                                    peer: id,
+                                    sequence: 0,
+                                    ack_receiver,
+                                    transport: self.out_queue_sender.clone(),
+                                },
+                                StreamReceiver {
+                                    sequence: 0,
+                                    split_buffer: Vec::new(),
+                                    split_channel: None,
+                                    transport_sender: self.out_queue_sender.clone(),
+                                    transport_receiver: in_queue_rx,
+                                },
+                            ));
                         },
                         Type::ACKNOWLEDGE => {
                             let sequence: u16 = seek_read!(read_cursor.read_varint(), "sequence");
@@ -429,10 +465,7 @@ impl Server {
                             let mut remove = false;
 
                             if let Some(client) = self.clients.get_mut(sender) {
-                                if client.ack_sender
-                                    .send(sequence)
-                                    .is_err()
-                                {
+                                if client.ack_sender.send(sequence).is_err() {
                                     remove = true;
                                 } else {
                                     client.address = addr;
@@ -452,15 +485,15 @@ impl Server {
                                     sender,
                                     packet_type,
                                     packet: Buffer {
-                                        buffer: mem::replace(&mut self.receive_buffer, [0; MAX_PACKET_SIZE]),
+                                        buffer: mem::replace(
+                                            &mut self.receive_buffer,
+                                            [0; MAX_PACKET_SIZE],
+                                        ),
                                         start,
                                         stop: len,
-                                    }
+                                    },
                                 };
-                                if client.in_queue
-                                    .send(data)
-                                    .is_err()
-                                {
+                                if client.in_queue.send(data).is_err() {
                                     remove = true;
                                 } else {
                                     client.address = addr;
@@ -482,7 +515,11 @@ impl Server {
                         },
                     };
 
-                    if let Err(err) = self.transport.send_to(packet.as_ref(), client.address).await {
+                    if let Err(err) = self
+                        .transport
+                        .send_to(packet.as_ref(), client.address)
+                        .await
+                    {
                         let _ = res_sender.send(Err(err.into()));
                     } else {
                         let _ = res_sender.send(Ok(()));

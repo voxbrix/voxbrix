@@ -61,13 +61,17 @@ pub struct Packet {
 
 impl From<Buffer> for Packet {
     fn from(from: Buffer) -> Self {
-        Packet { data: Data::Single(from) }
+        Packet {
+            data: Data::Single(from),
+        }
     }
 }
 
 impl From<Vec<u8>> for Packet {
     fn from(from: Vec<u8>) -> Self {
-        Packet { data: Data::Collection(from) }
+        Packet {
+            data: Data::Collection(from),
+        }
     }
 }
 
@@ -127,55 +131,53 @@ pub type Channel = usize;
 struct Type;
 
 impl Type {
-    const CONNECT: u8 = 0;
-
-    const ASSIGN_ID: u8 = 1;
-        // id: usize,
+    // id: usize,
 
     const ACKNOWLEDGE: u8 = 2;
-        // sequence: u16
+    const ASSIGN_ID: u8 = 1;
+    const CONNECT: u8 = 0;
+    // sequence: u16
 
     const DISCONNECT: u8 = 3;
-
     const PING: u8 = 4;
-        // sequence: u16,
-
-    const UNRELIABLE: u8 = 5;
-        // channel: usize,
-        // data: &[u8],
+    // channel: usize,
+    // data: &[u8],
 
     const RELIABLE: u8 = 6;
-        // channel: usize,
-        // sequence: u16,
-        // data: &[u8],
+    // channel: usize,
+    // sequence: u16,
+    // data: &[u8],
 
     const RELIABLE_SPLIT: u8 = 7;
-        // channel: usize,
-        // sequence: u16,
-        // data: &[u8],
+    // channel: usize,
+    // sequence: u16,
+    // data: &[u8],
 
     const UNDEFINED: u8 = u8::MAX;
+    // sequence: u16,
+
+    const UNRELIABLE: u8 = 5;
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        client::Client,
+        server::Server,
+    };
     use async_executor::LocalExecutor;
-    use futures_lite::future;
     use async_io::Timer;
+    use futures_lite::future;
     use std::{
-        time::Duration,
         cell::RefCell,
         iter,
         sync::atomic::{
             AtomicU16,
             Ordering,
-        }
+        },
+        time::Duration,
     };
-    use crate::{
-        server::Server,
-        client::Client,
-    };
-    
+
     static TEST_NUM_DISPENCER: AtomicU16 = AtomicU16::new(0);
 
     #[test]
@@ -188,32 +190,33 @@ mod tests {
         let rt = Box::leak(Box::new(LocalExecutor::new()));
         future::block_on(rt.run(async {
             rt.spawn(async {
-                let mut server = Server::bind(([127, 0, 0, 1], server_port))
-                    .expect("server socket bind");
+                let mut server =
+                    Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
                 loop {
-                    let (tx, _rx) = server.accept().await
-                        .expect("connection accepted");
+                    let (tx, _rx) = server.accept().await.expect("connection accepted");
 
                     rt.spawn(async move {
-                        tx.send_unreliable(0, b"HelloWorld").await
+                        tx.send_unreliable(0, b"HelloWorld")
+                            .await
                             .expect("server sent packet");
-                    }).detach();
-
+                    })
+                    .detach();
                 }
-            }).detach();
+            })
+            .detach();
 
             Timer::after(Duration::from_millis(5)).await;
-            
-            let client = Client::bind(([127, 0, 0, 1], client_port))
-                .expect("client bound");
 
-            let (_tx, mut rx) = client.connect(([127, 0, 0, 1], server_port)).await
+            let client = Client::bind(([127, 0, 0, 1], client_port)).expect("client bound");
+
+            let (_tx, mut rx) = client
+                .connect(([127, 0, 0, 1], server_port))
+                .await
                 .expect("client connection");
 
             let mut buf = vec![0u8; 508];
 
-            let (channel, result) = rx.recv(&mut buf).await
-                .expect("client message receive");
+            let (channel, result) = rx.recv(&mut buf).await.expect("client message receive");
 
             assert_eq!(result.as_ref(), b"HelloWorld");
             assert_eq!(channel, 0);
@@ -231,35 +234,35 @@ mod tests {
         let task = Box::leak(Box::new(RefCell::new(None)));
         future::block_on(rt.run(async {
             rt.spawn(async {
-                let mut server = Server::bind(([127, 0, 0, 1], server_port))
-                    .expect("server socket bind");
+                let mut server =
+                    Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
                 loop {
-                    let (mut tx, mut rx) = server.accept().await
-                        .expect("connection accepted");
+                    let (mut tx, mut rx) = server.accept().await.expect("connection accepted");
 
-                    rt.spawn(async move {
-                        while let Ok(_) = rx.recv().await {}
-                    }).detach();
+                    rt.spawn(async move { while let Ok(_) = rx.recv().await {} })
+                        .detach();
 
                     *task.borrow_mut() = Some(rt.spawn(async move {
-                        tx.send_reliable(0, b"HelloWorld").await
+                        tx.send_reliable(0, b"HelloWorld")
+                            .await
                             .expect("server sent packet");
                     }));
                 }
-            }).detach();
+            })
+            .detach();
 
             Timer::after(Duration::from_millis(5)).await;
-            
-            let client = Client::bind(([127, 0, 0, 1], client_port))
-                .expect("client bound");
 
-            let (_tx, mut rx) = client.connect(([127, 0, 0, 1], server_port)).await
+            let client = Client::bind(([127, 0, 0, 1], client_port)).expect("client bound");
+
+            let (_tx, mut rx) = client
+                .connect(([127, 0, 0, 1], server_port))
+                .await
                 .expect("client connection");
 
             let mut buf = vec![0u8; 508];
 
-            let (channel, result) = rx.recv(&mut buf).await
-                .expect("client message receive");
+            let (channel, result) = rx.recv(&mut buf).await.expect("client message receive");
 
             assert_eq!(result, b"HelloWorld");
             assert_eq!(channel, 0);
@@ -279,31 +282,32 @@ mod tests {
         let task = Box::leak(Box::new(RefCell::new(None)));
         future::block_on(rt.run(async {
             rt.spawn(async {
-                let mut server = Server::bind(([127, 0, 0, 1], server_port))
-                    .expect("server socket bind");
+                let mut server =
+                    Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
                 loop {
-                    let (mut tx, _rx) = server.accept().await
-                        .expect("connection accepted");
+                    let (mut tx, _rx) = server.accept().await.expect("connection accepted");
 
                     *task.borrow_mut() = Some(rt.spawn(async move {
-                        tx.send_reliable(0, b"HelloWorld").await
+                        tx.send_reliable(0, b"HelloWorld")
+                            .await
                             .expect("server sent packet");
                     }));
                 }
-            }).detach();
+            })
+            .detach();
 
             Timer::after(Duration::from_millis(5)).await;
-            
-            let client = Client::bind(([127, 0, 0, 1], client_port))
-                .expect("client bound");
 
-            let (_tx, mut rx) = client.connect(([127, 0, 0, 1], server_port)).await
+            let client = Client::bind(([127, 0, 0, 1], client_port)).expect("client bound");
+
+            let (_tx, mut rx) = client
+                .connect(([127, 0, 0, 1], server_port))
+                .await
                 .expect("client connection");
 
             let mut buf = vec![0u8; 508];
 
-            let (channel, result) = rx.recv(&mut buf).await
-                .expect("client message receive");
+            let (channel, result) = rx.recv(&mut buf).await.expect("client message receive");
 
             assert_eq!(result, b"HelloWorld");
             assert_eq!(channel, 0);
@@ -323,34 +327,35 @@ mod tests {
         let task = Box::leak(Box::new(RefCell::new(None)));
         future::block_on(rt.run(async {
             rt.spawn(async {
-                let mut server = Server::bind(([127, 0, 0, 1], server_port))
-                    .expect("server socket bind");
+                let mut server =
+                    Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
                 loop {
-                    let (mut tx, _rx) = server.accept().await
-                        .expect("connection accepted");
+                    let (mut tx, _rx) = server.accept().await.expect("connection accepted");
 
                     *task.borrow_mut() = Some(rt.spawn(async move {
                         for i in 0 .. 1000 {
-                            tx.send_reliable(0, format!("HelloWorld{}", i).as_bytes()).await
+                            tx.send_reliable(0, format!("HelloWorld{}", i).as_bytes())
+                                .await
                                 .expect("server sent packet");
                         }
                     }));
                 }
-            }).detach();
+            })
+            .detach();
 
             Timer::after(Duration::from_millis(5)).await;
-            
-            let client = Client::bind(([127, 0, 0, 1], client_port))
-                .expect("client bound");
 
-            let (_tx, mut rx) = client.connect(([127, 0, 0, 1], server_port)).await
+            let client = Client::bind(([127, 0, 0, 1], client_port)).expect("client bound");
+
+            let (_tx, mut rx) = client
+                .connect(([127, 0, 0, 1], server_port))
+                .await
                 .expect("client connection");
 
             let mut buf = vec![0u8; 508];
 
             for i in 0 .. 1000 {
-                let (channel, result) = rx.recv(&mut buf).await
-                    .expect("client message receive");
+                let (channel, result) = rx.recv(&mut buf).await.expect("client message receive");
                 assert_eq!(result, format!("HelloWorld{}", i).as_bytes());
                 assert_eq!(channel, 0);
             }
@@ -370,42 +375,43 @@ mod tests {
         let task = Box::leak(Box::new(RefCell::new(None)));
         future::block_on(rt.run(async {
             rt.spawn(async {
-                let mut server = Server::bind(([127, 0, 0, 1], server_port))
-                    .expect("server socket bind");
+                let mut server =
+                    Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
 
                 loop {
-                    let (mut tx, mut rx) = server.accept().await
-                        .expect("connection accepted");
+                    let (mut tx, mut rx) = server.accept().await.expect("connection accepted");
 
                     *task.borrow_mut() = Some(rt.spawn(async move {
                         for i in 0 .. 1000 {
-                            tx.send_reliable(0, format!("HelloWorld{}", i).as_bytes()).await
+                            tx.send_reliable(0, format!("HelloWorld{}", i).as_bytes())
+                                .await
                                 .expect("server sent packet");
                         }
 
                         for i in 0 .. 1000 {
-                            let (channel, result) = rx.recv().await
-                                .expect("client message receive");
+                            let (channel, result) =
+                                rx.recv().await.expect("client message receive");
                             assert_eq!(result.as_ref(), format!("HelloWorld{}", i).as_bytes());
                             assert_eq!(channel, 0);
                         }
                     }));
                 }
-            }).detach();
+            })
+            .detach();
 
             Timer::after(Duration::from_millis(5)).await;
-            
-            let client = Client::bind(([127, 0, 0, 1], client_port))
-                .expect("client bound");
 
-            let (mut tx, mut rx) = client.connect(([127, 0, 0, 1], server_port)).await
+            let client = Client::bind(([127, 0, 0, 1], client_port)).expect("client bound");
+
+            let (mut tx, mut rx) = client
+                .connect(([127, 0, 0, 1], server_port))
+                .await
                 .expect("client connection");
 
             let mut buf = vec![0u8; 508];
 
             for i in 0 .. 1000 {
-                let (channel, result) = rx.recv(&mut buf).await
-                    .expect("client message receive");
+                let (channel, result) = rx.recv(&mut buf).await.expect("client message receive");
                 assert_eq!(result, format!("HelloWorld{}", i).as_bytes());
                 assert_eq!(channel, 0);
             }
@@ -413,10 +419,12 @@ mod tests {
             rt.spawn(async move {
                 while let Ok(_) = rx.recv(&mut buf).await {}
                 panic!("recv loop ended");
-            }).detach();
+            })
+            .detach();
 
             for i in 0 .. 1000 {
-                tx.send_reliable(0, format!("HelloWorld{}", i).as_bytes()).await
+                tx.send_reliable(0, format!("HelloWorld{}", i).as_bytes())
+                    .await
                     .expect("server sent packet");
             }
 
@@ -435,53 +443,58 @@ mod tests {
         let task = Box::leak(Box::new(RefCell::new(None)));
         let data = Box::leak(Box::new({
             let data_slice = &[1, 2, 3, 4, 5];
-            iter::repeat(data_slice).take(300).flatten().cloned().collect::<Vec<_>>()
+            iter::repeat(data_slice)
+                .take(300)
+                .flatten()
+                .cloned()
+                .collect::<Vec<_>>()
         }));
         future::block_on(rt.run(async {
             rt.spawn(async {
-                let mut server = Server::bind(([127, 0, 0, 1], server_port))
-                    .expect("server socket bind");
+                let mut server =
+                    Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
 
                 loop {
-                    let (mut tx, mut rx) = server.accept().await
-                        .expect("connection accepted");
+                    let (mut tx, mut rx) = server.accept().await.expect("connection accepted");
 
                     let data = &data;
 
                     *task.borrow_mut() = Some(rt.spawn(async move {
-
-                        tx.send_reliable(0, data.as_ref()).await
+                        tx.send_reliable(0, data.as_ref())
+                            .await
                             .expect("server sent packet");
 
-                        let (channel, result) = rx.recv().await
-                            .expect("client message receive");
+                        let (channel, result) = rx.recv().await.expect("client message receive");
                         assert_eq!(result.as_ref(), data.as_slice());
                         assert_eq!(channel, 0);
                     }));
                 }
-            }).detach();
+            })
+            .detach();
 
             Timer::after(Duration::from_millis(5)).await;
-            
-            let client = Client::bind(([127, 0, 0, 1], client_port))
-                .expect("client bound");
 
-            let (mut tx, mut rx) = client.connect(([127, 0, 0, 1], server_port)).await
+            let client = Client::bind(([127, 0, 0, 1], client_port)).expect("client bound");
+
+            let (mut tx, mut rx) = client
+                .connect(([127, 0, 0, 1], server_port))
+                .await
                 .expect("client connection");
 
             let mut buf = vec![0u8; 1508];
 
-            let (channel, result) = rx.recv(&mut buf).await
-                .expect("client message receive");
+            let (channel, result) = rx.recv(&mut buf).await.expect("client message receive");
             assert_eq!(result.as_ref(), data.as_slice());
             assert_eq!(channel, 0);
 
             rt.spawn(async move {
                 while let Ok(_) = rx.recv(&mut buf).await {}
                 panic!("recv loop ended");
-            }).detach();
+            })
+            .detach();
 
-            tx.send_reliable(0, data.as_ref()).await
+            tx.send_reliable(0, data.as_ref())
+                .await
                 .expect("server sent packet");
 
             task.borrow_mut().take().unwrap().await;
@@ -500,32 +513,39 @@ mod tests {
 
         future::block_on(rt.run(async {
             rt.spawn(async {
-                let mut server = Server::bind(([127, 0, 0, 1], server_port))
-                    .expect("server socket bind");
+                let mut server =
+                    Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
 
                 loop {
-                    let (mut tx, mut rx) = server.accept().await
-                        .expect("connection accepted");
+                    let (mut tx, mut rx) = server.accept().await.expect("connection accepted");
 
                     *task.borrow_mut() = Some(rt.spawn(async move {
-
-                        for i in 0..10 {
+                        for i in 0 .. 10 {
                             let data = Box::leak(Box::new({
                                 let data_slice = &[i + 1, i + 2, i + 3, i + 4, i + 5];
-                                iter::repeat(data_slice).take(300).flatten().cloned().collect::<Vec<_>>()
+                                iter::repeat(data_slice)
+                                    .take(300)
+                                    .flatten()
+                                    .cloned()
+                                    .collect::<Vec<_>>()
                             }));
 
-                            tx.send_reliable(0, data.as_ref()).await
+                            tx.send_reliable(0, data.as_ref())
+                                .await
                                 .expect("server sent packet");
                         }
 
-                        for i in 0..10 {
-                            let (channel, result) = rx.recv().await
-                                .expect("client message receive");
+                        for i in 0 .. 10 {
+                            let (channel, result) =
+                                rx.recv().await.expect("client message receive");
 
                             let data = Box::leak(Box::new({
                                 let data_slice = &[i + 1, i + 2, i + 3, i + 4, i + 5];
-                                iter::repeat(data_slice).take(300).flatten().cloned().collect::<Vec<_>>()
+                                iter::repeat(data_slice)
+                                    .take(300)
+                                    .flatten()
+                                    .cloned()
+                                    .collect::<Vec<_>>()
                             }));
 
                             assert_eq!(result.as_ref(), data.as_slice());
@@ -533,25 +553,30 @@ mod tests {
                         }
                     }));
                 }
-            }).detach();
+            })
+            .detach();
 
             Timer::after(Duration::from_millis(5)).await;
-            
-            let client = Client::bind(([127, 0, 0, 1], client_port))
-                .expect("client bound");
 
-            let (mut tx, mut rx) = client.connect(([127, 0, 0, 1], server_port)).await
+            let client = Client::bind(([127, 0, 0, 1], client_port)).expect("client bound");
+
+            let (mut tx, mut rx) = client
+                .connect(([127, 0, 0, 1], server_port))
+                .await
                 .expect("client connection");
 
             let mut buf = vec![0u8; 1508];
 
-            for i in 0..10 {
-                let (channel, result) = rx.recv(&mut buf).await
-                    .expect("client message receive");
+            for i in 0 .. 10 {
+                let (channel, result) = rx.recv(&mut buf).await.expect("client message receive");
 
                 let data = Box::leak(Box::new({
                     let data_slice = &[i + 1, i + 2, i + 3, i + 4, i + 5];
-                    iter::repeat(data_slice).take(300).flatten().cloned().collect::<Vec<_>>()
+                    iter::repeat(data_slice)
+                        .take(300)
+                        .flatten()
+                        .cloned()
+                        .collect::<Vec<_>>()
                 }));
 
                 assert_eq!(result.as_ref(), data.as_slice());
@@ -561,14 +586,20 @@ mod tests {
             rt.spawn(async move {
                 while let Ok(_) = rx.recv(&mut buf).await {}
                 panic!("recv loop ended");
-            }).detach();
+            })
+            .detach();
 
-            for i in 0..10 {
+            for i in 0 .. 10 {
                 let data = Box::leak(Box::new({
                     let data_slice = &[i + 1, i + 2, i + 3, i + 4, i + 5];
-                    iter::repeat(data_slice).take(300).flatten().cloned().collect::<Vec<_>>()
+                    iter::repeat(data_slice)
+                        .take(300)
+                        .flatten()
+                        .cloned()
+                        .collect::<Vec<_>>()
                 }));
-                tx.send_reliable(0, data.as_ref()).await
+                tx.send_reliable(0, data.as_ref())
+                    .await
                     .expect("server sent packet");
             }
 
