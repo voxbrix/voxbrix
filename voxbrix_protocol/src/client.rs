@@ -18,12 +18,20 @@ use async_io::{
     Async,
     Timer,
 };
+#[cfg(feature = "multi")]
+use flume::{
+    unbounded as new_channel,
+    Receiver as ChannelRx,
+    Sender as ChannelTx,
+};
 use futures_lite::future::FutureExt;
 use integer_encoding::{
     VarIntReader,
     VarIntWriter,
 };
+#[cfg(feature = "single")]
 use local_channel::mpsc::{
+    channel as new_channel,
     Receiver as ChannelRx,
     Sender as ChannelTx,
 };
@@ -71,7 +79,7 @@ impl Client {
 
         let transport = Rc::new(self.transport);
 
-        let (ack_sender, ack_receiver) = local_channel::mpsc::channel();
+        let (ack_sender, ack_receiver) = new_channel();
 
         let mut buf = [0u8; MAX_PACKET_SIZE];
 
@@ -300,7 +308,14 @@ where
             self.transport.send(write_cursor.slice()).await?;
 
             let result: Result<_, StdIoError> = async {
+                #[cfg(feature = "single")]
                 while let Some(ack) = self.ack_receiver.recv().await {
+                    if ack == self.sequence {
+                        return Ok(());
+                    }
+                }
+                #[cfg(feature = "multi")]
+                while let Ok(ack) = self.ack_receiver.recv_async().await {
                     if ack == self.sequence {
                         return Ok(());
                     }

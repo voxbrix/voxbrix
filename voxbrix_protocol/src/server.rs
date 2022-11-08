@@ -16,12 +16,20 @@ use async_io::{
     Async,
     Timer,
 };
+#[cfg(feature = "multi")]
+use flume::{
+    unbounded as new_channel,
+    Receiver as ChannelRx,
+    Sender as ChannelTx,
+};
 use futures_lite::future::FutureExt;
 use integer_encoding::{
     VarIntReader,
     VarIntWriter,
 };
+#[cfg(feature = "single")]
 use local_channel::mpsc::{
+    channel as new_channel,
     Receiver as ChannelRx,
     Sender as ChannelTx,
 };
@@ -75,7 +83,7 @@ async fn stream_send_ack(
 
     let stop = cursor.position() as usize;
 
-    let (result_tx, mut result_rx) = local_channel::mpsc::channel();
+    let (result_tx, mut result_rx) = new_channel();
 
     transport
         .send((
@@ -89,10 +97,16 @@ async fn stream_send_ack(
         ))
         .map_err(|_| StdIoErrorKind::BrokenPipe)?;
 
+    #[cfg(feature = "single")]
     result_rx
         .recv()
         .await
         .ok_or_else(|| StdIoErrorKind::BrokenPipe)??;
+    #[cfg(feature = "multi")]
+    result_rx
+        .recv_async()
+        .await
+        .map_err(|_| StdIoErrorKind::BrokenPipe)??;
 
     Ok(())
 }
@@ -117,7 +131,7 @@ impl StreamSender {
 
         let stop = cursor.position() as usize;
 
-        let (result_tx, mut result_rx) = local_channel::mpsc::channel();
+        let (result_tx, mut result_rx) = new_channel();
 
         self.transport
             .send((
@@ -131,10 +145,16 @@ impl StreamSender {
             ))
             .map_err(|_| StdIoErrorKind::BrokenPipe)?;
 
+        #[cfg(feature = "single")]
         result_rx
             .recv()
             .await
             .ok_or_else(|| StdIoErrorKind::BrokenPipe)??;
+        #[cfg(feature = "multi")]
+        result_rx
+            .recv_async()
+            .await
+            .map_err(|_| StdIoErrorKind::BrokenPipe)??;
 
         Ok(())
     }
@@ -158,7 +178,7 @@ impl StreamSender {
 
             let stop = cursor.position() as usize;
 
-            let (result_tx, mut result_rx) = local_channel::mpsc::channel();
+            let (result_tx, mut result_rx) = new_channel();
 
             self.transport
                 .send((
@@ -172,13 +192,27 @@ impl StreamSender {
                 ))
                 .map_err(|_| StdIoErrorKind::BrokenPipe)?;
 
+            #[cfg(feature = "single")]
             result_rx
                 .recv()
                 .await
                 .ok_or_else(|| StdIoErrorKind::BrokenPipe)??;
+            #[cfg(feature = "multi")]
+            result_rx
+                .recv_async()
+                .await
+                .map_err(|_| StdIoErrorKind::BrokenPipe)??;
 
             let result: Result<_, StdIoError> = async {
+                #[cfg(feature = "single")]
                 while let Some(ack) = self.ack_receiver.recv().await {
+                    if ack == self.sequence {
+                        return Ok(());
+                    }
+                }
+
+                #[cfg(feature = "multi")]
+                while let Ok(ack) = self.ack_receiver.recv_async().await {
                     if ack == self.sequence {
                         return Ok(());
                     }
@@ -235,6 +269,7 @@ pub struct StreamReceiver {
 impl StreamReceiver {
     pub async fn recv<'a>(&mut self) -> Result<(Channel, Packet), StdIoError> {
         loop {
+            #[cfg(feature = "single")]
             let TypedBuffer {
                 sender,
                 packet_type,
@@ -244,6 +279,17 @@ impl StreamReceiver {
                 .recv()
                 .await
                 .ok_or_else(|| StdIoErrorKind::BrokenPipe)?;
+
+            #[cfg(feature = "multi")]
+            let TypedBuffer {
+                sender,
+                packet_type,
+                mut packet,
+            } = self
+                .transport_receiver
+                .recv_async()
+                .await
+                .map_err(|_| StdIoErrorKind::BrokenPipe)?;
 
             let mut read_cursor = Cursor::new(packet.as_ref());
 
@@ -391,7 +437,7 @@ impl Server {
         A: Into<SocketAddr>,
     {
         let transport = Async::<UdpSocket>::bind(bind_address.into())?;
-        let (out_queue_sender, out_queue) = local_channel::mpsc::channel();
+        let (out_queue_sender, out_queue) = new_channel();
         Ok(Self {
             clients: Clients::new(),
             out_queue,
@@ -404,7 +450,13 @@ impl Server {
     pub async fn accept(&mut self) -> Result<(StreamSender, StreamReceiver), StdIoError> {
         loop {
             let next: Result<_, StdIoError> = async {
-                Ok(ServerPacket::Out(self.out_queue.recv().await.unwrap())) // [1]
+                #[cfg(feature = "single")]
+                let out_packet = self.out_queue.recv().await.unwrap();
+
+                #[cfg(feature = "multi")]
+                let out_packet = self.out_queue.recv_async().await.unwrap();
+
+                Ok(ServerPacket::Out(out_packet)) // [1]
             }
             .race(async {
                 Ok(ServerPacket::In(
@@ -423,9 +475,9 @@ impl Server {
 
                     match packet_type {
                         Type::CONNECT => {
-                            let (in_queue_tx, in_queue_rx) = local_channel::mpsc::channel();
+                            let (in_queue_tx, in_queue_rx) = new_channel();
 
-                            let (ack_sender, ack_receiver) = local_channel::mpsc::channel();
+                            let (ack_sender, ack_receiver) = new_channel();
 
                             let client = Client {
                                 address: addr,
