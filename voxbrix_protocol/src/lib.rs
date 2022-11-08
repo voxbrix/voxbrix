@@ -1,12 +1,15 @@
 use std::io::Cursor;
 
+#[cfg(any(feature = "client", test))]
 pub mod client;
+
+#[cfg(any(feature = "server", test))]
 pub mod server;
 
 pub const MAX_PACKET_SIZE: usize = 508;
+pub const MAX_HEADER_SIZE: usize = 48;
 
 // 508 - channel(16) - sender(16) - assign_id(16)
-pub const MAX_HEADER_SIZE: usize = 48;
 pub const MAX_DATA_SIZE: usize = 460;
 
 const NEW_CONNECTION_ID: usize = 0;
@@ -130,33 +133,36 @@ pub type Channel = usize;
 
 struct Type;
 
+#[rustfmt::skip]
 impl Type {
-    // id: usize,
+    const CONNECT: u8 = 0;
+
+    const ASSIGN_ID: u8 = 1;
+        // id: usize,
 
     const ACKNOWLEDGE: u8 = 2;
-    const ASSIGN_ID: u8 = 1;
-    const CONNECT: u8 = 0;
-    // sequence: u16
+        // sequence: u16
 
     const DISCONNECT: u8 = 3;
+
     const PING: u8 = 4;
-    // channel: usize,
-    // data: &[u8],
-
-    const RELIABLE: u8 = 6;
-    // channel: usize,
-    // sequence: u16,
-    // data: &[u8],
-
-    const RELIABLE_SPLIT: u8 = 7;
-    // channel: usize,
-    // sequence: u16,
-    // data: &[u8],
-
-    const UNDEFINED: u8 = u8::MAX;
-    // sequence: u16,
+        // sequence: u16,
 
     const UNRELIABLE: u8 = 5;
+        // channel: usize,
+        // data: &[u8],
+
+    const RELIABLE: u8 = 6;
+        // channel: usize,
+        // sequence: u16,
+        // data: &[u8],
+
+    const RELIABLE_SPLIT: u8 = 7;
+        // channel: usize,
+        // sequence: u16,
+        // data: &[u8],
+
+    const UNDEFINED: u8 = u8::MAX;
 }
 
 #[cfg(test)]
