@@ -1,4 +1,10 @@
-use std::io::Cursor;
+use std::{
+    collections::{
+        BTreeMap,
+        BTreeSet,
+    },
+    io::Cursor,
+};
 
 #[cfg(any(feature = "client", test))]
 pub mod client;
@@ -101,6 +107,13 @@ impl AsMut<[u8]> for Packet {
     }
 }
 
+struct UnreliableBuffer {
+    split_id: u16,
+    expected_length: usize,
+    existing_pieces: BTreeSet<usize>,
+    buffer: BTreeMap<usize, (usize, [u8; MAX_DATA_SIZE])>,
+}
+
 #[macro_export]
 macro_rules! seek_read {
     ($e:expr, $c:literal) => {
@@ -152,12 +165,24 @@ impl Type {
         // channel: usize,
         // data: &[u8],
 
-    const RELIABLE: u8 = 6;
+    const UNRELIABLE_SPLIT_START: u8 = 6;
+        // channel: usize,
+        // split_id: u16,
+        // length: usize,
+        // data: &[u8],
+
+    const UNRELIABLE_SPLIT: u8 = 7;
+        // channel: usize,
+        // split_id: u16,
+        // count: usize,
+        // data: &[u8],
+
+    const RELIABLE: u8 = 8;
         // channel: usize,
         // sequence: u16,
         // data: &[u8],
 
-    const RELIABLE_SPLIT: u8 = 7;
+    const RELIABLE_SPLIT: u8 = 9;
         // channel: usize,
         // sequence: u16,
         // data: &[u8],
@@ -199,7 +224,7 @@ mod tests {
                 let mut server =
                     Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
                 loop {
-                    let (tx, _rx) = server.accept().await.expect("connection accepted");
+                    let (mut tx, _rx) = server.accept().await.expect("connection accepted");
 
                     rt.spawn(async move {
                         tx.send_unreliable(0, b"HelloWorld")
@@ -226,6 +251,350 @@ mod tests {
 
             assert_eq!(result.as_ref(), b"HelloWorld");
             assert_eq!(channel, 0);
+        }));
+    }
+
+    #[test]
+    fn unreliable_test_1() {
+        let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
+
+        let client_port = 30000 + test_num * 10 + 1;
+        let server_port = 30000 + test_num * 10;
+
+        let rt = Box::leak(Box::new(LocalExecutor::new()));
+        let data = Box::leak(Box::new({
+            let data_slice = &[1, 2, 3, 4, 5];
+            iter::repeat(data_slice)
+                .take(300)
+                .flatten()
+                .cloned()
+                .collect::<Vec<_>>()
+        }));
+
+        future::block_on(rt.run(async {
+            rt.spawn(async {
+                let mut server =
+                    Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
+                loop {
+                    let (mut tx, _rx) = server.accept().await.expect("connection accepted");
+
+                    let data = &data;
+
+                    rt.spawn(async move {
+                        tx.send_unreliable(0, data)
+                            .await
+                            .expect("server sent packet");
+                    })
+                    .detach();
+                }
+            })
+            .detach();
+
+            Timer::after(Duration::from_millis(5)).await;
+
+            let client = Client::bind(([127, 0, 0, 1], client_port)).expect("client bound");
+
+            let (_tx, mut rx) = client
+                .connect(([127, 0, 0, 1], server_port))
+                .await
+                .expect("client connection");
+
+            let mut buf = vec![0u8; 508];
+
+            let (channel, result) = rx.recv(&mut buf).await.expect("client message receive");
+
+            assert_eq!(result.as_ref(), data.as_slice());
+            assert_eq!(channel, 0);
+        }));
+    }
+
+    #[test]
+    fn unreliable_test_2() {
+        let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
+
+        let client_port = 30000 + test_num * 10 + 1;
+        let server_port = 30000 + test_num * 10;
+
+        let rt = Box::leak(Box::new(LocalExecutor::new()));
+        let task = Box::leak(Box::new(RefCell::new(None)));
+        let data = Box::leak(Box::new({
+            let data_slice = &[1, 2, 3, 4, 5];
+            iter::repeat(data_slice)
+                .take(300)
+                .flatten()
+                .cloned()
+                .collect::<Vec<_>>()
+        }));
+
+        future::block_on(rt.run(async {
+            rt.spawn(async {
+                let mut server =
+                    Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
+                loop {
+                    let (_tx, mut rx) = server.accept().await.expect("connection accepted");
+
+                    let data = &data;
+
+                    *task.borrow_mut() = Some(rt.spawn(async move {
+                        let (channel, result) = rx.recv().await.expect("server received data");
+
+                        assert_eq!(result.as_ref(), data.as_slice());
+                        assert_eq!(channel, 1);
+                    }));
+                }
+            })
+            .detach();
+
+            Timer::after(Duration::from_millis(5)).await;
+
+            let client = Client::bind(([127, 0, 0, 1], client_port)).expect("client bound");
+
+            let (mut tx, _rx) = client
+                .connect(([127, 0, 0, 1], server_port))
+                .await
+                .expect("client connection");
+
+            tx.send_unreliable(1, &data)
+                .await
+                .expect("client sent data");
+
+            task.borrow_mut().take().unwrap().await;
+        }));
+    }
+
+    #[test]
+    fn unreliable_test_3() {
+        let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
+
+        let client_port = 30000 + test_num * 10 + 1;
+        let server_port = 30000 + test_num * 10;
+
+        let rt = Box::leak(Box::new(LocalExecutor::new()));
+        let task = Box::leak(Box::new(RefCell::new(None)));
+        let data = Box::leak(Box::new({
+            let data_slice = &[1, 2, 3, 4, 5];
+            iter::repeat(data_slice)
+                .take(300)
+                .flatten()
+                .cloned()
+                .collect::<Vec<_>>()
+        }));
+
+        future::block_on(rt.run(async {
+            rt.spawn(async {
+                let mut server =
+                    Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
+                loop {
+                    let (_tx, mut rx) = server.accept().await.expect("connection accepted");
+
+                    let data = &data;
+
+                    *task.borrow_mut() = Some(rt.spawn(async move {
+                        for i in 0 .. 10 {
+                            let (channel, result) = rx.recv().await.expect("server received data");
+
+                            assert_eq!(
+                                result.as_ref(),
+                                [data.as_slice(), &[i]]
+                                    .into_iter()
+                                    .flatten()
+                                    .map(|i| *i)
+                                    .collect::<Vec<u8>>()
+                                    .as_slice()
+                            );
+                            assert_eq!(channel, 2);
+                        }
+                    }));
+                }
+            })
+            .detach();
+
+            Timer::after(Duration::from_millis(5)).await;
+
+            let client = Client::bind(([127, 0, 0, 1], client_port)).expect("client bound");
+
+            let (mut tx, _rx) = client
+                .connect(([127, 0, 0, 1], server_port))
+                .await
+                .expect("client connection");
+
+            for i in 0 .. 10 {
+                tx.send_unreliable(
+                    2,
+                    [data.as_slice(), &[i]]
+                        .into_iter()
+                        .flatten()
+                        .map(|i| *i)
+                        .collect::<Vec<u8>>()
+                        .as_slice(),
+                )
+                .await
+                .expect("client sent data");
+            }
+
+            task.borrow_mut().take().unwrap().await;
+        }));
+    }
+
+    #[test]
+    fn unreliable_test_4() {
+        let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
+
+        let client_port = 30000 + test_num * 10 + 1;
+        let server_port = 30000 + test_num * 10;
+
+        let rt = Box::leak(Box::new(LocalExecutor::new()));
+        let task = Box::leak(Box::new(RefCell::new(None)));
+        let data = Box::leak(Box::new({
+            let data_slice = &[1, 2, 3, 4, 5];
+            iter::repeat(data_slice)
+                .take(300)
+                .flatten()
+                .cloned()
+                .collect::<Vec<_>>()
+        }));
+
+        future::block_on(rt.run(async {
+            rt.spawn(async {
+                let mut server =
+                    Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
+                loop {
+                    let (mut tx, mut rx) = server.accept().await.expect("connection accepted");
+
+                    let data = &data;
+
+                    *task.borrow_mut() = Some(rt.spawn(async move {
+                        for i in 20 .. 30 {
+                            tx.send_unreliable(
+                                5,
+                                [data.as_slice(), &[i]]
+                                    .into_iter()
+                                    .flatten()
+                                    .map(|i| *i)
+                                    .collect::<Vec<u8>>()
+                                    .as_slice(),
+                            )
+                            .await
+                            .expect("server sent data");
+                        }
+                        for i in 50 .. 60 {
+                            tx.send_unreliable(
+                                5,
+                                [data.as_slice(), &[i]]
+                                    .into_iter()
+                                    .flatten()
+                                    .map(|i| *i)
+                                    .collect::<Vec<u8>>()
+                                    .as_slice(),
+                            )
+                            .await
+                            .expect("server sent data");
+                        }
+                        for i in 0 .. 10 {
+                            let (channel, result) = rx.recv().await.expect("server received data");
+
+                            assert_eq!(
+                                result.as_ref(),
+                                [data.as_slice(), &[i]]
+                                    .into_iter()
+                                    .flatten()
+                                    .map(|i| *i)
+                                    .collect::<Vec<u8>>()
+                                    .as_slice()
+                            );
+                            assert_eq!(channel, 7);
+                        }
+                        for i in 90 .. 100 {
+                            let (channel, result) = rx.recv().await.expect("server received data");
+
+                            assert_eq!(
+                                result.as_ref(),
+                                [data.as_slice(), &[i]]
+                                    .into_iter()
+                                    .flatten()
+                                    .map(|i| *i)
+                                    .collect::<Vec<u8>>()
+                                    .as_slice()
+                            );
+                            assert_eq!(channel, 7);
+                        }
+                    }));
+                }
+            })
+            .detach();
+
+            Timer::after(Duration::from_millis(5)).await;
+
+            let client = Client::bind(([127, 0, 0, 1], client_port)).expect("client bound");
+
+            let (mut tx, mut rx) = client
+                .connect(([127, 0, 0, 1], server_port))
+                .await
+                .expect("client connection");
+
+            let mut recv_buf = Vec::new();
+
+            for i in 20 .. 30 {
+                recv_buf.clear();
+                let (channel, result) = rx.recv(&mut recv_buf).await.expect("client received data");
+
+                assert_eq!(
+                    result.as_ref(),
+                    [data.as_slice(), &[i]]
+                        .into_iter()
+                        .flatten()
+                        .map(|i| *i)
+                        .collect::<Vec<u8>>()
+                        .as_slice()
+                );
+                assert_eq!(channel, 5);
+            }
+
+            for i in 50 .. 60 {
+                recv_buf.clear();
+                let (channel, result) = rx.recv(&mut recv_buf).await.expect("client received data");
+
+                assert_eq!(
+                    result.as_ref(),
+                    [data.as_slice(), &[i]]
+                        .into_iter()
+                        .flatten()
+                        .map(|i| *i)
+                        .collect::<Vec<u8>>()
+                        .as_slice()
+                );
+                assert_eq!(channel, 5);
+            }
+
+            for i in 0 .. 10 {
+                tx.send_unreliable(
+                    7,
+                    [data.as_slice(), &[i]]
+                        .into_iter()
+                        .flatten()
+                        .map(|i| *i)
+                        .collect::<Vec<u8>>()
+                        .as_slice(),
+                )
+                .await
+                .expect("client sent data");
+            }
+
+            for i in 90 .. 100 {
+                tx.send_unreliable(
+                    7,
+                    [data.as_slice(), &[i]]
+                        .into_iter()
+                        .flatten()
+                        .map(|i| *i)
+                        .collect::<Vec<u8>>()
+                        .as_slice(),
+                )
+                .await
+                .expect("client sent data");
+            }
+
+            task.borrow_mut().take().unwrap().await;
         }));
     }
 
