@@ -6,12 +6,10 @@ use super::{
     Id,
     Sequence,
     Type,
-    // 508 - channel(16) - sender(16) - assign_id(16)
+    UnreliableBuffer,
     MAX_DATA_SIZE,
-
     MAX_PACKET_SIZE,
     NEW_CONNECTION_ID,
-
     SERVER_ID,
 };
 use async_io::{
@@ -37,6 +35,11 @@ use local_channel::mpsc::{
 };
 use log::warn;
 use std::{
+    collections::{
+        BTreeMap,
+        BTreeSet,
+        HashMap,
+    },
     io::{
         Cursor,
         Error as StdIoError,
@@ -117,16 +120,18 @@ impl Client {
         let receiver = Receiver {
             id,
             sequence: 0,
-            split_buffer: Vec::new(),
-            split_channel: None,
+            reliable_split_buffer: Vec::new(),
+            reliable_split_channel: None,
             buffer: [0; MAX_PACKET_SIZE],
             ack_sender,
             transport: transport.clone(),
+            unreliable_split_buffers: HashMap::new(),
         };
 
         let sender = Sender {
             id,
             sequence: 0,
+            unreliable_split_id: 0,
             buffer: [0; MAX_PACKET_SIZE],
             ack_receiver,
             transport: transport.clone(),
@@ -139,11 +144,12 @@ impl Client {
 pub struct Receiver<T> {
     id: Id,
     sequence: Sequence,
-    split_buffer: Vec<u8>,
-    split_channel: Option<Channel>,
+    reliable_split_buffer: Vec<u8>,
+    reliable_split_channel: Option<Channel>,
     buffer: [u8; MAX_PACKET_SIZE],
     ack_sender: ChannelTx<Sequence>,
     transport: T,
+    unreliable_split_buffers: HashMap<Channel, UnreliableBuffer>,
 }
 
 impl<T> Receiver<T>
@@ -194,6 +200,101 @@ where
                     let start = read_cursor.position() as usize;
                     return Ok((channel, &mut buf[start .. len]));
                 },
+                Type::UNRELIABLE_SPLIT_START => {
+                    let channel: usize = seek_read!(read_cursor.read_varint(), "channel");
+                    let split_id: u16 = seek_read!(read_cursor.read_varint(), "split_id");
+                    let expected_length: usize = seek_read!(read_cursor.read_varint(), "length");
+
+                    let split_buffer = match self.unreliable_split_buffers.get_mut(&channel) {
+                        Some(b) => {
+                            b.split_id = split_id;
+                            b.expected_length = expected_length;
+                            b.existing_pieces.clear();
+                            b
+                        },
+                        None => {
+                            self.unreliable_split_buffers.insert(
+                                channel,
+                                UnreliableBuffer {
+                                    split_id,
+                                    expected_length,
+                                    existing_pieces: BTreeSet::new(),
+                                    buffer: BTreeMap::new(),
+                                },
+                            );
+
+                            self.unreliable_split_buffers.get_mut(&channel).unwrap()
+                        },
+                    };
+
+                    let start = read_cursor.position() as usize;
+
+                    let data_length = len - start;
+
+                    match split_buffer.buffer.get_mut(&0) {
+                        Some((current_length, shard)) => {
+                            (&mut shard[.. data_length]).copy_from_slice(&buf[start .. len]);
+                            *current_length = data_length;
+                        },
+                        None => {
+                            let mut new_shard = [0u8; MAX_DATA_SIZE];
+                            (&mut new_shard[.. data_length]).copy_from_slice(&buf[start .. len]);
+                            split_buffer.buffer.insert(0, (data_length, new_shard));
+                        },
+                    }
+
+                    split_buffer.existing_pieces.insert(0);
+                },
+                Type::UNRELIABLE_SPLIT => {
+                    let channel: usize = seek_read!(read_cursor.read_varint(), "channel");
+                    let split_id: u16 = seek_read!(read_cursor.read_varint(), "split_id");
+                    let count: usize = seek_read!(read_cursor.read_varint(), "count");
+                    let start = read_cursor.position() as usize;
+                    let data_length = len - start;
+
+                    let split_buffer = match self
+                        .unreliable_split_buffers
+                        .get_mut(&channel)
+                        .filter(|b| b.split_id == split_id)
+                    {
+                        Some(b) => b,
+                        None => continue,
+                    };
+
+                    match split_buffer.buffer.get_mut(&count) {
+                        Some((current_length, shard)) => {
+                            (&mut shard[.. data_length]).copy_from_slice(&buf[start .. len]);
+                            *current_length = data_length;
+                        },
+                        None => {
+                            let mut new_shard = [0u8; MAX_DATA_SIZE];
+                            (&mut new_shard[.. data_length]).copy_from_slice(&buf[start .. len]);
+                            split_buffer.buffer.insert(count, (data_length, new_shard));
+                        },
+                    }
+
+                    split_buffer.existing_pieces.insert(count);
+
+                    if split_buffer
+                        .existing_pieces
+                        .range(0 .. split_buffer.expected_length)
+                        .count()
+                        == split_buffer.expected_length
+                    {
+                        buf.clear();
+
+                        for (_, (len, data)) in
+                            split_buffer.buffer.range(0 .. split_buffer.expected_length)
+                        {
+                            buf.extend_from_slice(&data[.. *len]);
+                        }
+
+                        // TODO: also check CRC and if it's incorrect restore buf length to
+                        // MAX_PACKET_SIZE before continuing
+
+                        return Ok((channel, buf.as_mut()));
+                    }
+                },
                 Type::RELIABLE => {
                     let channel: usize = seek_read!(read_cursor.read_varint(), "channel");
                     let sequence: u16 = seek_read!(read_cursor.read_varint(), "sequence");
@@ -210,15 +311,16 @@ where
                         self.sequence += 1;
                         let start = read_cursor.position() as usize;
 
-                        if self.split_channel.is_none() {
+                        if self.reliable_split_channel.is_none() {
                             return Ok((channel, &mut buf[start .. len]));
                         } else {
-                            self.split_buffer.extend_from_slice(&mut buf[start .. len]);
+                            self.reliable_split_buffer
+                                .extend_from_slice(&mut buf[start .. len]);
 
-                            mem::swap(&mut self.split_buffer, buf);
+                            mem::swap(&mut self.reliable_split_buffer, buf);
 
-                            self.split_buffer.clear();
-                            self.split_channel = None;
+                            self.reliable_split_buffer.clear();
+                            self.reliable_split_channel = None;
 
                             return Ok((channel, buf));
                         }
@@ -227,10 +329,10 @@ where
                 Type::RELIABLE_SPLIT => {
                     let channel: usize = seek_read!(read_cursor.read_varint(), "channel");
 
-                    if self.split_channel.is_none() {
-                        self.split_channel = Some(channel);
-                    } else if let Some(split_channel) = self.split_channel {
-                        if split_channel != channel {
+                    if self.reliable_split_channel.is_none() {
+                        self.reliable_split_channel = Some(channel);
+                    } else if let Some(reliable_split_channel) = self.reliable_split_channel {
+                        if reliable_split_channel != channel {
                             warn!("skipping mishappened packet with channel {}", channel);
                             continue;
                         }
@@ -250,7 +352,8 @@ where
                         self.sequence += 1;
                         let start = read_cursor.position() as usize;
 
-                        self.split_buffer.extend_from_slice(&mut buf[start .. len]);
+                        self.reliable_split_buffer
+                            .extend_from_slice(&mut buf[start .. len]);
                     }
                 },
                 _ => {},
@@ -262,6 +365,7 @@ where
 pub struct Sender<T> {
     id: Id,
     sequence: Sequence,
+    unreliable_split_id: u16,
     buffer: [u8; MAX_PACKET_SIZE],
     ack_receiver: ChannelRx<Sequence>,
     transport: T,
@@ -271,21 +375,61 @@ impl<T> Sender<T>
 where
     T: Deref<Target = Async<UdpSocket>>,
 {
-    pub async fn send_unreliable(&self, channel: usize, data: &[u8]) -> Result<(), StdIoError> {
-        let mut buffer = [0u8; MAX_PACKET_SIZE];
+    async fn send_unreliable_one(
+        &self,
+        channel: usize,
+        data: &[u8],
+        message_type: u8,
+        len_or_count: Option<usize>,
+    ) -> Result<(), StdIoError> {
+        let mut buffer = [0; MAX_PACKET_SIZE];
 
-        let mut write_cursor = Cursor::new(buffer.as_mut());
+        let mut cursor = Cursor::new(buffer.as_mut());
 
-        write_cursor.write_varint(self.id).unwrap();
-        write_cursor.write_varint(Type::UNRELIABLE).unwrap();
-        write_cursor.write_varint(channel).unwrap();
-        write_cursor
-            .write_all(&data)
-            .map_err(|_| StdIoErrorKind::OutOfMemory)?;
+        cursor.write_varint(self.id).unwrap();
+        cursor.write_varint(message_type).unwrap();
+        cursor.write_varint(channel).unwrap();
+        if let Some(len_or_count) = len_or_count {
+            cursor.write_varint(self.unreliable_split_id).unwrap();
+            cursor.write_varint(len_or_count).unwrap();
+        }
+        cursor.write_all(&data)?;
 
-        self.transport.send(write_cursor.slice()).await?;
+        self.transport.send(cursor.slice()).await?;
 
         Ok(())
+    }
+
+    pub async fn send_unreliable(&mut self, channel: usize, data: &[u8]) -> Result<(), StdIoError> {
+        if data.len() > MAX_DATA_SIZE {
+            self.unreliable_split_id = self.unreliable_split_id.overflowing_add(1).0;
+            let length = data.len() / MAX_DATA_SIZE + 1;
+            self.send_unreliable_one(
+                channel,
+                &data[0 .. MAX_DATA_SIZE],
+                Type::UNRELIABLE_SPLIT_START,
+                Some(length),
+            )
+            .await?;
+
+            let mut start = MAX_DATA_SIZE;
+            for count in 1 .. length {
+                let end = start + (data.len() - start).min(MAX_DATA_SIZE);
+                self.send_unreliable_one(
+                    channel,
+                    &data[start .. end],
+                    Type::UNRELIABLE_SPLIT,
+                    Some(count),
+                )
+                .await?;
+                start += MAX_DATA_SIZE;
+            }
+
+            Ok(())
+        } else {
+            self.send_unreliable_one(channel, data, Type::UNRELIABLE, None)
+                .await
+        }
     }
 
     async fn send_reliable_one(

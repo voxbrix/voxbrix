@@ -8,6 +8,7 @@ use super::{
     Packet,
     Sequence,
     Type,
+    UnreliableBuffer,
     MAX_DATA_SIZE,
     MAX_PACKET_SIZE,
     SERVER_ID,
@@ -35,7 +36,12 @@ use local_channel::mpsc::{
 };
 use log::warn;
 use std::{
-    collections::VecDeque,
+    collections::{
+        BTreeMap,
+        BTreeSet,
+        HashMap,
+        VecDeque,
+    },
     io::{
         Cursor,
         Error as StdIoError,
@@ -114,19 +120,30 @@ async fn stream_send_ack(
 pub struct StreamSender {
     peer: Id,
     sequence: Sequence,
+    unreliable_split_id: u16,
     ack_receiver: ChannelRx<Sequence>,
     transport: ChannelTx<(Id, Buffer, ChannelTx<Result<(), StdIoError>>)>,
 }
 
 impl StreamSender {
-    pub async fn send_unreliable(&self, channel: usize, data: &[u8]) -> Result<(), StdIoError> {
+    async fn send_unreliable_one(
+        &self,
+        channel: usize,
+        data: &[u8],
+        message_type: u8,
+        len_or_count: Option<usize>,
+    ) -> Result<(), StdIoError> {
         let mut buffer = [0; MAX_PACKET_SIZE];
 
         let mut cursor = Cursor::new(buffer.as_mut());
 
         cursor.write_varint(SERVER_ID).unwrap();
-        cursor.write_varint(Type::UNRELIABLE).unwrap();
+        cursor.write_varint(message_type).unwrap();
         cursor.write_varint(channel).unwrap();
+        if let Some(len_or_count) = len_or_count {
+            cursor.write_varint(self.unreliable_split_id).unwrap();
+            cursor.write_varint(len_or_count).unwrap();
+        }
         cursor.write_all(&data)?;
 
         let stop = cursor.position() as usize;
@@ -157,6 +174,38 @@ impl StreamSender {
             .map_err(|_| StdIoErrorKind::BrokenPipe)??;
 
         Ok(())
+    }
+
+    pub async fn send_unreliable(&mut self, channel: usize, data: &[u8]) -> Result<(), StdIoError> {
+        if data.len() > MAX_DATA_SIZE {
+            self.unreliable_split_id = self.unreliable_split_id.overflowing_add(1).0;
+            let length = data.len() / MAX_DATA_SIZE + 1;
+            self.send_unreliable_one(
+                channel,
+                &data[0 .. MAX_DATA_SIZE],
+                Type::UNRELIABLE_SPLIT_START,
+                Some(length),
+            )
+            .await?;
+
+            let mut start = MAX_DATA_SIZE;
+            for count in 1 .. length {
+                let end = start + (data.len() - start).min(MAX_DATA_SIZE);
+                self.send_unreliable_one(
+                    channel,
+                    &data[start .. end],
+                    Type::UNRELIABLE_SPLIT,
+                    Some(count),
+                )
+                .await?;
+                start += MAX_DATA_SIZE;
+            }
+
+            Ok(())
+        } else {
+            self.send_unreliable_one(channel, data, Type::UNRELIABLE, None)
+                .await
+        }
     }
 
     async fn send_reliable_one(
@@ -262,6 +311,7 @@ pub struct StreamReceiver {
     sequence: Sequence,
     split_buffer: Vec<u8>,
     split_channel: Option<Channel>,
+    unreliable_split_buffers: HashMap<Channel, UnreliableBuffer>,
     transport_sender: ChannelTx<(Id, Buffer, ChannelTx<Result<(), StdIoError>>)>,
     transport_receiver: ChannelRx<TypedBuffer>,
 }
@@ -306,6 +356,102 @@ impl StreamReceiver {
                     let channel: usize = seek_read!(read_cursor.read_varint(), "channel");
                     packet.start = read_cursor.position() as usize;
                     return Ok((channel, packet.into()));
+                },
+                Type::UNRELIABLE_SPLIT_START => {
+                    let channel: usize = seek_read!(read_cursor.read_varint(), "channel");
+                    let split_id: u16 = seek_read!(read_cursor.read_varint(), "split_id");
+                    let expected_length: usize = seek_read!(read_cursor.read_varint(), "length");
+
+                    let split_buffer = match self.unreliable_split_buffers.get_mut(&channel) {
+                        Some(b) => {
+                            b.split_id = split_id;
+                            b.expected_length = expected_length;
+                            b.existing_pieces.clear();
+                            b
+                        },
+                        None => {
+                            self.unreliable_split_buffers.insert(
+                                channel,
+                                UnreliableBuffer {
+                                    split_id,
+                                    expected_length,
+                                    existing_pieces: BTreeSet::new(),
+                                    buffer: BTreeMap::new(),
+                                },
+                            );
+
+                            self.unreliable_split_buffers.get_mut(&channel).unwrap()
+                        },
+                    };
+
+                    packet.start += read_cursor.position() as usize;
+                    let packet: &[u8] = packet.as_ref();
+
+                    match split_buffer.buffer.get_mut(&0) {
+                        Some((current_length, shard)) => {
+                            (&mut shard[.. packet.len()]).copy_from_slice(&packet);
+                            *current_length = packet.len();
+                        },
+                        None => {
+                            let mut new_shard = [0u8; MAX_DATA_SIZE];
+                            (&mut new_shard[.. packet.len()]).copy_from_slice(&packet);
+                            split_buffer.buffer.insert(0, (packet.len(), new_shard));
+                        },
+                    }
+
+                    split_buffer.existing_pieces.insert(0);
+                },
+                Type::UNRELIABLE_SPLIT => {
+                    let channel: usize = seek_read!(read_cursor.read_varint(), "channel");
+                    let split_id: u16 = seek_read!(read_cursor.read_varint(), "split_id");
+                    let count: usize = seek_read!(read_cursor.read_varint(), "count");
+
+                    packet.start += read_cursor.position() as usize;
+                    let packet: &[u8] = packet.as_ref();
+
+                    let split_buffer = match self
+                        .unreliable_split_buffers
+                        .get_mut(&channel)
+                        .filter(|b| b.split_id == split_id)
+                    {
+                        Some(b) => b,
+                        None => continue,
+                    };
+
+                    match split_buffer.buffer.get_mut(&count) {
+                        Some((current_length, shard)) => {
+                            (&mut shard[.. packet.len()]).copy_from_slice(&packet);
+                            *current_length = packet.len();
+                        },
+                        None => {
+                            let mut new_shard = [0u8; MAX_DATA_SIZE];
+                            (&mut new_shard[.. packet.len()]).copy_from_slice(&packet);
+                            split_buffer.buffer.insert(count, (packet.len(), new_shard));
+                        },
+                    }
+
+                    split_buffer.existing_pieces.insert(count);
+
+                    if split_buffer
+                        .existing_pieces
+                        .range(0 .. split_buffer.expected_length)
+                        .count()
+                        == split_buffer.expected_length
+                    {
+                        let mut buf =
+                            Vec::with_capacity(MAX_DATA_SIZE * split_buffer.expected_length);
+
+                        for (_, (len, data)) in
+                            split_buffer.buffer.range(0 .. split_buffer.expected_length)
+                        {
+                            buf.extend_from_slice(&data[.. *len]);
+                        }
+
+                        // TODO: also check CRC and if it's incorrect restore buf length to
+                        // MAX_PACKET_SIZE before continuing
+
+                        return Ok((channel, buf.into()));
+                    }
                 },
                 Type::RELIABLE => {
                     let channel: usize = seek_read!(read_cursor.read_varint(), "channel");
@@ -500,12 +646,14 @@ impl Server {
                                     peer: id,
                                     sequence: 0,
                                     ack_receiver,
+                                    unreliable_split_id: 0,
                                     transport: self.out_queue_sender.clone(),
                                 },
                                 StreamReceiver {
                                     sequence: 0,
                                     split_buffer: Vec::new(),
                                     split_channel: None,
+                                    unreliable_split_buffers: HashMap::new(),
                                     transport_sender: self.out_queue_sender.clone(),
                                     transport_receiver: in_queue_rx,
                                 },
