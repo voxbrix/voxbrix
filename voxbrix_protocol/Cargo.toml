@@ -2,12 +2,11 @@
 name = "voxbrix_protocol"
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-#postcard = "1.0"
-#serde = "1.0"
 integer-encoding = "3.0"
 async-io = "1.9"
 futures-lite = "1.12"
@@ -19,7 +18,7 @@ log = "0.4"
 async-executor = "1.4"
 
 [features]
-default = ["single"]
+default = []
 single = ["local-channel"]
 multi = ["flume"]
 client = []
