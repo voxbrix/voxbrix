@@ -22,6 +22,8 @@ image = { version = "0.24", default-features = false, features = ["png"] }
 nalgebra-glm = { version = "0.17", default-features = false, features = ["std"] }
 anyhow = "1.0"
 serde = { version = "1.0", default-features = false, features = ["std", "derive"] } 
+voxbrix_protocol = { path = "../voxbrix_protocol", features = ["single", "client"] }
+voxbrix_messages = { path = "../voxbrix_messages" }
 bitmask = "0.5"
 ron = "0.7"
 log = "0.4"

@@ -48,6 +48,14 @@ use winit::{
     dpi::PhysicalSize,
     event::KeyboardInput as WinitKeyboardInput,
 };
+use voxbrix_protocol::client::Client;
+use voxbrix_messages::{
+    Pack,
+    Chunk as ChunkMessage,
+    server::ServerAccept,
+    client::ClientAccept,
+};
+use async_executor::LocalExecutor;
 
 pub enum Event {
     Process,
@@ -58,11 +66,12 @@ pub enum Event {
     Shutdown,
 }
 
-pub struct EventLoop {
+pub struct EventLoop<'a> {
+    pub rt: &'a LocalExecutor<'a>,
     pub window: WindowHandle,
 }
 
-impl EventLoop {
+impl EventLoop<'_> {
     pub async fn run(self) -> Result<()> {
         let WindowHandle {
             instance,
@@ -70,6 +79,54 @@ impl EventLoop {
             size: surface_size,
             event_rx: window_event_rx,
         } = self.window;
+
+        let mut send_buf = Vec::new();
+
+        let (mut tx, mut rx) = Client::bind(([127, 0, 0, 1], 12001))?
+            .connect(([127, 0, 0, 1], 12000)).await?;
+
+        let request = ServerAccept::GetChunksBlocks {
+            coords: vec![
+                ChunkMessage {
+                    position: [0, 0, -1],
+                    dimention: 0,
+                },
+                ChunkMessage {
+                    position: [0, 0, 0],
+                    dimention: 0,
+                },
+            ],
+        };
+
+        request.pack(&mut send_buf)
+            .expect("message packed");
+
+        self.rt.spawn(async move {
+            tx.send_reliable(0, &send_buf).await
+                .expect("message sent");
+        }).detach();
+
+        let mut recv_buf = Vec::new();
+        let mut cbc = ClassBlockComponent::new();
+
+        for _ in 0 .. 2 {
+            let (_channel, msg) = rx.recv(&mut recv_buf).await
+                .expect("message receive");
+
+            let resp = ClientAccept::unpack(msg)
+                .expect("message unpacked");
+
+            match resp {
+                ClientAccept::ClassBlockComponent { coords, value } => {
+                    let chunk = Chunk { position: coords.position, dimention: coords.dimention };
+                    let chunk_blocks = value.into_iter()
+                        .map(|c| BlockClass(c))
+                        .collect();
+
+                    cbc.insert_chunk(chunk, Blocks::new(chunk_blocks));
+                },
+            };
+        }
 
         let player_actor = Actor(0);
 
@@ -81,38 +138,6 @@ impl EventLoop {
                 textures: [1, 1, 1, 1, 1, 0],
             }),
         );
-
-        let mut cbc = ClassBlockComponent::new();
-
-        let chunk = Chunk {
-            position: [0, 0, 0],
-            dimention: 0,
-        };
-        let mut chunk_blocks = vec![BlockClass(1); 4096];
-        chunk_blocks[3005] = BlockClass(0);
-        chunk_blocks[1005] = BlockClass(0);
-        chunk_blocks[405] = BlockClass(0);
-        chunk_blocks[4005] = BlockClass(0);
-        chunk_blocks[4095] = BlockClass(0);
-        chunk_blocks[4094] = BlockClass(0);
-
-        cbc.insert_chunk(chunk, Blocks::new(chunk_blocks));
-
-        let chunk = Chunk {
-            position: [0, 0, 1],
-            dimention: 0,
-        };
-
-        let mut chunk_blocks = vec![BlockClass(0); 4096];
-        chunk_blocks[0] = BlockClass(1);
-        chunk_blocks[255] = BlockClass(1);
-        chunk_blocks[254] = BlockClass(1);
-        chunk_blocks[253] = BlockClass(1);
-        chunk_blocks[256] = BlockClass(1);
-        chunk_blocks[2000] = BlockClass(1);
-        chunk_blocks[2256] = BlockClass(1);
-
-        cbc.insert_chunk(chunk, Blocks::new(chunk_blocks));
 
         let mut last_render_time = Instant::now();
 

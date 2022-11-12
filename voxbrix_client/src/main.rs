@@ -67,14 +67,15 @@ fn main() {
 
     thread::spawn(move || {
         let result = std::panic::catch_unwind(move || {
-            let rt = LocalExecutor::new();
+            let rt = Box::leak(Box::new(LocalExecutor::new()));
+            let event_loop_rt = &rt;
             future::block_on(rt.run(async move {
                 match window_rx.recv_async().await {
                     Err(_) => {
                         error!("unable to receive window handle");
                     },
                     Ok(window) => {
-                        let event_loop = EventLoop { window };
+                        let event_loop = EventLoop { rt: &event_loop_rt, window };
                         if let Err(err) = event_loop.run().await {
                             error!("event loop ended with error: {:?}", err);
                         }
