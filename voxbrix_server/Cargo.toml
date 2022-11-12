@@ -8,3 +8,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 async-executor = "1.4"
+futures-lite = "1.12"
+voxbrix_protocol = { path = "../voxbrix_protocol", features = ["single", "server"] }
+voxbrix_messages = { path = "../voxbrix_messages" }
+anyhow = "1.0"

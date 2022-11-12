@@ -449,7 +449,7 @@ impl RenderSystem {
         let mut index_buffer = Vec::with_capacity(147456); // 4096 * 6(sides) * 2(polygons) * 3(vertices)
 
         let start = std::time::Instant::now();
-        for z in 0 .. 2 {
+        for z in -1 .. 1 {
             let zero_chunk = Chunk {
                 position: [0, 0, 0],
                 dimention: 0,

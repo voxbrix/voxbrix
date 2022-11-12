@@ -1,7 +1,11 @@
 [workspace]
-
 members = [
     "voxbrix_client",
+    "voxbrix_messages",
     "voxbrix_protocol",
     "voxbrix_server",
 ]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
