@@ -184,17 +184,6 @@ where
                 Type::DISCONNECT => {
                     return Err(StdIoErrorKind::NotConnected.into());
                 },
-                Type::PING => {
-                    let sequence: u16 = seek_read!(read_cursor.read_varint(), "sequence");
-
-                    let mut write_cursor = Cursor::new(self.buffer.as_mut());
-
-                    seek_write!(write_cursor.write_varint(self.id), "sender");
-                    seek_write!(write_cursor.write_varint(Type::ACKNOWLEDGE), "type");
-                    seek_write!(write_cursor.write_varint(sequence), "sequence");
-
-                    self.transport.send(write_cursor.slice()).await?;
-                },
                 Type::UNRELIABLE => {
                     let channel: usize = seek_read!(read_cursor.read_varint(), "channel");
                     let start = read_cursor.position() as usize;
@@ -299,6 +288,7 @@ where
                     let channel: usize = seek_read!(read_cursor.read_varint(), "channel");
                     let sequence: u16 = seek_read!(read_cursor.read_varint(), "sequence");
 
+                    // TODO: do not answer if the sequence is not previous, but random?
                     let mut write_cursor = Cursor::new(self.buffer.as_mut());
 
                     seek_write!(write_cursor.write_varint(self.id), "sender");
@@ -308,7 +298,7 @@ where
                     self.transport.send(write_cursor.slice()).await?;
 
                     if sequence == self.sequence {
-                        self.sequence += 1;
+                        self.sequence = self.sequence.wrapping_add(1);
                         let start = read_cursor.position() as usize;
 
                         if self.reliable_split_channel.is_none() {
@@ -340,6 +330,7 @@ where
 
                     let sequence: u16 = seek_read!(read_cursor.read_varint(), "sequence");
 
+                    // TODO: do not answer if the sequence is not previous, but random?
                     let mut write_cursor = Cursor::new(self.buffer.as_mut());
 
                     seek_write!(write_cursor.write_varint(self.id), "sender");
@@ -349,7 +340,7 @@ where
                     self.transport.send(write_cursor.slice()).await?;
 
                     if sequence == self.sequence {
-                        self.sequence += 1;
+                        self.sequence = self.sequence.wrapping_add(1);
                         let start = read_cursor.position() as usize;
 
                         self.reliable_split_buffer
@@ -402,7 +393,7 @@ where
 
     pub async fn send_unreliable(&mut self, channel: usize, data: &[u8]) -> Result<(), StdIoError> {
         if data.len() > MAX_DATA_SIZE {
-            self.unreliable_split_id = self.unreliable_split_id.overflowing_add(1).0;
+            self.unreliable_split_id = self.unreliable_split_id.wrapping_add(1);
             let length = data.len() / MAX_DATA_SIZE + 1;
             self.send_unreliable_one(
                 channel,
@@ -475,7 +466,7 @@ where
 
             match result {
                 Ok(()) => {
-                    self.sequence += 1;
+                    self.sequence = self.sequence.wrapping_add(1);
                     return Ok(());
                 },
                 Err(err) if err.kind() == StdIoErrorKind::BrokenPipe => return Err(err),

@@ -178,7 +178,7 @@ impl StreamSender {
 
     pub async fn send_unreliable(&mut self, channel: usize, data: &[u8]) -> Result<(), StdIoError> {
         if data.len() > MAX_DATA_SIZE {
-            self.unreliable_split_id = self.unreliable_split_id.overflowing_add(1).0;
+            self.unreliable_split_id = self.unreliable_split_id.wrapping_add(1);
             let length = data.len() / MAX_DATA_SIZE + 1;
             self.send_unreliable_one(
                 channel,
@@ -277,7 +277,7 @@ impl StreamSender {
 
             match result {
                 Ok(()) => {
-                    self.sequence += 1;
+                    self.sequence = self.sequence.wrapping_add(1);
                     return Ok(());
                 },
                 Err(err) if err.kind() == StdIoErrorKind::BrokenPipe => return Err(err),
@@ -346,11 +346,6 @@ impl StreamReceiver {
             match packet_type {
                 Type::DISCONNECT => {
                     return Err(StdIoErrorKind::NotConnected.into());
-                },
-                Type::PING => {
-                    let sequence: u16 = seek_read!(read_cursor.read_varint(), "sequence");
-
-                    stream_send_ack(sender, sequence, &mut self.transport_sender).await?;
                 },
                 Type::UNRELIABLE => {
                     let channel: usize = seek_read!(read_cursor.read_varint(), "channel");
@@ -457,10 +452,11 @@ impl StreamReceiver {
                     let channel: usize = seek_read!(read_cursor.read_varint(), "channel");
                     let sequence: u16 = seek_read!(read_cursor.read_varint(), "sequence");
 
+                    // TODO: do not answer if the sequence is not previous, but random?
                     stream_send_ack(sender, sequence, &mut self.transport_sender).await?;
 
                     if sequence == self.sequence {
-                        self.sequence += 1;
+                        self.sequence = self.sequence.wrapping_add(1);
 
                         if self.split_channel.is_none() {
                             packet.start += read_cursor.position() as usize;
@@ -494,10 +490,11 @@ impl StreamReceiver {
 
                     let sequence: u16 = seek_read!(read_cursor.read_varint(), "sequence");
 
+                    // TODO: do not answer if the sequence is not previous, but random?
                     stream_send_ack(sender, sequence, &mut self.transport_sender).await?;
 
                     if sequence == self.sequence {
-                        self.sequence += 1;
+                        self.sequence = self.sequence.wrapping_add(1);
                         let offset = read_cursor.position() as usize;
 
                         self.split_buffer
