@@ -158,34 +158,33 @@ impl Type {
 
     const DISCONNECT: u8 = 3;
 
-    const PING: u8 = 4;
-        // sequence: u16,
-
-    const UNRELIABLE: u8 = 5;
+    const UNRELIABLE: u8 = 4;
         // channel: usize,
         // data: &[u8],
 
-    const UNRELIABLE_SPLIT_START: u8 = 6;
+    const UNRELIABLE_SPLIT_START: u8 = 5;
         // channel: usize,
         // split_id: u16,
         // length: usize,
         // data: &[u8],
 
-    const UNRELIABLE_SPLIT: u8 = 7;
+    const UNRELIABLE_SPLIT: u8 = 6;
         // channel: usize,
         // split_id: u16,
         // count: usize,
         // data: &[u8],
 
-    const RELIABLE: u8 = 8;
+    const RELIABLE: u8 = 7;
         // channel: usize,
         // sequence: u16,
         // data: &[u8],
 
-    const RELIABLE_SPLIT: u8 = 9;
+    const RELIABLE_SPLIT: u8 = 8;
         // channel: usize,
         // sequence: u16,
         // data: &[u8],
+
+    //const PING: u8 = ?;
 
     const UNDEFINED: u8 = u8::MAX;
 }
