@@ -59,4 +59,8 @@ impl<T> BlockComponent<T> {
     {
         self.chunks.retain(|c, _| !remove_fn(c));
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&Chunk, &Blocks<T>)> {
+        self.chunks.iter()
+    }
 }

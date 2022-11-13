@@ -214,19 +214,19 @@ impl StreamSender {
         data: &[u8],
         packet_type: u8,
     ) -> Result<(), StdIoError> {
+        let mut buffer = [0; MAX_PACKET_SIZE];
+
+        let mut cursor = Cursor::new(buffer.as_mut());
+
+        cursor.write_varint(SERVER_ID)?;
+        cursor.write_varint(packet_type)?;
+        cursor.write_varint(channel)?;
+        cursor.write_varint(self.sequence)?;
+        cursor.write_all(data)?;
+
+        let stop = cursor.position() as usize;
+
         loop {
-            let mut buffer = [0; MAX_PACKET_SIZE];
-
-            let mut cursor = Cursor::new(buffer.as_mut());
-
-            cursor.write_varint(SERVER_ID)?;
-            cursor.write_varint(packet_type)?;
-            cursor.write_varint(channel)?;
-            cursor.write_varint(self.sequence)?;
-            cursor.write_all(data)?;
-
-            let stop = cursor.position() as usize;
-
             let (result_tx, mut result_rx) = new_channel();
 
             self.transport

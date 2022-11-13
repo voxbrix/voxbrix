@@ -1,18 +1,18 @@
+use anyhow::{
+    Error,
+    Result,
+};
 use async_executor::LocalExecutor;
+use futures_lite::future;
+use voxbrix_messages::{
+    client::ClientAccept,
+    server::ServerAccept,
+    Pack,
+};
 use voxbrix_protocol::server::{
     Server,
-    StreamSender,
     StreamReceiver,
-};
-use futures_lite::future;
-use anyhow::{
-    Result,
-    Error,
-};
-use voxbrix_messages::{
-    Pack,
-    server::ServerAccept,
-    client::ClientAccept,
+    StreamSender,
 };
 
 async fn handle(mut tx: StreamSender, mut rx: StreamReceiver) {
@@ -28,17 +28,23 @@ async fn handle(mut tx: StreamSender, mut rx: StreamReceiver) {
             ServerAccept::GetChunksBlocks { coords } => {
                 for chunk in coords {
                     let response = if chunk.position[2] < 0 {
-                        ClientAccept::ClassBlockComponent { coords: chunk, value: vec![1; 4096] }
+                        ClientAccept::ClassBlockComponent {
+                            coords: chunk,
+                            value: vec![1; 4096],
+                        }
                     } else {
-                        ClientAccept::ClassBlockComponent { coords: chunk, value: vec![0; 4096] }
+                        ClientAccept::ClassBlockComponent {
+                            coords: chunk,
+                            value: vec![0; 4096],
+                        }
                     };
 
                     // TODO: handle error
-                    response.pack(&mut send_buf)
-                        .expect("message pack");
+                    response.pack(&mut send_buf).expect("message pack");
 
                     // TODO handle retry
-                    tx.send_reliable(channel, &send_buf).await
+                    tx.send_reliable(channel, &send_buf)
+                        .await
                         .expect("message send");
                 }
             },
@@ -46,7 +52,7 @@ async fn handle(mut tx: StreamSender, mut rx: StreamReceiver) {
     }
 }
 
-fn main() -> Result<()>  {
+fn main() -> Result<()> {
     let rt = LocalExecutor::new();
     future::block_on(rt.run(async {
         let mut server = Server::bind(([127, 0, 0, 1], 12000))?;
@@ -57,6 +63,6 @@ fn main() -> Result<()>  {
 
         Ok::<(), Error>(())
     }))?;
-    
+
     Ok(())
 }

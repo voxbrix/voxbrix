@@ -429,17 +429,17 @@ where
         data: &[u8],
         packet_type: u8,
     ) -> Result<(), StdIoError> {
+        let mut write_cursor = Cursor::new(self.buffer.as_mut());
+
+        write_cursor.write_varint(self.id).unwrap();
+        write_cursor.write_varint(packet_type).unwrap();
+        write_cursor.write_varint(channel).unwrap();
+        write_cursor.write_varint(self.sequence).unwrap();
+        write_cursor
+            .write_all(data)
+            .map_err(|_| StdIoErrorKind::OutOfMemory)?;
+
         loop {
-            let mut write_cursor = Cursor::new(self.buffer.as_mut());
-
-            write_cursor.write_varint(self.id).unwrap();
-            write_cursor.write_varint(packet_type).unwrap();
-            write_cursor.write_varint(channel).unwrap();
-            write_cursor.write_varint(self.sequence).unwrap();
-            write_cursor
-                .write_all(data)
-                .map_err(|_| StdIoErrorKind::OutOfMemory)?;
-
             self.transport.send(write_cursor.slice()).await?;
 
             let result: Result<_, StdIoError> = async {

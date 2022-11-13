@@ -1,25 +1,19 @@
-use serde::{
-    Serialize,
-    Deserialize,
-};
-
-use std::mem;
-
 use crate::{
+    Chunk,
     Pack,
     PackError,
     UnpackError,
-    Chunk,
 };
-
 use postcard::Error;
+use serde::{
+    Deserialize,
+    Serialize,
+};
+use std::mem;
 
 #[derive(Serialize, Deserialize)]
 pub enum ClientAccept {
-    ClassBlockComponent {
-        coords: Chunk,
-        value: Vec<usize>,
-    }
+    ClassBlockComponent { coords: Chunk, value: Vec<usize> },
 }
 
 impl Pack for ClientAccept {
@@ -28,9 +22,8 @@ impl Pack for ClientAccept {
         match postcard::to_slice(self, buf.as_mut_slice()) {
             Ok(_) => {},
             Err(Error::SerializeBufferFull) => {
-                let mut new_buf = postcard::to_allocvec(self)
-                    .map_err(|_| PackError)?;
-                
+                let mut new_buf = postcard::to_allocvec(self).map_err(|_| PackError)?;
+
                 mem::swap(&mut new_buf, buf);
             },
             Err(_) => return Err(PackError),
@@ -40,11 +33,10 @@ impl Pack for ClientAccept {
     }
 
     fn unpack<R>(buf: R) -> Result<Self, UnpackError>
-    where 
+    where
         Self: Sized,
         R: AsRef<[u8]>,
     {
-        Ok(postcard::from_bytes::<Self>(buf.as_ref())
-            .map_err(|_| UnpackError)?)
+        Ok(postcard::from_bytes::<Self>(buf.as_ref()).map_err(|_| UnpackError)?)
     }
 }

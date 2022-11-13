@@ -75,7 +75,10 @@ fn main() {
                         error!("unable to receive window handle");
                     },
                     Ok(window) => {
-                        let event_loop = EventLoop { rt: &event_loop_rt, window };
+                        let event_loop = EventLoop {
+                            rt: &event_loop_rt,
+                            window,
+                        };
                         if let Err(err) = event_loop.run().await {
                             error!("event loop ended with error: {:?}", err);
                         }
