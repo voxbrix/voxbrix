@@ -38,24 +38,24 @@ use crate::{
     window::WindowHandle,
 };
 use anyhow::Result;
+use async_executor::LocalExecutor;
 use async_io::Timer;
 use futures_lite::stream::StreamExt;
 use std::time::{
     Duration,
     Instant,
 };
+use voxbrix_messages::{
+    client::ClientAccept,
+    server::ServerAccept,
+    Chunk as ChunkMessage,
+    Pack,
+};
+use voxbrix_protocol::client::Client;
 use winit::{
     dpi::PhysicalSize,
     event::KeyboardInput as WinitKeyboardInput,
 };
-use voxbrix_protocol::client::Client;
-use voxbrix_messages::{
-    Pack,
-    Chunk as ChunkMessage,
-    server::ServerAccept,
-    client::ClientAccept,
-};
-use async_executor::LocalExecutor;
 
 pub enum Event {
     Process,
@@ -83,7 +83,8 @@ impl EventLoop<'_> {
         let mut send_buf = Vec::new();
 
         let (mut tx, mut rx) = Client::bind(([127, 0, 0, 1], 12001))?
-            .connect(([127, 0, 0, 1], 12000)).await?;
+            .connect(([127, 0, 0, 1], 12000))
+            .await?;
 
         let request = ServerAccept::GetChunksBlocks {
             coords: vec![
@@ -98,30 +99,29 @@ impl EventLoop<'_> {
             ],
         };
 
-        request.pack(&mut send_buf)
-            .expect("message packed");
+        request.pack(&mut send_buf).expect("message packed");
 
-        self.rt.spawn(async move {
-            tx.send_reliable(0, &send_buf).await
-                .expect("message sent");
-        }).detach();
+        self.rt
+            .spawn(async move {
+                tx.send_reliable(0, &send_buf).await.expect("message sent");
+            })
+            .detach();
 
         let mut recv_buf = Vec::new();
         let mut cbc = ClassBlockComponent::new();
 
         for _ in 0 .. 2 {
-            let (_channel, msg) = rx.recv(&mut recv_buf).await
-                .expect("message receive");
+            let (_channel, msg) = rx.recv(&mut recv_buf).await.expect("message receive");
 
-            let resp = ClientAccept::unpack(msg)
-                .expect("message unpacked");
+            let resp = ClientAccept::unpack(msg).expect("message unpacked");
 
             match resp {
                 ClientAccept::ClassBlockComponent { coords, value } => {
-                    let chunk = Chunk { position: coords.position, dimention: coords.dimention };
-                    let chunk_blocks = value.into_iter()
-                        .map(|c| BlockClass(c))
-                        .collect();
+                    let chunk = Chunk {
+                        position: coords.position,
+                        dimention: coords.dimention,
+                    };
+                    let chunk_blocks = value.into_iter().map(|c| BlockClass(c)).collect();
 
                     cbc.insert_chunk(chunk, Blocks::new(chunk_blocks));
                 },

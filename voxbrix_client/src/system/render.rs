@@ -448,51 +448,45 @@ impl RenderSystem {
         let mut vertex_buffer = Vec::with_capacity(98304); // 4096 * 6(sides) * 4(vertices)
         let mut index_buffer = Vec::with_capacity(147456); // 4096 * 6(sides) * 2(polygons) * 3(vertices)
 
-        let start = std::time::Instant::now();
-        for z in -1 .. 1 {
-            let zero_chunk = Chunk {
-                position: [0, 0, 0],
-                dimention: 0,
-            };
-            let chunk = Chunk {
-                position: [0, 0, z],
-                dimention: 0,
-            };
+        let zero_chunk = Chunk {
+            position: [0, 0, 0],
+            dimention: 0,
+        };
 
-            let chunk_x_minus = Some(&chunk).and_then(|cz| {
+        let start = std::time::Instant::now();
+        for (chunk, blocks) in cbc.iter() {
+            let chunk_x_minus = Some(chunk).and_then(|cz| {
                 let mut chunk = cz.clone();
                 chunk.position[0] = cz.position[0].checked_sub(1)?;
                 cbc.get_chunk(&chunk)
             });
-            let chunk_x_plus = Some(&chunk).and_then(|cz| {
+            let chunk_x_plus = Some(chunk).and_then(|cz| {
                 let mut chunk = cz.clone();
                 chunk.position[0] = cz.position[0].checked_add(1)?;
                 cbc.get_chunk(&chunk)
             });
 
-            let chunk_y_minus = Some(&chunk).and_then(|cz| {
+            let chunk_y_minus = Some(chunk).and_then(|cz| {
                 let mut chunk = cz.clone();
                 chunk.position[1] = cz.position[1].checked_sub(1)?;
                 cbc.get_chunk(&chunk)
             });
-            let chunk_y_plus = Some(&chunk).and_then(|cz| {
+            let chunk_y_plus = Some(chunk).and_then(|cz| {
                 let mut chunk = cz.clone();
                 chunk.position[1] = cz.position[1].checked_add(1)?;
                 cbc.get_chunk(&chunk)
             });
 
-            let chunk_z_minus = Some(&chunk).and_then(|cz| {
+            let chunk_z_minus = Some(chunk).and_then(|cz| {
                 let mut chunk = cz.clone();
                 chunk.position[2] = cz.position[2].checked_sub(1)?;
                 cbc.get_chunk(&chunk)
             });
-            let chunk_z_plus = Some(&chunk).and_then(|cz| {
+            let chunk_z_plus = Some(chunk).and_then(|cz| {
                 let mut chunk = cz.clone();
                 chunk.position[2] = cz.position[2].checked_add(1)?;
                 cbc.get_chunk(&chunk)
             });
-
-            let blocks = cbc.get_chunk(&chunk).unwrap();
 
             for (block, block_class) in blocks.iter() {
                 if let Some(model) = mbcc.get(*block_class) {

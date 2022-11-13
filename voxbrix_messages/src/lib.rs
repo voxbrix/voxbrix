@@ -1,6 +1,6 @@
 use serde::{
-    Serialize,
     Deserialize,
+    Serialize,
 };
 
 #[derive(Debug)]
@@ -21,7 +21,7 @@ pub struct Chunk {
 pub trait Pack {
     fn pack(&self, buf: &mut Vec<u8>) -> Result<(), PackError>;
     fn unpack<R>(buf: R) -> Result<Self, UnpackError>
-    where 
+    where
         Self: Sized,
         R: AsRef<[u8]>;
 }
