@@ -45,6 +45,10 @@ impl<T> BlockComponent<T> {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.chunks.len()
+    }
+
     pub fn get_chunk(&self, chunk: &Chunk) -> Option<&Blocks<T>> {
         self.chunks.get(&chunk)
     }
@@ -53,7 +57,11 @@ impl<T> BlockComponent<T> {
         self.chunks.insert(chunk, blocks);
     }
 
-    pub fn remove_chunks<F>(&mut self, mut remove_fn: F)
+    pub fn remove_chunk(&mut self, chunk: &Chunk) {
+        self.chunks.remove(chunk);
+    }
+
+    pub fn filter_out_chunks<F>(&mut self, mut remove_fn: F)
     where
         F: FnMut(&Chunk) -> bool,
     {

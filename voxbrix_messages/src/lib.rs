@@ -15,7 +15,7 @@ pub mod server;
 #[derive(Serialize, Deserialize)]
 pub struct Chunk {
     pub position: [i32; 3],
-    pub dimention: u32,
+    pub dimension: u32,
 }
 
 pub trait Pack {

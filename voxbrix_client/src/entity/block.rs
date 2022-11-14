@@ -94,7 +94,7 @@ impl Block {
                 chunks_blocks[1].0 + chunk.position[1],
                 chunks_blocks[2].0 + chunk.position[2],
             ],
-            dimention: chunk.dimention,
+            dimension: chunk.dimension,
         };
 
         let block = Self::from_coords([

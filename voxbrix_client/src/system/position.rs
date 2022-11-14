@@ -7,17 +7,24 @@ use crate::{
         block::class::ClassBlockComponent,
     },
     entity::{
-        block::Block,
+        actor::Actor,
+        block::{
+            Block,
+            BLOCKS_IN_CHUNK_EDGE,
+        },
         chunk::Chunk,
     },
+    event_loop::Event,
+    linear_algebra::Vec3,
 };
 use either::Either;
+use local_channel::mpsc::Sender;
 use std::{
     cmp::Ordering,
     time::Duration,
 };
 
-const COLLISION_PUSHBACK: f32 = 1.0e-6;
+const COLLISION_PUSHBACK: f32 = 1.0e-3;
 
 pub struct PositionSystem {
     collider_blocks: [Vec<[i32; 3]>; 3],
@@ -33,6 +40,7 @@ impl PositionSystem {
     pub fn process(
         &mut self,
         dt: Duration,
+        center_chunk: &Chunk,
         cbc: &ClassBlockComponent,
         pc: &mut PositionActorComponent,
         vc: &VelocityActorComponent,
@@ -45,10 +53,6 @@ impl PositionSystem {
 
         let h_radius = 0.45;
         let v_radius = 0.95;
-        let zero_chunk = Chunk {
-            position: [0, 0, 0],
-            dimention: 0,
-        };
 
         for (actor, velocity) in vc.iter() {
             if let Some(position) = pc.get_mut(actor) {
@@ -112,7 +116,7 @@ impl PositionSystem {
                                 chunk_offset[a1] = block_a1;
                                 chunk_offset[a2] = block_a2;
                                 let (chunk, block) =
-                                    Block::from_chunk_offset(zero_chunk, chunk_offset);
+                                    Block::from_chunk_offset(*center_chunk, chunk_offset);
 
                                 if let Some(blocks) = cbc.get_chunk(&chunk) {
                                     let block_class = blocks.get(block);
@@ -202,6 +206,40 @@ impl PositionSystem {
 
                 *position = pos;
             }
+        }
+    }
+
+    pub fn post_movement(
+        &self,
+        player_actor: &Actor,
+        center_chunk: &mut Chunk,
+        pc: &mut PositionActorComponent,
+        event_tx: &Sender<Event>,
+    ) {
+        let player_position = match pc.get(*player_actor) {
+            Some(p) => p,
+            None => return,
+        };
+
+        let move_center = player_position
+            .vector
+            .iter()
+            .find(|dist| dist.abs() > BLOCKS_IN_CHUNK_EDGE as f32)
+            .is_some();
+
+        if move_center {
+            let chunk_diff_vec = player_position
+                .vector
+                .map(|f| f as i32 / BLOCKS_IN_CHUNK_EDGE as i32);
+            let actor_diff_vec = chunk_diff_vec.map(|i| i as f32 * BLOCKS_IN_CHUNK_EDGE as f32);
+
+            center_chunk.position = (Vec3::from(center_chunk.position) + chunk_diff_vec).into();
+
+            for (_actor, position) in pc.iter_mut() {
+                position.vector = position.vector - actor_diff_vec;
+            }
+
+            let _ = event_tx.send(Event::NearbyChunksUpdate);
         }
     }
 }

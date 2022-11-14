@@ -149,7 +149,7 @@ impl DirectControl {
         {
             Vec3::zeros()
         } else {
-            direction.normalize() * self.speed * dt
+            direction.normalize() * self.speed
         };
     }
 }
