@@ -42,4 +42,11 @@ impl<T> ActorComponent<T> {
             .enumerate()
             .filter_map(|(i, v)| Some((Actor(i), v.as_ref()?)))
     }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (Actor, &mut T)> {
+        self.actors
+            .iter_mut()
+            .enumerate()
+            .filter_map(|(i, v)| Some((Actor(i), v.as_mut()?)))
+    }
 }

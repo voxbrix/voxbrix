@@ -1,14 +1,14 @@
 use std::cmp::Ordering;
 
-#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+#[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
 pub struct Chunk {
     pub position: [i32; 3],
-    pub dimention: u32,
+    pub dimension: u32,
 }
 
 impl Ord for Chunk {
     fn cmp(&self, other: &Self) -> Ordering {
-        match self.dimention.cmp(&other.dimention) {
+        match self.dimension.cmp(&other.dimension) {
             Ordering::Equal => {
                 match self.position[2].cmp(&other.position[2]) {
                     Ordering::Equal => {

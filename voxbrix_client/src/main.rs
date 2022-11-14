@@ -23,7 +23,6 @@ mod event_loop;
 mod linear_algebra;
 mod manager;
 mod system;
-mod vertex;
 mod window;
 
 #[macro_export]

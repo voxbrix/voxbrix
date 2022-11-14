@@ -33,9 +33,12 @@ async fn handle(mut tx: StreamSender, mut rx: StreamReceiver) {
                             value: vec![1; 4096],
                         }
                     } else {
+                        let mut value = vec![0; 4096];
+                        value[chunk.position[0].abs() as usize * 2
+                            + chunk.position[1].abs() as usize] = 1;
                         ClientAccept::ClassBlockComponent {
                             coords: chunk,
-                            value: vec![0; 4096],
+                            value,
                         }
                     };
 

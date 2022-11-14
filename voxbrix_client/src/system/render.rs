@@ -24,9 +24,9 @@ use crate::{
         block::Neighbor,
         block_class::BlockClass,
         chunk::Chunk,
+        vertex::Vertex,
     },
     linear_algebra::Mat4,
-    vertex::Vertex,
 };
 use anyhow::Result;
 use async_fs::File;
@@ -36,7 +36,10 @@ use image::{
     RgbaImage,
 };
 use std::{
-    collections::HashMap,
+    collections::{
+        BTreeMap,
+        HashMap,
+    },
     hash::Hash,
     iter,
     num::NonZeroU32,
@@ -160,8 +163,12 @@ pub struct RenderSystem {
     config: SurfaceConfiguration,
     pub size: PhysicalSize<u32>,
     render_pipeline: RenderPipeline,
-    vertex_buffer: Buffer,
-    index_buffer: Buffer,
+    chunk_buffer_shards: BTreeMap<Chunk, (Vec<Vertex>, Vec<u32>)>,
+    update_chunk_buffer: bool,
+    chunk_vertex_buffer: Vec<Vertex>,
+    chunk_index_buffer: Vec<u32>,
+    prepared_vertex_buffer: Buffer,
+    prepared_index_buffer: Buffer,
     num_indices: u32,
     block_texture_bind_group: BindGroup,
     depth_texture_view: TextureView,
@@ -170,6 +177,8 @@ pub struct RenderSystem {
     projection: Projection,
     camera_buffer: Buffer,
     camera_bind_group: BindGroup,
+    center_chunk_buffer: Buffer,
+    center_chunk_bind_group: BindGroup,
 }
 
 impl RenderSystem {
@@ -304,10 +313,9 @@ impl RenderSystem {
         instance: Instance,
         surface: Surface,
         surface_size: PhysicalSize<u32>,
+        center_chunk: &Chunk,
         pac: &PositionActorComponent,
         fac: &FacingActorComponent,
-        cbc: &ClassBlockComponent,
-        mbcc: &ModelBlockClassComponent,
     ) -> Self {
         let adapter = instance
             .request_adapter(&RequestAdapterOptions {
@@ -398,9 +406,43 @@ impl RenderSystem {
             source: ShaderSource::Wgsl(include_str!("../shaders.wgsl").into()),
         });
 
+        let center_chunk_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("Center Chunk Buffer"),
+            contents: bytemuck::cast_slice(&[center_chunk.position]),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+
+        let center_chunk_bind_group_layout =
+            device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                entries: &[BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::VERTEX,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("center_chunk_bind_group_layout"),
+            });
+
+        let center_chunk_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            layout: &center_chunk_bind_group_layout,
+            entries: &[BindGroupEntry {
+                binding: 0,
+                resource: center_chunk_buffer.as_entire_binding(),
+            }],
+            label: Some("center_chunk_bind_group"),
+        });
+
         let render_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&block_texture_bind_group_layout, &camera_bind_group_layout],
+            bind_group_layouts: &[
+                &block_texture_bind_group_layout,
+                &camera_bind_group_layout,
+                &center_chunk_bind_group_layout,
+            ],
             push_constant_ranges: &[],
         });
 
@@ -445,88 +487,15 @@ impl RenderSystem {
             multiview: None,
         });
 
-        let mut vertex_buffer = Vec::with_capacity(98304); // 4096 * 6(sides) * 4(vertices)
-        let mut index_buffer = Vec::with_capacity(147456); // 4096 * 6(sides) * 2(polygons) * 3(vertices)
-
-        let zero_chunk = Chunk {
-            position: [0, 0, 0],
-            dimention: 0,
-        };
-
-        let start = std::time::Instant::now();
-        for (chunk, blocks) in cbc.iter() {
-            let chunk_x_minus = Some(chunk).and_then(|cz| {
-                let mut chunk = cz.clone();
-                chunk.position[0] = cz.position[0].checked_sub(1)?;
-                cbc.get_chunk(&chunk)
-            });
-            let chunk_x_plus = Some(chunk).and_then(|cz| {
-                let mut chunk = cz.clone();
-                chunk.position[0] = cz.position[0].checked_add(1)?;
-                cbc.get_chunk(&chunk)
-            });
-
-            let chunk_y_minus = Some(chunk).and_then(|cz| {
-                let mut chunk = cz.clone();
-                chunk.position[1] = cz.position[1].checked_sub(1)?;
-                cbc.get_chunk(&chunk)
-            });
-            let chunk_y_plus = Some(chunk).and_then(|cz| {
-                let mut chunk = cz.clone();
-                chunk.position[1] = cz.position[1].checked_add(1)?;
-                cbc.get_chunk(&chunk)
-            });
-
-            let chunk_z_minus = Some(chunk).and_then(|cz| {
-                let mut chunk = cz.clone();
-                chunk.position[2] = cz.position[2].checked_sub(1)?;
-                cbc.get_chunk(&chunk)
-            });
-            let chunk_z_plus = Some(chunk).and_then(|cz| {
-                let mut chunk = cz.clone();
-                chunk.position[2] = cz.position[2].checked_add(1)?;
-                cbc.get_chunk(&chunk)
-            });
-
-            for (block, block_class) in blocks.iter() {
-                if let Some(model) = mbcc.get(*block_class) {
-                    let cull_mask = neighbors_to_cull_mask(
-                        &block.neighbors(),
-                        &blocks,
-                        &[
-                            chunk_x_minus.as_ref(),
-                            chunk_x_plus.as_ref(),
-                            chunk_y_minus.as_ref(),
-                            chunk_y_plus.as_ref(),
-                            chunk_z_minus.as_ref(),
-                            chunk_z_plus.as_ref(),
-                        ],
-                        &mbcc,
-                    );
-                    model.to_vertices(
-                        &mut vertex_buffer,
-                        &mut index_buffer,
-                        &zero_chunk,
-                        &chunk,
-                        block.to_coords(),
-                        cull_mask,
-                    );
-                }
-            }
-        }
-        log::error!("elapsed: {}us", start.elapsed().as_micros());
-
-        let num_indices = index_buffer.len() as u32;
-
         let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&vertex_buffer),
+            contents: bytemuck::cast_slice::<Vertex, u8>(&[]),
             usage: BufferUsages::VERTEX,
         });
 
         let index_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(&index_buffer),
+            contents: bytemuck::cast_slice::<Vertex, u8>(&[]),
             usage: BufferUsages::INDEX,
         });
 
@@ -539,9 +508,13 @@ impl RenderSystem {
             config,
             size: surface_size,
             render_pipeline,
-            vertex_buffer,
-            index_buffer,
-            num_indices,
+            chunk_buffer_shards: BTreeMap::new(),
+            update_chunk_buffer: false,
+            chunk_vertex_buffer: Vec::new(),
+            chunk_index_buffer: Vec::new(),
+            prepared_vertex_buffer: vertex_buffer,
+            prepared_index_buffer: index_buffer,
+            num_indices: 0,
             block_texture_bind_group,
             depth_texture_view,
             camera,
@@ -549,6 +522,8 @@ impl RenderSystem {
             camera_uniform,
             camera_buffer,
             camera_bind_group,
+            center_chunk_buffer,
+            center_chunk_bind_group,
         }
     }
 
@@ -563,7 +538,18 @@ impl RenderSystem {
         }
     }
 
-    pub fn update(&mut self, pac: &PositionActorComponent, fac: &FacingActorComponent) {
+    pub fn update(
+        &mut self,
+        center_chunk: &Chunk,
+        pac: &PositionActorComponent,
+        fac: &FacingActorComponent,
+    ) {
+        self.queue.write_buffer(
+            &self.center_chunk_buffer,
+            0,
+            bytemuck::cast_slice(&[center_chunk.position]),
+        );
+
         self.camera_uniform
             .update_view_projection(&self.camera, pac, fac, &self.projection);
         self.queue.write_buffer(
@@ -573,7 +559,150 @@ impl RenderSystem {
         );
     }
 
+    fn update_chunk_buffer_shard(
+        &mut self,
+        chunk: &Chunk,
+        cbc: &ClassBlockComponent,
+        mbcc: &ModelBlockClassComponent,
+    ) {
+        let mut vertex_buffer = Vec::with_capacity(98304); // 4096 * 6(sides) * 4(vertices)
+        let mut index_buffer = Vec::with_capacity(147456); // 4096 * 6(sides) * 2(polygons) * 3(vertices)
+
+        let blocks = match cbc.get_chunk(chunk) {
+            Some(b) => b,
+            None => {
+                self.chunk_buffer_shards.remove(chunk);
+                return;
+            },
+        };
+
+        let chunk_x_minus = Some(chunk).and_then(|cz| {
+            let mut chunk = cz.clone();
+            chunk.position[0] = cz.position[0].checked_sub(1)?;
+            cbc.get_chunk(&chunk)
+        });
+        let chunk_x_plus = Some(chunk).and_then(|cz| {
+            let mut chunk = cz.clone();
+            chunk.position[0] = cz.position[0].checked_add(1)?;
+            cbc.get_chunk(&chunk)
+        });
+
+        let chunk_y_minus = Some(chunk).and_then(|cz| {
+            let mut chunk = cz.clone();
+            chunk.position[1] = cz.position[1].checked_sub(1)?;
+            cbc.get_chunk(&chunk)
+        });
+        let chunk_y_plus = Some(chunk).and_then(|cz| {
+            let mut chunk = cz.clone();
+            chunk.position[1] = cz.position[1].checked_add(1)?;
+            cbc.get_chunk(&chunk)
+        });
+
+        let chunk_z_minus = Some(chunk).and_then(|cz| {
+            let mut chunk = cz.clone();
+            chunk.position[2] = cz.position[2].checked_sub(1)?;
+            cbc.get_chunk(&chunk)
+        });
+        let chunk_z_plus = Some(chunk).and_then(|cz| {
+            let mut chunk = cz.clone();
+            chunk.position[2] = cz.position[2].checked_add(1)?;
+            cbc.get_chunk(&chunk)
+        });
+
+        for (block, block_class) in blocks.iter() {
+            if let Some(model) = mbcc.get(*block_class) {
+                let cull_mask = neighbors_to_cull_mask(
+                    &block.neighbors(),
+                    &blocks,
+                    &[
+                        chunk_x_minus.as_ref(),
+                        chunk_x_plus.as_ref(),
+                        chunk_y_minus.as_ref(),
+                        chunk_y_plus.as_ref(),
+                        chunk_z_minus.as_ref(),
+                        chunk_z_plus.as_ref(),
+                    ],
+                    &mbcc,
+                );
+                model.to_vertices(
+                    &mut vertex_buffer,
+                    &mut index_buffer,
+                    &chunk,
+                    block.to_coords(),
+                    cull_mask,
+                );
+            }
+        }
+
+        self.chunk_buffer_shards
+            .insert(*chunk, (vertex_buffer, index_buffer));
+    }
+
+    pub fn build_chunk(
+        &mut self,
+        chunk: &Chunk,
+        cbc: &ClassBlockComponent,
+        mbcc: &ModelBlockClassComponent,
+    ) {
+        self.update_chunk_buffer_shard(chunk, cbc, mbcc);
+
+        let mut check_neighbor = |x, y, z| {
+            let chunk = Chunk {
+                position: [x, y, z],
+                dimension: chunk.dimension,
+            };
+            if self.chunk_buffer_shards.get(&chunk).is_some() {
+                self.update_chunk_buffer_shard(&chunk, cbc, mbcc);
+            }
+        };
+
+        check_neighbor(chunk.position[0] - 1, chunk.position[1], chunk.position[2]);
+
+        check_neighbor(chunk.position[0] + 1, chunk.position[1], chunk.position[2]);
+
+        check_neighbor(chunk.position[0], chunk.position[1] - 1, chunk.position[2]);
+
+        check_neighbor(chunk.position[0], chunk.position[1] + 1, chunk.position[2]);
+
+        check_neighbor(chunk.position[0], chunk.position[1], chunk.position[2] - 1);
+
+        check_neighbor(chunk.position[0], chunk.position[1], chunk.position[2] + 1);
+
+        self.update_chunk_buffer = true;
+    }
+
     pub fn render(&mut self) -> Result<(), SurfaceError> {
+        if self.update_chunk_buffer {
+            self.update_chunk_buffer = false;
+
+            self.chunk_vertex_buffer.clear();
+            self.chunk_index_buffer.clear();
+
+            for (vertex_buffer, index_buffer) in self.chunk_buffer_shards.values() {
+                self.chunk_index_buffer.extend(
+                    index_buffer
+                        .iter()
+                        .map(|i| i + self.chunk_vertex_buffer.len() as u32),
+                );
+                self.chunk_vertex_buffer
+                    .extend_from_slice(vertex_buffer.as_slice());
+            }
+
+            self.prepared_vertex_buffer = self.device.create_buffer_init(&BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                contents: bytemuck::cast_slice(&self.chunk_vertex_buffer),
+                usage: BufferUsages::VERTEX,
+            });
+
+            self.prepared_index_buffer = self.device.create_buffer_init(&BufferInitDescriptor {
+                label: Some("Index Buffer"),
+                contents: bytemuck::cast_slice(&self.chunk_index_buffer),
+                usage: BufferUsages::INDEX,
+            });
+
+            self.num_indices = self.chunk_index_buffer.len() as u32;
+        }
+
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -612,8 +741,9 @@ impl RenderSystem {
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0, &self.block_texture_bind_group, &[]);
         render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
-        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        render_pass.set_index_buffer(self.index_buffer.slice(..), IndexFormat::Uint32);
+        render_pass.set_bind_group(2, &self.center_chunk_bind_group, &[]);
+        render_pass.set_vertex_buffer(0, self.prepared_vertex_buffer.slice(..));
+        render_pass.set_index_buffer(self.prepared_index_buffer.slice(..), IndexFormat::Uint32);
         render_pass.draw_indexed(0 .. self.num_indices, 0, 0 .. 1);
 
         drop(render_pass);

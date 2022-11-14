@@ -1,10 +1,9 @@
 use crate::{
     component::block_class::BlockClassComponent,
     entity::{
-        block::BLOCKS_IN_CHUNK_EDGE,
         chunk::Chunk,
+        vertex::Vertex,
     },
-    vertex::Vertex,
 };
 use bitmask::bitmask;
 
@@ -19,15 +18,12 @@ impl Model {
         &self,
         vertices: &mut Vec<Vertex>,
         indices: &mut Vec<u32>,
-        zero_chunk: &Chunk,
         chunk: &Chunk,
         block: [u8; 3],
         cull_mask: CullMask,
     ) {
         match self {
-            Self::Cube(cube) => {
-                cube.to_vertices(vertices, indices, zero_chunk, chunk, block, cull_mask)
-            },
+            Self::Cube(cube) => cube.to_vertices(chunk, vertices, indices, block, cull_mask),
         }
     }
 }
@@ -63,6 +59,7 @@ impl CullMaskSides {
 
 impl Cube {
     fn add_side(
+        chunk: [i32; 3],
         vertices: &mut Vec<Vertex>,
         indices: &mut Vec<u32>,
         positions: [[i32; 3]; 4],
@@ -71,24 +68,28 @@ impl Cube {
         let base = vertices.len() as u32;
 
         vertices.push(Vertex {
+            chunk,
             position: positions[0].map(|c| c as f32),
             texture_index,
             texture_position: [0.0, 0.0],
         });
 
         vertices.push(Vertex {
+            chunk,
             position: positions[1].map(|c| c as f32),
             texture_index,
             texture_position: [1.0, 0.0],
         });
 
         vertices.push(Vertex {
+            chunk,
             position: positions[2].map(|c| c as f32),
             texture_index,
             texture_position: [1.0, 1.0],
         });
 
         vertices.push(Vertex {
+            chunk,
             position: positions[3].map(|c| c as f32),
             texture_index,
             texture_position: [0.0, 1.0],
@@ -105,23 +106,20 @@ impl Cube {
 
     pub fn to_vertices(
         &self,
+        chunk: &Chunk,
         vertices: &mut Vec<Vertex>,
         indices: &mut Vec<u32>,
-        zero_chunk: &Chunk,
-        chunk: &Chunk,
         block: [u8; 3],
         cull_mask: CullMask,
     ) {
-        let x = (chunk.position[0] - zero_chunk.position[0]) * BLOCKS_IN_CHUNK_EDGE as i32
-            + block[0] as i32;
-        let y = (chunk.position[1] - zero_chunk.position[1]) * BLOCKS_IN_CHUNK_EDGE as i32
-            + block[1] as i32;
-        let z = (chunk.position[2] - zero_chunk.position[2]) * BLOCKS_IN_CHUNK_EDGE as i32
-            + block[2] as i32;
+        let x = block[0] as i32;
+        let y = block[1] as i32;
+        let z = block[2] as i32;
 
         if cull_mask.contains(CullMaskSides::X0) {
             // Back
             Self::add_side(
+                chunk.position,
                 vertices,
                 indices,
                 [[x, y, z + 1], [x, y + 1, z + 1], [x, y + 1, z], [x, y, z]],
@@ -132,6 +130,7 @@ impl Cube {
         if cull_mask.contains(CullMaskSides::X1) {
             // Forward
             Self::add_side(
+                chunk.position,
                 vertices,
                 indices,
                 [
@@ -147,6 +146,7 @@ impl Cube {
         if cull_mask.contains(CullMaskSides::Y0) {
             // Left
             Self::add_side(
+                chunk.position,
                 vertices,
                 indices,
                 [[x + 1, y, z + 1], [x, y, z + 1], [x, y, z], [x + 1, y, z]],
@@ -157,6 +157,7 @@ impl Cube {
         if cull_mask.contains(CullMaskSides::Y1) {
             // Right
             Self::add_side(
+                chunk.position,
                 vertices,
                 indices,
                 [
@@ -172,6 +173,7 @@ impl Cube {
         if cull_mask.contains(CullMaskSides::Z0) {
             // Down
             Self::add_side(
+                chunk.position,
                 vertices,
                 indices,
                 [[x, y, z], [x, y + 1, z], [x + 1, y + 1, z], [x + 1, y, z]],
@@ -182,6 +184,7 @@ impl Cube {
         if cull_mask.contains(CullMaskSides::Z1) {
             // Up
             Self::add_side(
+                chunk.position,
                 vertices,
                 indices,
                 [
