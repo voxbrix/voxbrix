@@ -21,7 +21,10 @@ use crate::{
     },
     entity::{
         actor::Actor,
-        block::Neighbor,
+        block::{
+            Neighbor,
+            BLOCKS_IN_CHUNK,
+        },
         block_class::BlockClass,
         chunk::Chunk,
         vertex::Vertex,
@@ -42,7 +45,10 @@ use std::{
     },
     hash::Hash,
     iter,
-    num::NonZeroU32,
+    num::{
+        NonZeroU32,
+        NonZeroU64,
+    },
     ops::Deref,
     path::{
         Path,
@@ -59,6 +65,10 @@ use wgpu::{
 use winit::dpi::PhysicalSize;
 
 const BLOCK_TEXTURE_FORMAT: ImageFormat = ImageFormat::Png;
+const INDEX_FORMAT: IndexFormat = IndexFormat::Uint32;
+const INDEX_SIZE: usize = std::mem::size_of::<u32>();
+const VERTEX_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK * 6 /*sides*/ * 4 /*vertices*/;
+const INDEX_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK * 6 /*sides*/ * 2 /*polygons*/ * 3 /*vertices*/;
 
 async fn load_block_textures<'a, T>(
     base_path: PathBuf,
@@ -565,8 +575,8 @@ impl RenderSystem {
         cbc: &ClassBlockComponent,
         mbcc: &ModelBlockClassComponent,
     ) {
-        let mut vertex_buffer = Vec::with_capacity(98304); // 4096 * 6(sides) * 4(vertices)
-        let mut index_buffer = Vec::with_capacity(147456); // 4096 * 6(sides) * 2(polygons) * 3(vertices)
+        let mut vertex_buffer = Vec::with_capacity(VERTEX_BUFFER_CAPACITY);
+        let mut index_buffer = Vec::with_capacity(INDEX_BUFFER_CAPACITY);
 
         let blocks = match cbc.get_chunk(chunk) {
             Some(b) => b,
@@ -673,34 +683,71 @@ impl RenderSystem {
 
     pub fn render(&mut self) -> Result<(), SurfaceError> {
         if self.update_chunk_buffer {
-            self.update_chunk_buffer = false;
-
             self.chunk_vertex_buffer.clear();
             self.chunk_index_buffer.clear();
 
-            for (vertex_buffer, index_buffer) in self.chunk_buffer_shards.values() {
-                self.chunk_index_buffer.extend(
-                    index_buffer
-                        .iter()
-                        .map(|i| i + self.chunk_vertex_buffer.len() as u32),
+            let (vertex_size, index_size) = self
+                .chunk_buffer_shards
+                .values()
+                .fold((0, 0), |(vbl, ibl), (vb, ib)| {
+                    (vbl + vb.len(), ibl + ib.len())
+                });
+
+            if vertex_size != 0 && index_size != 0 {
+                let vertex_size = vertex_size as u64 * Vertex::size();
+                let index_size = (index_size * INDEX_SIZE) as u64;
+
+                self.prepared_vertex_buffer = self.device.create_buffer(&BufferDescriptor {
+                    label: Some("Vertex Buffer"),
+                    size: vertex_size,
+                    usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+
+                self.prepared_index_buffer = self.device.create_buffer(&BufferDescriptor {
+                    label: Some("Index Buffer"),
+                    size: index_size as u64,
+                    usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+
+                let mut vertex_writer = self.queue.write_buffer_with(
+                    &self.prepared_vertex_buffer,
+                    0,
+                    NonZeroU64::new(vertex_size).unwrap(),
                 );
-                self.chunk_vertex_buffer
-                    .extend_from_slice(vertex_buffer.as_slice());
+
+                let mut index_writer = self.queue.write_buffer_with(
+                    &self.prepared_index_buffer,
+                    0,
+                    NonZeroU64::new(index_size).unwrap(),
+                );
+
+                let mut vertex_cursor = 0;
+                let mut num_vertices = 0;
+                let mut index_cursor = 0;
+                let mut num_indices = 0;
+
+                for (vertex_buffer, index_buffer) in self.chunk_buffer_shards.values() {
+                    for index in index_buffer.iter() {
+                        index_writer[index_cursor .. index_cursor + INDEX_SIZE]
+                            .copy_from_slice(bytemuck::bytes_of(&(index + num_vertices as u32)));
+                        index_cursor += INDEX_SIZE;
+                        num_indices += 1;
+                    }
+
+                    let vertex_byte_slice = bytemuck::cast_slice(&vertex_buffer);
+
+                    vertex_writer[vertex_cursor .. vertex_cursor + vertex_byte_slice.len()]
+                        .copy_from_slice(vertex_byte_slice);
+
+                    vertex_cursor += vertex_byte_slice.len();
+                    num_vertices += vertex_buffer.len();
+                }
+
+                self.num_indices = num_indices;
+                self.update_chunk_buffer = false;
             }
-
-            self.prepared_vertex_buffer = self.device.create_buffer_init(&BufferInitDescriptor {
-                label: Some("Vertex Buffer"),
-                contents: bytemuck::cast_slice(&self.chunk_vertex_buffer),
-                usage: BufferUsages::VERTEX,
-            });
-
-            self.prepared_index_buffer = self.device.create_buffer_init(&BufferInitDescriptor {
-                label: Some("Index Buffer"),
-                contents: bytemuck::cast_slice(&self.chunk_index_buffer),
-                usage: BufferUsages::INDEX,
-            });
-
-            self.num_indices = self.chunk_index_buffer.len() as u32;
         }
 
         let output = self.surface.get_current_texture()?;
@@ -743,7 +790,7 @@ impl RenderSystem {
         render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
         render_pass.set_bind_group(2, &self.center_chunk_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.prepared_vertex_buffer.slice(..));
-        render_pass.set_index_buffer(self.prepared_index_buffer.slice(..), IndexFormat::Uint32);
+        render_pass.set_index_buffer(self.prepared_index_buffer.slice(..), INDEX_FORMAT);
         render_pass.draw_indexed(0 .. self.num_indices, 0, 0 .. 1);
 
         drop(render_pass);
