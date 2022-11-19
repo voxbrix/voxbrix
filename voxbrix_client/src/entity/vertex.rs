@@ -50,7 +50,7 @@ impl Vertex {
         }
     }
 
-    pub fn size() -> BufferAddress {
+    pub const fn size() -> BufferAddress {
         mem::size_of::<Vertex>() as BufferAddress
     }
 }
