@@ -63,10 +63,12 @@ use wgpu::{
     *,
 };
 use winit::dpi::PhysicalSize;
+use rayon::prelude::*;
 
 const BLOCK_TEXTURE_FORMAT: ImageFormat = ImageFormat::Png;
 const INDEX_FORMAT: IndexFormat = IndexFormat::Uint32;
 const INDEX_SIZE: usize = std::mem::size_of::<u32>();
+const VERTEX_SIZE: usize = Vertex::size() as usize;
 const VERTEX_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK * 6 /*sides*/ * 4 /*vertices*/;
 const INDEX_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK * 6 /*sides*/ * 2 /*polygons*/ * 3 /*vertices*/;
 
@@ -166,6 +168,27 @@ impl CameraUniform {
     }
 }
 
+struct ChunkInfo<'a> {
+    chunk_shard: &'a (Vec<Vertex>, Vec<u32>),
+    vertex_offset: usize,
+    vertex_length: usize,
+    index_length: usize,
+    vertex_buffer: Option<&'a mut [u8]>,
+    index_buffer: Option<&'a mut [u8]>,
+}
+
+fn slice_buffers<'a>(chunk_info: &mut Vec<ChunkInfo<'a>>, mut vertex_buffer: &'a mut [u8], mut index_buffer: &'a mut [u8]) {
+    for chunk in chunk_info.into_iter() {
+        let (vertex_buffer_shard, residue) = vertex_buffer.split_at_mut(chunk.vertex_length * VERTEX_SIZE);
+        vertex_buffer = residue;
+        chunk.vertex_buffer = Some(vertex_buffer_shard);
+
+        let (index_buffer_shard, residue) = index_buffer.split_at_mut(chunk.index_length * INDEX_SIZE);
+        index_buffer = residue;
+        chunk.index_buffer = Some(index_buffer_shard);
+    }
+}
+
 pub struct RenderSystem {
     surface: Surface,
     device: Device,
@@ -175,8 +198,6 @@ pub struct RenderSystem {
     render_pipeline: RenderPipeline,
     chunk_buffer_shards: BTreeMap<Chunk, (Vec<Vertex>, Vec<u32>)>,
     update_chunk_buffer: bool,
-    chunk_vertex_buffer: Vec<Vertex>,
-    chunk_index_buffer: Vec<u32>,
     prepared_vertex_buffer: Buffer,
     prepared_index_buffer: Buffer,
     num_indices: u32,
@@ -520,8 +541,6 @@ impl RenderSystem {
             render_pipeline,
             chunk_buffer_shards: BTreeMap::new(),
             update_chunk_buffer: false,
-            chunk_vertex_buffer: Vec::new(),
-            chunk_index_buffer: Vec::new(),
             prepared_vertex_buffer: vertex_buffer,
             prepared_index_buffer: index_buffer,
             num_indices: 0,
@@ -682,31 +701,41 @@ impl RenderSystem {
     }
 
     pub fn render(&mut self) -> Result<(), SurfaceError> {
+        //let mut time_test = None;
         if self.update_chunk_buffer {
-            self.chunk_vertex_buffer.clear();
-            self.chunk_index_buffer.clear();
+            //time_test = Some(std::time::Instant::now());
+            let mut chunk_info = Vec::with_capacity(self.chunk_buffer_shards.len());
 
             let (vertex_size, index_size) = self
                 .chunk_buffer_shards
                 .values()
-                .fold((0, 0), |(vbl, ibl), (vb, ib)| {
+                .fold((0, 0), |(vbl, ibl), chunk_shard| {
+                    let (ref vb, ref ib) = chunk_shard;
+                    chunk_info.push(ChunkInfo {
+                        chunk_shard,
+                        vertex_offset: vbl,
+                        vertex_length: vb.len(),
+                        index_length: ib.len(),
+                        vertex_buffer: None,
+                        index_buffer: None,
+                    });
                     (vbl + vb.len(), ibl + ib.len())
                 });
 
             if vertex_size != 0 && index_size != 0 {
-                let vertex_size = vertex_size as u64 * Vertex::size();
-                let index_size = (index_size * INDEX_SIZE) as u64;
+                let vertex_byte_size = (vertex_size * VERTEX_SIZE) as u64;
+                let index_byte_size = (index_size * INDEX_SIZE) as u64;
 
                 self.prepared_vertex_buffer = self.device.create_buffer(&BufferDescriptor {
                     label: Some("Vertex Buffer"),
-                    size: vertex_size,
+                    size: vertex_byte_size,
                     usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
                     mapped_at_creation: false,
                 });
 
                 self.prepared_index_buffer = self.device.create_buffer(&BufferDescriptor {
                     label: Some("Index Buffer"),
-                    size: index_size as u64,
+                    size: index_byte_size as u64,
                     usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
                     mapped_at_creation: false,
                 });
@@ -714,38 +743,31 @@ impl RenderSystem {
                 let mut vertex_writer = self.queue.write_buffer_with(
                     &self.prepared_vertex_buffer,
                     0,
-                    NonZeroU64::new(vertex_size).unwrap(),
+                    NonZeroU64::new(vertex_byte_size).unwrap(),
                 );
 
                 let mut index_writer = self.queue.write_buffer_with(
                     &self.prepared_index_buffer,
                     0,
-                    NonZeroU64::new(index_size).unwrap(),
+                    NonZeroU64::new(index_byte_size).unwrap(),
                 );
 
-                let mut vertex_cursor = 0;
-                let mut num_vertices = 0;
-                let mut index_cursor = 0;
-                let mut num_indices = 0;
+                slice_buffers(&mut chunk_info, &mut vertex_writer, &mut index_writer);
 
-                for (vertex_buffer, index_buffer) in self.chunk_buffer_shards.values() {
-                    for index in index_buffer.iter() {
-                        index_writer[index_cursor .. index_cursor + INDEX_SIZE]
-                            .copy_from_slice(bytemuck::bytes_of(&(index + num_vertices as u32)));
+                chunk_info.par_iter_mut().for_each(|chunk| {
+                    let (vertex_vec, index_vec) = chunk.chunk_shard;
+
+                    let mut index_cursor = 0;                
+                    for index in index_vec.iter() {
+                        chunk.index_buffer.as_mut().unwrap()[index_cursor .. index_cursor + INDEX_SIZE]
+                            .copy_from_slice(bytemuck::bytes_of(&(index + chunk.vertex_offset as u32)));
                         index_cursor += INDEX_SIZE;
-                        num_indices += 1;
                     }
 
-                    let vertex_byte_slice = bytemuck::cast_slice(&vertex_buffer);
+                    chunk.vertex_buffer.as_mut().unwrap().copy_from_slice(bytemuck::cast_slice(&vertex_vec));
+                });
 
-                    vertex_writer[vertex_cursor .. vertex_cursor + vertex_byte_slice.len()]
-                        .copy_from_slice(vertex_byte_slice);
-
-                    vertex_cursor += vertex_byte_slice.len();
-                    num_vertices += vertex_buffer.len();
-                }
-
-                self.num_indices = num_indices;
+                self.num_indices = index_size as u32;
                 self.update_chunk_buffer = false;
             }
         }
@@ -797,6 +819,9 @@ impl RenderSystem {
 
         self.queue.submit(iter::once(encoder.finish()));
         output.present();
+        //if let Some(time_test) = time_test {
+        //    log::error!("Elapsed: {:?}", time_test.elapsed());
+        //}
 
         Ok(())
     }

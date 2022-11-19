@@ -127,27 +127,6 @@ impl EventLoop<'_> {
             })
             .detach();
 
-        let mut chunk_coords = Vec::new();
-
-        for z in -5 ..= 5 {
-            for y in -5 ..= 5 {
-                for x in -5 ..= 5 {
-                    chunk_coords.push(ChunkRequest {
-                        position: [0 + x, 0 + y, 0 + z],
-                        dimension: 0,
-                    });
-                }
-            }
-        }
-
-        let chunk_req = ServerAccept::GetChunksBlocks {
-            coords: chunk_coords,
-        };
-
-        sender_tx
-            .send(chunk_req)
-            .expect("initial request sent to sender");
-
         let mut scc = StatusChunkComponent::new();
 
         let mut cbc = ClassBlockComponent::new();
