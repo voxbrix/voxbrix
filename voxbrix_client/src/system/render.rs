@@ -383,6 +383,7 @@ impl RenderSystem {
             height: surface_size.height,
             // Fifo makes SurfaceTexture::present() block
             present_mode: PresentMode::Mailbox,
+            alpha_mode: CompositeAlphaMode::Auto,
         };
 
         surface.configure(&device, &config);

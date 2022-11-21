@@ -8,14 +8,14 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 integer-encoding = "3.0"
-async-io = "1.9"
+async-io = "1.10"
 futures-lite = "1.12"
 local-channel = { version = "0.1", optional = true }
 flume = { version = "0.10", optional = true }
 log = "0.4"
 
 [dev-dependencies]
-async-executor = "1.4"
+async-executor = "1.5"
 
 [features]
 default = []
