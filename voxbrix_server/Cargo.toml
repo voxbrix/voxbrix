@@ -7,7 +7,8 @@ license = "MIT OR Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-async-executor = "1.4"
+async-executor = "1.5"
+blocking = "1.2"
 futures-lite = "1.12"
 voxbrix_protocol = { path = "../voxbrix_protocol", features = ["single", "server"] }
 voxbrix_messages = { path = "../voxbrix_messages" }

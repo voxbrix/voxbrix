@@ -22,10 +22,13 @@ use winit::{
     },
     event_loop::{
         ControlFlow,
-        EventLoop,
+        EventLoopBuilder,
         EventLoopProxy,
     },
-    window::WindowBuilder,
+    window::{
+        WindowBuilder,
+        CursorGrabMode,
+    },
 };
 
 pub enum WindowEvent {
@@ -51,7 +54,7 @@ pub fn create_window(
     handle_tx: Sender<WindowHandle>,
     event_proxy_tx: Sender<EventLoopProxy<WindowEvent>>,
 ) -> Result<()> {
-    let event_loop = EventLoop::with_user_event();
+    let event_loop = EventLoopBuilder::with_user_event().build();
 
     event_proxy_tx
         .send(event_loop.create_proxy())
@@ -73,7 +76,8 @@ pub fn create_window(
         })
         .map_err(|_| Error::msg("surface channel is closed"))?;
 
-    window.set_cursor_grab(true)?;
+    window.set_cursor_grab(CursorGrabMode::Confined)
+        .or_else(|_| window.set_cursor_grab(CursorGrabMode::Locked))?;
     window.set_cursor_visible(false);
 
     macro_rules! send {
