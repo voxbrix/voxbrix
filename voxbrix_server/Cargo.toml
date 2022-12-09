@@ -10,6 +10,14 @@ license = "MIT OR Apache-2.0"
 async-executor = "1.5"
 blocking = "1.2"
 futures-lite = "1.12"
+async-io = "1.10"
 voxbrix_protocol = { path = "../voxbrix_protocol", features = ["single", "server"] }
-voxbrix_messages = { path = "../voxbrix_messages" }
+voxbrix_common = { path = "../voxbrix_common" }
+sled = "0.34"
+flume = "0.10"
+#serde = "1.0"
+#postcard = "1.0"
+local-channel = "0.1"
 anyhow = "1.0"
+log = "0.4"
+env_logger = "0.9"

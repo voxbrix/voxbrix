@@ -26,8 +26,8 @@ use winit::{
         EventLoopProxy,
     },
     window::{
-        WindowBuilder,
         CursorGrabMode,
+        WindowBuilder,
     },
 };
 
@@ -76,7 +76,8 @@ pub fn create_window(
         })
         .map_err(|_| Error::msg("surface channel is closed"))?;
 
-    window.set_cursor_grab(CursorGrabMode::Confined)
+    window
+        .set_cursor_grab(CursorGrabMode::Confined)
         .or_else(|_| window.set_cursor_grab(CursorGrabMode::Locked))?;
     window.set_cursor_visible(false);
 

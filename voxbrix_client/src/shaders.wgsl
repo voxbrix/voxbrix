@@ -1,13 +1,12 @@
 struct CameraUniform {
+    chunk: vec3<i32>,
+    _padding: u32,
     view_position: vec4<f32>,
     view_projection: mat4x4<f32>,
 };
 
 @group(1) @binding(0)
 var<uniform> camera: CameraUniform;
-
-@group(2) @binding(0)
-var<uniform> center_chunk: vec3<i32>;
 
 struct VertexInput {
     @location(0) chunk: vec3<i32>,
@@ -27,7 +26,7 @@ fn vs_main(
     in: VertexInput,
 ) -> VertexOutput {
     var out: VertexOutput;
-    let position = vec3<f32>(in.chunk - center_chunk) * 16.0 + in.position;
+    let position = vec3<f32>(in.chunk - camera.chunk) * 16.0 + in.position;
     out.clip_position = camera.view_projection * vec4<f32>(position, 1.0);
     out.texture_index = in.texture_index;
     out.texture_position = in.texture_position;

@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "voxbrix_client",
-    "voxbrix_messages",
+    "voxbrix_common",
     "voxbrix_protocol",
     "voxbrix_server",
 ]

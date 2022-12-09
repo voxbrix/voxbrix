@@ -1,24 +1,20 @@
 use crate::{
     component::{
         actor::{
-            position::PositionActorComponent,
+            position::{
+                GlobalPosition,
+                GlobalPositionActorComponent,
+            },
             velocity::VelocityActorComponent,
         },
         block::class::ClassBlockComponent,
     },
-    entity::{
-        actor::Actor,
-        block::{
-            Block,
-            BLOCKS_IN_CHUNK_EDGE,
-        },
-        chunk::Chunk,
+    entity::block::{
+        Block,
+        BLOCKS_IN_CHUNK_EDGE,
     },
-    event_loop::Event,
-    linear_algebra::Vec3,
 };
 use either::Either;
-use local_channel::mpsc::Sender;
 use std::{
     cmp::Ordering,
     time::Duration,
@@ -40,9 +36,8 @@ impl PositionSystem {
     pub fn process(
         &mut self,
         dt: Duration,
-        center_chunk: &Chunk,
         cbc: &ClassBlockComponent,
-        pc: &mut PositionActorComponent,
+        gpc: &mut GlobalPositionActorComponent,
         vc: &VelocityActorComponent,
     ) {
         #[derive(Copy, Clone)]
@@ -55,7 +50,11 @@ impl PositionSystem {
         let v_radius = 0.95;
 
         for (actor, velocity) in vc.iter() {
-            if let Some(position) = pc.get_mut(actor) {
+            if let Some(GlobalPosition {
+                chunk: center_chunk,
+                offset: position,
+            }) = gpc.get_mut(&actor)
+            {
                 let travel = velocity.clone() * dt;
 
                 let radius = [h_radius, h_radius, v_radius];
@@ -78,8 +77,8 @@ impl PositionSystem {
                     move_dir_by_axis[a0] = Some(move_dir);
 
                     let (actor_start, block_offset) = match move_dir {
-                        MoveDirection::Positive => (position.vector[a0] + radius[a0], 0),
-                        MoveDirection::Negative => (position.vector[a0] - radius[a0], 1),
+                        MoveDirection::Positive => (position[a0] + radius[a0], 0),
+                        MoveDirection::Negative => (position[a0] - radius[a0], 1),
                     };
 
                     let block_start = actor_start.floor() as i32;
@@ -99,13 +98,13 @@ impl PositionSystem {
                         let t =
                             ((block_a0 + block_offset) as f32 - actor_start) / velocity.vector[a0];
 
-                        let actor_a1 = position.vector[a1] + velocity.vector[a1] * t;
+                        let actor_a1 = position[a1] + velocity.vector[a1] * t;
 
                         let block_a1m = (actor_a1 - radius[a1]).floor() as i32;
                         let block_a1p = (actor_a1 + radius[a1]).floor() as i32;
 
                         for block_a1 in block_a1m ..= block_a1p {
-                            let actor_a2 = position.vector[a2] + velocity.vector[a2] * t;
+                            let actor_a2 = position[a2] + velocity.vector[a2] * t;
 
                             let block_a2m = (actor_a2 - radius[a2]).floor() as i32;
                             let block_a2p = (actor_a2 + radius[a2]).floor() as i32;
@@ -153,7 +152,7 @@ impl PositionSystem {
                     }
                 }
 
-                let mut pos = position.clone() + travel;
+                let mut new_position = position.clone() + travel.vector;
 
                 for (axis, chunk_offsets) in self.collider_blocks.iter_mut().enumerate() {
                     // Filter out surfaces of the blocks that can cause actor stuck
@@ -192,7 +191,7 @@ impl PositionSystem {
                         None => continue,
                     };
 
-                    pos.vector[axis] = match move_dir {
+                    new_position[axis] = match move_dir {
                         MoveDirection::Positive => {
                             collider_chunk_offset[axis] as f32 - radius[axis] - COLLISION_PUSHBACK
                         },
@@ -204,42 +203,26 @@ impl PositionSystem {
                     };
                 }
 
-                *position = pos;
+                let new_chunk = new_position
+                    .as_ref()
+                    .iter()
+                    .find(|dist| dist.abs() > BLOCKS_IN_CHUNK_EDGE as f32)
+                    .is_some();
+
+                if new_chunk {
+                    let chunk_diff_vec =
+                        new_position.map(|f| f as i32 / BLOCKS_IN_CHUNK_EDGE as i32);
+
+                    let actor_diff_vec =
+                        chunk_diff_vec.map(|i| i as f32 * BLOCKS_IN_CHUNK_EDGE as f32);
+
+                    center_chunk.position = center_chunk.position + chunk_diff_vec;
+
+                    new_position = new_position - actor_diff_vec;
+                }
+
+                *position = new_position;
             }
-        }
-    }
-
-    pub fn post_movement(
-        &self,
-        player_actor: &Actor,
-        center_chunk: &mut Chunk,
-        pc: &mut PositionActorComponent,
-        event_tx: &Sender<Event>,
-    ) {
-        let player_position = match pc.get(*player_actor) {
-            Some(p) => p,
-            None => return,
-        };
-
-        let move_center = player_position
-            .vector
-            .iter()
-            .find(|dist| dist.abs() > BLOCKS_IN_CHUNK_EDGE as f32)
-            .is_some();
-
-        if move_center {
-            let chunk_diff_vec = player_position
-                .vector
-                .map(|f| f as i32 / BLOCKS_IN_CHUNK_EDGE as i32);
-            let actor_diff_vec = chunk_diff_vec.map(|i| i as f32 * BLOCKS_IN_CHUNK_EDGE as f32);
-
-            center_chunk.position = (Vec3::from(center_chunk.position) + chunk_diff_vec).into();
-
-            for (_actor, position) in pc.iter_mut() {
-                position.vector = position.vector - actor_diff_vec;
-            }
-
-            let _ = event_tx.send(Event::NearbyChunksUpdate);
         }
     }
 }

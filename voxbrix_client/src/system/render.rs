@@ -7,7 +7,7 @@ use crate::{
     component::{
         actor::{
             facing::FacingActorComponent,
-            position::PositionActorComponent,
+            position::GlobalPositionActorComponent,
         },
         block::{
             class::ClassBlockComponent,
@@ -29,7 +29,6 @@ use crate::{
         chunk::Chunk,
         vertex::Vertex,
     },
-    linear_algebra::Mat4,
 };
 use anyhow::Result;
 use async_fs::File;
@@ -38,6 +37,7 @@ use image::{
     ImageFormat,
     RgbaImage,
 };
+use rayon::prelude::*;
 use std::{
     collections::{
         BTreeMap,
@@ -55,6 +55,7 @@ use std::{
         PathBuf,
     },
 };
+use voxbrix_common::math::Mat4;
 use wgpu::{
     util::{
         BufferInitDescriptor,
@@ -63,7 +64,6 @@ use wgpu::{
     *,
 };
 use winit::dpi::PhysicalSize;
-use rayon::prelude::*;
 
 const BLOCK_TEXTURE_FORMAT: ImageFormat = ImageFormat::Png;
 const INDEX_FORMAT: IndexFormat = IndexFormat::Uint32;
@@ -143,6 +143,8 @@ where
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct CameraUniform {
+    chunk: [i32; 3],
+    _padding: u32,
     view_position: [f32; 4],
     view_projection: [[f32; 4]; 4],
 }
@@ -150,6 +152,8 @@ struct CameraUniform {
 impl CameraUniform {
     fn new() -> Self {
         Self {
+            chunk: [0; 3],
+            _padding: 0,
             view_position: [0.0; 4],
             view_projection: Mat4::identity().into(),
         }
@@ -158,13 +162,17 @@ impl CameraUniform {
     fn update_view_projection(
         &mut self,
         camera: &Camera,
-        pac: &PositionActorComponent,
+        gpac: &GlobalPositionActorComponent,
         fac: &FacingActorComponent,
         projection: &Projection,
     ) {
-        let pos = pac.get(camera.actor).unwrap();
-        self.view_position = pos.vector.to_homogeneous().into();
-        self.view_projection = (projection.calc_matrix() * camera.calc_matrix(pac, fac)).into();
+        let pos = gpac.get(&camera.actor).unwrap();
+        self.chunk = pos.chunk.position.into();
+        self.view_position = pos.offset.to_homogeneous();
+        self.view_projection = match camera.calc_matrix(gpac, fac) {
+            Some(camera_matrix) => (projection.calc_matrix() * camera_matrix).into(),
+            None => self.view_projection,
+        };
     }
 }
 
@@ -177,13 +185,19 @@ struct ChunkInfo<'a> {
     index_buffer: Option<&'a mut [u8]>,
 }
 
-fn slice_buffers<'a>(chunk_info: &mut Vec<ChunkInfo<'a>>, mut vertex_buffer: &'a mut [u8], mut index_buffer: &'a mut [u8]) {
+fn slice_buffers<'a>(
+    chunk_info: &mut Vec<ChunkInfo<'a>>,
+    mut vertex_buffer: &'a mut [u8],
+    mut index_buffer: &'a mut [u8],
+) {
     for chunk in chunk_info.into_iter() {
-        let (vertex_buffer_shard, residue) = vertex_buffer.split_at_mut(chunk.vertex_length * VERTEX_SIZE);
+        let (vertex_buffer_shard, residue) =
+            vertex_buffer.split_at_mut(chunk.vertex_length * VERTEX_SIZE);
         vertex_buffer = residue;
         chunk.vertex_buffer = Some(vertex_buffer_shard);
 
-        let (index_buffer_shard, residue) = index_buffer.split_at_mut(chunk.index_length * INDEX_SIZE);
+        let (index_buffer_shard, residue) =
+            index_buffer.split_at_mut(chunk.index_length * INDEX_SIZE);
         index_buffer = residue;
         chunk.index_buffer = Some(index_buffer_shard);
     }
@@ -208,8 +222,6 @@ pub struct RenderSystem {
     projection: Projection,
     camera_buffer: Buffer,
     camera_bind_group: BindGroup,
-    center_chunk_buffer: Buffer,
-    center_chunk_bind_group: BindGroup,
 }
 
 impl RenderSystem {
@@ -344,8 +356,7 @@ impl RenderSystem {
         instance: Instance,
         surface: Surface,
         surface_size: PhysicalSize<u32>,
-        center_chunk: &Chunk,
-        pac: &PositionActorComponent,
+        gpac: &GlobalPositionActorComponent,
         fac: &FacingActorComponent,
     ) -> Self {
         let adapter = instance
@@ -401,7 +412,7 @@ impl RenderSystem {
         );
 
         let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_projection(&camera, pac, fac, &projection);
+        camera_uniform.update_view_projection(&camera, gpac, fac, &projection);
 
         let camera_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Camera Buffer"),
@@ -438,43 +449,9 @@ impl RenderSystem {
             source: ShaderSource::Wgsl(include_str!("../shaders.wgsl").into()),
         });
 
-        let center_chunk_buffer = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("Center Chunk Buffer"),
-            contents: bytemuck::cast_slice(&[center_chunk.position]),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        });
-
-        let center_chunk_bind_group_layout =
-            device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-                entries: &[BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::VERTEX,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-                label: Some("center_chunk_bind_group_layout"),
-            });
-
-        let center_chunk_bind_group = device.create_bind_group(&BindGroupDescriptor {
-            layout: &center_chunk_bind_group_layout,
-            entries: &[BindGroupEntry {
-                binding: 0,
-                resource: center_chunk_buffer.as_entire_binding(),
-            }],
-            label: Some("center_chunk_bind_group"),
-        });
-
         let render_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[
-                &block_texture_bind_group_layout,
-                &camera_bind_group_layout,
-                &center_chunk_bind_group_layout,
-            ],
+            bind_group_layouts: &[&block_texture_bind_group_layout, &camera_bind_group_layout],
             push_constant_ranges: &[],
         });
 
@@ -552,8 +529,6 @@ impl RenderSystem {
             camera_uniform,
             camera_buffer,
             camera_bind_group,
-            center_chunk_buffer,
-            center_chunk_bind_group,
         }
     }
 
@@ -568,20 +543,9 @@ impl RenderSystem {
         }
     }
 
-    pub fn update(
-        &mut self,
-        center_chunk: &Chunk,
-        pac: &PositionActorComponent,
-        fac: &FacingActorComponent,
-    ) {
-        self.queue.write_buffer(
-            &self.center_chunk_buffer,
-            0,
-            bytemuck::cast_slice(&[center_chunk.position]),
-        );
-
+    pub fn update(&mut self, gpac: &GlobalPositionActorComponent, fac: &FacingActorComponent) {
         self.camera_uniform
-            .update_view_projection(&self.camera, pac, fac, &self.projection);
+            .update_view_projection(&self.camera, gpac, fac, &self.projection);
         self.queue.write_buffer(
             &self.camera_buffer,
             0,
@@ -678,7 +642,7 @@ impl RenderSystem {
 
         let mut check_neighbor = |x, y, z| {
             let chunk = Chunk {
-                position: [x, y, z],
+                position: [x, y, z].into(),
                 dimension: chunk.dimension,
             };
             if self.chunk_buffer_shards.get(&chunk).is_some() {
@@ -702,26 +666,26 @@ impl RenderSystem {
     }
 
     pub fn render(&mut self) -> Result<(), SurfaceError> {
-        //let mut time_test = None;
+        // let mut time_test = None;
         if self.update_chunk_buffer {
-            //time_test = Some(std::time::Instant::now());
+            // time_test = Some(std::time::Instant::now());
             let mut chunk_info = Vec::with_capacity(self.chunk_buffer_shards.len());
 
-            let (vertex_size, index_size) = self
-                .chunk_buffer_shards
-                .values()
-                .fold((0, 0), |(vbl, ibl), chunk_shard| {
-                    let (ref vb, ref ib) = chunk_shard;
-                    chunk_info.push(ChunkInfo {
-                        chunk_shard,
-                        vertex_offset: vbl,
-                        vertex_length: vb.len(),
-                        index_length: ib.len(),
-                        vertex_buffer: None,
-                        index_buffer: None,
+            let (vertex_size, index_size) =
+                self.chunk_buffer_shards
+                    .values()
+                    .fold((0, 0), |(vbl, ibl), chunk_shard| {
+                        let (ref vb, ref ib) = chunk_shard;
+                        chunk_info.push(ChunkInfo {
+                            chunk_shard,
+                            vertex_offset: vbl,
+                            vertex_length: vb.len(),
+                            index_length: ib.len(),
+                            vertex_buffer: None,
+                            index_buffer: None,
+                        });
+                        (vbl + vb.len(), ibl + ib.len())
                     });
-                    (vbl + vb.len(), ibl + ib.len())
-                });
 
             if vertex_size != 0 && index_size != 0 {
                 let vertex_byte_size = (vertex_size * VERTEX_SIZE) as u64;
@@ -758,14 +722,21 @@ impl RenderSystem {
                 chunk_info.par_iter_mut().for_each(|chunk| {
                     let (vertex_vec, index_vec) = chunk.chunk_shard;
 
-                    let mut index_cursor = 0;                
+                    let mut index_cursor = 0;
                     for index in index_vec.iter() {
-                        chunk.index_buffer.as_mut().unwrap()[index_cursor .. index_cursor + INDEX_SIZE]
-                            .copy_from_slice(bytemuck::bytes_of(&(index + chunk.vertex_offset as u32)));
+                        chunk.index_buffer.as_mut().unwrap()
+                            [index_cursor .. index_cursor + INDEX_SIZE]
+                            .copy_from_slice(bytemuck::bytes_of(
+                                &(index + chunk.vertex_offset as u32),
+                            ));
                         index_cursor += INDEX_SIZE;
                     }
 
-                    chunk.vertex_buffer.as_mut().unwrap().copy_from_slice(bytemuck::cast_slice(&vertex_vec));
+                    chunk
+                        .vertex_buffer
+                        .as_mut()
+                        .unwrap()
+                        .copy_from_slice(bytemuck::cast_slice(&vertex_vec));
                 });
 
                 self.num_indices = index_size as u32;
@@ -811,7 +782,6 @@ impl RenderSystem {
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0, &self.block_texture_bind_group, &[]);
         render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
-        render_pass.set_bind_group(2, &self.center_chunk_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.prepared_vertex_buffer.slice(..));
         render_pass.set_index_buffer(self.prepared_index_buffer.slice(..), INDEX_FORMAT);
         render_pass.draw_indexed(0 .. self.num_indices, 0, 0 .. 1);
@@ -820,7 +790,7 @@ impl RenderSystem {
 
         self.queue.submit(iter::once(encoder.finish()));
         output.present();
-        //if let Some(time_test) = time_test {
+        // if let Some(time_test) = time_test {
         //    log::error!("Elapsed: {:?}", time_test.elapsed());
         //}
 

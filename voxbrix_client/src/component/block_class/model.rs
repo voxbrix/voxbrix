@@ -6,6 +6,7 @@ use crate::{
     },
 };
 use bitmask::bitmask;
+use voxbrix_common::math::Vec3;
 
 pub type ModelBlockClassComponent = BlockClassComponent<Model>;
 
@@ -59,7 +60,7 @@ impl CullMaskSides {
 
 impl Cube {
     fn add_side(
-        chunk: [i32; 3],
+        chunk: Vec3<i32>,
         vertices: &mut Vec<Vertex>,
         indices: &mut Vec<u32>,
         positions: [[i32; 3]; 4],
@@ -68,28 +69,28 @@ impl Cube {
         let base = vertices.len() as u32;
 
         vertices.push(Vertex {
-            chunk,
+            chunk: chunk.into(),
             position: positions[0].map(|c| c as f32),
             texture_index,
             texture_position: [0.0, 0.0],
         });
 
         vertices.push(Vertex {
-            chunk,
+            chunk: chunk.into(),
             position: positions[1].map(|c| c as f32),
             texture_index,
             texture_position: [1.0, 0.0],
         });
 
         vertices.push(Vertex {
-            chunk,
+            chunk: chunk.into(),
             position: positions[2].map(|c| c as f32),
             texture_index,
             texture_position: [1.0, 1.0],
         });
 
         vertices.push(Vertex {
-            chunk,
+            chunk: chunk.into(),
             position: positions[3].map(|c| c as f32),
             texture_index,
             texture_position: [0.0, 1.0],
