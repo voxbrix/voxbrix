@@ -19,11 +19,10 @@ winit = "0.27"
 wgpu = "0.14"
 bytemuck = { version = "1", features = ["derive"] }
 image = { version = "0.24", default-features = false, features = ["png"] }
-nalgebra-glm = { version = "0.17", default-features = false, features = ["std"] }
 anyhow = "1.0"
 serde = { version = "1.0", default-features = false, features = ["std", "derive"] } 
 voxbrix_protocol = { path = "../voxbrix_protocol", features = ["single", "client"] }
-voxbrix_messages = { path = "../voxbrix_messages" }
+voxbrix_common = { path = "../voxbrix_common" }
 local-channel = "0.1"
 bitmask = "0.5"
 ron = "0.8"

@@ -20,7 +20,6 @@ mod camera;
 mod component;
 mod entity;
 mod event_loop;
-mod linear_algebra;
 mod manager;
 mod system;
 mod window;
@@ -41,23 +40,23 @@ macro_rules! unblock {
     };
 }
 
-fn print_panic_info(panic_info: &PanicInfo<'_>) {
-    error!("panic in: {:?}", panic_info.location());
-
-    if let Some(panic_payload) = panic_info.payload().downcast_ref::<&str>() {
-        error!("panic with: \"{}\"", panic_payload);
-    } else if let Some(panic_payload) = panic_info.payload().downcast_ref::<String>() {
-        error!("panic with: \"{}\"", panic_payload);
-    }
-}
+// fn print_panic_info(panic_info: &PanicInfo<'_>) {
+// error!("panic in: {:?}", panic_info.location());
+//
+// if let Some(panic_payload) = panic_info.payload().downcast_ref::<&str>() {
+// error!("panic with: \"{}\"", panic_payload);
+// } else if let Some(panic_payload) = panic_info.payload().downcast_ref::<String>() {
+// error!("panic with: \"{}\"", panic_payload);
+// }
+// }
 
 fn main() {
     env_logger::init();
     info!("Starting!");
 
-    panic::set_hook(Box::new(move |panic_info| {
-        print_panic_info(panic_info);
-    }));
+    // panic::set_hook(Box::new(move |panic_info| {
+    // print_panic_info(panic_info);
+    // }));
 
     let (window_tx, window_rx) = flume::bounded(1);
     let (event_proxy_tx, event_proxy_rx) = flume::bounded::<EventLoopProxy<WindowEvent>>(1);

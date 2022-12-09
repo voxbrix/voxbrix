@@ -6,18 +6,15 @@ use crate::{
                 FacingActorComponent,
             },
             position::{
-                Position,
-                PositionActorComponent,
+                GlobalPosition,
+                GlobalPositionActorComponent,
             },
             velocity::{
                 Velocity,
                 VelocityActorComponent,
             },
         },
-        block::{
-            class::ClassBlockComponent,
-            Blocks,
-        },
+        block::class::ClassBlockComponent,
         block_class::model::{
             Cube,
             Model,
@@ -33,7 +30,6 @@ use crate::{
         block_class::BlockClass,
         chunk::Chunk,
     },
-    linear_algebra::Vec3,
     system::{
         controller::DirectControl,
         position::PositionSystem,
@@ -45,18 +41,18 @@ use anyhow::Result;
 use async_executor::LocalExecutor;
 use async_io::Timer;
 use futures_lite::stream::StreamExt;
-use std::{
-    collections::BTreeSet,
-    time::{
-        Duration,
-        Instant,
-    },
+use std::time::{
+    Duration,
+    Instant,
 };
-use voxbrix_messages::{
-    client::ClientAccept,
-    server::ServerAccept,
-    Chunk as ChunkRequest,
-    Pack,
+use voxbrix_common::{
+    math::Vec3,
+    messages::{
+        client::ClientAccept,
+        server::ServerAccept,
+    },
+    pack::Pack,
+    ChunkData,
 };
 use voxbrix_protocol::client::Client;
 use winit::{
@@ -71,7 +67,6 @@ pub enum Event {
     MouseMove { horizontal: f32, vertical: f32 },
     WindowResize { new_size: PhysicalSize<u32> },
     Network { message: ClientAccept },
-    NearbyChunksUpdate,
     DrawChunk { chunk: Chunk },
     Shutdown,
 }
@@ -133,10 +128,6 @@ impl EventLoop<'_> {
         let mut mbcc = ModelBlockClassComponent::new();
 
         let player_actor = Actor(0);
-        let mut center_chunk = Chunk {
-            position: [0, 0, 0],
-            dimension: 0,
-        };
 
         mbcc.set(
             BlockClass(1),
@@ -150,23 +141,27 @@ impl EventLoop<'_> {
         let mut position_system = PositionSystem::new();
         let mut direct_control_system = DirectControl::new(player_actor, 10.0, 0.4);
 
-        let mut pac = PositionActorComponent::new();
+        let mut gpac = GlobalPositionActorComponent::new();
         let mut vac = VelocityActorComponent::new();
         let mut fac = FacingActorComponent::new();
 
-        pac.set(
+        gpac.insert(
             player_actor,
-            Position {
-                vector: Vec3::new(8.0, 8.0, 24.0),
+            GlobalPosition {
+                chunk: Chunk {
+                    position: [0, 0, 0].into(),
+                    dimension: 0,
+                },
+                offset: Vec3::new([0.0, 0.0, 4.0]),
             },
         );
-        vac.set(
+        vac.insert(
             player_actor,
             Velocity {
-                vector: Vec3::new(0.0, 0.0, 0.0),
+                vector: Vec3::new([0.0, 0.0, 0.0]),
             },
         );
-        fac.set(
+        fac.insert(
             player_actor,
             Facing {
                 yaw: 0.0,
@@ -175,7 +170,7 @@ impl EventLoop<'_> {
         );
 
         let mut render_system =
-            RenderSystem::new(instance, surface, surface_size, &center_chunk, &pac, &fac).await;
+            RenderSystem::new(instance, surface, surface_size, &gpac, &fac).await;
 
         let mut stream = Timer::interval(Duration::from_millis(20))
             .map(|_| Event::Process)
@@ -190,15 +185,13 @@ impl EventLoop<'_> {
 
                     // TODO consider what should really be unblocked?
                     // let time_test = Instant::now();
-                    position_system.process(elapsed, &center_chunk, &cbc, &mut pac, &vac);
-                    position_system.post_movement(
-                        &player_actor,
-                        &mut center_chunk,
-                        &mut pac,
-                        &event_tx,
-                    );
+                    position_system.process(elapsed, &cbc, &mut gpac, &vac);
+                    let player_position = gpac.get(&player_actor).unwrap();
+                    sender_tx.send(ServerAccept::PlayerPosition {
+                        position: player_position.clone(),
+                    });
                     direct_control_system.process(elapsed, &mut vac, &mut fac);
-                    render_system.update(&center_chunk, &pac, &fac);
+                    render_system.update(&gpac, &fac);
                     render_system.render()?;
                     // log::error!("Elapsed: {:?}", time_test.elapsed());
                 },
@@ -216,67 +209,14 @@ impl EventLoop<'_> {
                 },
                 Event::Network { message } => {
                     match message {
-                        ClientAccept::ClassBlockComponent { coords, value } => {
-                            let chunk = Chunk {
-                                position: coords.position,
-                                dimension: coords.dimension,
-                            };
-
-                            let chunk_blocks = value.into_iter().map(|c| BlockClass(c)).collect();
-
-                            if let Some(ChunkStatus::Loading) = scc.get_chunk(&chunk) {
-                                cbc.insert_chunk(chunk, Blocks::new(chunk_blocks));
-                                scc.insert_chunk(chunk, ChunkStatus::Active);
-                                let _ = event_tx.send(Event::DrawChunk { chunk });
-                            }
+                        ClientAccept::ChunkData(ChunkData {
+                            chunk,
+                            block_classes,
+                        }) => {
+                            cbc.insert_chunk(chunk, block_classes);
+                            scc.insert(chunk, ChunkStatus::Active);
+                            let _ = event_tx.send(Event::DrawChunk { chunk });
                         },
-                    }
-                },
-                Event::NearbyChunksUpdate => {
-                    let new_chunks = (-5 ..= 5)
-                        .into_iter()
-                        .map(|z| (-5 ..= 5).into_iter().map(move |y| (y, z)))
-                        .flatten()
-                        .map(|(y, z)| (-5 ..= 5).into_iter().map(move |x| (x, y, z)))
-                        .flatten()
-                        .map(|(x, y, z)| {
-                            Chunk {
-                                position: [
-                                    center_chunk.position[0] + x,
-                                    center_chunk.position[1] + y,
-                                    center_chunk.position[2] + z,
-                                ],
-                                dimension: center_chunk.dimension,
-                            }
-                        })
-                        .collect::<BTreeSet<_>>();
-
-                    let add_chunks: Vec<_> = new_chunks
-                        .iter()
-                        .filter(|chunk| cbc.get_chunk(chunk).is_none())
-                        .inspect(|chunk| scc.insert_chunk(**chunk, ChunkStatus::Loading))
-                        .map(|chunk| {
-                            ChunkRequest {
-                                position: chunk.position,
-                                dimension: chunk.dimension,
-                            }
-                        })
-                        .collect();
-
-                    sender_tx
-                        .send(ServerAccept::GetChunksBlocks { coords: add_chunks })
-                        .expect("initial request sent to sender");
-
-                    let remove_chunks = cbc
-                        .iter()
-                        .map(|(chunk, _)| *chunk)
-                        .filter(|chunk| !new_chunks.contains(chunk))
-                        .collect::<Vec<_>>();
-
-                    for chunk in remove_chunks {
-                        scc.remove_chunk(&chunk);
-                        cbc.remove_chunk(&chunk);
-                        let _ = event_tx.send(Event::DrawChunk { chunk });
                     }
                 },
                 Event::DrawChunk { chunk } => {

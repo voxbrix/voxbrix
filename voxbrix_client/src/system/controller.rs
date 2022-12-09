@@ -4,7 +4,6 @@ use crate::{
         velocity::VelocityActorComponent,
     },
     entity::actor::Actor,
-    linear_algebra::Vec3,
 };
 use std::{
     f32::consts::{
@@ -13,13 +12,14 @@ use std::{
     },
     time::Duration,
 };
+use voxbrix_common::math::Vec3;
 use winit::event::{
     ElementState,
     KeyboardInput,
     VirtualKeyCode,
 };
 
-const UP_VECTOR: Vec3<f32> = Vec3::new(0.0, 0.0, 1.0);
+const UP_VECTOR: Vec3<f32> = Vec3::new([0.0, 0.0, 1.0]);
 const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 const PI_2: f32 = PI * 2.0;
 
@@ -112,12 +112,15 @@ impl DirectControl {
         facing_component: &mut FacingActorComponent,
     ) {
         // TODO add actor instead?
-        let actor_facing = facing_component.get_mut(self.actor).as_mut().unwrap();
-        let actor_velocity = velocity_component.get_mut(self.actor).as_mut().unwrap();
+        let actor_facing = facing_component.get_mut(&self.actor).unwrap();
+        let actor_velocity = velocity_component.get_mut(&self.actor).unwrap();
 
         let dt = dt.as_secs_f32();
         actor_facing.yaw += self.rotate_horizontal * self.sensitivity * dt;
         actor_facing.pitch += -self.rotate_vertical * self.sensitivity * dt;
+
+        self.rotate_horizontal = 0.0;
+        self.rotate_vertical = 0.0;
 
         if actor_facing.pitch < -SAFE_FRAC_PI_2 {
             actor_facing.pitch = -SAFE_FRAC_PI_2;
@@ -135,21 +138,15 @@ impl DirectControl {
             actor_facing.yaw = actor_facing.yaw + PI_2;
         }
 
-        let (forward, right) = actor_facing.forward_right();
-        drop(actor_facing);
+        actor_velocity.vector = actor_facing
+            .forward_right()
+            .and_then(|(forward, right)| {
+                let direction = forward * (self.move_forward - self.move_backward)
+                    + right * (self.move_right - self.move_left)
+                    + UP_VECTOR * (self.move_up - self.move_down);
 
-        self.rotate_horizontal = 0.0;
-        self.rotate_vertical = 0.0;
-
-        let direction = forward * (self.move_forward - self.move_backward)
-            + right * (self.move_right - self.move_left)
-            + UP_VECTOR * (self.move_up - self.move_down);
-
-        actor_velocity.vector = if direction[0] == 0.0 && direction[1] == 0.0 && direction[2] == 0.0
-        {
-            Vec3::zeros()
-        } else {
-            direction.normalize() * self.speed
-        };
+                Some(direction.normalize()? * self.speed)
+            })
+            .unwrap_or([0.0, 0.0, 0.0].into());
     }
 }
