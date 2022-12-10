@@ -1,4 +1,7 @@
-use crate::component::actor::position::GlobalPosition;
+use crate::{
+    component::actor::position::GlobalPosition,
+    pack::PackDefault,
+};
 use serde::{
     Deserialize,
     Serialize,
@@ -8,3 +11,5 @@ use serde::{
 pub enum ServerAccept {
     PlayerPosition { position: GlobalPosition },
 }
+
+impl PackDefault for ServerAccept {}
