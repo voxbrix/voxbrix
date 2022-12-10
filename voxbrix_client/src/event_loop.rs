@@ -31,6 +31,7 @@ use crate::{
         chunk::Chunk,
     },
     system::{
+        chunk_presence::ChunkPresenceSystem,
         controller::DirectControl,
         position::PositionSystem,
         render::RenderSystem,
@@ -41,6 +42,7 @@ use anyhow::Result;
 use async_executor::LocalExecutor;
 use async_io::Timer;
 use futures_lite::stream::StreamExt;
+use log::error;
 use std::time::{
     Duration,
     Instant,
@@ -48,7 +50,10 @@ use std::time::{
 use voxbrix_common::{
     math::Vec3,
     messages::{
-        client::ClientAccept,
+        client::{
+            ClientAccept,
+            ServerSettings,
+        },
         server::ServerAccept,
     },
     pack::Pack,
@@ -93,6 +98,22 @@ impl EventLoop<'_> {
         let (mut tx, mut rx) = Client::bind(([127, 0, 0, 1], 12001))?
             .connect(([127, 0, 0, 1], 12000))
             .await?;
+
+        let server_settings = rx
+            .recv(&mut send_buf)
+            .await
+            .map_err(|err| {
+                error!("run: unable to receive server_settings: {:?}", err);
+            })
+            .ok()
+            .and_then(|(_channel, data)| {
+                ServerSettings::unpack(&data)
+                    .map_err(|_| {
+                        error!("run: unable to decode server_settings");
+                    })
+                    .ok()
+            })
+            .expect("server_settings");
 
         self.rt
             .spawn(async move {
@@ -140,6 +161,7 @@ impl EventLoop<'_> {
 
         let mut position_system = PositionSystem::new();
         let mut direct_control_system = DirectControl::new(player_actor, 10.0, 0.4);
+        let chunk_presence_system = ChunkPresenceSystem::new();
 
         let mut gpac = GlobalPositionActorComponent::new();
         let mut vac = VelocityActorComponent::new();
@@ -187,6 +209,14 @@ impl EventLoop<'_> {
                     // let time_test = Instant::now();
                     position_system.process(elapsed, &cbc, &mut gpac, &vac);
                     let player_position = gpac.get(&player_actor).unwrap();
+                    chunk_presence_system.process(
+                        &server_settings,
+                        &player_actor,
+                        &gpac,
+                        &mut cbc,
+                        &mut scc,
+                        &event_tx,
+                    );
                     sender_tx.send(ServerAccept::PlayerPosition {
                         position: player_position.clone(),
                     });

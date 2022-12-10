@@ -73,7 +73,10 @@ use std::{
 use system::chunk_ticket::ChunkTicketSystem;
 use voxbrix_common::{
     messages::{
-        client::ClientAccept,
+        client::{
+            ClientAccept,
+            ServerSettings,
+        },
         server::ServerAccept,
     },
     pack::Pack,
@@ -189,7 +192,6 @@ async fn server_loop(
             } => {
                 cpc.insert(player, Client { tx });
                 apc.insert(player, Actor(0));
-                // gpac.insert(Actor(0), GlobalPosition { chunk: Chunk { position: [0, 0, 0].into(), dimension: 0 }, offset: [0.0, 0.0, 4.0].into() });
             },
             ServerEvent::PlayerEvent {
                 player,
@@ -327,8 +329,6 @@ async fn client_loop(
         .event_tx
         .send(ServerEvent::AddPlayer { player, client_tx });
 
-    // let mut buffer = Vec::new();
-
     macro_rules! send_reliable {
         ($channel:expr, $buffer:expr) => {
             match (async { Ok(tx.send_reliable($channel, $buffer).await) })
@@ -341,17 +341,27 @@ async fn client_loop(
                 Err(_) => {
                     warn!("client_loop: send_reliable timeout {:?}", player);
                     let _ = local.event_tx.send(ServerEvent::RemovePlayer { player });
-                    break;
+                    return;
                 },
                 Ok(Err(err)) => {
                     warn!("client_loop: send_reliable error {:?}", err);
                     let _ = local.event_tx.send(ServerEvent::RemovePlayer { player });
-                    break;
+                    return;
                 },
                 Ok(Ok(())) => {},
             }
         };
     }
+
+    let mut buffer = Vec::new();
+
+    ServerSettings {
+        player_ticket_radius: PLAYER_CHUNK_TICKET_RADIUS as u8,
+    }
+    .pack(&mut buffer)
+    .expect("pack server_settings");
+
+    send_reliable!(BASE_CHANNEL, &buffer);
 
     while let Some(event) = (async { Some(LoopEvent::ServerLoop(server_rx.recv().await?)) })
         .or(async {

@@ -19,9 +19,11 @@ pub trait Pack {
         R: AsRef<[u8]>;
 }
 
+pub trait PackDefault {}
+
 impl<T> Pack for T
 where
-    T: Serialize + DeserializeOwned,
+    T: Serialize + DeserializeOwned + PackDefault,
 {
     fn pack(&self, buf: &mut Vec<u8>) -> Result<(), PackError> {
         buf.clear();
