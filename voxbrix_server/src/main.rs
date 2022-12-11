@@ -80,6 +80,7 @@ use voxbrix_common::{
         server::ServerAccept,
     },
     pack::Pack,
+    stream::StreamExt as _,
     ChunkData,
 };
 use voxbrix_protocol::{
@@ -314,14 +315,14 @@ async fn client_loop(
     local: &'static Local,
     shared: &'static Shared,
     mut tx: StreamSender,
-    mut rx: StreamReceiver,
+    rx: StreamReceiver,
 ) {
     enum LoopEvent {
         ServerLoop(ClientEvent),
         PeerMessage { channel: usize, data: Packet },
     }
 
-    let (client_tx, mut server_rx) = local_channel::mpsc::channel();
+    let (client_tx, server_rx) = local_channel::mpsc::channel();
 
     let player = Player(0);
 
@@ -363,18 +364,28 @@ async fn client_loop(
 
     send_reliable!(BASE_CHANNEL, &buffer);
 
-    while let Some(event) = (async { Some(LoopEvent::ServerLoop(server_rx.recv().await?)) })
-        .or(async {
-            match rx.recv().await {
-                Ok((channel, data)) => Some(LoopEvent::PeerMessage { channel, data }),
-                Err(err) => {
-                    warn!("client_loop: connection interrupted: {:?}", err);
+    let mut events = Box::pin(
+        server_rx
+            .map(|le| LoopEvent::ServerLoop(le))
+            .or_ff(stream::unfold(rx, |mut rx| {
+                (async move {
+                    match rx.recv().await {
+                        Ok((channel, data)) => Some((LoopEvent::PeerMessage { channel, data }, rx)),
+                        Err(err) => {
+                            warn!("client_loop: connection interrupted: {:?}", err);
+                            None
+                        },
+                    }
+                })
+                .or(async {
+                    Timer::after(CLIENT_CONNECTION_TIMEOUT).await;
+                    warn!("client_loop: connection timeout");
                     None
-                },
-            }
-        })
-        .await
-    {
+                })
+            })),
+    );
+
+    while let Some(event) = events.next().await {
         match event {
             LoopEvent::ServerLoop(event) => {
                 match event {
@@ -394,6 +405,8 @@ async fn client_loop(
             },
         }
     }
+
+    let _ = local.event_tx.send(ServerEvent::RemovePlayer { player });
 }
 
 fn main() -> Result<()> {
