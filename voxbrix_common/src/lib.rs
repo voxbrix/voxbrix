@@ -4,6 +4,7 @@ pub mod math;
 pub mod messages;
 pub mod pack;
 pub mod sparse_vec;
+pub mod stream;
 
 use component::block::Blocks;
 use entity::{
