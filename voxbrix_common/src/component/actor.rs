@@ -4,7 +4,7 @@ use crate::{
 };
 
 pub mod class;
-pub mod facing;
+pub mod orientation;
 pub mod position;
 pub mod velocity;
 

@@ -1,9 +1,9 @@
 use crate::{
     component::{
         actor::{
-            facing::{
-                Facing,
-                FacingActorComponent,
+            orientation::{
+                Orientation,
+                OrientationActorComponent,
             },
             position::{
                 GlobalPosition,
@@ -165,7 +165,7 @@ impl EventLoop<'_> {
 
         let mut gpac = GlobalPositionActorComponent::new();
         let mut vac = VelocityActorComponent::new();
-        let mut fac = FacingActorComponent::new();
+        let mut oac = OrientationActorComponent::new();
 
         gpac.insert(
             player_actor,
@@ -183,16 +183,10 @@ impl EventLoop<'_> {
                 vector: Vec3::new([0.0, 0.0, 0.0]),
             },
         );
-        fac.insert(
-            player_actor,
-            Facing {
-                yaw: 0.0,
-                pitch: 0.0,
-            },
-        );
+        oac.insert(player_actor, Orientation::from_yaw_pitch(0.0, 0.0));
 
         let mut render_system =
-            RenderSystem::new(instance, surface, surface_size, &gpac, &fac).await;
+            RenderSystem::new(instance, surface, surface_size, &gpac, &oac).await;
 
         let mut stream = Timer::interval(Duration::from_millis(20))
             .map(|_| Event::Process)
@@ -220,8 +214,8 @@ impl EventLoop<'_> {
                     sender_tx.send(ServerAccept::PlayerPosition {
                         position: player_position.clone(),
                     });
-                    direct_control_system.process(elapsed, &mut vac, &mut fac);
-                    render_system.update(&gpac, &fac);
+                    direct_control_system.process(elapsed, &mut vac, &mut oac);
+                    render_system.update(&gpac, &oac);
                     render_system.render()?;
                     // log::error!("Elapsed: {:?}", time_test.elapsed());
                 },

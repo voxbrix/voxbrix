@@ -1,6 +1,6 @@
 use crate::{
     component::actor::{
-        facing::FacingActorComponent,
+        orientation::OrientationActorComponent,
         position::GlobalPositionActorComponent,
     },
     entity::actor::Actor,
@@ -25,21 +25,12 @@ impl Camera {
     pub fn calc_matrix(
         &self,
         position: &GlobalPositionActorComponent,
-        facing: &FacingActorComponent,
+        orientation: &OrientationActorComponent,
     ) -> Option<Mat4<f32>> {
-        let actor_facing = facing.get(&self.actor).unwrap();
-        let (pitch_sin, pitch_cos) = actor_facing.pitch.sin_cos();
-        let (yaw_sin, yaw_cos) = actor_facing.yaw.sin_cos();
-        // nalgebra_glm::translate(
-        // &nalgebra_glm::quat_to_mat4(&nalgebra_glm::quat_look_at_lh(
-        // &[yaw_cos * pitch_cos, yaw_sin * pitch_cos, pitch_sin].into(),
-        // &UP_VECTOR,
-        // )),
-        // &-position.get(&self.actor).unwrap().offset,
-        // )
+        let actor_orientation = orientation.get(&self.actor).unwrap();
         Mat4::look_to_lh(
             position.get(&self.actor).unwrap().offset,
-            [yaw_cos * pitch_cos, yaw_sin * pitch_cos, pitch_sin].into(),
+            actor_orientation.forward(),
             UP_VECTOR,
         )
     }

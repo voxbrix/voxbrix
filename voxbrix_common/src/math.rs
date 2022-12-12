@@ -3,6 +3,7 @@ use serde::{
     Serialize,
 };
 use std::{
+    borrow::Borrow,
     fmt::Debug,
     mem,
     ops::{
@@ -317,6 +318,98 @@ impl Mat4<f32> {
     }
 }
 
+#[derive(Serialize, Deserialize, PartialEq, Copy, Clone, Debug)]
+pub struct Quat {
+    vector: Vec3<f32>,
+    scalar: f32,
+}
+
+impl Quat {
+    pub fn from_axis_angle(axis: Vec3<f32>, angle: f32) -> Self {
+        let (sin, scalar) = (angle / 2.0).sin_cos();
+        Self {
+            vector: axis.map(|c| c * sin),
+            scalar,
+        }
+    }
+
+    pub fn normalize(&self) -> Option<Self> {
+        let d = (self.vector[0].powi(2)
+            + self.vector[1].powi(2)
+            + self.vector[2].powi(2)
+            + self.scalar.powi(2))
+        .sqrt();
+
+        if d == 0.0 {
+            return None;
+        }
+
+        Some(Self {
+            vector: self.vector.map(|c| c / d),
+            scalar: self.scalar / d,
+        })
+    }
+}
+
+impl Mul<Vec3<f32>> for Quat {
+    type Output = Vec3<f32>;
+
+    fn mul(self, other: Vec3<f32>) -> Self::Output {
+        &self * other
+    }
+}
+
+impl Mul<Vec3<f32>> for &Quat {
+    type Output = Vec3<f32>;
+
+    fn mul(self, other: Vec3<f32>) -> Self::Output {
+        let tmp = self.vector.cross(other) + (other * self.scalar);
+        (self.vector.cross(tmp) * 2.0) + other
+    }
+}
+
+impl<Q> Mul<Q> for Quat
+where
+    Q: Borrow<Quat>,
+{
+    type Output = Quat;
+
+    fn mul(self, other: Q) -> Self::Output {
+        &self * other
+    }
+}
+
+impl<Q> Mul<Q> for &Quat
+where
+    Q: Borrow<Quat>,
+{
+    type Output = Quat;
+
+    fn mul(self, other: Q) -> Self::Output {
+        let other = other.borrow();
+        Quat {
+            scalar: self.scalar * other.scalar
+                - self.vector[0] * other.vector[0]
+                - self.vector[1] * other.vector[1]
+                - self.vector[2] * other.vector[2],
+            vector: Vec3::new([
+                self.scalar * other.vector[0]
+                    + self.vector[0] * other.scalar
+                    + self.vector[1] * other.vector[2]
+                    - self.vector[2] * other.vector[1],
+                self.scalar * other.vector[1]
+                    + self.vector[1] * other.scalar
+                    + self.vector[2] * other.vector[0]
+                    - self.vector[0] * other.vector[2],
+                self.scalar * other.vector[2]
+                    + self.vector[2] * other.scalar
+                    + self.vector[0] * other.vector[1]
+                    - self.vector[1] * other.vector[0],
+            ]),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -351,5 +444,91 @@ mod tests {
         )
         .into();
         assert_eq!(res, ctrl);
+    }
+
+    #[test]
+    fn test_quat_from_axis_angle_0() {
+        let axis = [1.0, 0.0, 0.0];
+        let angle = 1.5;
+
+        let res = Quat::from_axis_angle(axis.into(), angle);
+
+        let ctrl = nalgebra_glm::quat_angle_axis(1.5, &axis.into());
+
+        type A = [f32; 3];
+
+        assert_eq!(A::from(res.vector), A::from(ctrl.vector()));
+        assert_eq!(res.scalar, ctrl.scalar());
+    }
+
+    #[test]
+    fn test_quat_from_axis_angle_1() {
+        let axis = [1.0, 0.5, 100.0];
+        let angle = 43.5;
+
+        let res = Quat::from_axis_angle(Vec3::<f32>::from(axis).normalize().unwrap(), angle);
+
+        let ctrl = nalgebra_glm::quat_angle_axis(angle, &axis.into());
+
+        type A = [f32; 3];
+
+        assert_eq!(A::from(res.vector), A::from(ctrl.vector()));
+        assert_eq!(res.scalar, ctrl.scalar());
+    }
+
+    #[test]
+    fn test_quat_mul_vec3_0() {
+        let axis = [1.0, 0.0, 0.0];
+        let angle = 0.5;
+        let vec3 = [1.3, 0.0, 3.3];
+
+        let res = Quat::from_axis_angle(axis.into(), angle) * Vec3::from(vec3);
+
+        let ctrl = nalgebra_glm::quat_rotate_vec3(
+            &nalgebra_glm::quat_angle_axis(angle, &axis.into()),
+            &vec3.into(),
+        );
+
+        type A = [f32; 3];
+
+        assert_eq!(A::from(res), A::from(ctrl));
+    }
+
+    #[test]
+    fn test_quat_mul_vec3_1() {
+        let axis = [1.0, 0.5, 1.0];
+        let angle = 83.5;
+        let vec3 = [1.3, 0.0, 3.3];
+
+        let res = Quat::from_axis_angle(Vec3::<f32>::from(axis).normalize().unwrap(), angle)
+            * Vec3::from(vec3);
+
+        let ctrl = nalgebra_glm::quat_rotate_vec3(
+            &nalgebra_glm::quat_angle_axis(angle, &axis.into()),
+            &vec3.into(),
+        );
+
+        type A = [f32; 3];
+
+        assert_eq!(A::from(res), A::from(ctrl));
+    }
+
+    #[test]
+    fn test_quat_mul_quat_0() {
+        let axis1 = [1.0, 0.5, 1.0];
+        let angle1 = 83.5;
+        let axis2 = [0.0, 0.5, 1.0];
+        let angle2 = -0.5;
+
+        let res = Quat::from_axis_angle(Vec3::<f32>::from(axis1).normalize().unwrap(), angle1)
+            * Quat::from_axis_angle(Vec3::<f32>::from(axis2).normalize().unwrap(), angle2);
+
+        let ctrl = nalgebra_glm::quat_angle_axis(angle1, &axis1.into())
+            * nalgebra_glm::quat_angle_axis(angle2, &axis2.into());
+
+        type A = [f32; 3];
+
+        assert_eq!(A::from(res.vector), A::from(ctrl.vector()));
+        assert_eq!(res.scalar, ctrl.scalar());
     }
 }

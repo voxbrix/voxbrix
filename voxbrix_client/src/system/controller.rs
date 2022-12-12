@@ -1,6 +1,10 @@
 use crate::{
     component::actor::{
-        facing::FacingActorComponent,
+        orientation::{
+            Orientation,
+            OrientationActorComponent,
+            UP,
+        },
         velocity::VelocityActorComponent,
     },
     entity::actor::Actor,
@@ -12,14 +16,12 @@ use std::{
     },
     time::Duration,
 };
-use voxbrix_common::math::Vec3;
 use winit::event::{
     ElementState,
     KeyboardInput,
     VirtualKeyCode,
 };
 
-const UP_VECTOR: Vec3<f32> = Vec3::new([0.0, 0.0, 1.0]);
 const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 const PI_2: f32 = PI * 2.0;
 
@@ -31,6 +33,8 @@ pub struct DirectControl {
     move_backward: f32,
     move_up: f32,
     move_down: f32,
+    yaw: f32,
+    pitch: f32,
     rotate_horizontal: f32,
     rotate_vertical: f32,
     speed: f32,
@@ -47,6 +51,8 @@ impl DirectControl {
             move_backward: 0.0,
             move_up: 0.0,
             move_down: 0.0,
+            yaw: 0.0,
+            pitch: 0.0,
             rotate_horizontal: 0.0,
             rotate_vertical: 0.0,
             speed,
@@ -109,44 +115,49 @@ impl DirectControl {
         &mut self,
         dt: Duration,
         velocity_component: &mut VelocityActorComponent,
-        facing_component: &mut FacingActorComponent,
+        orientation_component: &mut OrientationActorComponent,
     ) {
         // TODO add actor instead?
-        let actor_facing = facing_component.get_mut(&self.actor).unwrap();
+        let actor_orientation = orientation_component.get_mut(&self.actor).unwrap();
         let actor_velocity = velocity_component.get_mut(&self.actor).unwrap();
 
         let dt = dt.as_secs_f32();
-        actor_facing.yaw += self.rotate_horizontal * self.sensitivity * dt;
-        actor_facing.pitch += -self.rotate_vertical * self.sensitivity * dt;
+        self.yaw += self.rotate_horizontal * self.sensitivity * dt;
+        self.pitch += -self.rotate_vertical * self.sensitivity * dt;
 
         self.rotate_horizontal = 0.0;
         self.rotate_vertical = 0.0;
 
-        if actor_facing.pitch < -SAFE_FRAC_PI_2 {
-            actor_facing.pitch = -SAFE_FRAC_PI_2;
-        } else if actor_facing.pitch > SAFE_FRAC_PI_2 {
-            actor_facing.pitch = SAFE_FRAC_PI_2;
+        if self.pitch < -SAFE_FRAC_PI_2 {
+            self.pitch = -SAFE_FRAC_PI_2;
+        } else if self.pitch > SAFE_FRAC_PI_2 {
+            self.pitch = SAFE_FRAC_PI_2;
         }
 
-        if actor_facing.yaw.abs() > PI_2 {
-            actor_facing.yaw = actor_facing.yaw - (actor_facing.yaw / PI_2).trunc() * PI_2;
+        if self.yaw.abs() > PI_2 {
+            self.yaw = self.yaw - (self.yaw / PI_2).trunc() * PI_2;
         }
 
-        if actor_facing.yaw > PI {
-            actor_facing.yaw = actor_facing.yaw - PI_2;
-        } else if actor_facing.yaw < -PI {
-            actor_facing.yaw = actor_facing.yaw + PI_2;
+        if self.yaw > PI {
+            self.yaw = self.yaw - PI_2;
+        } else if self.yaw < -PI {
+            self.yaw = self.yaw + PI_2;
         }
 
-        actor_velocity.vector = actor_facing
-            .forward_right()
-            .and_then(|(forward, right)| {
-                let direction = forward * (self.move_forward - self.move_backward)
-                    + right * (self.move_right - self.move_left)
-                    + UP_VECTOR * (self.move_up - self.move_down);
+        *actor_orientation = Orientation::from_yaw_pitch(self.yaw, self.pitch);
 
-                Some(direction.normalize()? * self.speed)
-            })
+        let mut forward = actor_orientation.forward();
+        forward[2] = 0.0;
+
+        let right = UP.cross(forward);
+
+        let direction = forward * (self.move_forward - self.move_backward)
+            + right * (self.move_right - self.move_left)
+            + UP * (self.move_up - self.move_down);
+
+        actor_velocity.vector = direction
+            .normalize()
+            .map(|d| d * self.speed)
             .unwrap_or([0.0, 0.0, 0.0].into());
     }
 }

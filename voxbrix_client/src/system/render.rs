@@ -6,7 +6,7 @@ use crate::{
     },
     component::{
         actor::{
-            facing::FacingActorComponent,
+            orientation::OrientationActorComponent,
             position::GlobalPositionActorComponent,
         },
         block::{
@@ -163,13 +163,13 @@ impl CameraUniform {
         &mut self,
         camera: &Camera,
         gpac: &GlobalPositionActorComponent,
-        fac: &FacingActorComponent,
+        oac: &OrientationActorComponent,
         projection: &Projection,
     ) {
         let pos = gpac.get(&camera.actor).unwrap();
         self.chunk = pos.chunk.position.into();
         self.view_position = pos.offset.to_homogeneous();
-        self.view_projection = match camera.calc_matrix(gpac, fac) {
+        self.view_projection = match camera.calc_matrix(gpac, oac) {
             Some(camera_matrix) => (projection.calc_matrix() * camera_matrix).into(),
             None => self.view_projection,
         };
@@ -357,7 +357,7 @@ impl RenderSystem {
         surface: Surface,
         surface_size: PhysicalSize<u32>,
         gpac: &GlobalPositionActorComponent,
-        fac: &FacingActorComponent,
+        oac: &OrientationActorComponent,
     ) -> Self {
         let adapter = instance
             .request_adapter(&RequestAdapterOptions {
@@ -412,7 +412,7 @@ impl RenderSystem {
         );
 
         let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_projection(&camera, gpac, fac, &projection);
+        camera_uniform.update_view_projection(&camera, gpac, oac, &projection);
 
         let camera_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Camera Buffer"),
@@ -543,9 +543,9 @@ impl RenderSystem {
         }
     }
 
-    pub fn update(&mut self, gpac: &GlobalPositionActorComponent, fac: &FacingActorComponent) {
+    pub fn update(&mut self, gpac: &GlobalPositionActorComponent, oac: &OrientationActorComponent) {
         self.camera_uniform
-            .update_view_projection(&self.camera, gpac, fac, &self.projection);
+            .update_view_projection(&self.camera, gpac, oac, &self.projection);
         self.queue.write_buffer(
             &self.camera_buffer,
             0,
