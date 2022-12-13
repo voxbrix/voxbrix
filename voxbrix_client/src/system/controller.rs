@@ -149,11 +149,16 @@ impl DirectControl {
         let mut forward = actor_orientation.forward();
         forward[2] = 0.0;
 
-        let right = UP.cross(forward);
+        let direction = match forward.normalize() {
+            Some(forward) => {
+                let right = UP.cross(forward);
 
-        let direction = forward * (self.move_forward - self.move_backward)
-            + right * (self.move_right - self.move_left)
-            + UP * (self.move_up - self.move_down);
+                forward * (self.move_forward - self.move_backward)
+                    + right * (self.move_right - self.move_left)
+                    + UP * (self.move_up - self.move_down)
+            },
+            None => UP * (self.move_up - self.move_down),
+        };
 
         actor_velocity.vector = direction
             .normalize()
