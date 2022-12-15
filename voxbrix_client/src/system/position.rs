@@ -21,7 +21,7 @@ use std::{
     cmp::Ordering,
     time::Duration,
 };
-use voxbrix_common::math::Cast;
+use voxbrix_common::math::Round;
 
 const COLLISION_PUSHBACK: f32 = 1.0e-3;
 const MAX_BLOCK_TARGET_DISTANCE: i32 = BLOCKS_IN_CHUNK_EDGE as i32;
@@ -85,11 +85,11 @@ impl PositionSystem {
                         MoveDirection::Negative => (position[a0] - radius[a0], 1),
                     };
 
-                    let block_start = actor_start.floor() as i32;
+                    let block_start = actor_start.round_down();
 
                     let actor_finish = actor_start + travel.vector[a0];
 
-                    let block_finish = actor_finish.floor() as i32;
+                    let block_finish = actor_finish.round_down();
 
                     let block_range = match move_dir {
                         MoveDirection::Positive => Either::Left(block_start + 1 ..= block_finish),
@@ -104,14 +104,14 @@ impl PositionSystem {
 
                         let actor_a1 = position[a1] + velocity.vector[a1] * t;
 
-                        let block_a1m = (actor_a1 - radius[a1]).floor() as i32;
-                        let block_a1p = (actor_a1 + radius[a1]).floor() as i32;
+                        let block_a1m = (actor_a1 - radius[a1]).round_down();
+                        let block_a1p = (actor_a1 + radius[a1]).round_down();
 
                         for block_a1 in block_a1m ..= block_a1p {
                             let actor_a2 = position[a2] + velocity.vector[a2] * t;
 
-                            let block_a2m = (actor_a2 - radius[a2]).floor() as i32;
-                            let block_a2p = (actor_a2 + radius[a2]).floor() as i32;
+                            let block_a2m = (actor_a2 - radius[a2]).round_down();
+                            let block_a2p = (actor_a2 + radius[a2]).round_down();
 
                             for block_a2 in block_a2m ..= block_a2p {
                                 let mut chunk_offset = [0; 3];
@@ -245,7 +245,7 @@ impl PositionSystem {
         for (axis_0, axis_1, axis_2) in [(0, 1, 2), (1, 2, 0), (2, 0, 1)] {
             for axis_offset in 0 .. MAX_BLOCK_TARGET_DISTANCE {
                 // wall_offset helps to calculate the distance to the layer ("wall") of blocks
-                //     if we move to positive direction we need to add 1 after cast_down()
+                //     if we move to positive direction we need to add 1 after round_down()
                 //     while moving in the negative direction, the value is 0
                 // block_coord_offset helps to get the coordinate of the "wall" block layer
                 //     if we move to the negative direction the actual coordinate would be 1 block
@@ -264,7 +264,7 @@ impl PositionSystem {
                     _ => continue,
                 };
 
-                let block_side_axis_0 = (position.offset[axis_0] + axis_offset as f32).cast_down() + wall_offset;
+                let block_side_axis_0 = (position.offset[axis_0] + axis_offset as f32).round_down() + wall_offset;
 
                 let time = (block_side_axis_0 as f32 - position.offset[axis_0]) / forward[axis_0];
 
@@ -277,9 +277,9 @@ impl PositionSystem {
                 };
 
                 if is_record {
-                    let block_axis_1 = (position.offset[axis_1] + time * forward[axis_1]).cast_down();
+                    let block_axis_1 = (position.offset[axis_1] + time * forward[axis_1]).round_down();
 
-                    let block_axis_2 = (position.offset[axis_2] + time * forward[axis_2]).cast_down(); 
+                    let block_axis_2 = (position.offset[axis_2] + time * forward[axis_2]).round_down(); 
                     
                     let mut block_offset = [0; 3];
 

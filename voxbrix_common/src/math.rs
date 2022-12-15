@@ -418,23 +418,23 @@ where
     }
 }
 
-/// Cast in the required direction
-pub trait Cast {
-    /// Cast rounding to the higher value: e.g. `1.5f32.cast_up() == 2i32`, `(-1.5f32).cast_up() == -1i32`
-    fn cast_up(self) -> i32;
-    /// Cast rounding to the lower value: e.g. `1.5f32.cast_down() == 1i32`, `(-1.5f32).cast_down() == -2i32`
-    fn cast_down(self) -> i32;
+/// Round in the required direction
+pub trait Round {
+    /// Rounding to the higher value: e.g. `1.5f32.round_up() == 2i32`, `(-1.5f32).round_up() == -1i32`
+    fn round_up(self) -> i32;
+    /// Rounding to the lower value: e.g. `1.5f32.round_down() == 1i32`, `(-1.5f32).round_down() == -2i32`
+    fn round_down(self) -> i32;
 }
 
-impl Cast for f32 {
-    fn cast_up(self) -> i32 {
+impl Round for f32 {
+    fn round_up(self) -> i32 {
         match self.partial_cmp(&0.0) {
             Some(Ordering::Less) => self as i32,
             Some(Ordering::Greater) => self as i32 + 1,
             _ => self as i32,
         }
     }
-    fn cast_down(self) -> i32 {
+    fn round_down(self) -> i32 {
         match self.partial_cmp(&0.0) {
             Some(Ordering::Less) => self as i32 - 1,
             Some(Ordering::Greater) => self as i32,
