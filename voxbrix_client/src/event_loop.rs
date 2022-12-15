@@ -63,12 +63,14 @@ use voxbrix_protocol::client::Client;
 use winit::{
     dpi::PhysicalSize,
     event::KeyboardInput as WinitKeyboardInput,
+    event::MouseButton as WinitMouseButton,
 };
 
 pub enum Event {
     Process,
     // Render,
     Key { input: WinitKeyboardInput },
+    MouseButton { input: WinitMouseButton },
     MouseMove { horizontal: f32, vertical: f32 },
     WindowResize { new_size: PhysicalSize<u32> },
     Network { message: ClientAccept },
@@ -174,13 +176,13 @@ impl EventLoop<'_> {
                     position: [0, 0, 0].into(),
                     dimension: 0,
                 },
-                offset: Vec3::new([0.0, 0.0, 4.0]),
+                offset: Vec3::new(0.0, 0.0, 4.0),
             },
         );
         vac.insert(
             player_actor,
             Velocity {
-                vector: Vec3::new([0.0, 0.0, 0.0]),
+                vector: Vec3::new(0.0, 0.0, 0.0),
             },
         );
         oac.insert(player_actor, Orientation::from_yaw_pitch(0.0, 0.0));
@@ -221,6 +223,29 @@ impl EventLoop<'_> {
                 },
                 Event::Key { input } => {
                     direct_control_system.process_keyboard(&input);
+                },
+                Event::MouseButton { input } => {
+                    match input {
+                        WinitMouseButton::Left => {
+                            let position = gpac.get(&player_actor).unwrap();
+                            let orientation = oac.get(&player_actor).unwrap();
+
+                            PositionSystem::get_target_block(position, orientation, |chunk, block| {
+                                cbc.get_chunk(&chunk).map(|blocks| {
+                                    blocks.get(block).unwrap() == &BlockClass(1)
+                                }).unwrap_or(false)
+                            }).and_then(|(chunk, block, _side)| {
+                                let block_class = cbc.get_mut_chunk(&chunk)
+                                    .and_then(|c| c.get_mut(block))?;
+                                
+                                *block_class = BlockClass(0);
+                                
+                                let _ = event_tx.send(Event::DrawChunk { chunk });
+                                Some(())
+                            });
+                        },
+                        _ => {},
+                    }
                 },
                 Event::MouseMove {
                     horizontal,

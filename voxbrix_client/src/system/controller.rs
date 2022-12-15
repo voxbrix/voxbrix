@@ -3,7 +3,6 @@ use crate::{
         orientation::{
             Orientation,
             OrientationActorComponent,
-            UP,
         },
         velocity::VelocityActorComponent,
     },
@@ -21,6 +20,7 @@ use winit::event::{
     KeyboardInput,
     VirtualKeyCode,
 };
+use voxbrix_common::math::Vec3;
 
 const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 const PI_2: f32 = PI * 2.0;
@@ -151,18 +151,18 @@ impl DirectControl {
 
         let direction = match forward.normalize() {
             Some(forward) => {
-                let right = UP.cross(forward);
+                let right = Vec3::UP.cross(forward);
 
                 forward * (self.move_forward - self.move_backward)
                     + right * (self.move_right - self.move_left)
-                    + UP * (self.move_up - self.move_down)
+                    + Vec3::UP * (self.move_up - self.move_down)
             },
-            None => UP * (self.move_up - self.move_down),
+            None => Vec3::UP * (self.move_up - self.move_down),
         };
 
         actor_velocity.vector = direction
             .normalize()
             .map(|d| d * self.speed)
-            .unwrap_or([0.0, 0.0, 0.0].into());
+            .unwrap_or(Vec3::new(0.0, 0.0, 0.0));
     }
 }

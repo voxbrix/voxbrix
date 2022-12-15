@@ -5,13 +5,7 @@ use log::{
     error,
     info,
 };
-use std::{
-    panic::{
-        self,
-        PanicInfo,
-    },
-    thread,
-};
+use std::thread;
 use wgpu::Backends;
 use window::WindowEvent;
 use winit::event_loop::EventLoopProxy;

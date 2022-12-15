@@ -20,7 +20,7 @@ impl Model {
         vertices: &mut Vec<Vertex>,
         indices: &mut Vec<u32>,
         chunk: &Chunk,
-        block: [u8; 3],
+        block: [usize; 3],
         cull_mask: CullMask,
     ) {
         match self {
@@ -63,7 +63,7 @@ impl Cube {
         chunk: Vec3<i32>,
         vertices: &mut Vec<Vertex>,
         indices: &mut Vec<u32>,
-        positions: [[i32; 3]; 4],
+        positions: [[usize; 3]; 4],
         texture_index: u32,
     ) {
         let base = vertices.len() as u32;
@@ -110,12 +110,12 @@ impl Cube {
         chunk: &Chunk,
         vertices: &mut Vec<Vertex>,
         indices: &mut Vec<u32>,
-        block: [u8; 3],
+        block: [usize; 3],
         cull_mask: CullMask,
     ) {
-        let x = block[0] as i32;
-        let y = block[1] as i32;
-        let z = block[2] as i32;
+        let x = block[0];
+        let y = block[1];
+        let z = block[2];
 
         if cull_mask.contains(CullMaskSides::X0) {
             // Back

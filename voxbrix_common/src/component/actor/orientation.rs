@@ -6,13 +6,6 @@ use crate::{
     },
 };
 
-pub const FORWARD: Vec3<f32> = Vec3::new([1.0, 0.0, 0.0]);
-pub const BACK: Vec3<f32> = Vec3::new([-1.0, 0.0, 0.0]);
-pub const RIGHT: Vec3<f32> = Vec3::new([0.0, 1.0, 0.0]);
-pub const LEFT: Vec3<f32> = Vec3::new([0.0, -1.0, 0.0]);
-pub const UP: Vec3<f32> = Vec3::new([0.0, 0.0, 1.0]);
-pub const DOWN: Vec3<f32> = Vec3::new([0.0, 0.0, -1.0]);
-
 pub type OrientationActorComponent = ActorComponent<Orientation>;
 
 #[derive(Clone, Debug)]
@@ -22,20 +15,20 @@ pub struct Orientation {
 
 impl Orientation {
     pub fn forward(&self) -> Vec3<f32> {
-        self.rotation * FORWARD
+        self.rotation * Vec3::FORWARD
     }
 
     pub fn right(&self) -> Vec3<f32> {
-        self.rotation * RIGHT
+        self.rotation * Vec3::RIGHT
     }
 
     pub fn up(&self) -> Vec3<f32> {
-        self.rotation * UP
+        self.rotation * Vec3::UP
     }
 
     pub fn from_yaw_pitch(yaw: f32, pitch: f32) -> Self {
         Self {
-            rotation: Quat::from_axis_angle(UP, yaw) * Quat::from_axis_angle(LEFT, pitch),
+            rotation: Quat::from_axis_angle(Vec3::UP, yaw) * Quat::from_axis_angle(Vec3::LEFT, pitch),
         }
     }
 }

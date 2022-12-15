@@ -10,7 +10,7 @@ use voxbrix_common::math::{
     Vec3,
 };
 
-const UP_VECTOR: Vec3<f32> = Vec3::new([0.0, 0.0, 1.0]);
+const UP_VECTOR: Vec3<f32> = Vec3::new(0.0, 0.0, 1.0);
 
 #[derive(Debug)]
 pub struct Camera {

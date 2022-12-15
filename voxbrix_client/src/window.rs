@@ -16,6 +16,7 @@ use wgpu::{
 use winit::{
     dpi::PhysicalSize,
     event::{
+        ElementState as WinitElementState,
         DeviceEvent as WinitDeviceEvent,
         Event as WinitEvent,
         WindowEvent as WinitWindowEvent,
@@ -115,6 +116,11 @@ pub fn create_window(
                 window_id,
             } if window_id == window.id() => {
                 match event {
+                    &WinitWindowEvent::MouseInput { state, button, .. } => {
+                        if state == WinitElementState::Pressed {
+                            send!(Event::MouseButton { input: button }, flow);
+                        }
+                    },
                     &WinitWindowEvent::KeyboardInput { input, .. } => {
                         send!(Event::Key { input }, flow);
                     },
