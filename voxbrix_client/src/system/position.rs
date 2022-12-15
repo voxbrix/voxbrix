@@ -244,24 +244,31 @@ impl PositionSystem {
 
         for (axis_0, axis_1, axis_2) in [(0, 1, 2), (1, 2, 0), (2, 0, 1)] {
             for axis_offset in 0 .. MAX_BLOCK_TARGET_DISTANCE {
-                // direction_offset is a value that depends on the direction of the "forward" vector by
-                //     the axis_0
-                //     it helps to determine which block are we looking at
+                // wall_offset helps to calculate the distance to the layer ("wall") of blocks
+                //     if we move to positive direction we need to add 1 after cast_down()
+                //     while moving in the negative direction, the value is 0
+                // block_coord_offset helps to get the coordinate of the "wall" block layer
+                //     if we move to the negative direction the actual coordinate would be 1 block
+                //     behind the "wall" coordinate, because we "collide" with the front side of
+                //     the block in this case
+                //     while moving in the positive direction, the value is 0 as we collide with
+                //     the back side of the block, which is the same as it's coordinate
                 // side_index is a index of side/neighbor in [x_m, x_p, y_m, y_p, z_m, z_p]
-                let (axis_offset, direction_offset, side_index) = match forward[axis_0].partial_cmp(&0.0) {
+                let (axis_offset, wall_offset, block_coord_offset, side_index) = match forward[axis_0].partial_cmp(&0.0) {
                     Some(Ordering::Less) => {
-                        (- axis_offset, - 1, axis_0 * 2 + 1)
+                        (- axis_offset, 0, - 1, axis_0 * 2 + 1)
                     },
                     Some(Ordering::Greater) => {
-                        (axis_offset, 1, axis_0 * 2)
+                        (axis_offset, 1, 0, axis_0 * 2)
                     },
                     _ => continue,
                 };
 
+                let block_side_axis_0 = (position.offset[axis_0] + axis_offset as f32).cast_down() + wall_offset;
 
-                let block_axis_0 = (position.offset[axis_0] + axis_offset as f32).cast_down() + direction_offset;
+                let time = (block_side_axis_0 as f32 - position.offset[axis_0]) / forward[axis_0];
 
-                let time = (block_axis_0 as f32 - position.offset[axis_0]) / forward[axis_0];
+                let block_axis_0 = block_side_axis_0 + block_coord_offset;
 
                 let is_record = if let Some((old_time, _)) = time_block {
                     time < old_time
