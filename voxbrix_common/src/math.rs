@@ -14,14 +14,15 @@ use std::{
         Neg,
         Sub,
     },
+    cmp::Ordering,
 };
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Copy, Clone, Hash, Debug)]
 pub struct Vec3<T>([T; 3]);
 
 impl<T> Vec3<T> {
-    pub const fn new(new: [T; 3]) -> Self {
-        Self(new)
+    pub const fn new(x: T, y: T, z: T) -> Self {
+        Self([x, y, z])
     }
 }
 
@@ -90,6 +91,13 @@ where
 }
 
 impl Vec3<f32> {
+    pub const FORWARD: Vec3<f32> = Vec3::new(1.0, 0.0, 0.0);
+    pub const BACK: Vec3<f32> = Vec3::new(-1.0, 0.0, 0.0);
+    pub const RIGHT: Vec3<f32> = Vec3::new(0.0, 1.0, 0.0);
+    pub const LEFT: Vec3<f32> = Vec3::new(0.0, -1.0, 0.0);
+    pub const UP: Vec3<f32> = Vec3::new(0.0, 0.0, 1.0);
+    pub const DOWN: Vec3<f32> = Vec3::new(0.0, 0.0, -1.0);
+
     pub fn normalize(self) -> Option<Self> {
         let l = (self[0] * self[0] + self[1] * self[1] + self[2] * self[2]).sqrt();
         if l == 0.0 {
@@ -140,8 +148,8 @@ impl<T> Vec3<T> {
 pub struct Vec4<T>([T; 4]);
 
 impl<T> Vec4<T> {
-    pub const fn new(new: [T; 4]) -> Self {
-        Self(new)
+    pub const fn new(x: T, y: T, z: T, w: T) -> Self {
+        Self([x, y, z, w])
     }
 }
 
@@ -392,7 +400,7 @@ where
                 - self.vector[0] * other.vector[0]
                 - self.vector[1] * other.vector[1]
                 - self.vector[2] * other.vector[2],
-            vector: Vec3::new([
+            vector: Vec3::new(
                 self.scalar * other.vector[0]
                     + self.vector[0] * other.scalar
                     + self.vector[1] * other.vector[2]
@@ -405,7 +413,32 @@ where
                     + self.vector[2] * other.scalar
                     + self.vector[0] * other.vector[1]
                     - self.vector[1] * other.vector[0],
-            ]),
+            ),
+        }
+    }
+}
+
+/// Cast in the required direction
+pub trait Cast {
+    /// Cast rounding to the higher value: e.g. `1.5f32.cast_up() == 2i32`, `(-1.5f32).cast_up() == -1i32`
+    fn cast_up(self) -> i32;
+    /// Cast rounding to the lower value: e.g. `1.5f32.cast_down() == 1i32`, `(-1.5f32).cast_down() == -2i32`
+    fn cast_down(self) -> i32;
+}
+
+impl Cast for f32 {
+    fn cast_up(self) -> i32 {
+        match self.partial_cmp(&0.0) {
+            Some(Ordering::Less) => self as i32,
+            Some(Ordering::Greater) => self as i32 + 1,
+            _ => self as i32,
+        }
+    }
+    fn cast_down(self) -> i32 {
+        match self.partial_cmp(&0.0) {
+            Some(Ordering::Less) => self as i32 - 1,
+            Some(Ordering::Greater) => self as i32,
+            _ => self as i32,
         }
     }
 }

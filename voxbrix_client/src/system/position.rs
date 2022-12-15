@@ -6,6 +6,7 @@ use crate::{
                 GlobalPositionActorComponent,
             },
             velocity::VelocityActorComponent,
+            orientation::Orientation,
         },
         block::class::ClassBlockComponent,
     },
@@ -13,14 +14,17 @@ use crate::{
         Block,
         BLOCKS_IN_CHUNK_EDGE,
     },
+    entity::chunk::Chunk,
 };
 use either::Either;
 use std::{
     cmp::Ordering,
     time::Duration,
 };
+use voxbrix_common::math::Cast;
 
 const COLLISION_PUSHBACK: f32 = 1.0e-3;
+const MAX_BLOCK_TARGET_DISTANCE: i32 = BLOCKS_IN_CHUNK_EDGE as i32;
 
 pub struct PositionSystem {
     collider_blocks: [Vec<[i32; 3]>; 3],
@@ -224,5 +228,67 @@ impl PositionSystem {
                 *position = new_position;
             }
         }
+    }
+
+    pub fn get_target_block<F>(
+        position: &GlobalPosition,
+        orientation: &Orientation,
+        mut targeting: F,
+    ) -> Option<(Chunk, Block, usize)>
+    where
+        F: FnMut(Chunk, Block) -> bool,
+    {
+        let forward = orientation.forward();
+
+        let mut time_block = None;
+
+        for (axis_0, axis_1, axis_2) in [(0, 1, 2), (1, 2, 0), (2, 0, 1)] {
+            for axis_offset in 0 .. MAX_BLOCK_TARGET_DISTANCE {
+                // direction_offset is a value that depends on the direction of the "forward" vector by
+                //     the axis_0
+                //     it helps to determine which block are we looking at
+                // side_index is a index of side/neighbor in [x_m, x_p, y_m, y_p, z_m, z_p]
+                let (axis_offset, direction_offset, side_index) = match forward[axis_0].partial_cmp(&0.0) {
+                    Some(Ordering::Less) => {
+                        (- axis_offset, - 1, axis_0 * 2 + 1)
+                    },
+                    Some(Ordering::Greater) => {
+                        (axis_offset, 1, axis_0 * 2)
+                    },
+                    _ => continue,
+                };
+
+
+                let block_axis_0 = (position.offset[axis_0] + axis_offset as f32).cast_down() + direction_offset;
+
+                let time = (block_axis_0 as f32 - position.offset[axis_0]) / forward[axis_0];
+
+                let is_record = if let Some((old_time, _)) = time_block {
+                    time < old_time
+                } else {
+                    true
+                };
+
+                if is_record {
+                    let block_axis_1 = (position.offset[axis_1] + time * forward[axis_1]).cast_down();
+
+                    let block_axis_2 = (position.offset[axis_2] + time * forward[axis_2]).cast_down(); 
+                    
+                    let mut block_offset = [0; 3];
+
+                    block_offset[axis_0] = block_axis_0;
+                    block_offset[axis_1] = block_axis_1;
+                    block_offset[axis_2] = block_axis_2;
+
+                    let (chunk, block) = Block::from_chunk_offset(position.chunk, block_offset);
+
+                    if targeting(chunk, block) {
+                        time_block = Some((time, (chunk, block, side_index)));
+                    }
+                }
+            }
+        }
+
+        Some(time_block?.1)
     }
 }

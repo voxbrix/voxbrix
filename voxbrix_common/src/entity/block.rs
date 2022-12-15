@@ -1,4 +1,5 @@
 use crate::entity::chunk::Chunk;
+use crate::math::Vec3;
 
 pub const BLOCKS_IN_CHUNK_EDGE: usize = 16;
 pub const BLOCKS_IN_CHUNK_LAYER: usize = BLOCKS_IN_CHUNK_EDGE * BLOCKS_IN_CHUNK_EDGE;
@@ -9,24 +10,24 @@ pub const BLOCKS_IN_CHUNK: usize =
 pub struct Block(pub usize);
 
 impl Block {
-    pub fn to_coords(&self) -> [u8; 3] {
+    pub fn to_coords(&self) -> [usize; 3] {
         let z = self.0 / BLOCKS_IN_CHUNK_LAYER;
         let x_y = self.0 % BLOCKS_IN_CHUNK_LAYER;
         let y = x_y / BLOCKS_IN_CHUNK_EDGE;
         let x = x_y % BLOCKS_IN_CHUNK_EDGE;
 
-        [x as u8, y as u8, z as u8]
+        [x, y, z]
     }
 
-    pub fn from_coords([x, y, z]: [u8; 3]) -> Self {
-        Self(z as usize * BLOCKS_IN_CHUNK_LAYER + y as usize * BLOCKS_IN_CHUNK_EDGE + x as usize)
+    pub fn from_coords([x, y, z]: [usize; 3]) -> Self {
+        Self(z * BLOCKS_IN_CHUNK_LAYER + y * BLOCKS_IN_CHUNK_EDGE + x)
     }
 
     pub fn neighbors(&self) -> [Neighbor; 6] {
         let i = self.0 % BLOCKS_IN_CHUNK_EDGE;
         let x_m = if i == 0 {
             let row = self.0 / BLOCKS_IN_CHUNK_EDGE;
-            Neighbor::OtherChunk(Block(row + BLOCKS_IN_CHUNK_EDGE - 1))
+            Neighbor::OtherChunk(Block(row * BLOCKS_IN_CHUNK_EDGE + BLOCKS_IN_CHUNK_EDGE - 1))
         } else {
             Neighbor::ThisChunk(Block(self.0 - 1))
         };
@@ -34,7 +35,7 @@ impl Block {
         let i = self.0 % BLOCKS_IN_CHUNK_EDGE + 1;
         let x_p = if i >= BLOCKS_IN_CHUNK_EDGE {
             let row = self.0 / BLOCKS_IN_CHUNK_EDGE;
-            Neighbor::OtherChunk(Block(row + i - BLOCKS_IN_CHUNK_EDGE))
+            Neighbor::OtherChunk(Block(row * BLOCKS_IN_CHUNK_EDGE + i - BLOCKS_IN_CHUNK_EDGE))
         } else {
             Neighbor::ThisChunk(Block(self.0 + 1))
         };
@@ -43,7 +44,7 @@ impl Block {
         let y_m = if i < BLOCKS_IN_CHUNK_EDGE {
             let row = self.0 / BLOCKS_IN_CHUNK_LAYER;
             Neighbor::OtherChunk(Block(
-                row + BLOCKS_IN_CHUNK_LAYER + i - BLOCKS_IN_CHUNK_EDGE,
+                row * BLOCKS_IN_CHUNK_LAYER + BLOCKS_IN_CHUNK_LAYER + i - BLOCKS_IN_CHUNK_EDGE,
             ))
         } else {
             Neighbor::ThisChunk(Block(self.0 - BLOCKS_IN_CHUNK_EDGE))
@@ -52,7 +53,7 @@ impl Block {
         let i = self.0 % BLOCKS_IN_CHUNK_LAYER + BLOCKS_IN_CHUNK_EDGE;
         let y_p = if i >= BLOCKS_IN_CHUNK_LAYER {
             let row = self.0 / BLOCKS_IN_CHUNK_LAYER;
-            Neighbor::OtherChunk(Block(row + i - BLOCKS_IN_CHUNK_LAYER))
+            Neighbor::OtherChunk(Block(row * BLOCKS_IN_CHUNK_LAYER + i - BLOCKS_IN_CHUNK_LAYER))
         } else {
             Neighbor::ThisChunk(Block(self.0 + BLOCKS_IN_CHUNK_EDGE))
         };
@@ -89,19 +90,18 @@ impl Block {
         });
 
         let actual_chunk = Chunk {
-            position: [
+            position: Vec3::new(
                 chunks_blocks[0].0 + chunk.position[0],
                 chunks_blocks[1].0 + chunk.position[1],
                 chunks_blocks[2].0 + chunk.position[2],
-            ]
-            .into(),
+            ),
             dimension: chunk.dimension,
         };
 
         let block = Self::from_coords([
-            chunks_blocks[0].1 as u8,
-            chunks_blocks[1].1 as u8,
-            chunks_blocks[2].1 as u8,
+            chunks_blocks[0].1 as usize,
+            chunks_blocks[1].1 as usize,
+            chunks_blocks[2].1 as usize,
         ]);
 
         (actual_chunk, block)

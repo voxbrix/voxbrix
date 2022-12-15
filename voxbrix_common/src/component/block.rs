@@ -42,6 +42,10 @@ impl<T> Blocks<T> {
         self.blocks.get(i.0)
     }
 
+    pub fn get_mut(&mut self, i: Block) -> Option<&mut T> {
+        self.blocks.get_mut(i.0)
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (Block, &T)> {
         self.blocks.iter().enumerate().map(|(i, b)| (Block(i), b))
     }
@@ -64,6 +68,10 @@ impl<T> BlockComponent<T> {
 
     pub fn get_chunk(&self, chunk: &Chunk) -> Option<&Blocks<T>> {
         self.chunks.get(&chunk)
+    }
+
+    pub fn get_mut_chunk(&mut self, chunk: &Chunk) -> Option<&mut Blocks<T>> {
+        self.chunks.get_mut(&chunk)
     }
 
     pub fn insert_chunk(&mut self, chunk: Chunk, blocks: Blocks<T>) {
