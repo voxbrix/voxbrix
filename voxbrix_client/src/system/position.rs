@@ -26,15 +26,11 @@ use voxbrix_common::math::Round;
 const COLLISION_PUSHBACK: f32 = 1.0e-3;
 const MAX_BLOCK_TARGET_DISTANCE: i32 = BLOCKS_IN_CHUNK_EDGE as i32;
 
-pub struct PositionSystem {
-    collider_blocks: [Vec<[i32; 3]>; 3],
-}
+pub struct PositionSystem;
 
 impl PositionSystem {
     pub fn new() -> Self {
-        Self {
-            collider_blocks: [Vec::new(), Vec::new(), Vec::new()],
-        }
+        Self
     }
 
     pub fn process(
@@ -65,11 +61,8 @@ impl PositionSystem {
 
                 let axis_set = [(0, 1, 2), (1, 0, 2), (2, 0, 1)];
 
-                self.collider_blocks.iter_mut().for_each(|c| c.clear());
-
                 // Distance to collision in blocks by each axis
-                let mut col_by_axis = [None; 3];
-                let mut move_dir_by_axis = [None; 3];
+                let mut max_movement = [None; 3];
 
                 for (a0, a1, a2) in axis_set {
                     let move_dir = match travel.vector[a0].total_cmp(&0.0) {
@@ -77,8 +70,6 @@ impl PositionSystem {
                         Ordering::Less => MoveDirection::Negative,
                         Ordering::Equal => continue,
                     };
-
-                    move_dir_by_axis[a0] = Some(move_dir);
 
                     let (actor_start, block_offset) = match move_dir {
                         MoveDirection::Positive => (position[a0] + radius[a0], 0),
@@ -121,28 +112,64 @@ impl PositionSystem {
                                 let (chunk, block) =
                                     Block::from_chunk_offset(*center_chunk, chunk_offset);
 
-                                if let Some(blocks) = cbc.get_chunk(&chunk) {
-                                    let block_class = blocks.get(block);
-
+                                if let Some(block_class) = cbc.get_chunk(&chunk)
+                                    .and_then(|b| b.get(block))
+                                {
                                     // TODO better block analysis
-                                    if block_class.is_some() && block_class.unwrap().0 == 1 {
+                                    if block_class.0 == 1 {
                                         // Collision!
-                                        // TODO:
-                                        // record collision time t_min and/or actor coordinate
-                                        // for comparison with other axis collision detection
-                                        // after that we can break from detection by this axis.
-                                        // optimization: we can quit comparing in subsequent
-                                        // axis if t > t_min
+                                        // Now check whether we should skip stopping in case the
+                                        // border we hit is between two solid blocks ("before" block and
+                                        // the target block) and actor is not inside "before"
+                                        // block. Latter condition is requred to prevent actor from
+                                        // falling/moving endlessly under textures in case they
+                                        // somehow ended up inside the solid block (e.g. block was
+                                        // built on the actor's place or the block is not cube
+                                        // shape).
+                                        let (block_before_a0, actor_current_front_a0) = match move_dir {
+                                            MoveDirection::Positive => {
+                                                (block_a0 - 1, (position[a0] + radius[a0]).round_down())
+                                            },
+                                            MoveDirection::Negative => {
+                                                (block_a0 + 1, (position[a0] - radius[a0]).round_down())
+                                            },
+                                        };
 
-                                        // pos_col_min[a0] = Some((block_a0 + block_offset) as f32 + match move_dir {
-                                        // MoveDirection::Positive => - a0_radius - COLLISION_PUSHBACK,
-                                        // MoveDirection::Negative => a0_radius + COLLISION_PUSHBACK,
-                                        // });
+                                        let actor_current_a1p = (position[a1] + radius[a1]).round_down();
+                                        let actor_current_a1m = (position[a1] - radius[a1]).round_down();
 
-                                        self.collider_blocks[a0].push(chunk_offset);
-                                        col_by_axis[a0] = Some(block_a0);
+                                        let actor_current_a2p = (position[a2] + radius[a2]).round_down();
+                                        let actor_current_a2m = (position[a2] - radius[a2]).round_down();
+                                        
+                                        let stop = actor_current_front_a0 == block_before_a0
+                                            && (actor_current_a1m .. actor_current_a1p).contains(&block_a1)
+                                            && (actor_current_a2m .. actor_current_a2p).contains(&block_a2)
+                                            || {
+                                                let mut block_before = [0; 3];
+                                                block_before[a0] = block_before_a0;
+                                                block_before[a1] = block_a1;
+                                                block_before[a2] = block_a2;
 
-                                        // break 'colliders;
+                                                let (chunk, block) =
+                                                    Block::from_chunk_offset(*center_chunk, block_before);
+
+                                                cbc.get_chunk(&chunk)
+                                                    .and_then(|b| b.get(block))
+                                                    .map(|bc| {
+                                                        // Opposite of collision condition
+                                                        // TODO better block analysis
+                                                        !(bc.0 == 1)
+                                                    })
+                                                    // stop if chunk is not loaded
+                                                    .unwrap_or(true)
+                                            };
+
+                                        if stop {
+                                            max_movement[a0] = Some((block_a0 + block_offset) as f32 + match move_dir {
+                                                MoveDirection::Positive => - radius[a0] - COLLISION_PUSHBACK,
+                                                MoveDirection::Negative => radius[a0] + COLLISION_PUSHBACK,
+                                            });
+                                        }
                                     }
                                 } else {
                                     // TODO chunk not loaded
@@ -150,7 +177,7 @@ impl PositionSystem {
                             }
                         }
 
-                        if col_by_axis[a0].is_some() {
+                        if max_movement[a0].is_some() {
                             break 'axis;
                         }
                     }
@@ -158,53 +185,10 @@ impl PositionSystem {
 
                 let mut new_position = position.clone() + travel.vector;
 
-                for (axis, chunk_offsets) in self.collider_blocks.iter_mut().enumerate() {
-                    // Filter out surfaces of the blocks that can cause actor stuck
-                    // when it moves at an angle to the smooth surface that
-                    // consists of multiple blocks
-                    //
-                    // Essentially, we ignore the diagonal blocks (x) for an actor (a):
-                    // |x|   |x|
-                    // | |a a| |
-                    // | |a a| |
-                    // |x|   |x|
-                    let collider_chunk_offset = chunk_offsets.drain(..).find(|chunk_offset| {
-                        let ignore_iter = col_by_axis.iter().enumerate().filter_map(|(ia, io)| {
-                            if ia != axis {
-                                Some((ia, io.as_ref()?))
-                            } else {
-                                None
-                            }
-                        });
-
-                        for (ignore_axis, ignore_offset) in ignore_iter {
-                            if chunk_offset[ignore_axis] == *ignore_offset {
-                                return false;
-                            }
-                        }
-                        return true;
-                    });
-
-                    let collider_chunk_offset = match collider_chunk_offset {
-                        Some(o) => o,
-                        None => continue,
-                    };
-
-                    let move_dir = match move_dir_by_axis[axis] {
-                        Some(o) => o,
-                        None => continue,
-                    };
-
-                    new_position[axis] = match move_dir {
-                        MoveDirection::Positive => {
-                            collider_chunk_offset[axis] as f32 - radius[axis] - COLLISION_PUSHBACK
-                        },
-                        MoveDirection::Negative => {
-                            (collider_chunk_offset[axis] + 1) as f32
-                                + radius[axis]
-                                + COLLISION_PUSHBACK
-                        },
-                    };
+                for a in 0 ..= 2 {
+                    if let Some(max_movement) = max_movement[a] {
+                        new_position[a] = max_movement;
+                    }
                 }
 
                 let new_chunk = new_position
