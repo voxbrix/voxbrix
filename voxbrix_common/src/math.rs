@@ -4,6 +4,7 @@ use serde::{
 };
 use std::{
     borrow::Borrow,
+    cmp::Ordering,
     fmt::Debug,
     mem,
     ops::{
@@ -14,7 +15,6 @@ use std::{
         Neg,
         Sub,
     },
-    cmp::Ordering,
 };
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Copy, Clone, Hash, Debug)]
@@ -90,6 +90,7 @@ where
     }
 }
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
 impl Vec3<f32> {
     pub const FORWARD: Vec3<f32> = Vec3::new(1.0, 0.0, 0.0);
     pub const BACK: Vec3<f32> = Vec3::new(-1.0, 0.0, 0.0);
@@ -97,7 +98,9 @@ impl Vec3<f32> {
     pub const LEFT: Vec3<f32> = Vec3::new(0.0, -1.0, 0.0);
     pub const UP: Vec3<f32> = Vec3::new(0.0, 0.0, 1.0);
     pub const DOWN: Vec3<f32> = Vec3::new(0.0, 0.0, -1.0);
+}
 
+impl Vec3<f32> {
     pub fn normalize(self) -> Option<Self> {
         let l = (self[0] * self[0] + self[1] * self[1] + self[2] * self[2]).sqrt();
         if l == 0.0 {
@@ -434,6 +437,7 @@ impl Round for f32 {
             _ => self as i32,
         }
     }
+
     fn round_down(self) -> i32 {
         match self.partial_cmp(&0.0) {
             Some(Ordering::Less) => self as i32 - 1,

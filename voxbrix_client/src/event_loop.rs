@@ -27,6 +27,7 @@ use crate::{
     },
     entity::{
         actor::Actor,
+        block::Block,
         block_class::BlockClass,
         chunk::Chunk,
     },
@@ -62,8 +63,10 @@ use voxbrix_common::{
 use voxbrix_protocol::client::Client;
 use winit::{
     dpi::PhysicalSize,
-    event::KeyboardInput as WinitKeyboardInput,
-    event::MouseButton as WinitMouseButton,
+    event::{
+        KeyboardInput as WinitKeyboardInput,
+        MouseButton as WinitMouseButton,
+    },
 };
 
 pub enum Event {
@@ -230,16 +233,53 @@ impl EventLoop<'_> {
                             let position = gpac.get(&player_actor).unwrap();
                             let orientation = oac.get(&player_actor).unwrap();
 
-                            PositionSystem::get_target_block(position, orientation, |chunk, block| {
-                                cbc.get_chunk(&chunk).map(|blocks| {
-                                    blocks.get(block).unwrap() == &BlockClass(1)
-                                }).unwrap_or(false)
-                            }).and_then(|(chunk, block, _side)| {
-                                let block_class = cbc.get_mut_chunk(&chunk)
-                                    .and_then(|c| c.get_mut(block))?;
-                                
+                            PositionSystem::get_target_block(
+                                position,
+                                orientation,
+                                |chunk, block| {
+                                    cbc.get_chunk(&chunk)
+                                        .map(|blocks| blocks.get(block).unwrap() == &BlockClass(1))
+                                        .unwrap_or(false)
+                                },
+                            )
+                            .and_then(|(chunk, block, _side)| {
+                                let block_class =
+                                    cbc.get_mut_chunk(&chunk).and_then(|c| c.get_mut(block))?;
+
                                 *block_class = BlockClass(0);
-                                
+
+                                let _ = event_tx.send(Event::DrawChunk { chunk });
+                                Some(())
+                            });
+                        },
+                        WinitMouseButton::Right => {
+                            let position = gpac.get(&player_actor).unwrap();
+                            let orientation = oac.get(&player_actor).unwrap();
+
+                            PositionSystem::get_target_block(
+                                position,
+                                orientation,
+                                |chunk, block| {
+                                    cbc.get_chunk(&chunk)
+                                        .map(|blocks| blocks.get(block).unwrap() == &BlockClass(1))
+                                        .unwrap_or(false)
+                                },
+                            )
+                            .and_then(|(chunk, block, side)| {
+                                let axis = side / 2;
+                                let direction = match side % 2 {
+                                    0 => -1,
+                                    1 => 1,
+                                    _ => panic!("incorrect side index"),
+                                };
+                                let mut block = block.to_coords().map(|u| u as i32);
+                                block[axis] += direction;
+                                let (chunk, block) = Block::from_chunk_offset(chunk, block);
+                                let block_class =
+                                    cbc.get_mut_chunk(&chunk).and_then(|c| c.get_mut(block))?;
+
+                                *block_class = BlockClass(1);
+
                                 let _ = event_tx.send(Event::DrawChunk { chunk });
                                 Some(())
                             });
