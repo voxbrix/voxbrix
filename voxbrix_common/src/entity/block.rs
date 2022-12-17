@@ -1,5 +1,7 @@
-use crate::entity::chunk::Chunk;
-use crate::math::Vec3;
+use crate::{
+    entity::chunk::Chunk,
+    math::Vec3,
+};
 
 pub const BLOCKS_IN_CHUNK_EDGE: usize = 16;
 pub const BLOCKS_IN_CHUNK_LAYER: usize = BLOCKS_IN_CHUNK_EDGE * BLOCKS_IN_CHUNK_EDGE;
@@ -53,7 +55,9 @@ impl Block {
         let i = self.0 % BLOCKS_IN_CHUNK_LAYER + BLOCKS_IN_CHUNK_EDGE;
         let y_p = if i >= BLOCKS_IN_CHUNK_LAYER {
             let row = self.0 / BLOCKS_IN_CHUNK_LAYER;
-            Neighbor::OtherChunk(Block(row * BLOCKS_IN_CHUNK_LAYER + i - BLOCKS_IN_CHUNK_LAYER))
+            Neighbor::OtherChunk(Block(
+                row * BLOCKS_IN_CHUNK_LAYER + i - BLOCKS_IN_CHUNK_LAYER,
+            ))
         } else {
             Neighbor::ThisChunk(Block(self.0 + BLOCKS_IN_CHUNK_EDGE))
         };

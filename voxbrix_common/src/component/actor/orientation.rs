@@ -28,7 +28,8 @@ impl Orientation {
 
     pub fn from_yaw_pitch(yaw: f32, pitch: f32) -> Self {
         Self {
-            rotation: Quat::from_axis_angle(Vec3::UP, yaw) * Quat::from_axis_angle(Vec3::LEFT, pitch),
+            rotation: Quat::from_axis_angle(Vec3::UP, yaw)
+                * Quat::from_axis_angle(Vec3::LEFT, pitch),
         }
     }
 }

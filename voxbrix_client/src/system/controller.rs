@@ -15,12 +15,12 @@ use std::{
     },
     time::Duration,
 };
+use voxbrix_common::math::Vec3;
 use winit::event::{
     ElementState,
     KeyboardInput,
     VirtualKeyCode,
 };
-use voxbrix_common::math::Vec3;
 
 const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 const PI_2: f32 = PI * 2.0;

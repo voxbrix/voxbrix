@@ -16,8 +16,8 @@ use wgpu::{
 use winit::{
     dpi::PhysicalSize,
     event::{
-        ElementState as WinitElementState,
         DeviceEvent as WinitDeviceEvent,
+        ElementState as WinitElementState,
         Event as WinitEvent,
         WindowEvent as WinitWindowEvent,
     },

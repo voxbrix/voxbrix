@@ -1,20 +1,22 @@
 use crate::{
     component::{
         actor::{
+            orientation::Orientation,
             position::{
                 GlobalPosition,
                 GlobalPositionActorComponent,
             },
             velocity::VelocityActorComponent,
-            orientation::Orientation,
         },
         block::class::ClassBlockComponent,
     },
-    entity::block::{
-        Block,
-        BLOCKS_IN_CHUNK_EDGE,
+    entity::{
+        block::{
+            Block,
+            BLOCKS_IN_CHUNK_EDGE,
+        },
+        chunk::Chunk,
     },
-    entity::chunk::Chunk,
 };
 use either::Either;
 use std::{
@@ -112,8 +114,8 @@ impl PositionSystem {
                                 let (chunk, block) =
                                     Block::from_chunk_offset(*center_chunk, chunk_offset);
 
-                                if let Some(block_class) = cbc.get_chunk(&chunk)
-                                    .and_then(|b| b.get(block))
+                                if let Some(block_class) =
+                                    cbc.get_chunk(&chunk).and_then(|b| b.get(block))
                                 {
                                     // TODO better block analysis
                                     if block_class.0 == 1 {
@@ -126,32 +128,47 @@ impl PositionSystem {
                                         // somehow ended up inside the solid block (e.g. block was
                                         // built on the actor's place or the block is not cube
                                         // shape).
-                                        let (block_before_a0, actor_current_front_a0) = match move_dir {
-                                            MoveDirection::Positive => {
-                                                (block_a0 - 1, (position[a0] + radius[a0]).round_down())
-                                            },
-                                            MoveDirection::Negative => {
-                                                (block_a0 + 1, (position[a0] - radius[a0]).round_down())
-                                            },
-                                        };
+                                        let (block_before_a0, actor_current_front_a0) =
+                                            match move_dir {
+                                                MoveDirection::Positive => {
+                                                    (
+                                                        block_a0 - 1,
+                                                        (position[a0] + radius[a0]).round_down(),
+                                                    )
+                                                },
+                                                MoveDirection::Negative => {
+                                                    (
+                                                        block_a0 + 1,
+                                                        (position[a0] - radius[a0]).round_down(),
+                                                    )
+                                                },
+                                            };
 
-                                        let actor_current_a1p = (position[a1] + radius[a1]).round_down();
-                                        let actor_current_a1m = (position[a1] - radius[a1]).round_down();
+                                        let actor_current_a1p =
+                                            (position[a1] + radius[a1]).round_down();
+                                        let actor_current_a1m =
+                                            (position[a1] - radius[a1]).round_down();
 
-                                        let actor_current_a2p = (position[a2] + radius[a2]).round_down();
-                                        let actor_current_a2m = (position[a2] - radius[a2]).round_down();
-                                        
+                                        let actor_current_a2p =
+                                            (position[a2] + radius[a2]).round_down();
+                                        let actor_current_a2m =
+                                            (position[a2] - radius[a2]).round_down();
+
                                         let stop = actor_current_front_a0 == block_before_a0
-                                            && (actor_current_a1m .. actor_current_a1p).contains(&block_a1)
-                                            && (actor_current_a2m .. actor_current_a2p).contains(&block_a2)
+                                            && (actor_current_a1m ..= actor_current_a1p)
+                                                .contains(&block_a1)
+                                            && (actor_current_a2m ..= actor_current_a2p)
+                                                .contains(&block_a2)
                                             || {
                                                 let mut block_before = [0; 3];
                                                 block_before[a0] = block_before_a0;
                                                 block_before[a1] = block_a1;
                                                 block_before[a2] = block_a2;
 
-                                                let (chunk, block) =
-                                                    Block::from_chunk_offset(*center_chunk, block_before);
+                                                let (chunk, block) = Block::from_chunk_offset(
+                                                    *center_chunk,
+                                                    block_before,
+                                                );
 
                                                 cbc.get_chunk(&chunk)
                                                     .and_then(|b| b.get(block))
@@ -165,10 +182,17 @@ impl PositionSystem {
                                             };
 
                                         if stop {
-                                            max_movement[a0] = Some((block_a0 + block_offset) as f32 + match move_dir {
-                                                MoveDirection::Positive => - radius[a0] - COLLISION_PUSHBACK,
-                                                MoveDirection::Negative => radius[a0] + COLLISION_PUSHBACK,
-                                            });
+                                            max_movement[a0] = Some(
+                                                (block_a0 + block_offset) as f32
+                                                    + match move_dir {
+                                                        MoveDirection::Positive => {
+                                                            -radius[a0] - COLLISION_PUSHBACK
+                                                        },
+                                                        MoveDirection::Negative => {
+                                                            radius[a0] + COLLISION_PUSHBACK
+                                                        },
+                                                    },
+                                            );
                                         }
                                     }
                                 } else {
@@ -238,17 +262,15 @@ impl PositionSystem {
                 //     while moving in the positive direction, the value is 0 as we collide with
                 //     the back side of the block, which is the same as it's coordinate
                 // side_index is a index of side/neighbor in [x_m, x_p, y_m, y_p, z_m, z_p]
-                let (axis_offset, wall_offset, block_coord_offset, side_index) = match forward[axis_0].partial_cmp(&0.0) {
-                    Some(Ordering::Less) => {
-                        (- axis_offset, 0, - 1, axis_0 * 2 + 1)
-                    },
-                    Some(Ordering::Greater) => {
-                        (axis_offset, 1, 0, axis_0 * 2)
-                    },
-                    _ => continue,
-                };
+                let (axis_offset, wall_offset, block_coord_offset, side_index) =
+                    match forward[axis_0].partial_cmp(&0.0) {
+                        Some(Ordering::Less) => (-axis_offset, 0, -1, axis_0 * 2 + 1),
+                        Some(Ordering::Greater) => (axis_offset, 1, 0, axis_0 * 2),
+                        _ => continue,
+                    };
 
-                let block_side_axis_0 = (position.offset[axis_0] + axis_offset as f32).round_down() + wall_offset;
+                let block_side_axis_0 =
+                    (position.offset[axis_0] + axis_offset as f32).round_down() + wall_offset;
 
                 let time = (block_side_axis_0 as f32 - position.offset[axis_0]) / forward[axis_0];
 
@@ -261,10 +283,12 @@ impl PositionSystem {
                 };
 
                 if is_record {
-                    let block_axis_1 = (position.offset[axis_1] + time * forward[axis_1]).round_down();
+                    let block_axis_1 =
+                        (position.offset[axis_1] + time * forward[axis_1]).round_down();
 
-                    let block_axis_2 = (position.offset[axis_2] + time * forward[axis_2]).round_down(); 
-                    
+                    let block_axis_2 =
+                        (position.offset[axis_2] + time * forward[axis_2]).round_down();
+
                     let mut block_offset = [0; 3];
 
                     block_offset[axis_0] = block_axis_0;
