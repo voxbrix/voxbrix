@@ -18,12 +18,16 @@ use crate::{
         chunk::Chunk,
     },
 };
+use arrayvec::ArrayVec;
 use either::Either;
 use std::{
     cmp::Ordering,
     time::Duration,
 };
-use voxbrix_common::math::Round;
+use voxbrix_common::math::{
+    Round,
+    Vec3,
+};
 
 const COLLISION_PUSHBACK: f32 = 1.0e-3;
 const MAX_BLOCK_TARGET_DISTANCE: i32 = BLOCKS_IN_CHUNK_EDGE as i32;
@@ -42,10 +46,15 @@ impl PositionSystem {
         gpc: &mut GlobalPositionActorComponent,
         vc: &VelocityActorComponent,
     ) {
-        #[derive(Copy, Clone)]
         enum MoveDirection {
             Positive,
             Negative,
+        }
+
+        struct MoveLimit {
+            axis_set: [usize; 3],
+            time_to_collision: f32,
+            max_movement: f32,
         }
 
         let h_radius = 0.45;
@@ -54,34 +63,40 @@ impl PositionSystem {
         for (actor, velocity) in vc.iter() {
             if let Some(GlobalPosition {
                 chunk: center_chunk,
-                offset: position,
+                offset: start_position,
             }) = gpc.get_mut(&actor)
             {
-                let travel = velocity.clone() * dt;
-
                 let radius = [h_radius, h_radius, v_radius];
 
-                let axis_set = [(0, 1, 2), (1, 0, 2), (2, 0, 1)];
+                let calc_pass = |finish_position: Vec3<f32>, axis_set: [usize; 3]| {
+                    let [a0, a1, a2] = axis_set;
 
-                // Distance to collision in blocks by each axis
-                let mut max_movement = [None; 3];
+                    let travel_a0 = finish_position[a0] - start_position[a0];
 
-                for (a0, a1, a2) in axis_set {
-                    let move_dir = match travel.vector[a0].total_cmp(&0.0) {
+                    let move_dir = match travel_a0.total_cmp(&0.0) {
                         Ordering::Greater => MoveDirection::Positive,
                         Ordering::Less => MoveDirection::Negative,
-                        Ordering::Equal => continue,
+                        Ordering::Equal => return None,
                     };
 
-                    let (actor_start, block_offset) = match move_dir {
-                        MoveDirection::Positive => (position[a0] + radius[a0], 0),
-                        MoveDirection::Negative => (position[a0] - radius[a0], 1),
+                    let (actor_start, actor_finish, block_offset) = match move_dir {
+                        MoveDirection::Positive => {
+                            (
+                                start_position[a0] + radius[a0],
+                                finish_position[a0] + radius[a0],
+                                0,
+                            )
+                        },
+                        MoveDirection::Negative => {
+                            (
+                                start_position[a0] - radius[a0],
+                                finish_position[a0] - radius[a0],
+                                1,
+                            )
+                        },
                     };
 
                     let block_start = actor_start.round_down();
-
-                    let actor_finish = actor_start + travel.vector[a0];
-
                     let block_finish = actor_finish.round_down();
 
                     let block_range = match move_dir {
@@ -91,17 +106,17 @@ impl PositionSystem {
                         },
                     };
 
-                    'axis: for block_a0 in block_range {
+                    for block_a0 in block_range {
                         let t =
                             ((block_a0 + block_offset) as f32 - actor_start) / velocity.vector[a0];
 
-                        let actor_a1 = position[a1] + velocity.vector[a1] * t;
+                        let actor_a1 = finish_position[a1];
 
                         let block_a1m = (actor_a1 - radius[a1]).round_down();
                         let block_a1p = (actor_a1 + radius[a1]).round_down();
 
                         for block_a1 in block_a1m ..= block_a1p {
-                            let actor_a2 = position[a2] + velocity.vector[a2] * t;
+                            let actor_a2 = finish_position[a2];
 
                             let block_a2m = (actor_a2 - radius[a2]).round_down();
                             let block_a2p = (actor_a2 + radius[a2]).round_down();
@@ -119,103 +134,76 @@ impl PositionSystem {
                                 {
                                     // TODO better block analysis
                                     if block_class.0 == 1 {
-                                        // Collision!
-                                        // Now check whether we should skip stopping in case the
-                                        // border we hit is between two solid blocks ("before" block and
-                                        // the target block) and actor is not inside "before"
-                                        // block. Latter condition is requred to prevent actor from
-                                        // falling/moving endlessly under textures in case they
-                                        // somehow ended up inside the solid block (e.g. block was
-                                        // built on the actor's place or the block is not cube
-                                        // shape).
-                                        let (block_before_a0, actor_current_front_a0) =
-                                            match move_dir {
-                                                MoveDirection::Positive => {
-                                                    (
-                                                        block_a0 - 1,
-                                                        (position[a0] + radius[a0]).round_down(),
-                                                    )
-                                                },
-                                                MoveDirection::Negative => {
-                                                    (
-                                                        block_a0 + 1,
-                                                        (position[a0] - radius[a0]).round_down(),
-                                                    )
-                                                },
-                                            };
-
-                                        let actor_current_a1p =
-                                            (position[a1] + radius[a1]).round_down();
-                                        let actor_current_a1m =
-                                            (position[a1] - radius[a1]).round_down();
-
-                                        let actor_current_a2p =
-                                            (position[a2] + radius[a2]).round_down();
-                                        let actor_current_a2m =
-                                            (position[a2] - radius[a2]).round_down();
-
-                                        let stop = actor_current_front_a0 == block_before_a0
-                                            && (actor_current_a1m ..= actor_current_a1p)
-                                                .contains(&block_a1)
-                                            && (actor_current_a2m ..= actor_current_a2p)
-                                                .contains(&block_a2)
-                                            || {
-                                                let mut block_before = [0; 3];
-                                                block_before[a0] = block_before_a0;
-                                                block_before[a1] = block_a1;
-                                                block_before[a2] = block_a2;
-
-                                                let (chunk, block) = Block::from_chunk_offset(
-                                                    *center_chunk,
-                                                    block_before,
-                                                );
-
-                                                cbc.get_chunk(&chunk)
-                                                    .and_then(|b| b.get(block))
-                                                    .map(|bc| {
-                                                        // Opposite of collision condition
-                                                        // TODO better block analysis
-                                                        !(bc.0 == 1)
-                                                    })
-                                                    // stop if chunk is not loaded
-                                                    .unwrap_or(true)
-                                            };
-
-                                        if stop {
-                                            max_movement[a0] = Some(
-                                                (block_a0 + block_offset) as f32
-                                                    + match move_dir {
-                                                        MoveDirection::Positive => {
-                                                            -radius[a0] - COLLISION_PUSHBACK
-                                                        },
-                                                        MoveDirection::Negative => {
-                                                            radius[a0] + COLLISION_PUSHBACK
-                                                        },
+                                        return Some(MoveLimit {
+                                            axis_set,
+                                            time_to_collision: t,
+                                            max_movement: (block_a0 + block_offset) as f32
+                                                + match move_dir {
+                                                    MoveDirection::Positive => {
+                                                        -radius[a0] - COLLISION_PUSHBACK
                                                     },
-                                            );
-                                        }
+                                                    MoveDirection::Negative => {
+                                                        radius[a0] + COLLISION_PUSHBACK
+                                                    },
+                                                },
+                                        });
                                     }
                                 } else {
                                     // TODO chunk not loaded
                                 }
                             }
                         }
+                    }
 
-                        if max_movement[a0].is_some() {
-                            break 'axis;
+                    None
+                };
+
+                let travel = velocity.clone() * dt;
+                let mut finish_position = *start_position + travel.vector;
+
+                let axis_sets = [[0, 1, 2], [1, 0, 2], [2, 0, 1]];
+
+                let mut move_limits = ArrayVec::<_, 3>::new();
+
+                for axis_set in axis_sets {
+                    if let Some(ml) = calc_pass(finish_position, axis_set) {
+                        move_limits.push(ml);
+                    }
+                }
+
+                for _ in 0 ..= 1 {
+                    move_limits.sort_unstable_by(|ml1, ml2| {
+                        ml1.time_to_collision
+                            .partial_cmp(&ml2.time_to_collision)
+                            .unwrap()
+                    });
+
+                    if let Some(move_limit) = move_limits.first() {
+                        finish_position[move_limit.axis_set[0]] = move_limit.max_movement;
+                    }
+
+                    let mut next_move_limits = ArrayVec::new();
+
+                    for &MoveLimit { axis_set, .. } in move_limits.iter().skip(1) {
+                        if let Some(ml) = calc_pass(finish_position, axis_set) {
+                            next_move_limits.push(ml);
                         }
                     }
+
+                    move_limits = next_move_limits;
                 }
 
-                let mut new_position = position.clone() + travel.vector;
+                move_limits.sort_unstable_by(|ml1, ml2| {
+                    ml1.time_to_collision
+                        .partial_cmp(&ml2.time_to_collision)
+                        .unwrap()
+                });
 
-                for a in 0 ..= 2 {
-                    if let Some(max_movement) = max_movement[a] {
-                        new_position[a] = max_movement;
-                    }
+                if let Some(move_limit) = move_limits.first() {
+                    finish_position[move_limit.axis_set[0]] = move_limit.max_movement;
                 }
 
-                let new_chunk = new_position
+                let new_chunk = finish_position
                     .as_ref()
                     .iter()
                     .find(|dist| dist.abs() > BLOCKS_IN_CHUNK_EDGE as f32)
@@ -223,17 +211,17 @@ impl PositionSystem {
 
                 if new_chunk {
                     let chunk_diff_vec =
-                        new_position.map(|f| f as i32 / BLOCKS_IN_CHUNK_EDGE as i32);
+                        finish_position.map(|f| f as i32 / BLOCKS_IN_CHUNK_EDGE as i32);
 
                     let actor_diff_vec =
                         chunk_diff_vec.map(|i| i as f32 * BLOCKS_IN_CHUNK_EDGE as f32);
 
                     center_chunk.position = center_chunk.position + chunk_diff_vec;
 
-                    new_position = new_position - actor_diff_vec;
+                    finish_position = finish_position - actor_diff_vec;
                 }
 
-                *position = new_position;
+                *start_position = finish_position;
             }
         }
     }
