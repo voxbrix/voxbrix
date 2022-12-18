@@ -25,6 +25,7 @@ voxbrix_protocol = { path = "../voxbrix_protocol", features = ["single", "client
 voxbrix_common = { path = "../voxbrix_common" }
 local-channel = "0.1"
 bitmask = "0.5"
+arrayvec = { version = "0.7", default-features = false }
 ron = "0.8"
 log = "0.4"
 env_logger = "0.9"
