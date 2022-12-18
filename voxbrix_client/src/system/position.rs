@@ -53,7 +53,10 @@ impl PositionSystem {
 
         struct MoveLimit {
             axis_set: [usize; 3],
-            time_to_collision: f32,
+
+            // powi(2) of the distance from the actor to the colliding block
+            // defines priority of the move limits
+            collider_distance: f32,
             max_movement: f32,
         }
 
@@ -110,13 +113,33 @@ impl PositionSystem {
                         let t =
                             ((block_a0 + block_offset) as f32 - actor_start) / velocity.vector[a0];
 
-                        let actor_a1 = finish_position[a1];
+                        let actor_a1 = match velocity.vector[a1].total_cmp(&0.0) {
+                            Ordering::Greater => {
+                                (start_position[a1] + velocity.vector[a1] * t)
+                                    .min(finish_position[a1])
+                            },
+                            Ordering::Less => {
+                                (start_position[a1] + velocity.vector[a1] * t)
+                                    .max(finish_position[a1])
+                            },
+                            Ordering::Equal => finish_position[a1],
+                        };
 
                         let block_a1m = (actor_a1 - radius[a1]).round_down();
                         let block_a1p = (actor_a1 + radius[a1]).round_down();
 
                         for block_a1 in block_a1m ..= block_a1p {
-                            let actor_a2 = finish_position[a2];
+                            let actor_a2 = match velocity.vector[a2].total_cmp(&0.0) {
+                                Ordering::Greater => {
+                                    (start_position[a2] + velocity.vector[a2] * t)
+                                        .min(finish_position[a2])
+                                },
+                                Ordering::Less => {
+                                    (start_position[a2] + velocity.vector[a2] * t)
+                                        .max(finish_position[a2])
+                                },
+                                Ordering::Equal => finish_position[a2],
+                            };
 
                             let block_a2m = (actor_a2 - radius[a2]).round_down();
                             let block_a2p = (actor_a2 + radius[a2]).round_down();
@@ -136,7 +159,13 @@ impl PositionSystem {
                                     if block_class.0 == 1 {
                                         return Some(MoveLimit {
                                             axis_set,
-                                            time_to_collision: t,
+                                            collider_distance: (block_a0 as f32 + 0.5
+                                                - start_position[a0])
+                                                .powi(2)
+                                                + (block_a1 as f32 + 0.5 - start_position[a1])
+                                                    .powi(2)
+                                                + (block_a2 as f32 + 0.5 - start_position[a2])
+                                                    .powi(2),
                                             max_movement: (block_a0 + block_offset) as f32
                                                 + match move_dir {
                                                     MoveDirection::Positive => {
@@ -158,33 +187,36 @@ impl PositionSystem {
                     None
                 };
 
-                let travel = velocity.clone() * dt;
-                let mut finish_position = *start_position + travel.vector;
+                let mut finish_position = *start_position + (velocity.clone() * dt).vector;
 
                 let axis_sets = [[0, 1, 2], [1, 0, 2], [2, 0, 1]];
 
                 let mut move_limits = ArrayVec::<_, 3>::new();
 
+                // Initial movement limiters by axis
                 for axis_set in axis_sets {
                     if let Some(ml) = calc_pass(finish_position, axis_set) {
                         move_limits.push(ml);
                     }
                 }
 
-                for _ in 0 ..= 1 {
+                // Re-calculation in case some colliding blocks are actually unreachable
+                // behind other colliding blocks on different axis, priority is defined
+                // by the distance from initial actor position to the colliding block
+                while move_limits.len() > 1 {
                     move_limits.sort_unstable_by(|ml1, ml2| {
-                        ml1.time_to_collision
-                            .partial_cmp(&ml2.time_to_collision)
-                            .unwrap()
+                        ml1.collider_distance.total_cmp(&ml2.collider_distance)
                     });
 
-                    if let Some(move_limit) = move_limits.first() {
+                    let mut move_limits_iter = move_limits.iter();
+
+                    if let Some(move_limit) = move_limits_iter.next() {
                         finish_position[move_limit.axis_set[0]] = move_limit.max_movement;
                     }
 
                     let mut next_move_limits = ArrayVec::new();
 
-                    for &MoveLimit { axis_set, .. } in move_limits.iter().skip(1) {
+                    for &MoveLimit { axis_set, .. } in move_limits_iter {
                         if let Some(ml) = calc_pass(finish_position, axis_set) {
                             next_move_limits.push(ml);
                         }
@@ -193,23 +225,17 @@ impl PositionSystem {
                     move_limits = next_move_limits;
                 }
 
-                move_limits.sort_unstable_by(|ml1, ml2| {
-                    ml1.time_to_collision
-                        .partial_cmp(&ml2.time_to_collision)
-                        .unwrap()
-                });
-
                 if let Some(move_limit) = move_limits.first() {
                     finish_position[move_limit.axis_set[0]] = move_limit.max_movement;
                 }
 
-                let new_chunk = finish_position
+                // If we need to "move" actor to other chunk
+                if finish_position
                     .as_ref()
                     .iter()
                     .find(|dist| dist.abs() > BLOCKS_IN_CHUNK_EDGE as f32)
-                    .is_some();
-
-                if new_chunk {
+                    .is_some()
+                {
                     let chunk_diff_vec =
                         finish_position.map(|f| f as i32 / BLOCKS_IN_CHUNK_EDGE as i32);
 
@@ -251,9 +277,9 @@ impl PositionSystem {
                 //     the back side of the block, which is the same as it's coordinate
                 // side_index is a index of side/neighbor in [x_m, x_p, y_m, y_p, z_m, z_p]
                 let (axis_offset, wall_offset, block_coord_offset, side_index) =
-                    match forward[axis_0].partial_cmp(&0.0) {
-                        Some(Ordering::Less) => (-axis_offset, 0, -1, axis_0 * 2 + 1),
-                        Some(Ordering::Greater) => (axis_offset, 1, 0, axis_0 * 2),
+                    match forward[axis_0].total_cmp(&0.0) {
+                        Ordering::Less => (-axis_offset, 0, -1, axis_0 * 2 + 1),
+                        Ordering::Greater => (axis_offset, 1, 0, axis_0 * 2),
                         _ => continue,
                     };
 
