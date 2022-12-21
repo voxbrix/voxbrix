@@ -603,10 +603,10 @@ impl RenderSystem {
             cbc.get_chunk(&chunk)
         });
 
-        for (block, block_class) in blocks.iter() {
+        for (block, block_coords, block_class) in blocks.iter_with_coords() {
             if let Some(model) = mbcc.get(*block_class) {
                 let cull_mask = neighbors_to_cull_mask(
-                    &block.neighbors(),
+                    &block.neighbors_in_coords(block_coords),
                     &blocks,
                     &[
                         chunk_x_minus.as_ref(),
@@ -622,7 +622,7 @@ impl RenderSystem {
                     &mut vertex_buffer,
                     &mut index_buffer,
                     &chunk,
-                    block.to_coords(),
+                    block_coords,
                     cull_mask,
                 );
             }
@@ -666,9 +666,7 @@ impl RenderSystem {
     }
 
     pub fn render(&mut self) -> Result<(), SurfaceError> {
-        // let mut time_test = None;
         if self.update_chunk_buffer {
-            // time_test = Some(std::time::Instant::now());
             let mut chunk_info = Vec::with_capacity(self.chunk_buffer_shards.len());
 
             let (vertex_size, index_size) =
@@ -687,24 +685,24 @@ impl RenderSystem {
                         (vbl + vb.len(), ibl + ib.len())
                     });
 
+            let vertex_byte_size = (vertex_size * VERTEX_SIZE) as u64;
+            let index_byte_size = (index_size * INDEX_SIZE) as u64;
+
+            self.prepared_vertex_buffer = self.device.create_buffer(&BufferDescriptor {
+                label: Some("Vertex Buffer"),
+                size: vertex_byte_size,
+                usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+
+            self.prepared_index_buffer = self.device.create_buffer(&BufferDescriptor {
+                label: Some("Index Buffer"),
+                size: index_byte_size as u64,
+                usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+
             if vertex_size != 0 && index_size != 0 {
-                let vertex_byte_size = (vertex_size * VERTEX_SIZE) as u64;
-                let index_byte_size = (index_size * INDEX_SIZE) as u64;
-
-                self.prepared_vertex_buffer = self.device.create_buffer(&BufferDescriptor {
-                    label: Some("Vertex Buffer"),
-                    size: vertex_byte_size,
-                    usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
-                    mapped_at_creation: false,
-                });
-
-                self.prepared_index_buffer = self.device.create_buffer(&BufferDescriptor {
-                    label: Some("Index Buffer"),
-                    size: index_byte_size as u64,
-                    usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
-                    mapped_at_creation: false,
-                });
-
                 let mut vertex_writer = self.queue.write_buffer_with(
                     &self.prepared_vertex_buffer,
                     0,
@@ -738,10 +736,10 @@ impl RenderSystem {
                         .unwrap()
                         .copy_from_slice(bytemuck::cast_slice(&vertex_vec));
                 });
-
-                self.num_indices = index_size as u32;
-                self.update_chunk_buffer = false;
             }
+
+            self.num_indices = index_size as u32;
+            self.update_chunk_buffer = false;
         }
 
         let output = self.surface.get_current_texture()?;
@@ -790,9 +788,6 @@ impl RenderSystem {
 
         self.queue.submit(iter::once(encoder.finish()));
         output.present();
-        // if let Some(time_test) = time_test {
-        //    log::error!("Elapsed: {:?}", time_test.elapsed());
-        //}
 
         Ok(())
     }

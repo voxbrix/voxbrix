@@ -25,54 +25,41 @@ impl Block {
         Self(z * BLOCKS_IN_CHUNK_LAYER + y * BLOCKS_IN_CHUNK_EDGE + x)
     }
 
-    pub fn neighbors(&self) -> [Neighbor; 6] {
-        let i = self.0 % BLOCKS_IN_CHUNK_EDGE;
-        let x_m = if i == 0 {
-            let row = self.0 / BLOCKS_IN_CHUNK_EDGE;
-            Neighbor::OtherChunk(Block(row * BLOCKS_IN_CHUNK_EDGE + BLOCKS_IN_CHUNK_EDGE - 1))
+    pub fn neighbors_in_coords(&self, [x, y, z]: [usize; 3]) -> [Neighbor; 6] {
+        let x_m = if x == 0 {
+            Neighbor::OtherChunk(Block(self.0 + BLOCKS_IN_CHUNK_EDGE - 1))
         } else {
             Neighbor::ThisChunk(Block(self.0 - 1))
         };
 
-        let i = self.0 % BLOCKS_IN_CHUNK_EDGE + 1;
-        let x_p = if i >= BLOCKS_IN_CHUNK_EDGE {
-            let row = self.0 / BLOCKS_IN_CHUNK_EDGE;
-            Neighbor::OtherChunk(Block(row * BLOCKS_IN_CHUNK_EDGE + i - BLOCKS_IN_CHUNK_EDGE))
-        } else {
+        let x_p = if x + 1 < BLOCKS_IN_CHUNK_EDGE {
             Neighbor::ThisChunk(Block(self.0 + 1))
+        } else {
+            Neighbor::OtherChunk(Block(self.0 + 1 - BLOCKS_IN_CHUNK_EDGE))
         };
 
-        let i = self.0 % BLOCKS_IN_CHUNK_LAYER;
-        let y_m = if i < BLOCKS_IN_CHUNK_EDGE {
-            let row = self.0 / BLOCKS_IN_CHUNK_LAYER;
-            Neighbor::OtherChunk(Block(
-                row * BLOCKS_IN_CHUNK_LAYER + BLOCKS_IN_CHUNK_LAYER + i - BLOCKS_IN_CHUNK_EDGE,
-            ))
+        let y_m = if y == 0 {
+            Neighbor::OtherChunk(Block(self.0 + BLOCKS_IN_CHUNK_LAYER - BLOCKS_IN_CHUNK_EDGE))
         } else {
             Neighbor::ThisChunk(Block(self.0 - BLOCKS_IN_CHUNK_EDGE))
         };
 
-        let i = self.0 % BLOCKS_IN_CHUNK_LAYER + BLOCKS_IN_CHUNK_EDGE;
-        let y_p = if i >= BLOCKS_IN_CHUNK_LAYER {
-            let row = self.0 / BLOCKS_IN_CHUNK_LAYER;
-            Neighbor::OtherChunk(Block(
-                row * BLOCKS_IN_CHUNK_LAYER + i - BLOCKS_IN_CHUNK_LAYER,
-            ))
-        } else {
+        let y_p = if y + 1 < BLOCKS_IN_CHUNK_EDGE {
             Neighbor::ThisChunk(Block(self.0 + BLOCKS_IN_CHUNK_EDGE))
+        } else {
+            Neighbor::OtherChunk(Block(self.0 + BLOCKS_IN_CHUNK_EDGE - BLOCKS_IN_CHUNK_LAYER))
         };
 
-        let z_m = if self.0 < BLOCKS_IN_CHUNK_LAYER {
+        let z_m = if z == 0 {
             Neighbor::OtherChunk(Block(self.0 + BLOCKS_IN_CHUNK - BLOCKS_IN_CHUNK_LAYER))
         } else {
             Neighbor::ThisChunk(Block(self.0 - BLOCKS_IN_CHUNK_LAYER))
         };
 
-        let i = self.0 + BLOCKS_IN_CHUNK_LAYER;
-        let z_p = if i >= BLOCKS_IN_CHUNK {
-            Neighbor::OtherChunk(Block(i - BLOCKS_IN_CHUNK))
+        let z_p = if z + 1 < BLOCKS_IN_CHUNK_EDGE {
+            Neighbor::ThisChunk(Block(self.0 + BLOCKS_IN_CHUNK_LAYER))
         } else {
-            Neighbor::ThisChunk(Block(i))
+            Neighbor::OtherChunk(Block(self.0 + BLOCKS_IN_CHUNK_LAYER - BLOCKS_IN_CHUNK))
         };
 
         [x_m, x_p, y_m, y_p, z_m, z_p]

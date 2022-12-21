@@ -2,6 +2,7 @@ use crate::entity::{
     block::{
         Block,
         BLOCKS_IN_CHUNK,
+        BLOCKS_IN_CHUNK_EDGE,
     },
     chunk::Chunk,
 };
@@ -48,6 +49,18 @@ impl<T> Blocks<T> {
 
     pub fn iter(&self) -> impl Iterator<Item = (Block, &T)> {
         self.blocks.iter().enumerate().map(|(i, b)| (Block(i), b))
+    }
+
+    pub fn iter_with_coords(&self) -> impl Iterator<Item = (Block, [usize; 3], &T)> {
+        let coords = (0 .. BLOCKS_IN_CHUNK_EDGE).flat_map(move |z| {
+            (0 .. BLOCKS_IN_CHUNK_EDGE)
+                .flat_map(move |y| (0 .. BLOCKS_IN_CHUNK_EDGE).map(move |x| ([x, y, z])))
+        });
+        self.blocks
+            .iter()
+            .enumerate()
+            .zip(coords)
+            .map(|((i, b), c)| (Block(i), c, b))
     }
 }
 
