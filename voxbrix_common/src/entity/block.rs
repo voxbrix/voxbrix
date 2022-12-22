@@ -2,13 +2,17 @@ use crate::{
     entity::chunk::Chunk,
     math::Vec3,
 };
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 pub const BLOCKS_IN_CHUNK_EDGE: usize = 16;
 pub const BLOCKS_IN_CHUNK_LAYER: usize = BLOCKS_IN_CHUNK_EDGE * BLOCKS_IN_CHUNK_EDGE;
 pub const BLOCKS_IN_CHUNK: usize =
     BLOCKS_IN_CHUNK_EDGE * BLOCKS_IN_CHUNK_EDGE * BLOCKS_IN_CHUNK_EDGE;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Serialize, Deserialize, Copy, Clone, Debug)]
 pub struct Block(pub usize);
 
 impl Block {

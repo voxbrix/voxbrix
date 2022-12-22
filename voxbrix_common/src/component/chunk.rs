@@ -34,11 +34,11 @@ impl<T> ChunkComponent<T> {
         self.chunks.remove(chunk)
     }
 
-    pub fn retain<F>(&mut self, mut retain_fn: F)
+    pub fn retain<F>(&mut self, retain_fn: F)
     where
-        F: FnMut(&Chunk) -> bool,
+        F: FnMut(&Chunk, &mut T) -> bool,
     {
-        self.chunks.retain(|c, _| retain_fn(c));
+        self.chunks.retain(retain_fn);
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&Chunk, &T)> {

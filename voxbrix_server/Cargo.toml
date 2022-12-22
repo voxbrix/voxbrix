@@ -18,6 +18,7 @@ flume = "0.10"
 #serde = "1.0"
 #postcard = "1.0"
 local-channel = "0.1"
+arrayvec = { version = "0.7", default-features = false }
 anyhow = "1.0"
 log = "0.4"
 env_logger = "0.9"

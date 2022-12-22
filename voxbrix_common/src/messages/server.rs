@@ -1,5 +1,10 @@
 use crate::{
     component::actor::position::GlobalPosition,
+    entity::{
+        block::Block,
+        block_class::BlockClass,
+        chunk::Chunk,
+    },
     pack::PackDefault,
 };
 use serde::{
@@ -9,7 +14,14 @@ use serde::{
 
 #[derive(Serialize, Deserialize)]
 pub enum ServerAccept {
-    PlayerPosition { position: GlobalPosition },
+    PlayerPosition {
+        position: GlobalPosition,
+    },
+    AlterBlock {
+        chunk: Chunk,
+        block: Block,
+        block_class: BlockClass,
+    },
 }
 
 impl PackDefault for ServerAccept {}

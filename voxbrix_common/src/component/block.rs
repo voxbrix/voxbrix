@@ -34,6 +34,13 @@ pub struct Blocks<T> {
     blocks: [T; BLOCKS_IN_CHUNK],
 }
 
+pub fn coords_iter() -> impl Iterator<Item = [usize; 3]> {
+    (0 .. BLOCKS_IN_CHUNK_EDGE).flat_map(move |z| {
+        (0 .. BLOCKS_IN_CHUNK_EDGE)
+            .flat_map(move |y| (0 .. BLOCKS_IN_CHUNK_EDGE).map(move |x| ([x, y, z])))
+    })
+}
+
 impl<T> Blocks<T> {
     pub fn new(blocks: [T; BLOCKS_IN_CHUNK]) -> Self {
         Self { blocks }
@@ -52,14 +59,10 @@ impl<T> Blocks<T> {
     }
 
     pub fn iter_with_coords(&self) -> impl Iterator<Item = (Block, [usize; 3], &T)> {
-        let coords = (0 .. BLOCKS_IN_CHUNK_EDGE).flat_map(move |z| {
-            (0 .. BLOCKS_IN_CHUNK_EDGE)
-                .flat_map(move |y| (0 .. BLOCKS_IN_CHUNK_EDGE).map(move |x| ([x, y, z])))
-        });
         self.blocks
             .iter()
             .enumerate()
-            .zip(coords)
+            .zip(coords_iter())
             .map(|((i, b), c)| (Block(i), c, b))
     }
 }
