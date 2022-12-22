@@ -77,7 +77,9 @@ impl ChunkTicketSystem {
             .cloned()
             .collect::<Vec<_>>();
 
-        scc.retain(|chunk| self.data.contains(chunk));
+        // TODO: sort new_chunks by the sum of distances to the actors
+
+        scc.retain(|chunk, status| self.data.contains(chunk) || *status == ChunkStatus::Loading);
         cbc.retain(|chunk| self.data.contains(chunk));
 
         blocking::unblock(move || {

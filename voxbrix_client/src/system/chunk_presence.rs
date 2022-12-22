@@ -47,7 +47,7 @@ impl ChunkPresenceSystem {
                 && chunk.position[2] <= player_chunk.position[2].saturating_add(radius)
         };
 
-        scc.retain(|chunk| {
+        scc.retain(|chunk, _| {
             let retain = retain_fn(chunk);
             if !retain {
                 cbc.remove_chunk(chunk);

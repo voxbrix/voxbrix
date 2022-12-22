@@ -12,6 +12,7 @@ use crate::{
         },
         block::{
             class::ClassBlockComponent,
+            coords_iter,
             Blocks,
         },
         chunk::status::{
@@ -25,16 +26,25 @@ use crate::{
     },
     entity::{
         actor::Actor,
-        block::BLOCKS_IN_CHUNK,
+        block::{
+            self,
+            BLOCKS_IN_CHUNK,
+            BLOCKS_IN_CHUNK_EDGE,
+        },
         block_class::BlockClass,
-        chunk::Chunk,
+        chunk::{
+            self,
+            Chunk,
+        },
         player::Player,
     },
+    store::AsKey,
 };
 use anyhow::{
     Error,
     Result,
 };
+use arrayvec::ArrayVec;
 use async_executor::LocalExecutor;
 use async_io::Timer;
 use flume::{
@@ -61,6 +71,7 @@ use log::{
     warn,
 };
 use sled::{
+    transaction::ConflictableTransactionError,
     Batch,
     Db,
     Subscriber as DataSubscriber,
@@ -172,19 +183,65 @@ async fn server_loop(
                 cts.clear();
                 cts.actor_tickets(&ctac);
                 cts.apply(&mut scc, &mut cbc, |chunk| {
-                    let response = if chunk.position[2] < -1 {
+                    let tree = shared.database.open_tree([0, 1]).unwrap();
+                    let mut block_key = [0; block::KEY_LENGTH];
+                    let chunk_key = &mut block_key[.. chunk::KEY_LENGTH];
+                    chunk
+                        .to_key(chunk_key)
+                        .expect("server_loop: chunk encode to key");
+
+                    let block_classes = tree
+                        .scan_prefix(chunk_key)
+                        .values()
+                        .map(|bytes| {
+                            let bytes = bytes.expect("server_loop: database read");
+                            BlockClass::unpack(&bytes)
+                                .expect("server_loop: block class deserialization")
+                        })
+                        .collect::<ArrayVec<_, BLOCKS_IN_CHUNK>>();
+
+                    let data = if block_classes.len() == BLOCKS_IN_CHUNK {
+                        let block_classes = block_classes.into_inner().unwrap();
                         ChunkData {
                             chunk: *chunk,
-                            block_classes: Blocks::new([BlockClass(1); BLOCKS_IN_CHUNK]),
+                            block_classes: Blocks::new(block_classes),
                         }
                     } else {
+                        let block_classes = if chunk.position[2] < -1 {
+                            [BlockClass(1); BLOCKS_IN_CHUNK]
+                        } else {
+                            [BlockClass(0); BLOCKS_IN_CHUNK]
+                        };
+
+                        // TODO real chunk generation
+                        std::thread::sleep(Duration::from_millis(500));
+
+                        let mut batch = Batch::default();
+                        let mut val_buf = Vec::new();
+
+                        for ([x, y, z], block_class) in coords_iter().zip(block_classes.into_iter())
+                        {
+                            block_key[chunk::KEY_LENGTH] = z as u8;
+                            block_key[chunk::KEY_LENGTH + 1] = y as u8;
+                            block_key[chunk::KEY_LENGTH + 2] = x as u8;
+
+                            block_class
+                                .pack(&mut val_buf)
+                                .expect("server_loop: message pack error");
+
+                            batch.insert(&block_key, val_buf.as_slice());
+                        }
+
+                        tree.apply_batch(batch)
+                            .expect("server_loop: database batch");
+
                         ChunkData {
                             chunk: *chunk,
-                            block_classes: Blocks::new([BlockClass(0); BLOCKS_IN_CHUNK]),
+                            block_classes: Blocks::new(block_classes),
                         }
                     };
 
-                    let _ = shared.event_tx.send(SharedEvent::ChunkLoaded(response));
+                    let _ = shared.event_tx.send(SharedEvent::ChunkLoaded(data));
                 });
             },
             ServerEvent::AddPlayer {
@@ -236,6 +293,11 @@ async fn server_loop(
                                 // before
                             }
                         },
+                        ServerAccept::AlterBlock {
+                            chunk,
+                            block,
+                            block_class,
+                        } => {},
                     }
                 }
             },
@@ -411,7 +473,7 @@ async fn client_loop(
 
 fn main() -> Result<()> {
     env_logger::init();
-    let database = sled::open("/tmp/voxbrix.db")?;
+    let database = sled::open("/tmp/database")?;
 
     let (event_tx, event_shared_rx) = flume::unbounded();
 
