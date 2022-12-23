@@ -36,19 +36,10 @@ impl ChunkPresenceSystem {
             chunk: player_chunk,
             offset: _,
         } = gpc.get(player).unwrap();
-        let radius = settings.player_ticket_radius as i32;
-        let retain_fn = |chunk: &Chunk| {
-            chunk.dimension == player_chunk.dimension
-                && chunk.position[0] >= player_chunk.position[0].saturating_sub(radius)
-                && chunk.position[0] <= player_chunk.position[0].saturating_add(radius)
-                && chunk.position[1] >= player_chunk.position[1].saturating_sub(radius)
-                && chunk.position[1] <= player_chunk.position[1].saturating_add(radius)
-                && chunk.position[2] >= player_chunk.position[2].saturating_sub(radius)
-                && chunk.position[2] <= player_chunk.position[2].saturating_add(radius)
-        };
+        let radius = player_chunk.radius(settings.player_ticket_radius as i32);
 
         scc.retain(|chunk, _| {
-            let retain = retain_fn(chunk);
+            let retain = radius.is_within(chunk);
             if !retain {
                 cbc.remove_chunk(chunk);
                 let _ = event_tx.send(Event::DrawChunk { chunk: *chunk });

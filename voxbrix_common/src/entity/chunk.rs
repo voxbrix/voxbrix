@@ -35,3 +35,39 @@ impl PartialOrd for Chunk {
         Some(self.cmp(other))
     }
 }
+
+impl Chunk {
+    pub fn radius(&self, radius: i32) -> ChunkRadius {
+        ChunkRadius {
+            dimension: self.dimension,
+            min_position: (
+                self.position[0].saturating_sub(radius),
+                self.position[1].saturating_sub(radius),
+                self.position[2].saturating_sub(radius),
+            ),
+            max_position: (
+                self.position[0].saturating_add(radius),
+                self.position[1].saturating_add(radius),
+                self.position[2].saturating_add(radius),
+            ),
+        }
+    }
+}
+
+pub struct ChunkRadius {
+    dimension: u32,
+    min_position: (i32, i32, i32),
+    max_position: (i32, i32, i32),
+}
+
+impl ChunkRadius {
+    pub fn is_within(&self, chunk: &Chunk) -> bool {
+        chunk.dimension == self.dimension
+            && chunk.position[0] >= self.min_position.0
+            && chunk.position[0] <= self.max_position.0
+            && chunk.position[1] >= self.min_position.1
+            && chunk.position[1] <= self.max_position.1
+            && chunk.position[2] >= self.min_position.2
+            && chunk.position[2] <= self.max_position.2
+    }
+}

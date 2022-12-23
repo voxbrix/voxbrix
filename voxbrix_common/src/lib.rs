@@ -8,6 +8,7 @@ pub mod stream;
 
 use component::block::Blocks;
 use entity::{
+    block::Block,
     block_class::BlockClass,
     chunk::Chunk,
 };
@@ -16,8 +17,15 @@ use serde::{
     Serialize,
 };
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct ChunkData {
     pub chunk: Chunk,
     pub block_classes: Blocks<BlockClass>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct AlterBlock {
+    pub chunk: Chunk,
+    pub block: Block,
+    pub block_class: BlockClass,
 }

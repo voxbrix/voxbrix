@@ -1,6 +1,6 @@
 use crate::{
     component::player::PlayerComponent,
-    Client,
+    server::Client,
 };
 
 pub type ClientPlayerComponent = PlayerComponent<Client>;
