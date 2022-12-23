@@ -123,7 +123,7 @@ impl EventLoop<'_> {
         self.rt
             .spawn(async move {
                 while let Some(msg) = sender_rx.recv().await {
-                    msg.pack(&mut send_buf).expect("message packed");
+                    msg.pack(&mut send_buf);
 
                     tx.send_reliable(0, &send_buf).await.expect("message sent");
                 }
@@ -248,6 +248,12 @@ impl EventLoop<'_> {
 
                                 *block_class = BlockClass(0);
 
+                                sender_tx.send(ServerAccept::AlterBlock {
+                                    chunk,
+                                    block,
+                                    block_class: *block_class,
+                                });
+
                                 let _ = event_tx.send(Event::DrawChunk { chunk });
                                 Some(())
                             });
@@ -280,6 +286,12 @@ impl EventLoop<'_> {
 
                                 *block_class = BlockClass(1);
 
+                                sender_tx.send(ServerAccept::AlterBlock {
+                                    chunk,
+                                    block,
+                                    block_class: *block_class,
+                                });
+
                                 let _ = event_tx.send(Event::DrawChunk { chunk });
                                 Some(())
                             });
@@ -306,6 +318,11 @@ impl EventLoop<'_> {
                             scc.insert(chunk, ChunkStatus::Active);
                             let _ = event_tx.send(Event::DrawChunk { chunk });
                         },
+                        ClientAccept::AlterBlock {
+                            chunk,
+                            block,
+                            block_class,
+                        } => {},
                     }
                 },
                 Event::DrawChunk { chunk } => {

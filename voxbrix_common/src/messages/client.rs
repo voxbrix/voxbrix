@@ -1,4 +1,9 @@
 use crate::{
+    entity::{
+        block::Block,
+        block_class::BlockClass,
+        chunk::Chunk,
+    },
     pack::PackDefault,
     ChunkData,
 };
@@ -10,6 +15,11 @@ use serde::{
 #[derive(Serialize, Deserialize)]
 pub enum ClientAccept {
     ChunkData(ChunkData),
+    AlterBlock {
+        chunk: Chunk,
+        block: Block,
+        block_class: BlockClass,
+    },
 }
 
 impl PackDefault for ClientAccept {}
