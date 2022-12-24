@@ -18,6 +18,7 @@ pub const MAX_HEADER_SIZE: usize = 48;
 // 508 - channel(16) - sender(16) - assign_id(16)
 pub const MAX_DATA_SIZE: usize = 460;
 
+#[cfg(any(feature = "client", test))]
 const NEW_CONNECTION_ID: usize = 0;
 const SERVER_ID: usize = 1;
 
@@ -218,19 +219,24 @@ mod tests {
         let server_port = 30000 + test_num * 10;
 
         let rt = Box::leak(Box::new(LocalExecutor::new()));
+        let task = Box::leak(Box::new(RefCell::new(None)));
         future::block_on(rt.run(async {
             rt.spawn(async {
                 let mut server =
                     Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
                 loop {
-                    let (mut tx, _rx) = server.accept().await.expect("connection accepted");
+                    let (mut tx, mut rx) = server.accept().await.expect("connection accepted");
 
-                    rt.spawn(async move {
-                        tx.send_unreliable(0, b"HelloWorld")
+                    *task.borrow_mut() = Some(rt.spawn(async move {
+                        tx.send_unreliable(0, b"1HelloWorld1")
                             .await
                             .expect("server sent packet");
-                    })
-                    .detach();
+
+                        let (channel, result) = rx.recv().await.unwrap();
+
+                        assert_eq!(result.as_ref(), b"2HelloWorld2");
+                        assert_eq!(channel, 1);
+                    }));
                 }
             })
             .detach();
@@ -239,7 +245,7 @@ mod tests {
 
             let client = Client::bind(([127, 0, 0, 1], client_port)).expect("client bound");
 
-            let (_tx, mut rx) = client
+            let (mut tx, mut rx) = client
                 .connect(([127, 0, 0, 1], server_port))
                 .await
                 .expect("client connection");
@@ -248,8 +254,14 @@ mod tests {
 
             let (channel, result) = rx.recv(&mut buf).await.expect("client message receive");
 
-            assert_eq!(result.as_ref(), b"HelloWorld");
+            assert_eq!(result.as_ref(), b"1HelloWorld1");
             assert_eq!(channel, 0);
+
+            tx.send_unreliable(1, b"2HelloWorld2")
+                .await
+                .expect("client sent packet");
+
+            task.borrow_mut().take().unwrap().await;
         }));
     }
 

@@ -71,7 +71,7 @@ use winit::{
 
 pub enum Event {
     Process,
-    // Render,
+    SendPosition,
     Key { input: WinitKeyboardInput },
     MouseButton { input: WinitMouseButton },
     MouseMove { horizontal: f32, vertical: f32 },
@@ -95,14 +95,17 @@ impl EventLoop<'_> {
             event_rx: window_event_rx,
         } = self.window;
 
-        let (sender_tx, mut sender_rx) = local_channel::mpsc::channel::<ServerAccept>();
+        let (reliable_tx, mut reliable_rx) = local_channel::mpsc::channel::<ServerAccept>();
+        let (unreliable_tx, mut unreliable_rx) = local_channel::mpsc::channel::<ServerAccept>();
         let (event_tx, event_rx) = local_channel::mpsc::channel::<Event>();
 
         let mut send_buf = Vec::new();
 
-        let (mut tx, mut rx) = Client::bind(([127, 0, 0, 1], 12001))?
+        let (tx, mut rx) = Client::bind(([127, 0, 0, 1], 12001))?
             .connect(([127, 0, 0, 1], 12000))
             .await?;
+
+        let (mut unreliable, mut reliable) = tx.split();
 
         let server_settings = rx
             .recv(&mut send_buf)
@@ -122,10 +125,30 @@ impl EventLoop<'_> {
 
         self.rt
             .spawn(async move {
-                while let Some(msg) = sender_rx.recv().await {
+                let mut send_buf = Vec::new();
+
+                while let Some(msg) = unreliable_rx.recv().await {
                     msg.pack(&mut send_buf);
 
-                    tx.send_reliable(0, &send_buf).await.expect("message sent");
+                    unreliable
+                        .send_unreliable(0, &send_buf)
+                        .await
+                        .expect("message sent");
+                }
+            })
+            .detach();
+
+        self.rt
+            .spawn(async move {
+                let mut send_buf = Vec::new();
+
+                while let Some(msg) = reliable_rx.recv().await {
+                    msg.pack(&mut send_buf);
+
+                    reliable
+                        .send_reliable(0, &send_buf)
+                        .await
+                        .expect("message sent");
                 }
             })
             .detach();
@@ -196,6 +219,7 @@ impl EventLoop<'_> {
         let mut stream = Timer::interval(Duration::from_millis(20))
             .map(|_| Event::Process)
             .or(window_event_rx.stream())
+            .or(Timer::interval(Duration::from_millis(50)).map(|_| Event::SendPosition))
             .or(event_rx);
 
         while let Some(event) = stream.next().await {
@@ -207,7 +231,6 @@ impl EventLoop<'_> {
                     // TODO consider what should really be unblocked?
                     // let time_test = Instant::now();
                     position_system.process(elapsed, &cbc, &mut gpac, &vac);
-                    let player_position = gpac.get(&player_actor).unwrap();
                     chunk_presence_system.process(
                         &server_settings,
                         &player_actor,
@@ -216,13 +239,16 @@ impl EventLoop<'_> {
                         &mut scc,
                         &event_tx,
                     );
-                    sender_tx.send(ServerAccept::PlayerPosition {
-                        position: player_position.clone(),
-                    });
                     direct_control_system.process(elapsed, &mut vac, &mut oac);
                     render_system.update(&gpac, &oac);
                     render_system.render()?;
                     // log::error!("Elapsed: {:?}", time_test.elapsed());
+                },
+                Event::SendPosition => {
+                    let player_position = gpac.get(&player_actor).unwrap();
+                    unreliable_tx.send(ServerAccept::PlayerPosition {
+                        position: player_position.clone(),
+                    });
                 },
                 Event::Key { input } => {
                     direct_control_system.process_keyboard(&input);
@@ -243,6 +269,7 @@ impl EventLoop<'_> {
                                 },
                             )
                             .and_then(|(chunk, block, _side)| {
+                                /*
                                 let block_class =
                                     cbc.get_mut_chunk(&chunk).and_then(|c| c.get_mut(block))?;
 
@@ -255,6 +282,14 @@ impl EventLoop<'_> {
                                 });
 
                                 let _ = event_tx.send(Event::DrawChunk { chunk });
+                                */
+
+                                reliable_tx.send(ServerAccept::AlterBlock {
+                                    chunk,
+                                    block,
+                                    block_class: BlockClass(0),
+                                });
+
                                 Some(())
                             });
                         },
@@ -272,6 +307,8 @@ impl EventLoop<'_> {
                                 },
                             )
                             .and_then(|(chunk, block, side)| {
+                                /*
+                                 * 
                                 let axis = side / 2;
                                 let direction = match side % 2 {
                                     0 => -1,
@@ -293,6 +330,23 @@ impl EventLoop<'_> {
                                 });
 
                                 let _ = event_tx.send(Event::DrawChunk { chunk });
+                                */
+                                let axis = side / 2;
+                                let direction = match side % 2 {
+                                    0 => -1,
+                                    1 => 1,
+                                    _ => panic!("incorrect side index"),
+                                };
+                                let mut block = block.to_coords().map(|u| u as i32);
+                                block[axis] += direction;
+                                let (chunk, block) = Block::from_chunk_offset(chunk, block);
+
+                                reliable_tx.send(ServerAccept::AlterBlock {
+                                    chunk,
+                                    block,
+                                    block_class: BlockClass(1),
+                                });
+
                                 Some(())
                             });
                         },
@@ -322,7 +376,15 @@ impl EventLoop<'_> {
                             chunk,
                             block,
                             block_class,
-                        } => {},
+                        } => {
+                            if let Some(block_class_ref) =
+                                cbc.get_mut_chunk(&chunk).and_then(|c| c.get_mut(block))
+                            {
+                                *block_class_ref = block_class;
+
+                                let _ = event_tx.send(Event::DrawChunk { chunk });
+                            }
+                        },
                     }
                 },
                 Event::DrawChunk { chunk } => {

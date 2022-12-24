@@ -118,14 +118,36 @@ async fn stream_send_ack(
 }
 
 pub struct StreamSender {
-    peer: Id,
-    sequence: Sequence,
-    unreliable_split_id: u16,
-    ack_receiver: ChannelRx<Sequence>,
-    transport: ChannelTx<(Id, Buffer, ChannelTx<Result<(), StdIoError>>)>,
+    unreliable: StreamUnreliableSender,
+    reliable: StreamReliableSender,
 }
 
 impl StreamSender {
+    pub async fn send_unreliable(&mut self, channel: usize, data: &[u8]) -> Result<(), StdIoError> {
+        self.unreliable.send_unreliable(channel, data).await
+    }
+
+    pub async fn send_reliable(&mut self, channel: usize, data: &[u8]) -> Result<(), StdIoError> {
+        self.reliable.send_reliable(channel, data).await
+    }
+
+    pub fn split(self) -> (StreamUnreliableSender, StreamReliableSender) {
+        let Self {
+            unreliable,
+            reliable,
+        } = self;
+
+        (unreliable, reliable)
+    }
+}
+
+pub struct StreamUnreliableSender {
+    peer: Id,
+    unreliable_split_id: u16,
+    transport: ChannelTx<(Id, Buffer, ChannelTx<Result<(), StdIoError>>)>,
+}
+
+impl StreamUnreliableSender {
     async fn send_unreliable_one(
         &self,
         channel: usize,
@@ -207,7 +229,16 @@ impl StreamSender {
                 .await
         }
     }
+}
 
+pub struct StreamReliableSender {
+    peer: Id,
+    sequence: Sequence,
+    ack_receiver: ChannelRx<Sequence>,
+    transport: ChannelTx<(Id, Buffer, ChannelTx<Result<(), StdIoError>>)>,
+}
+
+impl StreamReliableSender {
     async fn send_reliable_one(
         &mut self,
         channel: usize,
@@ -349,7 +380,7 @@ impl StreamReceiver {
                 },
                 Type::UNRELIABLE => {
                     let channel: usize = seek_read!(read_cursor.read_varint(), "channel");
-                    packet.start = read_cursor.position() as usize;
+                    packet.start += read_cursor.position() as usize;
                     return Ok((channel, packet.into()));
                 },
                 Type::UNRELIABLE_SPLIT_START => {
@@ -640,11 +671,17 @@ impl Server {
 
                             return Ok((
                                 StreamSender {
-                                    peer: id,
-                                    sequence: 0,
-                                    ack_receiver,
-                                    unreliable_split_id: 0,
-                                    transport: self.out_queue_sender.clone(),
+                                    unreliable: StreamUnreliableSender {
+                                        peer: id,
+                                        unreliable_split_id: 0,
+                                        transport: self.out_queue_sender.clone(),
+                                    },
+                                    reliable: StreamReliableSender {
+                                        peer: id,
+                                        sequence: 0,
+                                        ack_receiver,
+                                        transport: self.out_queue_sender.clone(),
+                                    },
                                 },
                                 StreamReceiver {
                                     sequence: 0,

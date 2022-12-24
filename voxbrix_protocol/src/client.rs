@@ -129,12 +129,18 @@ impl Client {
         };
 
         let sender = Sender {
-            id,
-            sequence: 0,
-            unreliable_split_id: 0,
-            buffer: [0; MAX_PACKET_SIZE],
-            ack_receiver,
-            transport: transport.clone(),
+            unreliable: UnreliableSender {
+                id,
+                unreliable_split_id: 0,
+                transport: transport.clone(),
+            },
+            reliable: ReliableSender {
+                id,
+                sequence: 0,
+                buffer: [0; MAX_PACKET_SIZE],
+                ack_receiver,
+                transport,
+            },
         };
 
         Ok((sender, receiver))
@@ -354,15 +360,44 @@ where
 }
 
 pub struct Sender<T> {
-    id: Id,
-    sequence: Sequence,
-    unreliable_split_id: u16,
-    buffer: [u8; MAX_PACKET_SIZE],
-    ack_receiver: ChannelRx<Sequence>,
-    transport: T,
+    unreliable: UnreliableSender<T>,
+    reliable: ReliableSender<T>,
 }
 
 impl<T> Sender<T>
+where
+    T: Deref<Target = Async<UdpSocket>>,
+{
+    pub async fn send_unreliable(&mut self, channel: usize, data: &[u8]) -> Result<(), StdIoError> {
+        self.unreliable.send_unreliable(channel, data).await
+    }
+
+    pub async fn send_reliable(&mut self, channel: usize, data: &[u8]) -> Result<(), StdIoError> {
+        self.reliable.send_reliable(channel, data).await
+    }
+}
+
+impl<T> Sender<T>
+where
+    T: Deref<Target = Async<UdpSocket>> + Clone,
+{
+    pub fn split(self) -> (UnreliableSender<T>, ReliableSender<T>) {
+        let Self {
+            unreliable,
+            reliable,
+        } = self;
+
+        (unreliable, reliable)
+    }
+}
+
+pub struct UnreliableSender<T> {
+    id: Id,
+    unreliable_split_id: u16,
+    transport: T,
+}
+
+impl<T> UnreliableSender<T>
 where
     T: Deref<Target = Async<UdpSocket>>,
 {
@@ -422,7 +457,20 @@ where
                 .await
         }
     }
+}
 
+pub struct ReliableSender<T> {
+    id: Id,
+    sequence: Sequence,
+    buffer: [u8; MAX_PACKET_SIZE],
+    ack_receiver: ChannelRx<Sequence>,
+    transport: T,
+}
+
+impl<T> ReliableSender<T>
+where
+    T: Deref<Target = Async<UdpSocket>>,
+{
     async fn send_reliable_one(
         &mut self,
         channel: usize,

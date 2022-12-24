@@ -44,20 +44,13 @@ use crate::{
 };
 use arrayvec::ArrayVec;
 use async_io::Timer;
-use flume::{
-    Receiver as SharedReceiver,
-    Sender as SharedSender,
-};
+use flume::Receiver as SharedReceiver;
 use futures_lite::stream::StreamExt;
 use local_channel::mpsc::{
     Receiver,
     Sender,
 };
-use log::{
-    debug,
-    error,
-    warn,
-};
+use log::debug;
 use sled::Batch;
 use std::{
     rc::Rc,
@@ -122,7 +115,14 @@ where
     }
 }
 
+// Safe, as the Rc counter in the container can not be incremented (clone)
+// and can be decremented (drop) only once, with dropping the container
 unsafe impl<T: Send> Send for SendRc<T> {}
+
+// Safe, references to the container can safely be passed between threads
+// because one can only get access to the underlying Rc by consuming
+// the container, which does not have Clone
+unsafe impl<T: Sync> Sync for SendRc<T> {}
 
 pub async fn run(
     local: &'static Local,
@@ -302,10 +302,12 @@ pub async fn run(
                                     let client = cpc.get(player)?;
                                     Some((player, client))
                                 }) {
-                                    if let Err(_) = client.tx.send(ClientEvent::SendDataRef {
-                                        channel: BASE_CHANNEL,
-                                        data: data_buf.clone(),
-                                    }) {
+                                    if let Err(_) =
+                                        client.tx.send(ClientEvent::SendDataRefReliable {
+                                            channel: BASE_CHANNEL,
+                                            data: data_buf.clone(),
+                                        })
+                                    {
                                         let _ = local
                                             .event_tx
                                             .send(ServerEvent::RemovePlayer { player: *player });
@@ -353,7 +355,7 @@ pub async fn run(
                                 None
                             }
                         }) {
-                            if let Err(_) = client.tx.send(ClientEvent::SendDataRef {
+                            if let Err(_) = client.tx.send(ClientEvent::SendDataRefReliable {
                                 channel: BASE_CHANNEL,
                                 data: chunk_data_buf.clone(),
                             }) {
