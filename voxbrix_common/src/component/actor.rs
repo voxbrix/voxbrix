@@ -42,4 +42,8 @@ impl<T> ActorComponent<T> {
     pub fn remove(&mut self, i: &Actor) -> Option<T> {
         self.actors.remove(i.0)
     }
+
+    pub fn push(&mut self, new: T) -> Actor {
+        Actor(self.actors.push(new))
+    }
 }

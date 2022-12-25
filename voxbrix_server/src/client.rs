@@ -1,5 +1,8 @@
 use crate::{
-    entity::player::Player,
+    entity::{
+        actor::Actor,
+        player::Player,
+    },
     server::ServerEvent,
     Local,
     Shared,
@@ -18,7 +21,7 @@ use futures_lite::{
 use log::warn;
 use std::rc::Rc;
 use voxbrix_common::{
-    messages::client::ServerSettings,
+    messages::client::InitialData,
     pack::Pack,
     stream::StreamExt as _,
 };
@@ -33,8 +36,33 @@ use voxbrix_protocol::{
 
 // Client loop input
 pub enum ClientEvent {
-    SendDataRefUnreliable { channel: Channel, data: Rc<Vec<u8>> },
-    SendDataRefReliable { channel: Channel, data: Rc<Vec<u8>> },
+    AssignActor { actor: Actor },
+    SendDataUnreliable { channel: Channel, data: SendData },
+    SendDataReliable { channel: Channel, data: SendData },
+}
+
+enum SelfEvent {
+    Exit,
+}
+
+enum LoopEvent {
+    ServerLoop(ClientEvent),
+    PeerMessage { channel: usize, data: Packet },
+    SelfEvent(SelfEvent),
+}
+
+pub enum SendData {
+    Owned(Vec<u8>),
+    Ref(Rc<Vec<u8>>),
+}
+
+impl SendData {
+    fn as_slice(&self) -> &[u8] {
+        match self {
+            Self::Owned(v) => v.as_slice(),
+            Self::Ref(v) => v.as_slice(),
+        }
+    }
 }
 
 pub async fn run(
@@ -45,17 +73,7 @@ pub async fn run(
 ) {
     let (mut unreliable_tx, mut reliable_tx) = tx.split();
 
-    enum SelfEvent {
-        Exit,
-    }
-
-    enum LoopEvent {
-        ServerLoop(ClientEvent),
-        PeerMessage { channel: usize, data: Packet },
-        SelfEvent(SelfEvent),
-    }
-
-    let (client_tx, server_rx) = local_channel::mpsc::channel();
+    let (client_tx, mut server_rx) = local_channel::mpsc::channel();
     let (self_tx, self_rx) = local_channel::mpsc::channel();
 
     let player = Player(0);
@@ -64,8 +82,13 @@ pub async fn run(
         .event_tx
         .send(ServerEvent::AddPlayer { player, client_tx });
 
+    let actor = match server_rx.recv().await {
+        Some(ClientEvent::AssignActor { actor }) => actor,
+        _ => panic!("client_loop: incorrect answer to AddPlayer"),
+    };
+
     let (unreliable_loop_tx, mut unreliable_loop_rx) =
-        local_channel::mpsc::channel::<(Channel, Rc<Vec<u8>>)>();
+        local_channel::mpsc::channel::<(Channel, SendData)>();
     let self_tx_local = self_tx.clone();
     local
         .rt
@@ -84,7 +107,7 @@ pub async fn run(
         .detach();
 
     let (reliable_loop_tx, mut reliable_loop_rx) =
-        local_channel::mpsc::channel::<(Channel, Rc<Vec<u8>>)>();
+        local_channel::mpsc::channel::<(Channel, SendData)>();
     local
         .rt
         .spawn(async move {
@@ -114,9 +137,10 @@ pub async fn run(
 
     reliable_loop_tx.send((
         BASE_CHANNEL,
-        Rc::new(
-            ServerSettings {
-                player_ticket_radius: PLAYER_CHUNK_TICKET_RADIUS as u8,
+        SendData::Owned(
+            InitialData {
+                actor,
+                player_ticket_radius: PLAYER_CHUNK_TICKET_RADIUS,
             }
             .pack_to_vec(),
         ),
@@ -148,12 +172,13 @@ pub async fn run(
         match event {
             LoopEvent::ServerLoop(event) => {
                 match event {
-                    ClientEvent::SendDataRefUnreliable { channel, data } => {
+                    ClientEvent::SendDataUnreliable { channel, data } => {
                         let _ = unreliable_loop_tx.send((channel, data));
                     },
-                    ClientEvent::SendDataRefReliable { channel, data } => {
+                    ClientEvent::SendDataReliable { channel, data } => {
                         let _ = reliable_loop_tx.send((channel, data));
                     },
+                    _ => {},
                 }
             },
             LoopEvent::PeerMessage { channel, data } => {

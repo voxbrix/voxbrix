@@ -13,7 +13,7 @@ futures-lite = "1.12"
 async-io = "1.10"
 voxbrix_protocol = { path = "../voxbrix_protocol", features = ["single", "server"] }
 voxbrix_common = { path = "../voxbrix_common" }
-sled = "0.34"
+redb = "0.10"
 flume = "0.10"
 #serde = "1.0"
 #postcard = "1.0"

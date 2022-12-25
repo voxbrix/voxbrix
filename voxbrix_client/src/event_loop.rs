@@ -53,7 +53,7 @@ use voxbrix_common::{
     messages::{
         client::{
             ClientAccept,
-            ServerSettings,
+            InitialData,
         },
         server::ServerAccept,
     },
@@ -107,17 +107,17 @@ impl EventLoop<'_> {
 
         let (mut unreliable, mut reliable) = tx.split();
 
-        let server_settings = rx
+        let initial_data = rx
             .recv(&mut send_buf)
             .await
             .map_err(|err| {
-                error!("run: unable to receive server_settings: {:?}", err);
+                error!("run: unable to receive initial_data: {:?}", err);
             })
             .ok()
             .and_then(|(_channel, data)| {
-                ServerSettings::unpack(&data)
+                InitialData::unpack(&data)
                     .map_err(|_| {
-                        error!("run: unable to decode server_settings");
+                        error!("run: unable to decode initial_data");
                     })
                     .ok()
             })
@@ -176,7 +176,7 @@ impl EventLoop<'_> {
         let mut cbc = ClassBlockComponent::new();
         let mut mbcc = ModelBlockClassComponent::new();
 
-        let player_actor = Actor(0);
+        let player_actor = initial_data.actor;
 
         mbcc.set(
             BlockClass(1),
@@ -232,7 +232,7 @@ impl EventLoop<'_> {
                     // let time_test = Instant::now();
                     position_system.process(elapsed, &cbc, &mut gpac, &vac);
                     chunk_presence_system.process(
-                        &server_settings,
+                        initial_data.player_ticket_radius,
                         &player_actor,
                         &gpac,
                         &mut cbc,
