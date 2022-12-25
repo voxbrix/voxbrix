@@ -1,5 +1,7 @@
 use crate::{
+    component::actor::position::GlobalPosition,
     entity::{
+        actor::Actor,
         block::Block,
         block_class::BlockClass,
         chunk::Chunk,
@@ -25,8 +27,10 @@ pub enum ClientAccept {
 impl PackDefault for ClientAccept {}
 
 #[derive(Serialize, Deserialize)]
-pub struct ServerSettings {
-    pub player_ticket_radius: u8,
+pub struct InitialData {
+    pub actor: Actor,
+    // pub position: GlobalPosition,
+    pub player_ticket_radius: i32,
 }
 
-impl PackDefault for ServerSettings {}
+impl PackDefault for InitialData {}

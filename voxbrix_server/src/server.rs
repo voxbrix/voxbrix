@@ -1,10 +1,17 @@
 use crate::{
-    client::ClientEvent,
+    client::{
+        ClientEvent,
+        SendData,
+    },
     component::{
         actor::{
             chunk_ticket::{
                 ActorChunkTicket,
                 ChunkTicketActorComponent,
+            },
+            existence::{
+                ActorExistence,
+                ExistenceActorComponent,
             },
             position::GlobalPositionActorComponent,
         },
@@ -22,7 +29,6 @@ use crate::{
         },
     },
     entity::{
-        actor::Actor,
         block::{
             self,
             BLOCKS_IN_CHUNK,
@@ -39,6 +45,7 @@ use crate::{
     Local,
     Shared,
     BASE_CHANNEL,
+    BLOCK_CLASS_TABLE,
     PLAYER_CHUNK_TICKET_RADIUS,
     PROCESS_INTERVAL,
 };
@@ -51,7 +58,7 @@ use local_channel::mpsc::{
     Sender,
 };
 use log::debug;
-use sled::Batch;
+use redb::ReadableTable;
 use std::{
     rc::Rc,
     time::Duration,
@@ -130,9 +137,9 @@ pub async fn run(
     event_rx: Receiver<ServerEvent>,
     event_shared_rx: SharedReceiver<SharedEvent>,
 ) {
-    // TODO remake in ECS
     let mut cpc = ClientPlayerComponent::new();
     let mut apc = ActorPlayerComponent::new();
+    let mut eac = ExistenceActorComponent::new();
     let mut ctac = ChunkTicketActorComponent::new();
     let mut scc = StatusChunkComponent::new();
     let mut gpac = GlobalPositionActorComponent::new();
@@ -152,21 +159,28 @@ pub async fn run(
                 cts.clear();
                 cts.actor_tickets(&ctac);
                 cts.apply(&mut scc, &mut cbc, |chunk| {
-                    let tree = shared.database.open_tree([0, 1]).unwrap();
                     let mut block_key = [0; block::KEY_LENGTH];
                     // TODO: some non-runtime way involving const generics?
                     let chunk_key = &mut block_key[.. chunk::KEY_LENGTH];
                     chunk.to_key(chunk_key);
+                    let mut block_key_finish = block_key;
+                    (&mut block_key_finish[block::KEY_LENGTH - 2 .. block::KEY_LENGTH])
+                        .fill(u8::MAX);
 
-                    let block_classes = tree
-                        .scan_prefix(chunk_key)
-                        .values()
-                        .map(|bytes| {
-                            let bytes = bytes.expect("server_loop: database read");
-                            BlockClass::unpack(&bytes)
-                                .expect("server_loop: block class deserialization")
-                        })
-                        .collect::<ArrayVec<_, BLOCKS_IN_CHUNK>>();
+                    let block_classes = {
+                        let db_read = shared.database.begin_read().unwrap();
+                        let table = db_read
+                            .open_table(BLOCK_CLASS_TABLE)
+                            .expect("server_loop: database read");
+                        table
+                            .range(block_key .. block_key_finish)
+                            .unwrap()
+                            .map(|(_key, bytes)| {
+                                BlockClass::unpack(&bytes)
+                                    .expect("server_loop: block class deserialization")
+                            })
+                            .collect::<ArrayVec<_, BLOCKS_IN_CHUNK>>()
+                    };
 
                     let data = if block_classes.len() == BLOCKS_IN_CHUNK {
                         let block_classes = block_classes.into_inner().unwrap();
@@ -184,18 +198,21 @@ pub async fn run(
                         // TODO real chunk generation
                         std::thread::sleep(Duration::from_millis(500));
 
-                        let mut batch = Batch::default();
-                        let mut val_buf = Vec::new();
+                        let db_write = shared.database.begin_write().unwrap();
+                        {
+                            let mut table = db_write.open_table(BLOCK_CLASS_TABLE).unwrap();
+                            let mut val_buf = Vec::new();
 
-                        for (block, block_class) in block_classes.iter() {
-                            block.to_key(&mut block_key);
-                            block_class.pack(&mut val_buf);
+                            for (block, block_class) in block_classes.iter() {
+                                block.to_key(&mut block_key);
+                                block_class.pack(&mut val_buf);
 
-                            batch.insert(&block_key, val_buf.as_slice());
+                                table
+                                    .insert(&block_key, val_buf.as_slice())
+                                    .expect("server_loop: database write");
+                            }
                         }
-
-                        tree.apply_batch(batch)
-                            .expect("server_loop: database batch");
+                        db_write.commit().unwrap();
 
                         ChunkData {
                             chunk: *chunk,
@@ -216,8 +233,12 @@ pub async fn run(
                 player,
                 client_tx: tx,
             } => {
+                let tx_init = tx.clone();
+                let actor = eac.push(ActorExistence);
                 cpc.insert(player, Client { tx });
-                apc.insert(player, Actor(0));
+                apc.insert(player, actor);
+
+                tx_init.send(ClientEvent::AssignActor { actor });
             },
             ServerEvent::PlayerEvent {
                 player,
@@ -273,14 +294,21 @@ pub async fn run(
                                 *block_class_ref = block_class;
 
                                 store.execute(move |buf| {
-                                    let tree = shared.database.open_tree([0, 1]).unwrap();
-                                    let mut block_key = [0; block::KEY_LENGTH];
-                                    chunk.to_key(&mut block_key[.. chunk::KEY_LENGTH]);
-                                    block.to_key(&mut block_key);
-                                    block_class.pack(buf);
+                                    let db_write = shared.database.begin_write().unwrap();
+                                    {
+                                        let mut table =
+                                            db_write.open_table(BLOCK_CLASS_TABLE).unwrap();
 
-                                    tree.insert(&block_key, buf.as_slice())
-                                        .expect("server_loop: database write");
+                                        let mut block_key = [0; block::KEY_LENGTH];
+                                        chunk.to_key(&mut block_key[.. chunk::KEY_LENGTH]);
+                                        block.to_key(&mut block_key);
+                                        block_class.pack(buf);
+
+                                        table
+                                            .insert(&block_key, buf.as_slice())
+                                            .expect("server_loop: database write");
+                                    }
+                                    db_write.commit().unwrap();
                                 });
 
                                 let data_buf = Rc::new(
@@ -302,12 +330,10 @@ pub async fn run(
                                     let client = cpc.get(player)?;
                                     Some((player, client))
                                 }) {
-                                    if let Err(_) =
-                                        client.tx.send(ClientEvent::SendDataRefReliable {
-                                            channel: BASE_CHANNEL,
-                                            data: data_buf.clone(),
-                                        })
-                                    {
+                                    if let Err(_) = client.tx.send(ClientEvent::SendDataReliable {
+                                        channel: BASE_CHANNEL,
+                                        data: SendData::Ref(data_buf.clone()),
+                                    }) {
                                         let _ = local
                                             .event_tx
                                             .send(ServerEvent::RemovePlayer { player: *player });
@@ -321,6 +347,7 @@ pub async fn run(
             ServerEvent::RemovePlayer { player } => {
                 cpc.remove(&player);
                 if let Some(actor) = apc.remove(&player) {
+                    eac.remove(&actor);
                     gpac.remove(&actor);
                     ctac.remove(&actor);
                 }
@@ -355,9 +382,9 @@ pub async fn run(
                                 None
                             }
                         }) {
-                            if let Err(_) = client.tx.send(ClientEvent::SendDataRefReliable {
+                            if let Err(_) = client.tx.send(ClientEvent::SendDataReliable {
                                 channel: BASE_CHANNEL,
-                                data: chunk_data_buf.clone(),
+                                data: SendData::Ref(chunk_data_buf.clone()),
                             }) {
                                 let _ = local
                                     .event_tx

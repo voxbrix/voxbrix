@@ -4,11 +4,14 @@ use flume::Sender as SharedSender;
 use futures_lite::future;
 use local_channel::mpsc::Sender;
 use log::error;
+use redb::{
+    Database,
+    TableDefinition,
+};
 use server::{
     ServerEvent,
     SharedEvent,
 };
-use sled::Db;
 use std::time::Duration;
 use voxbrix_protocol::{
     server::Server,
@@ -17,8 +20,11 @@ use voxbrix_protocol::{
 
 const BASE_CHANNEL: Channel = 0;
 const PLAYER_CHUNK_TICKET_RADIUS: i32 = 2;
-const PROCESS_INTERVAL: Duration = Duration::from_secs(1);
+const PROCESS_INTERVAL: Duration = Duration::from_millis(50);
 const CLIENT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
+const BLOCK_CLASS_TABLE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("block_class");
+const PLAYER_TABLE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("player");
+const USERNAME_TABLE: TableDefinition<&str, u64> = TableDefinition::new("username");
 
 mod client;
 mod component;
@@ -33,13 +39,20 @@ pub struct Local {
 }
 
 pub struct Shared {
-    pub database: Db,
+    pub database: Database,
     pub event_tx: SharedSender<SharedEvent>,
 }
 
 fn main() -> Result<()> {
     env_logger::init();
-    let database = sled::open("/tmp/database")?;
+    let database = unsafe { Database::create("/tmp/voxbrix.db")? };
+
+    let write_tx = database.begin_write()?;
+    {
+        // Initialize all tables
+        write_tx.open_table(BLOCK_CLASS_TABLE)?;
+    }
+    write_tx.commit()?;
 
     let (event_tx, event_shared_rx) = flume::unbounded();
 
