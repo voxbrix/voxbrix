@@ -15,7 +15,7 @@ voxbrix_protocol = { path = "../voxbrix_protocol", features = ["single", "server
 voxbrix_common = { path = "../voxbrix_common" }
 redb = "0.10"
 flume = "0.10"
-#serde = "1.0"
+serde = "1.0"
 #postcard = "1.0"
 local-channel = "0.1"
 arrayvec = { version = "0.7", default-features = false }

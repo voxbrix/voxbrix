@@ -53,9 +53,13 @@ use voxbrix_common::{
     messages::{
         client::{
             ClientAccept,
-            InitialData,
+            InitFailure,
+            InitResponse,
         },
-        server::ServerAccept,
+        server::{
+            InitRequest,
+            ServerAccept,
+        },
     },
     pack::Pack,
     ChunkData,
@@ -99,29 +103,48 @@ impl EventLoop<'_> {
         let (unreliable_tx, mut unreliable_rx) = local_channel::mpsc::channel::<ServerAccept>();
         let (event_tx, event_rx) = local_channel::mpsc::channel::<Event>();
 
-        let mut send_buf = Vec::new();
-
         let (tx, mut rx) = Client::bind(([127, 0, 0, 1], 12001))?
             .connect(([127, 0, 0, 1], 12000))
             .await?;
 
         let (mut unreliable, mut reliable) = tx.split();
 
-        let initial_data = rx
-            .recv(&mut send_buf)
+        let init_response = self.rt.spawn(async move {
+            let mut recv_buf = Vec::new();
+            let (_channel, bytes) = rx
+                .recv(&mut recv_buf)
+                .await
+                .expect("initialization response");
+
+            (
+                rx,
+                InitResponse::unpack(&bytes).expect("initialization response unpack"),
+            )
+        });
+
+        reliable
+            .send_reliable(
+                0,
+                &InitRequest {
+                    username: "user1".to_owned(),
+                    password: "1234".as_bytes().to_vec(),
+                }
+                .pack_to_vec(),
+            )
             .await
-            .map_err(|err| {
-                error!("run: unable to receive initial_data: {:?}", err);
-            })
-            .ok()
-            .and_then(|(_channel, data)| {
-                InitialData::unpack(&data)
-                    .map_err(|_| {
-                        error!("run: unable to decode initial_data");
-                    })
-                    .ok()
-            })
-            .expect("server_settings");
+            .expect("initialization request");
+
+        let (mut rx, init_response) = init_response.await;
+
+        let (player_actor, chunk_radius) = match init_response {
+            InitResponse::Success {
+                actor,
+                player_ticket_radius,
+            } => (actor, player_ticket_radius),
+            InitResponse::Failure(err) => {
+                panic!("{:?}", err);
+            },
+        };
 
         self.rt
             .spawn(async move {
@@ -175,8 +198,6 @@ impl EventLoop<'_> {
 
         let mut cbc = ClassBlockComponent::new();
         let mut mbcc = ModelBlockClassComponent::new();
-
-        let player_actor = initial_data.actor;
 
         mbcc.set(
             BlockClass(1),
@@ -232,7 +253,7 @@ impl EventLoop<'_> {
                     // let time_test = Instant::now();
                     position_system.process(elapsed, &cbc, &mut gpac, &vac);
                     chunk_presence_system.process(
-                        initial_data.player_ticket_radius,
+                        chunk_radius,
                         &player_actor,
                         &gpac,
                         &mut cbc,

@@ -1,5 +1,4 @@
 use crate::{
-    component::actor::position::GlobalPosition,
     entity::{
         actor::Actor,
         block::Block,
@@ -26,11 +25,20 @@ pub enum ClientAccept {
 
 impl PackDefault for ClientAccept {}
 
-#[derive(Serialize, Deserialize)]
-pub struct InitialData {
-    pub actor: Actor,
-    // pub position: GlobalPosition,
-    pub player_ticket_radius: i32,
+#[derive(Serialize, Deserialize, Debug)]
+pub enum InitFailure {
+    IncorrectPassword,
+    Unknown,
 }
 
-impl PackDefault for InitialData {}
+#[derive(Serialize, Deserialize)]
+pub enum InitResponse {
+    Success {
+        actor: Actor,
+        // position: GlobalPosition,
+        player_ticket_radius: i32,
+    },
+    Failure(InitFailure),
+}
+
+impl PackDefault for InitResponse {}

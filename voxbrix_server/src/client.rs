@@ -4,11 +4,14 @@ use crate::{
         player::Player,
     },
     server::ServerEvent,
+    storage::player::Player as PlayerStorage,
     Local,
     Shared,
     BASE_CHANNEL,
     CLIENT_CONNECTION_TIMEOUT,
     PLAYER_CHUNK_TICKET_RADIUS,
+    PLAYER_TABLE,
+    USERNAME_TABLE,
 };
 use async_io::Timer;
 use futures_lite::{
@@ -19,9 +22,16 @@ use futures_lite::{
     },
 };
 use log::warn;
+use redb::ReadableTable;
 use std::rc::Rc;
 use voxbrix_common::{
-    messages::client::InitialData,
+    messages::{
+        client::{
+            InitFailure,
+            InitResponse,
+        },
+        server::InitRequest,
+    },
     pack::Pack,
     stream::StreamExt as _,
 };
@@ -69,14 +79,103 @@ pub async fn run(
     local: &'static Local,
     shared: &'static Shared,
     tx: StreamSender,
-    rx: StreamReceiver,
+    mut rx: StreamReceiver,
 ) {
     let (mut unreliable_tx, mut reliable_tx) = tx.split();
 
+    // Lookup for the player in the database,
+    // if there's none - register,
+    // if the password is not correct - send error
+    let player_res = {
+        match rx
+            .recv()
+            .await
+            .ok()
+            .and_then(|(_channel, data)| InitRequest::unpack(&data).ok())
+        {
+            Some(req) => {
+                blocking::unblock(|| {
+                    let InitRequest { username, password } = req;
+
+                    let db_write = shared.database.begin_write().expect("database write");
+                    let player = {
+                        let mut player_table = db_write
+                            .open_table(PLAYER_TABLE)
+                            .expect("database table open");
+                        let mut username_table = db_write
+                            .open_table(USERNAME_TABLE)
+                            .expect("database table open");
+
+                        let player = match username_table.get(&username).expect("database read") {
+                            Some(p) => p,
+                            None => {
+                                let player = player_table
+                                    .iter()
+                                    .expect("database read")
+                                    .next_back()
+                                    // TODO wrapping?
+                                    .map(|(id, _)| id.checked_add(1).unwrap())
+                                    .unwrap_or(0);
+
+                                username_table
+                                    .insert(&username, &player)
+                                    .expect("database write");
+
+                                player
+                            },
+                        };
+
+                        match player_table
+                            .get(&player)
+                            .expect("database read")
+                            .map(|bytes| PlayerStorage::unpack(bytes))
+                            .transpose()
+                            .map_err(|_| InitFailure::Unknown)?
+                        {
+                            Some(PlayerStorage {
+                                username: st_un,
+                                password: st_ps,
+                            }) => {
+                                if username == st_un && password == st_ps {
+                                    Ok(player)
+                                } else {
+                                    Err(InitFailure::IncorrectPassword)
+                                }
+                            },
+                            None => {
+                                player_table
+                                    .insert(
+                                        &player,
+                                        &PlayerStorage { username, password }.pack_to_vec(),
+                                    )
+                                    .expect("database write");
+
+                                Ok(player)
+                            },
+                        }
+                    }?;
+                    db_write.commit().expect("database commit");
+
+                    Ok(player)
+                })
+                .await
+            },
+            None => return,
+        }
+    };
+
+    let player = match player_res {
+        Ok(p) => Player(p),
+        Err(err) => {
+            reliable_tx
+                .send_reliable(BASE_CHANNEL, &InitResponse::Failure(err).pack_to_vec())
+                .await;
+            return;
+        },
+    };
+
     let (client_tx, mut server_rx) = local_channel::mpsc::channel();
     let (self_tx, self_rx) = local_channel::mpsc::channel();
-
-    let player = Player(0);
 
     let _ = local
         .event_tx
@@ -135,10 +234,11 @@ pub async fn run(
         })
         .detach();
 
+    // Finalize successful connection
     reliable_loop_tx.send((
         BASE_CHANNEL,
         SendData::Owned(
-            InitialData {
+            InitResponse::Success {
                 actor,
                 player_ticket_radius: PLAYER_CHUNK_TICKET_RADIUS,
             }
