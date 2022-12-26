@@ -1,12 +1,14 @@
 use flume::Sender;
 use std::thread;
 
-pub trait AsKey {
-    fn to_key(&self, buf: &mut [u8]);
-    fn from_key<B>(buf: B) -> Self
+pub trait AsKey<const KEY_LENGTH: usize> {
+    fn write_key(&self, buf: &mut [u8]);
+    fn read_key<B>(buf: B) -> Self
     where
         Self: Sized,
         B: AsRef<[u8]>;
+    fn to_key(self) -> [u8; KEY_LENGTH];
+    fn from_key(from: [u8; KEY_LENGTH]) -> Self;
 }
 
 pub struct StorageThread {

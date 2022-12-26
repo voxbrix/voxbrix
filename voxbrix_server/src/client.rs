@@ -1,10 +1,16 @@
 use crate::{
     entity::{
         actor::Actor,
-        player::Player,
+        player::{
+            self,
+            Player,
+        },
     },
     server::ServerEvent,
-    storage::player::Player as PlayerStorage,
+    storage::{
+        player::Player as PlayerStorage,
+        AsKey,
+    },
     Local,
     Shared,
     BASE_CHANNEL,
@@ -95,6 +101,7 @@ pub async fn run(
         {
             Some(req) => {
                 blocking::unblock(|| {
+                    let mut value_buf = Vec::new();
                     let InitRequest { username, password } = req;
 
                     let db_write = shared.database.begin_write().expect("database write");
@@ -106,19 +113,27 @@ pub async fn run(
                             .open_table(USERNAME_TABLE)
                             .expect("database table open");
 
-                        let player = match username_table.get(&username).expect("database read") {
-                            Some(p) => p,
+                        let player = match username_table
+                            .get(username.as_bytes())
+                            .expect("database read")
+                        {
+                            Some(p) => Player::unpack(p).unwrap(),
                             None => {
                                 let player = player_table
                                     .iter()
                                     .expect("database read")
                                     .next_back()
                                     // TODO wrapping?
-                                    .map(|(id, _)| id.checked_add(1).unwrap())
-                                    .unwrap_or(0);
+                                    .map(|(id, _)| {
+                                        let player = Player::read_key(id);
+                                        Player(player.0.checked_add(1).unwrap())
+                                    })
+                                    .unwrap_or(Player(0));
+
+                                player.pack(&mut value_buf);
 
                                 username_table
-                                    .insert(&username, &player)
+                                    .insert(username.as_bytes(), &value_buf)
                                     .expect("database write");
 
                                 player
@@ -126,7 +141,7 @@ pub async fn run(
                         };
 
                         match player_table
-                            .get(&player)
+                            .get(&player.to_key())
                             .expect("database read")
                             .map(|bytes| PlayerStorage::unpack(bytes))
                             .transpose()
@@ -145,7 +160,7 @@ pub async fn run(
                             None => {
                                 player_table
                                     .insert(
-                                        &player,
+                                        &player.to_key(),
                                         &PlayerStorage { username, password }.pack_to_vec(),
                                     )
                                     .expect("database write");
@@ -165,7 +180,7 @@ pub async fn run(
     };
 
     let player = match player_res {
-        Ok(p) => Player(p),
+        Ok(p) => p,
         Err(err) => {
             reliable_tx
                 .send_reliable(BASE_CHANNEL, &InitResponse::Failure(err).pack_to_vec())

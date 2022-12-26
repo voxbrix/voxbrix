@@ -23,8 +23,8 @@ const PLAYER_CHUNK_TICKET_RADIUS: i32 = 2;
 const PROCESS_INTERVAL: Duration = Duration::from_millis(50);
 const CLIENT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 const BLOCK_CLASS_TABLE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("block_class");
-const PLAYER_TABLE: TableDefinition<u64, &[u8]> = TableDefinition::new("player");
-const USERNAME_TABLE: TableDefinition<&str, u64> = TableDefinition::new("username");
+const PLAYER_TABLE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("player");
+const USERNAME_TABLE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("username");
 
 mod client;
 mod component;

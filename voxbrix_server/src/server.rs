@@ -162,7 +162,7 @@ pub async fn run(
                     let mut block_key = [0; block::KEY_LENGTH];
                     // TODO: some non-runtime way involving const generics?
                     let chunk_key = &mut block_key[.. chunk::KEY_LENGTH];
-                    chunk.to_key(chunk_key);
+                    chunk.write_key(chunk_key);
                     let mut block_key_finish = block_key;
                     (&mut block_key_finish[block::KEY_LENGTH - 2 .. block::KEY_LENGTH])
                         .fill(u8::MAX);
@@ -204,7 +204,7 @@ pub async fn run(
                             let mut val_buf = Vec::new();
 
                             for (block, block_class) in block_classes.iter() {
-                                block.to_key(&mut block_key);
+                                block.write_key(&mut block_key);
                                 block_class.pack(&mut val_buf);
 
                                 table
@@ -300,8 +300,8 @@ pub async fn run(
                                             db_write.open_table(BLOCK_CLASS_TABLE).unwrap();
 
                                         let mut block_key = [0; block::KEY_LENGTH];
-                                        chunk.to_key(&mut block_key[.. chunk::KEY_LENGTH]);
-                                        block.to_key(&mut block_key);
+                                        chunk.write_key(&mut block_key[.. chunk::KEY_LENGTH]);
+                                        block.write_key(&mut block_key);
                                         block_class.pack(buf);
 
                                         table
