@@ -2,6 +2,8 @@ use flume::Sender;
 use std::thread;
 
 pub trait AsKey<const KEY_LENGTH: usize> {
+    const KEY_LENGTH: usize = KEY_LENGTH;
+
     fn write_key(&self, buf: &mut [u8]);
     fn read_key<B>(buf: B) -> Self
     where

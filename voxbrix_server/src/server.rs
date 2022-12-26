@@ -30,11 +30,11 @@ use crate::{
     },
     entity::{
         block::{
-            self,
+            Block,
             BLOCKS_IN_CHUNK,
         },
         block_class::BlockClass,
-        chunk,
+        chunk::Chunk,
         player::Player,
     },
     storage::{
@@ -159,12 +159,12 @@ pub async fn run(
                 cts.clear();
                 cts.actor_tickets(&ctac);
                 cts.apply(&mut scc, &mut cbc, |chunk| {
-                    let mut block_key = [0; block::KEY_LENGTH];
+                    let mut block_key = [0; Block::KEY_LENGTH];
                     // TODO: some non-runtime way involving const generics?
-                    let chunk_key = &mut block_key[.. chunk::KEY_LENGTH];
+                    let chunk_key = &mut block_key[.. Chunk::KEY_LENGTH];
                     chunk.write_key(chunk_key);
                     let mut block_key_finish = block_key;
-                    (&mut block_key_finish[block::KEY_LENGTH - 2 .. block::KEY_LENGTH])
+                    (&mut block_key_finish[Block::KEY_LENGTH - 2 .. Block::KEY_LENGTH])
                         .fill(u8::MAX);
 
                     let block_classes = {
@@ -299,8 +299,8 @@ pub async fn run(
                                         let mut table =
                                             db_write.open_table(BLOCK_CLASS_TABLE).unwrap();
 
-                                        let mut block_key = [0; block::KEY_LENGTH];
-                                        chunk.write_key(&mut block_key[.. chunk::KEY_LENGTH]);
+                                        let mut block_key = [0; Block::KEY_LENGTH];
+                                        chunk.write_key(&mut block_key[.. Chunk::KEY_LENGTH]);
                                         block.write_key(&mut block_key);
                                         block_class.pack(buf);
 

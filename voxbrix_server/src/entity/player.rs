@@ -6,10 +6,10 @@ use serde::{
 use std::mem;
 use voxbrix_common::pack::PackDefault;
 
-pub const KEY_LENGTH: usize = mem::size_of::<u64>();
+pub const KEY_LENGTH: usize = mem::size_of::<usize>();
 
 #[derive(Serialize, Deserialize, PartialOrd, Ord, PartialEq, Eq, Clone, Copy, Debug)]
-pub struct Player(pub u64);
+pub struct Player(pub usize);
 
 impl AsKey<KEY_LENGTH> for Player {
     fn write_key(&self, buf: &mut [u8]) {
@@ -23,15 +23,15 @@ impl AsKey<KEY_LENGTH> for Player {
     {
         let buf: &[u8] = buf.as_ref();
 
-        Self(u64::from_be_bytes(buf.try_into().unwrap()))
+        Self(usize::from_be_bytes(buf.try_into().unwrap()))
     }
 
-    fn to_key(self) -> [u8; KEY_LENGTH] {
+    fn to_key(self) -> [u8; Self::KEY_LENGTH] {
         self.0.to_be_bytes()
     }
 
-    fn from_key(from: [u8; KEY_LENGTH]) -> Self {
-        Player(u64::from_be_bytes(from))
+    fn from_key(from: [u8; Self::KEY_LENGTH]) -> Self {
+        Player(usize::from_be_bytes(from))
     }
 }
 
