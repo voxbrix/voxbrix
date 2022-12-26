@@ -1,4 +1,4 @@
-use crate::store::AsKey;
+use crate::storage::AsKey;
 pub use voxbrix_common::entity::block::*;
 
 // 4b dimension, 12b chunk coords, 2b block coords (u16)

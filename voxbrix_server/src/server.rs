@@ -37,9 +37,9 @@ use crate::{
         chunk,
         player::Player,
     },
-    store::{
+    storage::{
         AsKey,
-        StoreThread,
+        StorageThread,
     },
     system::chunk_ticket::ChunkTicketSystem,
     Local,
@@ -151,7 +151,7 @@ pub async fn run(
         .or(event_rx)
         .or(event_shared_rx.stream().map(ServerEvent::SharedEvent));
 
-    let store = StoreThread::new();
+    let storage = StorageThread::new();
 
     while let Some(event) = stream.next().await {
         match event {
@@ -293,7 +293,7 @@ pub async fn run(
                             {
                                 *block_class_ref = block_class;
 
-                                store.execute(move |buf| {
+                                storage.execute(move |buf| {
                                     let db_write = shared.database.begin_write().unwrap();
                                     {
                                         let mut table =

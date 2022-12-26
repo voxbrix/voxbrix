@@ -1,80 +1,52 @@
-use std::path::Path;
-use sled::{
-    Db,
-    Tree,
-};
-pub use sled::{
-    IVec,
-    Error,
-    transaction::{
-        TransactionalTree,
-        TransactionResult,
-        ConflictableTransactionResult,
-    },
-};
+use flume::Sender;
+use std::thread;
 
-trait Key {
-    fn to_key<'a>(&self, buf: &'a mut Vec<u8>) -> &'a [u8];
-    //fn from_key(key: &[u8]) -> Self;
-}
-
-impl Key for u32 {
-    fn to_key<'a>(&self, buf: &'a mut Vec<u8>) -> &'a [u8] {
-        buf.clear();
-        buf.extend_from_slice(&self.to_be_bytes());
-        buf.as_slice()
-    }
-}
-
-pub struct Storage {
-    db: Db,
-}
-
-impl Storage {
-    pub async fn open<P>(path: P) -> Result<Self, Error>
+pub trait AsKey {
+    fn to_key(&self, buf: &mut [u8]);
+    fn from_key<B>(buf: B) -> Self
     where
-        P: 'static + AsRef<Path> + Send,
-    {
-        let db = blocking::unblock(|| sled::open(path)).await?;
+        Self: Sized,
+        B: AsRef<[u8]>;
+}
 
-        Ok(Self {
-            db,
-        })
+pub struct StorageThread {
+    tx: Sender<Box<dyn FnMut(&mut Vec<u8>) + Send>>,
+}
+
+impl StorageThread {
+    pub fn new() -> Self {
+        let (tx, rx) = flume::unbounded::<Box<dyn FnMut(&mut Vec<u8>) + Send>>();
+        thread::spawn(move || {
+            // Shared buffer to serialize data to db format
+            let mut buf = Vec::new();
+            while let Ok(mut task) = rx.recv() {
+                task(&mut buf);
+            }
+        });
+
+        Self { tx }
     }
 
-    pub async fn open_dataset<K>(&self, key: K) -> Result<Dataset, Error> 
+    pub fn execute<F>(&self, task: F)
     where
-        K: 'static + AsRef<[u8]> + Send,
+        F: 'static + FnMut(&mut Vec<u8>) + Send,
     {
-        let db = self.db.clone();
-        let tree = blocking::unblock(move || db.open_tree(key)).await?;
-
-        Ok(Dataset {
-            tree,
-        })
+        let _ = self.tx.send(Box::new(task));
     }
 }
 
-pub struct Dataset {
-    tree: Tree,
-}
+pub mod player {
+    use serde::{
+        Deserialize,
+        Serialize,
+    };
+    use voxbrix_common::pack::PackDefault;
 
-impl Dataset {
-    pub async fn transaction<F, A, E>(&self, f: F) -> TransactionResult<A, E>
-    where
-        F: 'static + Fn(&TransactionalTree) -> ConflictableTransactionResult<A, E> + Send, 
-        E: 'static + Send,
-        A: 'static + Send,
-    {
-        let tree = self.tree.clone();
-        blocking::unblock(move || tree.transaction(f)).await
+    #[derive(Serialize, Deserialize)]
+    pub struct Player {
+        pub username: String,
+        pub password: Vec<u8>,
     }
 
-    pub async fn get<K>(&self, key: K) -> Result<Option<IVec>, Error>
-    where
-        K: 'static + AsRef<[u8]> + Send,
-    {
-        let tree = self.tree.clone();
-        blocking::unblock(move || tree.get(key)).await
-    }
+    impl PackDefault for Player {}
 }

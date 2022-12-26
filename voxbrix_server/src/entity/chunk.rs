@@ -1,4 +1,4 @@
-use crate::store::AsKey;
+use crate::storage::AsKey;
 pub use voxbrix_common::entity::chunk::*;
 
 pub const KEY_LENGTH: usize = 16;
