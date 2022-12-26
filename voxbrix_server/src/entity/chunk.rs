@@ -1,9 +1,7 @@
 use crate::storage::AsKey;
 pub use voxbrix_common::entity::chunk::*;
 
-pub const KEY_LENGTH: usize = 16;
-
-impl AsKey<KEY_LENGTH> for Chunk {
+impl AsKey<16> for Chunk {
     fn write_key(&self, buf: &mut [u8]) {
         let position = self.position.map(|x| u32_from_i32(x));
 
@@ -32,8 +30,8 @@ impl AsKey<KEY_LENGTH> for Chunk {
         }
     }
 
-    fn to_key(self) -> [u8; KEY_LENGTH] {
-        let mut buf = [0; KEY_LENGTH];
+    fn to_key(self) -> [u8; Self::KEY_LENGTH] {
+        let mut buf = [0; Self::KEY_LENGTH];
         let position = self.position.map(|x| u32_from_i32(x));
 
         buf[0 .. 4].copy_from_slice(&self.dimension.to_be_bytes());
@@ -44,7 +42,7 @@ impl AsKey<KEY_LENGTH> for Chunk {
         buf
     }
 
-    fn from_key(from: [u8; KEY_LENGTH]) -> Self {
+    fn from_key(from: [u8; Self::KEY_LENGTH]) -> Self {
         let position = [
             u32::from_be_bytes(from[12 .. 16].try_into().unwrap()),
             u32::from_be_bytes(from[8 .. 12].try_into().unwrap()),

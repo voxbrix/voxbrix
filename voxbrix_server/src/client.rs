@@ -1,10 +1,7 @@
 use crate::{
     entity::{
         actor::Actor,
-        player::{
-            self,
-            Player,
-        },
+        player::Player,
     },
     server::ServerEvent,
     storage::{
@@ -101,7 +98,6 @@ pub async fn run(
         {
             Some(req) => {
                 blocking::unblock(|| {
-                    let mut value_buf = Vec::new();
                     let InitRequest { username, password } = req;
 
                     let db_write = shared.database.begin_write().expect("database write");
@@ -124,16 +120,14 @@ pub async fn run(
                                     .expect("database read")
                                     .next_back()
                                     // TODO wrapping?
-                                    .map(|(id, _)| {
-                                        let player = Player::read_key(id);
+                                    .map(|(bytes, _)| {
+                                        let player = Player::read_key(bytes);
                                         Player(player.0.checked_add(1).unwrap())
                                     })
                                     .unwrap_or(Player(0));
 
-                                player.pack(&mut value_buf);
-
                                 username_table
-                                    .insert(username.as_bytes(), &value_buf)
+                                    .insert(username.as_bytes(), &player.pack_to_vec())
                                     .expect("database write");
 
                                 player
@@ -182,7 +176,7 @@ pub async fn run(
     let player = match player_res {
         Ok(p) => p,
         Err(err) => {
-            reliable_tx
+            let _ = reliable_tx
                 .send_reliable(BASE_CHANNEL, &InitResponse::Failure(err).pack_to_vec())
                 .await;
             return;
@@ -250,7 +244,7 @@ pub async fn run(
         .detach();
 
     // Finalize successful connection
-    reliable_loop_tx.send((
+    if let Err(err) = reliable_loop_tx.send((
         BASE_CHANNEL,
         SendData::Owned(
             InitResponse::Success {
@@ -259,7 +253,14 @@ pub async fn run(
             }
             .pack_to_vec(),
         ),
-    ));
+    )) {
+        warn!(
+            "client_loop: unable to send initialization response: {:?}",
+            err
+        );
+        let _ = local.event_tx.send(ServerEvent::RemovePlayer { player });
+        return;
+    }
 
     let mut events = Box::pin(
         server_rx
@@ -302,7 +303,8 @@ pub async fn run(
                     channel,
                     data,
                 }) {
-                    break;
+                    // Server loop is down
+                    return;
                 }
             },
             LoopEvent::SelfEvent(event) => {
