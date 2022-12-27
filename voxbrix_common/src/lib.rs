@@ -16,6 +16,22 @@ use serde::{
     Serialize,
 };
 
+#[macro_export]
+macro_rules! unblock {
+    (($($a:ident),+)$e:expr) => {
+        {
+            let res;
+
+            (($($a),+), res) = blocking::unblock(move || {
+                let res = $e;
+                (($($a),+), res)
+            }).await;
+
+            res
+        }
+    };
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ChunkData {
     pub chunk: Chunk,

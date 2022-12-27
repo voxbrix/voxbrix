@@ -69,6 +69,7 @@ use voxbrix_common::{
         server::ServerAccept,
     },
     pack::Pack,
+    unblock,
     ChunkData,
 };
 use voxbrix_protocol::{
@@ -156,77 +157,76 @@ pub async fn run(
     while let Some(event) = stream.next().await {
         match event {
             ServerEvent::Process => {
-                cts.clear();
-                cts.actor_tickets(&ctac);
-                cts.apply(&mut scc, &mut cbc, |chunk| {
-                    let mut block_key = [0; Block::KEY_LENGTH];
-                    // TODO: some non-runtime way involving const generics?
-                    let chunk_key = &mut block_key[.. Chunk::KEY_LENGTH];
-                    chunk.write_key(chunk_key);
-                    let mut block_key_finish = block_key;
-                    (&mut block_key_finish[Block::KEY_LENGTH - 2 .. Block::KEY_LENGTH])
-                        .fill(u8::MAX);
+                unblock!((apc, eac, ctac, scc, gpac, cts, cbc) {
+                    cts.clear();
+                    cts.actor_tickets(&ctac);
+                    cts.apply(&mut scc, &mut cbc, |chunk| {
+                        let mut block_key = [0; Block::KEY_LENGTH];
+                        // TODO: some non-runtime way involving const generics?
+                        let chunk_key = &mut block_key[.. Chunk::KEY_LENGTH];
+                        chunk.write_key(chunk_key);
+                        let mut block_key_finish = block_key;
+                        (&mut block_key_finish[Block::KEY_LENGTH - 2 .. Block::KEY_LENGTH])
+                            .fill(u8::MAX);
 
-                    let block_classes = {
-                        let db_read = shared.database.begin_read().unwrap();
-                        let table = db_read
-                            .open_table(BLOCK_CLASS_TABLE)
-                            .expect("server_loop: database read");
-                        table
-                            .range(block_key .. block_key_finish)
-                            .unwrap()
-                            .map(|(_key, bytes)| {
-                                BlockClass::unpack(&bytes)
-                                    .expect("server_loop: block class deserialization")
-                            })
-                            .collect::<ArrayVec<_, BLOCKS_IN_CHUNK>>()
-                    };
-
-                    let data = if block_classes.len() == BLOCKS_IN_CHUNK {
-                        let block_classes = block_classes.into_inner().unwrap();
-                        ChunkData {
-                            chunk: *chunk,
-                            block_classes: Blocks::new(block_classes),
-                        }
-                    } else {
-                        let block_classes = if chunk.position[2] < -1 {
-                            Blocks::new([BlockClass(1); BLOCKS_IN_CHUNK])
-                        } else {
-                            Blocks::new([BlockClass(0); BLOCKS_IN_CHUNK])
+                        let block_classes = {
+                            let db_read = shared.database.begin_read().unwrap();
+                            let table = db_read
+                                .open_table(BLOCK_CLASS_TABLE)
+                                .expect("server_loop: database read");
+                            table
+                                .range(block_key .. block_key_finish)
+                                .unwrap()
+                                .map(|(_key, bytes)| {
+                                    BlockClass::unpack(&bytes)
+                                        .expect("server_loop: block class deserialization")
+                                })
+                                .collect::<ArrayVec<_, BLOCKS_IN_CHUNK>>()
                         };
 
-                        // TODO real chunk generation
-                        std::thread::sleep(Duration::from_millis(500));
-
-                        let db_write = shared.database.begin_write().unwrap();
-                        {
-                            let mut table = db_write.open_table(BLOCK_CLASS_TABLE).unwrap();
-                            let mut val_buf = Vec::new();
-
-                            for (block, block_class) in block_classes.iter() {
-                                block.write_key(&mut block_key);
-                                block_class.pack(&mut val_buf);
-
-                                table
-                                    .insert(&block_key, val_buf.as_slice())
-                                    .expect("server_loop: database write");
+                        let data = if block_classes.len() == BLOCKS_IN_CHUNK {
+                            let block_classes = block_classes.to_vec();
+                            ChunkData {
+                                chunk: *chunk,
+                                block_classes: Blocks::new(block_classes),
                             }
-                        }
-                        db_write.commit().unwrap();
+                        } else {
+                            let block_classes = if chunk.position[2] < -1 {
+                                Blocks::new(vec![BlockClass(1); BLOCKS_IN_CHUNK])
+                            } else {
+                                Blocks::new(vec![BlockClass(0); BLOCKS_IN_CHUNK])
+                            };
 
-                        ChunkData {
-                            chunk: *chunk,
-                            block_classes,
-                        }
-                    };
+                            let db_write = shared.database.begin_write().unwrap();
+                            {
+                                let mut table = db_write.open_table(BLOCK_CLASS_TABLE).unwrap();
+                                let mut val_buf = Vec::new();
 
-                    // Moving allocations and cloning away from the main thread
-                    let data_encoded =
-                        SendRc::new(ClientAccept::ChunkData(data.clone()).pack_to_vec());
+                                for (block, block_class) in block_classes.iter() {
+                                    block.write_key(&mut block_key);
+                                    block_class.pack(&mut val_buf);
 
-                    let _ = shared
-                        .event_tx
-                        .send(SharedEvent::ChunkLoaded { data, data_encoded });
+                                    table
+                                        .insert(&block_key, val_buf.as_slice())
+                                        .expect("server_loop: database write");
+                                }
+                            }
+                            db_write.commit().unwrap();
+
+                            ChunkData {
+                                chunk: *chunk,
+                                block_classes,
+                            }
+                        };
+
+                        // Moving allocations and cloning away from the main thread
+                        let data_encoded =
+                            SendRc::new(ClientAccept::ChunkData(data.clone()).pack_to_vec());
+
+                        let _ = shared
+                            .event_tx
+                            .send(SharedEvent::ChunkLoaded { data, data_encoded });
+                    });
                 });
             },
             ServerEvent::AddPlayer {

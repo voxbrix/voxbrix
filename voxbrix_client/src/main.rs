@@ -18,22 +18,6 @@ mod manager;
 mod system;
 mod window;
 
-#[macro_export]
-macro_rules! unblock {
-    (($($a:ident),+)$e:expr) => {
-        {
-            let res;
-
-            (($($a),+), res) = blocking::unblock(move || -> Result<_> {
-                let res = $e;
-                Ok((($($a),+), res))
-            }).await?;
-
-            res
-        }
-    };
-}
-
 // fn print_panic_info(panic_info: &PanicInfo<'_>) {
 // error!("panic in: {:?}", panic_info.location());
 //

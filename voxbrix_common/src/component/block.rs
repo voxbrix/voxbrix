@@ -1,7 +1,6 @@
 use crate::entity::{
     block::{
         Block,
-        BLOCKS_IN_CHUNK,
         BLOCKS_IN_CHUNK_EDGE,
     },
     chunk::Chunk,
@@ -25,13 +24,8 @@ pub mod class;
 // }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(bound(
-    serialize = "for<'a> T: serde::Serialize + serde::Deserialize<'a>",
-    deserialize = "T: serde::Serialize + serde::Deserialize<'de>"
-))]
 pub struct Blocks<T> {
-    #[serde(with = "serde_big_array::BigArray")]
-    blocks: [T; BLOCKS_IN_CHUNK],
+    blocks: Vec<T>,
 }
 
 pub fn coords_iter() -> impl Iterator<Item = [usize; 3]> {
@@ -42,7 +36,7 @@ pub fn coords_iter() -> impl Iterator<Item = [usize; 3]> {
 }
 
 impl<T> Blocks<T> {
-    pub fn new(blocks: [T; BLOCKS_IN_CHUNK]) -> Self {
+    pub fn new(blocks: Vec<T>) -> Self {
         Self { blocks }
     }
 
