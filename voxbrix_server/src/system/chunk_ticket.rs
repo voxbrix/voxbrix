@@ -30,32 +30,11 @@ impl ChunkTicketSystem {
     }
 
     pub fn actor_tickets(&mut self, ctac: &ChunkTicketActorComponent) {
-        let iter = ctac
-            .iter()
-            .map(|(_, chunk_ticket)| {
-                let ActorChunkTicket { chunk, radius } = chunk_ticket;
-                let radius = *radius as i32;
-
-                (chunk.position[2].saturating_sub(radius)
-                    ..= chunk.position[2].saturating_add(radius))
-                    .map(move |z| {
-                        (chunk.position[1].saturating_sub(radius)
-                            ..= chunk.position[1].saturating_add(radius))
-                            .map(move |y| {
-                                (chunk.position[0].saturating_sub(radius)
-                                    ..= chunk.position[0].saturating_add(radius))
-                                    .map(move |x| {
-                                        Chunk {
-                                            position: [x, y, z].into(),
-                                            dimension: chunk.dimension,
-                                        }
-                                    })
-                            })
-                    })
-            })
-            .flatten()
-            .flatten()
-            .flatten();
+        let iter = ctac.iter().flat_map(|(_, chunk_ticket)| {
+            let ActorChunkTicket { chunk, radius } = chunk_ticket;
+            let radius = chunk.radius(*radius as i32);
+            radius.into_iter()
+        });
 
         self.data.extend(iter);
     }
