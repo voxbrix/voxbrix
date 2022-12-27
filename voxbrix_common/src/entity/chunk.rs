@@ -64,10 +64,25 @@ impl ChunkRadius {
     pub fn is_within(&self, chunk: &Chunk) -> bool {
         chunk.dimension == self.dimension
             && chunk.position[0] >= self.min_position.0
-            && chunk.position[0] <= self.max_position.0
+            && chunk.position[0] < self.max_position.0
             && chunk.position[1] >= self.min_position.1
-            && chunk.position[1] <= self.max_position.1
+            && chunk.position[1] < self.max_position.1
             && chunk.position[2] >= self.min_position.2
-            && chunk.position[2] <= self.max_position.2
+            && chunk.position[2] < self.max_position.2
+    }
+
+    // TODO: Proper IntoIterator impl
+    // https://github.com/rust-lang/rust/issues/63063
+    pub fn into_iter(self) -> impl Iterator<Item = Chunk> {
+        (self.min_position.2 .. self.max_position.2).flat_map(move |z| {
+            (self.min_position.1 .. self.max_position.1).flat_map(move |y| {
+                (self.min_position.0 .. self.max_position.0).map(move |x| {
+                    Chunk {
+                        position: [x, y, z].into(),
+                        dimension: self.dimension,
+                    }
+                })
+            })
+        })
     }
 }
