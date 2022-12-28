@@ -26,7 +26,6 @@ use crate::{
         },
     },
     entity::{
-        actor::Actor,
         block::Block,
         block_class::BlockClass,
         chunk::Chunk,
@@ -43,7 +42,6 @@ use anyhow::Result;
 use async_executor::LocalExecutor;
 use async_io::Timer;
 use futures_lite::stream::StreamExt;
-use log::error;
 use std::time::{
     Duration,
     Instant,
@@ -53,7 +51,6 @@ use voxbrix_common::{
     messages::{
         client::{
             ClientAccept,
-            InitFailure,
             InitResponse,
         },
         server::{
@@ -62,6 +59,7 @@ use voxbrix_common::{
         },
     },
     pack::Pack,
+    unblock,
     ChunkData,
 };
 use voxbrix_protocol::client::Client;
@@ -262,7 +260,11 @@ impl EventLoop<'_> {
                     );
                     direct_control_system.process(elapsed, &mut vac, &mut oac);
                     render_system.update(&gpac, &oac);
-                    render_system.render()?;
+
+                    unblock!((render_system) {
+                        render_system.render()
+                            .expect("render");
+                    });
                     // log::error!("Elapsed: {:?}", time_test.elapsed());
                 },
                 Event::SendPosition => {
@@ -409,7 +411,9 @@ impl EventLoop<'_> {
                     }
                 },
                 Event::DrawChunk { chunk } => {
-                    render_system.build_chunk(&chunk, &cbc, &mbcc);
+                    unblock!((render_system, cbc, mbcc) {
+                        render_system.build_chunk(&chunk, &cbc, &mbcc);
+                    });
                 },
                 Event::Shutdown => break,
             }

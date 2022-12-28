@@ -26,7 +26,7 @@ fn vs_main(
     in: VertexInput,
 ) -> VertexOutput {
     var out: VertexOutput;
-    let position = vec3<f32>(in.chunk - camera.chunk) * 40.0 + in.position;
+    let position = vec3<f32>(in.chunk - camera.chunk) * 32.0 + in.position;
     out.clip_position = camera.view_projection * vec4<f32>(position, 1.0);
     out.texture_index = in.texture_index;
     out.texture_position = in.texture_position;

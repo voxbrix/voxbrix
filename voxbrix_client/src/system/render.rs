@@ -55,7 +55,10 @@ use std::{
         PathBuf,
     },
 };
-use voxbrix_common::math::Mat4;
+use voxbrix_common::math::{
+    Mat4,
+    Vec3,
+};
 use wgpu::{
     util::{
         BufferInitDescriptor,
@@ -553,22 +556,15 @@ impl RenderSystem {
         );
     }
 
-    fn update_chunk_buffer_shard(
-        &mut self,
+    fn build_chunk_buffer_shard(
         chunk: &Chunk,
         cbc: &ClassBlockComponent,
         mbcc: &ModelBlockClassComponent,
-    ) {
+    ) -> (Vec<Vertex>, Vec<u32>) {
         let mut vertex_buffer = Vec::with_capacity(VERTEX_BUFFER_CAPACITY);
         let mut index_buffer = Vec::with_capacity(INDEX_BUFFER_CAPACITY);
 
-        let blocks = match cbc.get_chunk(chunk) {
-            Some(b) => b,
-            None => {
-                self.chunk_buffer_shards.remove(chunk);
-                return;
-            },
-        };
+        let blocks = cbc.get_chunk(chunk).unwrap();
 
         let chunk_x_minus = Some(chunk).and_then(|cz| {
             let mut chunk = cz.clone();
@@ -628,8 +624,7 @@ impl RenderSystem {
             }
         }
 
-        self.chunk_buffer_shards
-            .insert(*chunk, (vertex_buffer, index_buffer));
+        (vertex_buffer, index_buffer)
     }
 
     pub fn build_chunk(
@@ -638,29 +633,30 @@ impl RenderSystem {
         cbc: &ClassBlockComponent,
         mbcc: &ModelBlockClassComponent,
     ) {
-        self.update_chunk_buffer_shard(chunk, cbc, mbcc);
+        if cbc.get_chunk(chunk).is_none() {
+            self.chunk_buffer_shards.remove(chunk);
+        }
 
-        let mut check_neighbor = |x, y, z| {
-            let chunk = Chunk {
-                position: [x, y, z].into(),
-                dimension: chunk.dimension,
-            };
-            if self.chunk_buffer_shards.get(&chunk).is_some() {
-                self.update_chunk_buffer_shard(&chunk, cbc, mbcc);
-            }
-        };
+        let par_iter = [
+            Vec3::new(0, 0, 0),
+            Vec3::new(-1, 0, 0),
+            Vec3::new(1, 0, 0),
+            Vec3::new(0, -1, 0),
+            Vec3::new(0, 1, 0),
+            Vec3::new(0, 0, -1),
+            Vec3::new(0, 0, 1),
+        ]
+        .into_par_iter()
+        .filter_map(|shift| {
+            let mut chunk = *chunk;
 
-        check_neighbor(chunk.position[0] - 1, chunk.position[1], chunk.position[2]);
+            chunk.position = chunk.position + shift;
+            cbc.get_chunk(&chunk)?;
 
-        check_neighbor(chunk.position[0] + 1, chunk.position[1], chunk.position[2]);
+            Some((chunk, Self::build_chunk_buffer_shard(&chunk, cbc, mbcc)))
+        });
 
-        check_neighbor(chunk.position[0], chunk.position[1] - 1, chunk.position[2]);
-
-        check_neighbor(chunk.position[0], chunk.position[1] + 1, chunk.position[2]);
-
-        check_neighbor(chunk.position[0], chunk.position[1], chunk.position[2] - 1);
-
-        check_neighbor(chunk.position[0], chunk.position[1], chunk.position[2] + 1);
+        self.chunk_buffer_shards.par_extend(par_iter);
 
         self.update_chunk_buffer = true;
     }

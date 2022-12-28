@@ -19,7 +19,7 @@ use voxbrix_protocol::{
 };
 
 const BASE_CHANNEL: Channel = 0;
-const PLAYER_CHUNK_TICKET_RADIUS: i32 = 2;
+const PLAYER_CHUNK_TICKET_RADIUS: i32 = 4;
 const PROCESS_INTERVAL: Duration = Duration::from_millis(50);
 const CLIENT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 const BLOCK_CLASS_TABLE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("block_class");
