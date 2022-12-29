@@ -8,7 +8,7 @@ use crate::{
         chunk::status::StatusChunkComponent,
     },
     entity::actor::Actor,
-    event_loop::Event,
+    scene::game::Event,
 };
 use local_channel::mpsc::Sender;
 
@@ -38,7 +38,7 @@ impl ChunkPresenceSystem {
             let retain = radius.is_within(chunk);
             if !retain {
                 cbc.remove_chunk(chunk);
-                let _ = event_tx.send(Event::DrawChunk { chunk: *chunk });
+                let _ = event_tx.send(Event::DrawChunk(*chunk));
             }
             retain
         });

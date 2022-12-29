@@ -30,13 +30,18 @@ use crate::{
         block_class::BlockClass,
         chunk::Chunk,
     },
+    scene::SceneSwitch,
     system::{
         chunk_presence::ChunkPresenceSystem,
         controller::DirectControl,
         position::PositionSystem,
         render::RenderSystem,
     },
-    window::WindowHandle,
+    window::{
+        InputEvent,
+        WindowEvent,
+        WindowHandle,
+    },
     RenderHandle,
 };
 use anyhow::Result;
@@ -67,70 +72,42 @@ use voxbrix_common::{
     ChunkData,
 };
 use voxbrix_protocol::client::Client;
-use winit::{
-    dpi::PhysicalSize,
-    event::{
-        KeyboardInput as WinitKeyboardInput,
-        MouseButton as WinitMouseButton,
-    },
+use winit::event::{
+    DeviceEvent,
+    ElementState,
+    MouseButton,
 };
-
-pub enum EventLoop {
-    Menu,
-    Game { parameters: GameLoopParameters },
-    Exit,
-}
 
 pub enum Event {
     Process,
     SendPosition,
-    Key { input: WinitKeyboardInput },
-    MouseButton { input: WinitMouseButton },
-    MouseMove { horizontal: f32, vertical: f32 },
-    WindowResize { new_size: PhysicalSize<u32> },
-    Network { message: ClientAccept },
-    DrawChunk { chunk: Chunk },
+    Input(InputEvent),
+    NetworkInput(ClientAccept),
+    DrawChunk(Chunk),
     Shutdown,
 }
 
-pub struct MenuLoop<'a> {
-    pub rt: &'a LocalExecutor<'a>,
-    pub window_handle: &'static WindowHandle,
-    pub render_handle: &'static RenderHandle,
-}
-
-impl MenuLoop<'_> {
-    pub async fn run(self) -> Result<EventLoop> {
-        Ok(EventLoop::Game {
-            parameters: GameLoopParameters {
-                server: ([127, 0, 0, 1], 12000).into(),
-                username: "username".to_owned(),
-                password: "password".as_bytes().to_owned(),
-            },
-        })
-    }
-}
-
-pub struct GameLoopParameters {
+pub struct GameSceneParameters {
+    pub socket: SocketAddr,
     pub server: SocketAddr,
     pub username: String,
     pub password: Vec<u8>,
 }
 
-pub struct GameLoop<'a> {
+pub struct GameScene<'a> {
     pub rt: &'a LocalExecutor<'a>,
     pub window_handle: &'static WindowHandle,
     pub render_handle: &'static RenderHandle,
-    pub parameters: GameLoopParameters,
+    pub parameters: GameSceneParameters,
 }
 
-impl GameLoop<'_> {
-    pub async fn run(self) -> Result<()> {
+impl GameScene<'_> {
+    pub async fn run(self) -> Result<SceneSwitch> {
         let (reliable_tx, mut reliable_rx) = local_channel::mpsc::channel::<ServerAccept>();
         let (unreliable_tx, mut unreliable_rx) = local_channel::mpsc::channel::<ServerAccept>();
         let (event_tx, event_rx) = local_channel::mpsc::channel::<Event>();
 
-        let (tx, mut rx) = Client::bind(([0, 0, 0, 0], 0))?
+        let (tx, mut rx) = Client::bind(self.parameters.socket)?
             .connect(self.parameters.server)
             .await?;
 
@@ -214,7 +191,7 @@ impl GameLoop<'_> {
                         Err(_) => continue,
                     };
 
-                    if let Err(_) = event_tx_network.send(Event::Network { message }) {
+                    if let Err(_) = event_tx_network.send(Event::NetworkInput(message)) {
                         break;
                     };
                 }
@@ -271,7 +248,7 @@ impl GameLoop<'_> {
 
         let mut stream = Timer::interval(Duration::from_millis(20))
             .map(|_| Event::Process)
-            .or(self.window_handle.event_rx.stream())
+            .or(self.window_handle.event_rx.stream().map(Event::Input))
             .or(Timer::interval(Duration::from_millis(50)).map(|_| Event::SendPosition))
             .or(event_rx);
 
@@ -307,119 +284,118 @@ impl GameLoop<'_> {
                         position: player_position.clone(),
                     });
                 },
-                Event::Key { input } => {
-                    direct_control_system.process_keyboard(&input);
-                },
-                Event::MouseButton { input } => {
-                    match input {
-                        WinitMouseButton::Left => {
-                            let position = gpac.get(&player_actor).unwrap();
-                            let orientation = oac.get(&player_actor).unwrap();
-
-                            PositionSystem::get_target_block(
-                                position,
-                                orientation,
-                                |chunk, block| {
-                                    cbc.get_chunk(&chunk)
-                                        .map(|blocks| blocks.get(block).unwrap() == &BlockClass(1))
-                                        .unwrap_or(false)
+                Event::Input(event) => {
+                    match event {
+                        InputEvent::DeviceEvent {
+                            device_id: _,
+                            event,
+                        } => {
+                            match event {
+                                DeviceEvent::MouseMotion {
+                                    delta: (horizontal, vertical),
+                                } => {
+                                    direct_control_system
+                                        .process_mouse(horizontal as f32, vertical as f32);
                                 },
-                            )
-                            .and_then(|(chunk, block, _side)| {
-                                /*
-                                let block_class =
-                                    cbc.get_mut_chunk(&chunk).and_then(|c| c.get_mut(block))?;
-
-                                *block_class = BlockClass(0);
-
-                                sender_tx.send(ServerAccept::AlterBlock {
-                                    chunk,
-                                    block,
-                                    block_class: *block_class,
-                                });
-
-                                let _ = event_tx.send(Event::DrawChunk { chunk });
-                                */
-
-                                reliable_tx.send(ServerAccept::AlterBlock {
-                                    chunk,
-                                    block,
-                                    block_class: BlockClass(0),
-                                });
-
-                                Some(())
-                            });
+                                _ => {},
+                            }
                         },
-                        WinitMouseButton::Right => {
-                            let position = gpac.get(&player_actor).unwrap();
-                            let orientation = oac.get(&player_actor).unwrap();
-
-                            PositionSystem::get_target_block(
-                                position,
-                                orientation,
-                                |chunk, block| {
-                                    cbc.get_chunk(&chunk)
-                                        .map(|blocks| blocks.get(block).unwrap() == &BlockClass(1))
-                                        .unwrap_or(false)
+                        InputEvent::WindowEvent { event } => {
+                            match event {
+                                WindowEvent::Resized(size) => {
+                                    render_system.resize(size);
                                 },
-                            )
-                            .and_then(|(chunk, block, side)| {
-                                /*
-                                 * 
-                                let axis = side / 2;
-                                let direction = match side % 2 {
-                                    0 => -1,
-                                    1 => 1,
-                                    _ => panic!("incorrect side index"),
-                                };
-                                let mut block = block.to_coords().map(|u| u as i32);
-                                block[axis] += direction;
-                                let (chunk, block) = Block::from_chunk_offset(chunk, block);
-                                let block_class =
-                                    cbc.get_mut_chunk(&chunk).and_then(|c| c.get_mut(block))?;
+                                WindowEvent::CloseRequested | WindowEvent::Destroyed => {
+                                    return Ok(SceneSwitch::Exit);
+                                },
+                                WindowEvent::KeyboardInput {
+                                    device_id: _,
+                                    input,
+                                    is_synthetic: _,
+                                } => {
+                                    direct_control_system.process_keyboard(&input);
+                                },
+                                WindowEvent::MouseInput {
+                                    device_id: _,
+                                    state,
+                                    button,
+                                } => {
+                                    if state == ElementState::Pressed {
+                                        match button {
+                                            MouseButton::Left => {
+                                                let position = gpac.get(&player_actor).unwrap();
+                                                let orientation = oac.get(&player_actor).unwrap();
 
-                                *block_class = BlockClass(1);
+                                                PositionSystem::get_target_block(
+                                                    position,
+                                                    orientation,
+                                                    |chunk, block| {
+                                                        cbc.get_chunk(&chunk)
+                                                            .map(|blocks| {
+                                                                blocks.get(block).unwrap()
+                                                                    == &BlockClass(1)
+                                                            })
+                                                            .unwrap_or(false)
+                                                    },
+                                                )
+                                                .and_then(|(chunk, block, _side)| {
+                                                    reliable_tx.send(ServerAccept::AlterBlock {
+                                                        chunk,
+                                                        block,
+                                                        block_class: BlockClass(0),
+                                                    });
 
-                                sender_tx.send(ServerAccept::AlterBlock {
-                                    chunk,
-                                    block,
-                                    block_class: *block_class,
-                                });
+                                                    Some(())
+                                                });
+                                            },
+                                            MouseButton::Right => {
+                                                let position = gpac.get(&player_actor).unwrap();
+                                                let orientation = oac.get(&player_actor).unwrap();
 
-                                let _ = event_tx.send(Event::DrawChunk { chunk });
-                                */
-                                let axis = side / 2;
-                                let direction = match side % 2 {
-                                    0 => -1,
-                                    1 => 1,
-                                    _ => panic!("incorrect side index"),
-                                };
-                                let mut block = block.to_coords().map(|u| u as i32);
-                                block[axis] += direction;
-                                let (chunk, block) = Block::from_chunk_offset(chunk, block);
+                                                PositionSystem::get_target_block(
+                                                    position,
+                                                    orientation,
+                                                    |chunk, block| {
+                                                        cbc.get_chunk(&chunk)
+                                                            .map(|blocks| {
+                                                                blocks.get(block).unwrap()
+                                                                    == &BlockClass(1)
+                                                            })
+                                                            .unwrap_or(false)
+                                                    },
+                                                )
+                                                .and_then(|(chunk, block, side)| {
+                                                    let axis = side / 2;
+                                                    let direction = match side % 2 {
+                                                        0 => -1,
+                                                        1 => 1,
+                                                        _ => panic!("incorrect side index"),
+                                                    };
+                                                    let mut block =
+                                                        block.to_coords().map(|u| u as i32);
+                                                    block[axis] += direction;
+                                                    let (chunk, block) =
+                                                        Block::from_chunk_offset(chunk, block);
 
-                                reliable_tx.send(ServerAccept::AlterBlock {
-                                    chunk,
-                                    block,
-                                    block_class: BlockClass(1),
-                                });
+                                                    reliable_tx.send(ServerAccept::AlterBlock {
+                                                        chunk,
+                                                        block,
+                                                        block_class: BlockClass(1),
+                                                    });
 
-                                Some(())
-                            });
+                                                    Some(())
+                                                });
+                                            },
+                                            _ => {},
+                                        }
+                                    }
+                                },
+                                _ => {},
+                            }
                         },
-                        _ => {},
                     }
                 },
-                Event::MouseMove {
-                    horizontal,
-                    vertical,
-                } => {
-                    direct_control_system.process_mouse(horizontal, vertical);
-                },
-                Event::WindowResize { new_size } => {
-                    render_system.resize(new_size);
-                },
-                Event::Network { message } => {
+                Event::NetworkInput(message) => {
                     match message {
                         ClientAccept::ChunkData(ChunkData {
                             chunk,
@@ -427,7 +403,7 @@ impl GameLoop<'_> {
                         }) => {
                             cbc.insert_chunk(chunk, block_classes);
                             scc.insert(chunk, ChunkStatus::Active);
-                            let _ = event_tx.send(Event::DrawChunk { chunk });
+                            let _ = event_tx.send(Event::DrawChunk(chunk));
                         },
                         ClientAccept::AlterBlock {
                             chunk,
@@ -439,12 +415,12 @@ impl GameLoop<'_> {
                             {
                                 *block_class_ref = block_class;
 
-                                let _ = event_tx.send(Event::DrawChunk { chunk });
+                                let _ = event_tx.send(Event::DrawChunk(chunk));
                             }
                         },
                     }
                 },
-                Event::DrawChunk { chunk } => {
+                Event::DrawChunk(chunk) => {
                     unblock!((render_system, cbc, mbcc) {
                         render_system.build_chunk(&chunk, &cbc, &mbcc);
                     });
@@ -453,45 +429,6 @@ impl GameLoop<'_> {
             }
         }
 
-        Ok(())
-    }
-}
-
-pub struct MainLoop<'a> {
-    pub rt: &'a LocalExecutor<'a>,
-    pub window_handle: &'static WindowHandle,
-    pub render_handle: &'static RenderHandle,
-}
-
-impl MainLoop<'_> {
-    pub async fn run(self) -> Result<()> {
-        let mut next_loop = Some(EventLoop::Menu);
-
-        loop {
-            match next_loop.take().unwrap_or_else(|| EventLoop::Exit) {
-                EventLoop::Menu => {
-                    next_loop = Some(
-                        MenuLoop {
-                            rt: self.rt,
-                            window_handle: self.window_handle,
-                            render_handle: self.render_handle,
-                        }
-                        .run()
-                        .await?,
-                    );
-                },
-                EventLoop::Game { parameters } => {
-                    GameLoop {
-                        rt: self.rt,
-                        window_handle: self.window_handle,
-                        render_handle: self.render_handle,
-                        parameters,
-                    }
-                    .run()
-                    .await?;
-                },
-                EventLoop::Exit => return Ok(()),
-            }
-        }
+        Ok(SceneSwitch::Menu)
     }
 }
