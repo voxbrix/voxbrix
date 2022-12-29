@@ -37,14 +37,18 @@ use crate::{
         render::RenderSystem,
     },
     window::WindowHandle,
+    RenderHandle,
 };
 use anyhow::Result;
 use async_executor::LocalExecutor;
 use async_io::Timer;
 use futures_lite::stream::StreamExt;
-use std::time::{
-    Duration,
-    Instant,
+use std::{
+    net::SocketAddr,
+    time::{
+        Duration,
+        Instant,
+    },
 };
 use voxbrix_common::{
     math::Vec3,
@@ -71,6 +75,12 @@ use winit::{
     },
 };
 
+pub enum EventLoop {
+    Menu,
+    Game { parameters: GameLoopParameters },
+    Exit,
+}
+
 pub enum Event {
     Process,
     SendPosition,
@@ -83,26 +93,45 @@ pub enum Event {
     Shutdown,
 }
 
-pub struct EventLoop<'a> {
+pub struct MenuLoop<'a> {
     pub rt: &'a LocalExecutor<'a>,
-    pub window: WindowHandle,
+    pub window_handle: &'static WindowHandle,
+    pub render_handle: &'static RenderHandle,
 }
 
-impl EventLoop<'_> {
-    pub async fn run(self) -> Result<()> {
-        let WindowHandle {
-            instance,
-            surface,
-            size: surface_size,
-            event_rx: window_event_rx,
-        } = self.window;
+impl MenuLoop<'_> {
+    pub async fn run(self) -> Result<EventLoop> {
+        Ok(EventLoop::Game {
+            parameters: GameLoopParameters {
+                server: ([127, 0, 0, 1], 12000).into(),
+                username: "username".to_owned(),
+                password: "password".as_bytes().to_owned(),
+            },
+        })
+    }
+}
 
+pub struct GameLoopParameters {
+    pub server: SocketAddr,
+    pub username: String,
+    pub password: Vec<u8>,
+}
+
+pub struct GameLoop<'a> {
+    pub rt: &'a LocalExecutor<'a>,
+    pub window_handle: &'static WindowHandle,
+    pub render_handle: &'static RenderHandle,
+    pub parameters: GameLoopParameters,
+}
+
+impl GameLoop<'_> {
+    pub async fn run(self) -> Result<()> {
         let (reliable_tx, mut reliable_rx) = local_channel::mpsc::channel::<ServerAccept>();
         let (unreliable_tx, mut unreliable_rx) = local_channel::mpsc::channel::<ServerAccept>();
         let (event_tx, event_rx) = local_channel::mpsc::channel::<Event>();
 
-        let (tx, mut rx) = Client::bind(([127, 0, 0, 1], 12001))?
-            .connect(([127, 0, 0, 1], 12000))
+        let (tx, mut rx) = Client::bind(([0, 0, 0, 0], 0))?
+            .connect(self.parameters.server)
             .await?;
 
         let (mut unreliable, mut reliable) = tx.split();
@@ -124,8 +153,8 @@ impl EventLoop<'_> {
             .send_reliable(
                 0,
                 &InitRequest {
-                    username: "user1".to_owned(),
-                    password: "1234".as_bytes().to_vec(),
+                    username: self.parameters.username,
+                    password: self.parameters.password,
                 }
                 .pack_to_vec(),
             )
@@ -232,12 +261,17 @@ impl EventLoop<'_> {
         );
         oac.insert(player_actor, Orientation::from_yaw_pitch(0.0, 0.0));
 
-        let mut render_system =
-            RenderSystem::new(instance, surface, surface_size, &gpac, &oac).await;
+        let mut render_system = RenderSystem::new(
+            self.render_handle,
+            self.window_handle.window.inner_size(),
+            &gpac,
+            &oac,
+        )
+        .await;
 
         let mut stream = Timer::interval(Duration::from_millis(20))
             .map(|_| Event::Process)
-            .or(window_event_rx.stream())
+            .or(self.window_handle.event_rx.stream())
             .or(Timer::interval(Duration::from_millis(50)).map(|_| Event::SendPosition))
             .or(event_rx);
 
@@ -420,5 +454,44 @@ impl EventLoop<'_> {
         }
 
         Ok(())
+    }
+}
+
+pub struct MainLoop<'a> {
+    pub rt: &'a LocalExecutor<'a>,
+    pub window_handle: &'static WindowHandle,
+    pub render_handle: &'static RenderHandle,
+}
+
+impl MainLoop<'_> {
+    pub async fn run(self) -> Result<()> {
+        let mut next_loop = Some(EventLoop::Menu);
+
+        loop {
+            match next_loop.take().unwrap_or_else(|| EventLoop::Exit) {
+                EventLoop::Menu => {
+                    next_loop = Some(
+                        MenuLoop {
+                            rt: self.rt,
+                            window_handle: self.window_handle,
+                            render_handle: self.render_handle,
+                        }
+                        .run()
+                        .await?,
+                    );
+                },
+                EventLoop::Game { parameters } => {
+                    GameLoop {
+                        rt: self.rt,
+                        window_handle: self.window_handle,
+                        render_handle: self.render_handle,
+                        parameters,
+                    }
+                    .run()
+                    .await?;
+                },
+                EventLoop::Exit => return Ok(()),
+            }
+        }
     }
 }
