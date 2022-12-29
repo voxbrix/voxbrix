@@ -1,13 +1,10 @@
 use async_executor::LocalExecutor;
-use event_loop::MainLoop;
 use futures_lite::future;
-use log::{
-    error,
-    info,
-};
+use log::error;
+use scene::MainScene;
 use std::thread;
 use window::{
-    WindowEvent,
+    WindowCommand,
     WindowHandle,
 };
 use winit::event_loop::EventLoopProxy;
@@ -15,8 +12,8 @@ use winit::event_loop::EventLoopProxy;
 mod camera;
 mod component;
 mod entity;
-mod event_loop;
 mod manager;
+mod scene;
 mod system;
 mod window;
 
@@ -39,16 +36,13 @@ pub struct RenderHandle {
 
 fn main() {
     env_logger::init();
-    info!("Starting!");
 
     // panic::set_hook(Box::new(move |panic_info| {
     // print_panic_info(panic_info);
     // }));
 
     let (window_tx, window_rx) = flume::bounded::<WindowHandle>(1);
-    let (event_proxy_tx, event_proxy_rx) = flume::bounded::<EventLoopProxy<WindowEvent>>(1);
-
-    let backends = wgpu::Backends::VULKAN;
+    let (event_proxy_tx, event_proxy_rx) = flume::bounded::<EventLoopProxy<WindowCommand>>(1);
 
     thread::spawn(move || {
         let result = std::panic::catch_unwind(move || {
@@ -60,7 +54,11 @@ fn main() {
                         error!("unable to receive window handle");
                     },
                     Ok(window_handle) => {
-                        let instance = wgpu::Instance::new(backends);
+                        // Mailbox (Fast Vsync) and Immediate (No Vsync) work best with
+                        // the current rendering approach
+                        // Vulkan supports Mailbox present mode reliably and is cross-platform
+                        // https://github.com/gfx-rs/wgpu/issues/2128
+                        let instance = wgpu::Instance::new(wgpu::Backends::VULKAN);
                         let surface = unsafe { instance.create_surface(&window_handle.window) };
 
                         let adapter = instance
@@ -99,6 +97,7 @@ fn main() {
                             width: size.width,
                             height: size.height,
                             // Fifo makes SurfaceTexture::present() block
+                            // which is bad for current rendering implementation
                             present_mode: wgpu::PresentMode::Mailbox,
                             alpha_mode: wgpu::CompositeAlphaMode::Auto,
                         };
@@ -113,7 +112,7 @@ fn main() {
                             device,
                             queue,
                         }));
-                        let main_loop = MainLoop {
+                        let main_loop = MainScene {
                             rt: &main_loop_rt,
                             window_handle,
                             render_handle,
@@ -132,7 +131,7 @@ fn main() {
 
         match event_proxy_rx.recv() {
             Ok(tx) => {
-                let _ = tx.send_event(WindowEvent::Shutdown);
+                let _ = tx.send_event(WindowCommand::Shutdown);
             },
             Err(_) => {
                 error!("unable to receive window proxy to send shutdown");
