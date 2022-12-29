@@ -8,13 +8,7 @@ use flume::{
     Sender,
 };
 use log::info;
-use wgpu::{
-    Backends,
-    Instance,
-    Surface,
-};
 use winit::{
-    dpi::PhysicalSize,
     event::{
         DeviceEvent as WinitDeviceEvent,
         ElementState as WinitElementState,
@@ -28,6 +22,7 @@ use winit::{
     },
     window::{
         CursorGrabMode,
+        Window,
         WindowBuilder,
     },
 };
@@ -37,21 +32,19 @@ pub enum WindowEvent {
 }
 
 pub struct WindowHandle {
-    pub instance: Instance,
-    pub surface: Surface,
-    pub size: PhysicalSize<u32>,
+    pub window: Window,
     pub event_rx: Receiver<Event>,
-    // event_tx: Sender<WindowEvent>,
-    //  this should be implemented in a separate "proxy" thread
-    //  that will pull events out of async channel and send them
-    //  via send_event()
-    //  EventLoopProxy should not be directly passed to
-    //  the main event loop, because send_event() method
-    //  may be blocking
+    // TODO investigate if send_event() is blocking:
+    // wayland: std unbound channel, not blocking
+    //     https://github.com/rust-windowing/winit/blob/master/src/platform_impl/linux/wayland/event_loop/mod.rs
+    //     https://github.com/Smithay/calloop/blob/master/src/sources/channel.rs
+    // x11:
+    // windows:
+    // mac:
+    pub event_tx: EventLoopProxy<WindowEvent>,
 }
 
 pub fn create_window(
-    backends: Backends,
     handle_tx: Sender<WindowHandle>,
     event_proxy_tx: Sender<EventLoopProxy<WindowEvent>>,
 ) -> Result<()> {
@@ -63,24 +56,20 @@ pub fn create_window(
 
     let window = WindowBuilder::new().build(&event_loop)?;
 
-    let instance = Instance::new(backends);
-    let surface = unsafe { instance.create_surface(&window) };
-
     let (event_tx, event_rx) = flume::bounded(32);
-
-    handle_tx
-        .send(WindowHandle {
-            instance,
-            surface,
-            size: window.inner_size(),
-            event_rx,
-        })
-        .map_err(|_| Error::msg("surface channel is closed"))?;
 
     window
         .set_cursor_grab(CursorGrabMode::Confined)
         .or_else(|_| window.set_cursor_grab(CursorGrabMode::Locked))?;
     window.set_cursor_visible(false);
+
+    handle_tx
+        .send(WindowHandle {
+            window,
+            event_rx,
+            event_tx: event_loop.create_proxy(),
+        })
+        .map_err(|_| Error::msg("surface channel is closed"))?;
 
     macro_rules! send {
         ($e:expr, $c:ident) => {
@@ -113,8 +102,8 @@ pub fn create_window(
 
             WinitEvent::WindowEvent {
                 ref event,
-                window_id,
-            } if window_id == window.id() => {
+                window_id: _,
+            } => {
                 match event {
                     &WinitWindowEvent::MouseInput { state, button, .. } => {
                         if state == WinitElementState::Pressed {
