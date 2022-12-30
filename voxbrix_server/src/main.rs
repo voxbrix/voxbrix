@@ -65,7 +65,7 @@ fn main() -> Result<()> {
         event_tx,
     }));
 
-    let server = Server::bind(([127, 0, 0, 1], 12000))?;
+    let server = Server::bind(([0, 0, 0, 0], 12000))?;
 
     future::block_on(local.rt.run(async {
         local

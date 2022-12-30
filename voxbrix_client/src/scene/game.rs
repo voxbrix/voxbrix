@@ -68,6 +68,7 @@ use voxbrix_common::{
         },
     },
     pack::Pack,
+    stream::StreamExt as _,
     unblock,
     ChunkData,
 };
@@ -238,9 +239,40 @@ impl GameScene<'_> {
         );
         oac.insert(player_actor, Orientation::from_yaw_pitch(0.0, 0.0));
 
+        self.window_handle
+            .window
+            .set_cursor_grab(winit::window::CursorGrabMode::Confined)
+            .or_else(|_| {
+                self.window_handle
+                    .window
+                    .set_cursor_grab(winit::window::CursorGrabMode::Locked)
+            })?;
+        self.window_handle.window.set_cursor_visible(false);
+
+        let size = self.window_handle.window.inner_size();
+
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format: self
+                .render_handle
+                .surface
+                .get_supported_formats(&self.render_handle.adapter)[0],
+            width: size.width,
+            height: size.height,
+            // Fifo makes SurfaceTexture::present() block
+            // which is bad for current rendering implementation
+            present_mode: wgpu::PresentMode::Mailbox,
+            alpha_mode: wgpu::CompositeAlphaMode::Auto,
+        };
+
+        self.render_handle
+            .surface
+            .configure(&self.render_handle.device, &config);
+
         let mut render_system = RenderSystem::new(
             self.render_handle,
             self.window_handle.window.inner_size(),
+            player_actor,
             &gpac,
             &oac,
         )
@@ -248,9 +280,9 @@ impl GameScene<'_> {
 
         let mut stream = Timer::interval(Duration::from_millis(20))
             .map(|_| Event::Process)
-            .or(self.window_handle.event_rx.stream().map(Event::Input))
-            .or(Timer::interval(Duration::from_millis(50)).map(|_| Event::SendPosition))
-            .or(event_rx);
+            .or_ff(self.window_handle.event_rx.stream().map(Event::Input))
+            .or_ff(Timer::interval(Duration::from_millis(50)).map(|_| Event::SendPosition))
+            .or_ff(event_rx);
 
         while let Some(event) = stream.next().await {
             match event {

@@ -5,9 +5,12 @@ use crate::{
             ChunkTicketActorComponent,
         },
         block::class::ClassBlockComponent,
-        chunk::status::{
-            ChunkStatus,
-            StatusChunkComponent,
+        chunk::{
+            cache::CacheChunkComponent,
+            status::{
+                ChunkStatus,
+                StatusChunkComponent,
+            },
         },
     },
     entity::chunk::Chunk,
@@ -39,8 +42,13 @@ impl ChunkTicketSystem {
         self.data.extend(iter);
     }
 
-    pub fn apply<F>(&self, scc: &mut StatusChunkComponent, cbc: &mut ClassBlockComponent, mut f: F)
-    where
+    pub fn apply<F>(
+        &self,
+        scc: &mut StatusChunkComponent,
+        cbc: &mut ClassBlockComponent,
+        ccc: &mut CacheChunkComponent,
+        mut f: F,
+    ) where
         F: 'static + FnMut(&Chunk) + Send,
     {
         let new_chunks = self
@@ -59,6 +67,7 @@ impl ChunkTicketSystem {
         // TODO: sort new_chunks by the sum of distances to the actors
 
         scc.retain(|chunk, status| self.data.contains(chunk) || *status == ChunkStatus::Loading);
+        ccc.retain(|chunk, _| self.data.contains(chunk));
         cbc.retain(|chunk| self.data.contains(chunk));
 
         blocking::unblock(move || {
@@ -67,5 +76,9 @@ impl ChunkTicketSystem {
             }
         })
         .detach();
+    }
+
+    pub fn existing(&self) -> &BTreeSet<Chunk> {
+        &self.data
     }
 }
