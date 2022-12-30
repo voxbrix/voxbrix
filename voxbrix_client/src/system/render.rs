@@ -359,6 +359,7 @@ impl<'a> RenderSystem<'a> {
     pub async fn new(
         render_handle: &'a RenderHandle,
         surface_size: PhysicalSize<u32>,
+        player_actor: Actor,
         gpac: &GlobalPositionActorComponent,
         oac: &OrientationActorComponent,
     ) -> RenderSystem<'a> {
@@ -386,7 +387,7 @@ impl<'a> RenderSystem<'a> {
             )
             .await;
 
-        let camera = Camera::new(Actor(0));
+        let camera = Camera::new(player_actor);
         let projection = Projection::new(
             config.width,
             config.height,

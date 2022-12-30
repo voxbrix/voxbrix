@@ -19,9 +19,12 @@ use crate::{
             class::ClassBlockComponent,
             Blocks,
         },
-        chunk::status::{
-            ChunkStatus,
-            StatusChunkComponent,
+        chunk::{
+            cache::CacheChunkComponent,
+            status::{
+                ChunkStatus,
+                StatusChunkComponent,
+            },
         },
         player::{
             actor::ActorPlayerComponent,
@@ -59,17 +62,14 @@ use local_channel::mpsc::{
 };
 use log::debug;
 use redb::ReadableTable;
-use std::{
-    rc::Rc,
-    time::Duration,
-};
+use std::rc::Rc;
 use voxbrix_common::{
     messages::{
         client::ClientAccept,
         server::ServerAccept,
     },
     pack::Pack,
-    unblock,
+    // unblock,
     ChunkData,
 };
 use voxbrix_protocol::{
@@ -143,6 +143,7 @@ pub async fn run(
     let mut eac = ExistenceActorComponent::new();
     let mut ctac = ChunkTicketActorComponent::new();
     let mut scc = StatusChunkComponent::new();
+    let mut ccc = CacheChunkComponent::new();
     let mut gpac = GlobalPositionActorComponent::new();
     let mut cts = ChunkTicketSystem::new();
     let mut cbc = ClassBlockComponent::new();
@@ -157,76 +158,74 @@ pub async fn run(
     while let Some(event) = stream.next().await {
         match event {
             ServerEvent::Process => {
-                unblock!((apc, eac, ctac, scc, gpac, cts, cbc) {
-                    cts.clear();
-                    cts.actor_tickets(&ctac);
-                    cts.apply(&mut scc, &mut cbc, |chunk| {
-                        let mut block_key = [0; Block::KEY_LENGTH];
-                        // TODO: some non-runtime way involving const generics?
-                        let chunk_key = &mut block_key[.. Chunk::KEY_LENGTH];
-                        chunk.write_key(chunk_key);
-                        let mut block_key_finish = block_key;
-                        (&mut block_key_finish[Block::KEY_LENGTH - 2 .. Block::KEY_LENGTH])
-                            .fill(u8::MAX);
+                cts.clear();
+                cts.actor_tickets(&ctac);
+                cts.apply(&mut scc, &mut cbc, &mut ccc, |chunk| {
+                    let mut block_key = [0; Block::KEY_LENGTH];
+                    // TODO: some non-runtime way involving const generics?
+                    let chunk_key = &mut block_key[.. Chunk::KEY_LENGTH];
+                    chunk.write_key(chunk_key);
+                    let mut block_key_finish = block_key;
+                    (&mut block_key_finish[Block::KEY_LENGTH - 2 .. Block::KEY_LENGTH])
+                        .fill(u8::MAX);
 
-                        let block_classes = {
-                            let db_read = shared.database.begin_read().unwrap();
-                            let table = db_read
-                                .open_table(BLOCK_CLASS_TABLE)
-                                .expect("server_loop: database read");
-                            table
-                                .range(block_key .. block_key_finish)
-                                .unwrap()
-                                .map(|(_key, bytes)| {
-                                    BlockClass::unpack(&bytes)
-                                        .expect("server_loop: block class deserialization")
-                                })
-                                .collect::<ArrayVec<_, BLOCKS_IN_CHUNK>>()
-                        };
+                    let block_classes = {
+                        let db_read = shared.database.begin_read().unwrap();
+                        let table = db_read
+                            .open_table(BLOCK_CLASS_TABLE)
+                            .expect("server_loop: database read");
+                        table
+                            .range(block_key .. block_key_finish)
+                            .unwrap()
+                            .map(|(_key, bytes)| {
+                                BlockClass::unpack(&bytes)
+                                    .expect("server_loop: block class deserialization")
+                            })
+                            .collect::<ArrayVec<_, BLOCKS_IN_CHUNK>>()
+                    };
 
-                        let data = if block_classes.len() == BLOCKS_IN_CHUNK {
-                            let block_classes = block_classes.to_vec();
-                            ChunkData {
-                                chunk: *chunk,
-                                block_classes: Blocks::new(block_classes),
-                            }
+                    let data = if block_classes.len() == BLOCKS_IN_CHUNK {
+                        let block_classes = block_classes.to_vec();
+                        ChunkData {
+                            chunk: *chunk,
+                            block_classes: Blocks::new(block_classes),
+                        }
+                    } else {
+                        let block_classes = if chunk.position[2] < -1 {
+                            Blocks::new(vec![BlockClass(1); BLOCKS_IN_CHUNK])
                         } else {
-                            let block_classes = if chunk.position[2] < -1 {
-                                Blocks::new(vec![BlockClass(1); BLOCKS_IN_CHUNK])
-                            } else {
-                                Blocks::new(vec![BlockClass(0); BLOCKS_IN_CHUNK])
-                            };
-
-                            let db_write = shared.database.begin_write().unwrap();
-                            {
-                                let mut table = db_write.open_table(BLOCK_CLASS_TABLE).unwrap();
-                                let mut val_buf = Vec::new();
-
-                                for (block, block_class) in block_classes.iter() {
-                                    block.write_key(&mut block_key);
-                                    block_class.pack(&mut val_buf);
-
-                                    table
-                                        .insert(&block_key, val_buf.as_slice())
-                                        .expect("server_loop: database write");
-                                }
-                            }
-                            db_write.commit().unwrap();
-
-                            ChunkData {
-                                chunk: *chunk,
-                                block_classes,
-                            }
+                            Blocks::new(vec![BlockClass(0); BLOCKS_IN_CHUNK])
                         };
 
-                        // Moving allocations and cloning away from the main thread
-                        let data_encoded =
-                            SendRc::new(ClientAccept::ChunkData(data.clone()).pack_to_vec());
+                        let db_write = shared.database.begin_write().unwrap();
+                        {
+                            let mut table = db_write.open_table(BLOCK_CLASS_TABLE).unwrap();
+                            let mut val_buf = Vec::new();
 
-                        let _ = shared
-                            .event_tx
-                            .send(SharedEvent::ChunkLoaded { data, data_encoded });
-                    });
+                            for (block, block_class) in block_classes.iter() {
+                                block.write_key(&mut block_key);
+                                block_class.pack(&mut val_buf);
+
+                                table
+                                    .insert(&block_key, val_buf.as_slice())
+                                    .expect("server_loop: database write");
+                            }
+                        }
+                        db_write.commit().unwrap();
+
+                        ChunkData {
+                            chunk: *chunk,
+                            block_classes,
+                        }
+                    };
+
+                    // Moving allocations and cloning away from the main thread
+                    let data_encoded =
+                        SendRc::new(ClientAccept::ChunkData(data.clone()).pack_to_vec());
+
+                    let _ = shared
+                        .event_tx
+                        .send(SharedEvent::ChunkLoaded { data, data_encoded });
                 });
             },
             ServerEvent::AddPlayer {
@@ -271,15 +270,40 @@ pub async fn run(
                             if curr_pos.is_none()
                                 || curr_pos.is_some() && curr_pos.unwrap().chunk != chunk
                             {
-                                ctac.insert(
-                                    *actor,
-                                    ActorChunkTicket {
-                                        chunk,
-                                        radius: PLAYER_CHUNK_TICKET_RADIUS,
-                                    },
-                                );
-                                // TODO send all chunks that are already loaded but were out of range
-                                // before
+                                let curr_radius = chunk.radius(PLAYER_CHUNK_TICKET_RADIUS);
+
+                                let prev_radius = ctac
+                                    .insert(
+                                        *actor,
+                                        ActorChunkTicket {
+                                            chunk,
+                                            radius: PLAYER_CHUNK_TICKET_RADIUS,
+                                        },
+                                    )
+                                    .map(|c| c.chunk.radius(c.radius));
+
+                                for chunk_data in curr_radius.into_iter().filter_map(|chunk| {
+                                    if let Some(prev_radius) = &prev_radius {
+                                        if prev_radius.is_within(&chunk) {
+                                            return None;
+                                        }
+                                    }
+
+                                    ccc.get(&chunk)
+                                }) {
+                                    if let Some(client) = cpc.get(&player) {
+                                        if let Err(_) =
+                                            client.tx.send(ClientEvent::SendDataReliable {
+                                                channel: BASE_CHANNEL,
+                                                data: SendData::Ref(chunk_data.clone()),
+                                            })
+                                        {
+                                            let _ = local
+                                                .event_tx
+                                                .send(ServerEvent::RemovePlayer { player });
+                                        }
+                                    }
+                                }
                             }
                         },
                         ServerAccept::AlterBlock {
@@ -292,6 +316,24 @@ pub async fn run(
                                 .and_then(|blocks| blocks.get_mut(block))
                             {
                                 *block_class_ref = block_class;
+
+                                drop(block_class_ref);
+
+                                // TODO unify block alterations in Process tick
+                                // and update cache there
+                                // possibly also unblock/rayon, this takes around 1ms for each
+                                // chunk
+                                let blocks_cache = cbc.get_chunk(&chunk).unwrap().clone();
+
+                                let chunk_data = Rc::new(
+                                    ClientAccept::ChunkData(ChunkData {
+                                        chunk,
+                                        block_classes: blocks_cache,
+                                    })
+                                    .pack_to_vec(),
+                                );
+
+                                ccc.insert(chunk, chunk_data);
 
                                 storage.execute(move |buf| {
                                     let db_write = shared.database.begin_write().unwrap();
@@ -367,6 +409,7 @@ pub async fn run(
                         }
 
                         cbc.insert_chunk(chunk_data.chunk, chunk_data.block_classes);
+                        ccc.insert(chunk_data.chunk, chunk_data_buf.clone());
 
                         let chunk = chunk_data.chunk;
 

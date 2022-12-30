@@ -89,21 +89,6 @@ fn main() {
                             .await
                             .unwrap();
 
-                        let size = window_handle.window.inner_size();
-
-                        let config = wgpu::SurfaceConfiguration {
-                            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                            format: surface.get_supported_formats(&adapter)[0],
-                            width: size.width,
-                            height: size.height,
-                            // Fifo makes SurfaceTexture::present() block
-                            // which is bad for current rendering implementation
-                            present_mode: wgpu::PresentMode::Mailbox,
-                            alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                        };
-
-                        surface.configure(&device, &config);
-
                         let window_handle = Box::leak(Box::new(window_handle));
 
                         let render_handle = Box::leak(Box::new(RenderHandle {

@@ -30,13 +30,13 @@ use winit::{
         EventLoopProxy,
     },
     window::{
-        CursorGrabMode,
         Window,
         WindowBuilder,
     },
 };
 
 // winit's WindowEvent subset, just because we don't want lifetimes
+#[derive(Debug)]
 pub enum WindowEvent {
     Resized(PhysicalSize<u32>),
     CloseRequested,
@@ -126,8 +126,125 @@ impl WindowEvent {
             _ => Err(from),
         }
     }
+
+    pub fn to_iced(
+        &self,
+        scale_factor: f64,
+        modifiers: ModifiersState,
+    ) -> Option<iced_winit::event::Event> {
+        use iced_winit::{
+            conversion,
+            event::Event,
+            keyboard,
+            mouse,
+            window,
+            Point,
+        };
+
+        match self {
+            WindowEvent::Resized(size) => {
+                let logical_size = size.to_logical(scale_factor);
+
+                Some(Event::Window(window::Event::Resized {
+                    width: logical_size.width,
+                    height: logical_size.height,
+                }))
+            },
+            WindowEvent::CloseRequested => Some(Event::Window(window::Event::CloseRequested)),
+            WindowEvent::KeyboardInput {
+                input:
+                    winit::event::KeyboardInput {
+                        virtual_keycode: Some(virtual_keycode),
+                        state,
+                        ..
+                    },
+                ..
+            } => {
+                Some(Event::Keyboard({
+                    let key_code = conversion::key_code(*virtual_keycode);
+                    let modifiers = conversion::modifiers(modifiers);
+
+                    match state {
+                        winit::event::ElementState::Pressed => {
+                            keyboard::Event::KeyPressed {
+                                key_code,
+                                modifiers,
+                            }
+                        },
+                        winit::event::ElementState::Released => {
+                            keyboard::Event::KeyReleased {
+                                key_code,
+                                modifiers,
+                            }
+                        },
+                    }
+                }))
+            },
+            WindowEvent::MouseInput { button, state, .. } => {
+                let button = conversion::mouse_button(*button);
+
+                Some(Event::Mouse(match state {
+                    winit::event::ElementState::Pressed => mouse::Event::ButtonPressed(button),
+                    winit::event::ElementState::Released => mouse::Event::ButtonReleased(button),
+                }))
+            },
+            WindowEvent::ModifiersChanged(new_modifiers) => {
+                Some(Event::Keyboard(keyboard::Event::ModifiersChanged(
+                    conversion::modifiers(*new_modifiers),
+                )))
+            },
+            WindowEvent::Focused(focused) => {
+                Some(Event::Window(if *focused {
+                    window::Event::Focused
+                } else {
+                    window::Event::Unfocused
+                }))
+            },
+            WindowEvent::ReceivedCharacter(c) if !is_private_use_character(*c) => {
+                Some(Event::Keyboard(keyboard::Event::CharacterReceived(*c)))
+            },
+            WindowEvent::CursorMoved { position, .. } => {
+                let position = position.to_logical::<f64>(scale_factor);
+
+                Some(Event::Mouse(mouse::Event::CursorMoved {
+                    position: Point::new(position.x as f32, position.y as f32),
+                }))
+            },
+            WindowEvent::MouseWheel { delta, .. } => {
+                match delta {
+                    winit::event::MouseScrollDelta::LineDelta(delta_x, delta_y) => {
+                        Some(Event::Mouse(mouse::Event::WheelScrolled {
+                            delta: mouse::ScrollDelta::Lines {
+                                x: *delta_x,
+                                y: *delta_y,
+                            },
+                        }))
+                    },
+                    winit::event::MouseScrollDelta::PixelDelta(position) => {
+                        Some(Event::Mouse(mouse::Event::WheelScrolled {
+                            delta: mouse::ScrollDelta::Pixels {
+                                x: position.x as f32,
+                                y: position.y as f32,
+                            },
+                        }))
+                    },
+                }
+            },
+            _ => None,
+        }
+    }
 }
 
+pub(crate) fn is_private_use_character(c: char) -> bool {
+    matches!(
+        c,
+        '\u{E000}'..='\u{F8FF}'
+        | '\u{F0000}'..='\u{FFFFD}'
+        | '\u{100000}'..='\u{10FFFD}'
+    )
+}
+
+#[derive(Debug)]
 pub enum InputEvent {
     DeviceEvent {
         device_id: DeviceId,
@@ -185,11 +302,6 @@ pub fn create_window(
     let window = WindowBuilder::new().build(&event_loop)?;
 
     let (event_tx, event_rx) = flume::bounded(32);
-
-    window
-        .set_cursor_grab(CursorGrabMode::Confined)
-        .or_else(|_| window.set_cursor_grab(CursorGrabMode::Locked))?;
-    window.set_cursor_visible(false);
 
     handle_tx
         .send(WindowHandle {
