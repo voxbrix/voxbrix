@@ -162,13 +162,7 @@ pub async fn run(
                 cts.clear();
                 cts.actor_tickets(&ctac);
                 cts.apply(&mut scc, &mut cbc, &mut ccc, |chunk| {
-                    let mut block_key = [0; Block::KEY_LENGTH];
-                    // TODO: some non-runtime way involving const generics?
-                    let chunk_key = &mut block_key[.. Chunk::KEY_LENGTH];
-                    chunk.write_key(chunk_key);
-                    let mut block_key_finish = block_key;
-                    (&mut block_key_finish[Block::KEY_LENGTH - 2 .. Block::KEY_LENGTH])
-                        .fill(u8::MAX);
+                    let chunk_key = chunk.to_key();
 
                     let block_classes = {
                         let db_read = shared.database.begin_read().unwrap();
@@ -176,22 +170,11 @@ pub async fn run(
                             .open_table(BLOCK_CLASS_TABLE)
                             .expect("server_loop: database read");
                         table
-                            .range(block_key .. block_key_finish)
+                            .get(&chunk_key)
                             .unwrap()
-                            .map(|(_key, bytes)| {
-                                BlockClass::unpack(&bytes)
-                                    .expect("server_loop: block class deserialization")
-                            })
-                            .collect::<ArrayVec<_, BLOCKS_IN_CHUNK>>()
-                    };
-
-                    let data = if block_classes.len() == BLOCKS_IN_CHUNK {
-                        let block_classes = block_classes.to_vec();
-                        ChunkData {
-                            chunk: *chunk,
-                            block_classes: Blocks::new(block_classes),
-                        }
-                    } else {
+                            .and_then(|bytes| Blocks::unpack(&bytes).ok())
+                    }
+                    .unwrap_or_else(|| {
                         let block_classes = if chunk.position[2] < -1 {
                             Blocks::new(vec![BlockClass(1); BLOCKS_IN_CHUNK])
                         } else {
@@ -201,23 +184,18 @@ pub async fn run(
                         let db_write = shared.database.begin_write().unwrap();
                         {
                             let mut table = db_write.open_table(BLOCK_CLASS_TABLE).unwrap();
-                            let mut val_buf = Vec::new();
-
-                            for (block, block_class) in block_classes.iter() {
-                                block.write_key(&mut block_key);
-                                block_class.pack(&mut val_buf);
-
-                                table
-                                    .insert(&block_key, val_buf.as_slice())
-                                    .expect("server_loop: database write");
-                            }
+                            table
+                                .insert(&chunk_key, block_classes.pack_to_vec().as_slice())
+                                .expect("server_loop: database write");
                         }
                         db_write.commit().unwrap();
 
-                        ChunkData {
-                            chunk: *chunk,
-                            block_classes,
-                        }
+                        block_classes
+                    });
+
+                    let data = ChunkData {
+                        chunk: *chunk,
+                        block_classes,
                     };
 
                     // Moving allocations and cloning away from the main thread
@@ -355,15 +333,17 @@ pub async fn run(
                                 // chunk
                                 let blocks_cache = cbc.get_chunk(&chunk).unwrap().clone();
 
-                                let chunk_data = Rc::new(
-                                    ClientAccept::ChunkData(ChunkData {
-                                        chunk,
-                                        block_classes: blocks_cache,
-                                    })
-                                    .pack_to_vec(),
-                                );
+                                let cache_data = ClientAccept::ChunkData(ChunkData {
+                                    chunk,
+                                    block_classes: blocks_cache,
+                                });
 
-                                ccc.insert(chunk, chunk_data);
+                                ccc.insert(chunk, Rc::new(cache_data.pack_to_vec()));
+
+                                let blocks_cache = match cache_data {
+                                    ClientAccept::ChunkData(b) => b.block_classes,
+                                    _ => panic!(),
+                                };
 
                                 storage.execute(move |buf| {
                                     let db_write = shared.database.begin_write().unwrap();
@@ -371,13 +351,10 @@ pub async fn run(
                                         let mut table =
                                             db_write.open_table(BLOCK_CLASS_TABLE).unwrap();
 
-                                        let mut block_key = [0; Block::KEY_LENGTH];
-                                        chunk.write_key(&mut block_key[.. Chunk::KEY_LENGTH]);
-                                        block.write_key(&mut block_key);
-                                        block_class.pack(buf);
+                                        blocks_cache.pack(buf);
 
                                         table
-                                            .insert(&block_key, buf.as_slice())
+                                            .insert(&chunk.to_key(), buf.as_slice())
                                             .expect("server_loop: database write");
                                     }
                                     db_write.commit().unwrap();

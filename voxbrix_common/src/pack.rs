@@ -63,6 +63,7 @@ pub trait PackZip {
 
 pub trait PackZipDefault {}
 
+// TODO fix if Write and Read gets implemented for the postcard
 impl<T> PackZip for T
 where
     T: Serialize + DeserializeOwned + PackZipDefault,

@@ -1,9 +1,12 @@
-use crate::entity::{
-    block::{
-        Block,
-        BLOCKS_IN_CHUNK_EDGE,
+use crate::{
+    entity::{
+        block::{
+            Block,
+            BLOCKS_IN_CHUNK_EDGE,
+        },
+        chunk::Chunk,
     },
-    chunk::Chunk,
+    pack::PackZipDefault,
 };
 use serde::{
     Deserialize,
@@ -60,6 +63,8 @@ impl<T> Blocks<T> {
             .map(|((i, b), c)| (Block(i), c, b))
     }
 }
+
+impl<T> PackZipDefault for Blocks<T> {}
 
 pub struct BlockComponent<T> {
     chunks: BTreeMap<Chunk, Blocks<T>>,
