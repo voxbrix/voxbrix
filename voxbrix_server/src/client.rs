@@ -93,10 +93,12 @@ pub async fn run(
     // if there's none - register,
     // if the password is not correct - send error
     let player_res = {
-        match rx
-            .recv()
+        match async { rx.recv().await.ok() }
+            .or(async {
+                Timer::after(CLIENT_CONNECTION_TIMEOUT).await;
+                None
+            })
             .await
-            .ok()
             .and_then(|(_channel, data)| InitRequest::unpack(&data).ok())
         {
             Some(req) => {

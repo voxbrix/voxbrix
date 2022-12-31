@@ -26,6 +26,7 @@ use crate::{
         },
     },
     entity::{
+        actor::Actor,
         block::Block,
         block_class::BlockClass,
         chunk::Chunk,
@@ -48,31 +49,25 @@ use anyhow::Result;
 use async_executor::LocalExecutor;
 use async_io::Timer;
 use futures_lite::stream::StreamExt;
-use std::{
-    net::SocketAddr,
-    time::{
-        Duration,
-        Instant,
-    },
+use std::time::{
+    Duration,
+    Instant,
 };
 use voxbrix_common::{
     math::Vec3,
     messages::{
-        client::{
-            ClientAccept,
-            InitResponse,
-        },
-        server::{
-            InitRequest,
-            ServerAccept,
-        },
+        client::ClientAccept,
+        server::ServerAccept,
     },
     pack::PackZip,
     stream::StreamExt as _,
     unblock,
     ChunkData,
 };
-use voxbrix_protocol::client::Client;
+use voxbrix_protocol::client::{
+    Receiver,
+    Sender,
+};
 use winit::event::{
     DeviceEvent,
     ElementState,
@@ -89,10 +84,9 @@ pub enum Event {
 }
 
 pub struct GameSceneParameters {
-    pub socket: SocketAddr,
-    pub server: SocketAddr,
-    pub username: String,
-    pub password: Vec<u8>,
+    pub connection: (Sender, Receiver),
+    pub player_actor: Actor,
+    pub player_ticket_radius: i32,
 }
 
 pub struct GameScene<'a> {
@@ -108,48 +102,15 @@ impl GameScene<'_> {
         let (unreliable_tx, mut unreliable_rx) = local_channel::mpsc::channel::<ServerAccept>();
         let (event_tx, event_rx) = local_channel::mpsc::channel::<Event>();
 
-        let (tx, mut rx) = Client::bind(self.parameters.socket)?
-            .connect(self.parameters.server)
-            .await?;
+        let GameSceneParameters {
+            connection,
+            player_actor,
+            player_ticket_radius,
+        } = self.parameters;
+
+        let (tx, mut rx) = connection;
 
         let (mut unreliable, mut reliable) = tx.split();
-
-        let init_response = self.rt.spawn(async move {
-            let mut recv_buf = Vec::new();
-            let (_channel, bytes) = rx
-                .recv(&mut recv_buf)
-                .await
-                .expect("initialization response");
-
-            (
-                rx,
-                InitResponse::unpack(&bytes).expect("initialization response unpack"),
-            )
-        });
-
-        reliable
-            .send_reliable(
-                0,
-                &InitRequest {
-                    username: self.parameters.username,
-                    password: self.parameters.password,
-                }
-                .pack_to_vec(),
-            )
-            .await
-            .expect("initialization request");
-
-        let (mut rx, init_response) = init_response.await;
-
-        let (player_actor, chunk_radius) = match init_response {
-            InitResponse::Success {
-                actor,
-                player_ticket_radius,
-            } => (actor, player_ticket_radius),
-            InitResponse::Failure(err) => {
-                panic!("{:?}", err);
-            },
-        };
 
         self.rt
             .spawn(async move {
@@ -294,7 +255,7 @@ impl GameScene<'_> {
                     // let time_test = Instant::now();
                     position_system.process(elapsed, &cbc, &mut gpac, &vac);
                     chunk_presence_system.process(
-                        chunk_radius,
+                        player_ticket_radius,
                         &player_actor,
                         &gpac,
                         &mut cbc,
