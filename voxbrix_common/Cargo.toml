@@ -11,7 +11,7 @@ postcard = { version = "1.0", default-features = false, features = ["use-std"] }
 serde = "1.0"
 futures-core = { version = "0.3", default-features = false }
 pin-project-lite = "0.2"
-lz4_flex = { version = "0.9", default-features = false, features = ["std", "safe-decode"] }
+lz4_flex = { version = "0.9", default-features = false, features = ["safe-decode"] }
 
 [dev-dependencies]
 nalgebra-glm = { version = "0.17", default-features = false, features = ["std"] }
