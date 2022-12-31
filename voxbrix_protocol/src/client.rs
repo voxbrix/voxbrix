@@ -34,6 +34,10 @@ use local_channel::mpsc::{
     Sender as ChannelTx,
 };
 use log::warn;
+#[cfg(feature = "single")]
+use std::rc::Rc;
+#[cfg(feature = "multi")]
+use std::sync::Arc;
 use std::{
     collections::{
         BTreeMap,
@@ -52,8 +56,6 @@ use std::{
         SocketAddr,
         UdpSocket,
     },
-    ops::Deref,
-    rc::Rc,
     slice,
     time::Duration,
 };
@@ -71,16 +73,17 @@ impl Client {
         Ok(Self { transport })
     }
 
-    pub async fn connect<A>(
-        self,
-        server_address: A,
-    ) -> Result<(Sender<Rc<Async<UdpSocket>>>, Receiver<Rc<Async<UdpSocket>>>), StdIoError>
+    pub async fn connect<A>(self, server_address: A) -> Result<(Sender, Receiver), StdIoError>
     where
         A: Into<SocketAddr>,
     {
         self.transport.get_ref().connect(server_address.into())?;
 
+        #[cfg(feature = "single")]
         let transport = Rc::new(self.transport);
+
+        #[cfg(feature = "multi")]
+        let transport = Arc::new(self.transport);
 
         let (ack_sender, ack_receiver) = new_channel();
 
@@ -147,21 +150,23 @@ impl Client {
     }
 }
 
-pub struct Receiver<T> {
+pub struct Receiver {
     id: Id,
     sequence: Sequence,
     reliable_split_buffer: Vec<u8>,
     reliable_split_channel: Option<Channel>,
     buffer: [u8; MAX_PACKET_SIZE],
     ack_sender: ChannelTx<Sequence>,
-    transport: T,
+
+    #[cfg(feature = "single")]
+    transport: Rc<Async<UdpSocket>>,
+
+    #[cfg(feature = "multi")]
+    transport: Arc<Async<UdpSocket>>,
     unreliable_split_buffers: HashMap<Channel, UnreliableBuffer>,
 }
 
-impl<T> Receiver<T>
-where
-    T: Deref<Target = Async<UdpSocket>>,
-{
+impl Receiver {
     pub async fn recv<'a>(
         &mut self,
         buf: &'a mut Vec<u8>,
@@ -359,15 +364,12 @@ where
     }
 }
 
-pub struct Sender<T> {
-    unreliable: UnreliableSender<T>,
-    reliable: ReliableSender<T>,
+pub struct Sender {
+    unreliable: UnreliableSender,
+    reliable: ReliableSender,
 }
 
-impl<T> Sender<T>
-where
-    T: Deref<Target = Async<UdpSocket>>,
-{
+impl Sender {
     pub async fn send_unreliable(&mut self, channel: usize, data: &[u8]) -> Result<(), StdIoError> {
         self.unreliable.send_unreliable(channel, data).await
     }
@@ -377,11 +379,8 @@ where
     }
 }
 
-impl<T> Sender<T>
-where
-    T: Deref<Target = Async<UdpSocket>> + Clone,
-{
-    pub fn split(self) -> (UnreliableSender<T>, ReliableSender<T>) {
+impl Sender {
+    pub fn split(self) -> (UnreliableSender, ReliableSender) {
         let Self {
             unreliable,
             reliable,
@@ -391,16 +390,18 @@ where
     }
 }
 
-pub struct UnreliableSender<T> {
+pub struct UnreliableSender {
     id: Id,
     unreliable_split_id: u16,
-    transport: T,
+
+    #[cfg(feature = "single")]
+    transport: Rc<Async<UdpSocket>>,
+
+    #[cfg(feature = "multi")]
+    transport: Arc<Async<UdpSocket>>,
 }
 
-impl<T> UnreliableSender<T>
-where
-    T: Deref<Target = Async<UdpSocket>>,
-{
+impl UnreliableSender {
     async fn send_unreliable_one(
         &self,
         channel: usize,
@@ -459,18 +460,20 @@ where
     }
 }
 
-pub struct ReliableSender<T> {
+pub struct ReliableSender {
     id: Id,
     sequence: Sequence,
     buffer: [u8; MAX_PACKET_SIZE],
     ack_receiver: ChannelRx<Sequence>,
-    transport: T,
+
+    #[cfg(feature = "single")]
+    transport: Rc<Async<UdpSocket>>,
+
+    #[cfg(feature = "multi")]
+    transport: Arc<Async<UdpSocket>>,
 }
 
-impl<T> ReliableSender<T>
-where
-    T: Deref<Target = Async<UdpSocket>>,
-{
+impl ReliableSender {
     async fn send_reliable_one(
         &mut self,
         channel: usize,

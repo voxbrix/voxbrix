@@ -43,7 +43,15 @@ use iced_winit::{
     Size,
 };
 use std::time::Duration;
-use voxbrix_common::stream::StreamExt as _;
+use voxbrix_common::{
+    messages::{
+        client::InitResponse,
+        server::InitRequest,
+    },
+    pack::PackZip,
+    stream::StreamExt as _,
+};
+use voxbrix_protocol::client::Client;
 use winit::{
     dpi::PhysicalPosition,
     event::ModifiersState,
@@ -248,32 +256,85 @@ impl MenuScene<'_> {
             .map(|_| Event::Process)
             .or_ff(self.window_handle.event_rx.stream().map(Event::Input));
 
+        // let server = match program.server_address.parse() {
+        // Ok(s) => s,
+        // Err(_) => {
+        // },
+        // }
+
         while let Some(event) = stream.next().await {
             match event {
                 Event::Process => {
-                    let mut action = || {
+                    let action = async {
                         let program = menu.program();
                         if let Some(action) = &program.command {
                             match action {
                                 MainMenuAction::Submit => {
-                                    let socket = ([0, 0, 0, 0], 0).into();
-                                    let server = match program.server_address.parse() {
-                                        Ok(s) => s,
-                                        Err(_) => {
-                                            menu.queue_message(Message::Error(
-                                                "Incorrect server socket address format".to_owned(),
-                                            ));
+                                    let connect_result = async {
+                                        let socket: std::net::SocketAddr = ([0, 0, 0, 0], 0).into();
+                                        let server: std::net::SocketAddr =
+                                            program.server_address.parse().map_err(|_| {
+                                                "Incorrect server socket address format"
+                                            })?;
+
+                                        let (mut tx, mut rx) = Client::bind(socket)
+                                            .map_err(|_| "Unable to bind socket")?
+                                            .connect(server)
+                                            .await
+                                            .map_err(|_| "Connection error")?;
+
+                                        let init_response = self.rt.spawn(async move {
+                                            let mut recv_buf = Vec::new();
+                                            let (_channel, bytes) =
+                                                rx.recv(&mut recv_buf).await.map_err(|_| {
+                                                    "Unable to get initialization response"
+                                                })?;
+                                            InitResponse::unpack(&bytes)
+                                                .map(|resp| (rx, resp))
+                                                .map_err(|_| {
+                                                    "Unable to unpack initialization response"
+                                                })
+                                        });
+
+                                        tx.send_reliable(
+                                            0,
+                                            &InitRequest {
+                                                username: program.username.to_owned(),
+                                                password: program.password.as_bytes().to_owned(),
+                                            }
+                                            .pack_to_vec(),
+                                        )
+                                        .await
+                                        .map_err(|_| "Unable to send initialization request")?;
+
+                                        let (rx, init_response) = init_response.await?;
+
+                                        let (player_actor, player_ticket_radius) =
+                                            match init_response {
+                                                InitResponse::Success {
+                                                    actor,
+                                                    player_ticket_radius,
+                                                } => (actor, player_ticket_radius),
+                                                InitResponse::Failure(_err) => {
+                                                    return Err("Incorrect password");
+                                                },
+                                            };
+                                        return Ok::<_, &str>(GameSceneParameters {
+                                            connection: (tx, rx),
+                                            player_actor,
+                                            player_ticket_radius,
+                                        });
+                                    };
+
+                                    match connect_result.await {
+                                        Ok(parameters) => {
+                                            return Some(SceneSwitch::Game { parameters });
+                                        },
+                                        Err(err) => {
+                                            menu.queue_message(Message::Error(err.to_owned()));
                                             return None;
                                         },
                                     };
-                                    return Some(SceneSwitch::Game {
-                                        parameters: GameSceneParameters {
-                                            socket,
-                                            server,
-                                            username: program.username.clone(),
-                                            password: program.password.as_bytes().to_owned(),
-                                        },
-                                    });
                                 },
                                 MainMenuAction::Exit => {
                                     return Some(SceneSwitch::Exit);
@@ -283,7 +344,7 @@ impl MenuScene<'_> {
                         None
                     };
 
-                    if let Some(action) = action() {
+                    if let Some(action) = action.await {
                         return Ok(action);
                     }
 
