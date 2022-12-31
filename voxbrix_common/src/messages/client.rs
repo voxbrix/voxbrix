@@ -5,7 +5,7 @@ use crate::{
         block_class::BlockClass,
         chunk::Chunk,
     },
-    pack::PackDefault,
+    pack::PackZipDefault,
     ChunkData,
 };
 use serde::{
@@ -23,7 +23,7 @@ pub enum ClientAccept {
     },
 }
 
-impl PackDefault for ClientAccept {}
+impl PackZipDefault for ClientAccept {}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum InitFailure {
@@ -41,4 +41,4 @@ pub enum InitResponse {
     Failure(InitFailure),
 }
 
-impl PackDefault for InitResponse {}
+impl PackZipDefault for InitResponse {}

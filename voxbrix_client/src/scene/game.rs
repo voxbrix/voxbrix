@@ -67,7 +67,7 @@ use voxbrix_common::{
             ServerAccept,
         },
     },
-    pack::Pack,
+    pack::PackZip,
     stream::StreamExt as _,
     unblock,
     ChunkData,

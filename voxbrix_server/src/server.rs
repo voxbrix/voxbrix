@@ -69,6 +69,7 @@ use voxbrix_common::{
         server::ServerAccept,
     },
     pack::Pack,
+    pack::PackZip,
     // unblock,
     ChunkData,
 };
@@ -319,6 +320,35 @@ pub async fn run(
 
                                 drop(block_class_ref);
 
+                                let data_buf = Rc::new(
+                                    ClientAccept::AlterBlock {
+                                        chunk,
+                                        block,
+                                        block_class,
+                                    }
+                                    .pack_to_vec(),
+                                );
+
+                                for (player, client) in apc.iter().filter_map(|(player, actor)| {
+                                    let ticket = ctac.get(actor)?;
+                                    ticket
+                                        .chunk
+                                        .radius(ticket.radius)
+                                        .is_within(&chunk)
+                                        .then_some(())?;
+                                    let client = cpc.get(player)?;
+                                    Some((player, client))
+                                }) {
+                                    if let Err(_) = client.tx.send(ClientEvent::SendDataReliable {
+                                        channel: BASE_CHANNEL,
+                                        data: SendData::Ref(data_buf.clone()),
+                                    }) {
+                                        let _ = local
+                                            .event_tx
+                                            .send(ServerEvent::RemovePlayer { player: *player });
+                                    }
+                                }
+
                                 // TODO unify block alterations in Process tick
                                 // and update cache there
                                 // possibly also unblock/rayon, this takes around 1ms for each
@@ -352,35 +382,6 @@ pub async fn run(
                                     }
                                     db_write.commit().unwrap();
                                 });
-
-                                let data_buf = Rc::new(
-                                    ClientAccept::AlterBlock {
-                                        chunk,
-                                        block,
-                                        block_class,
-                                    }
-                                    .pack_to_vec(),
-                                );
-
-                                for (player, client) in apc.iter().filter_map(|(player, actor)| {
-                                    let ticket = ctac.get(actor)?;
-                                    ticket
-                                        .chunk
-                                        .radius(ticket.radius)
-                                        .is_within(&chunk)
-                                        .then_some(())?;
-                                    let client = cpc.get(player)?;
-                                    Some((player, client))
-                                }) {
-                                    if let Err(_) = client.tx.send(ClientEvent::SendDataReliable {
-                                        channel: BASE_CHANNEL,
-                                        data: SendData::Ref(data_buf.clone()),
-                                    }) {
-                                        let _ = local
-                                            .event_tx
-                                            .send(ServerEvent::RemovePlayer { player: *player });
-                                    }
-                                }
                             }
                         },
                     }
