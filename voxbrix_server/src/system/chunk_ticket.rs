@@ -77,8 +77,4 @@ impl ChunkTicketSystem {
         })
         .detach();
     }
-
-    pub fn existing(&self) -> &BTreeSet<Chunk> {
-        &self.data
-    }
 }

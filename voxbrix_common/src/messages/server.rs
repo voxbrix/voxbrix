@@ -5,7 +5,7 @@ use crate::{
         block_class::BlockClass,
         chunk::Chunk,
     },
-    pack::PackDefault,
+    pack::PackZipDefault,
 };
 use serde::{
     Deserialize,
@@ -24,7 +24,7 @@ pub enum ServerAccept {
     },
 }
 
-impl PackDefault for ServerAccept {}
+impl PackZipDefault for ServerAccept {}
 
 #[derive(Serialize, Deserialize)]
 pub struct InitRequest {
@@ -32,4 +32,4 @@ pub struct InitRequest {
     pub password: Vec<u8>,
 }
 
-impl PackDefault for InitRequest {}
+impl PackZipDefault for InitRequest {}

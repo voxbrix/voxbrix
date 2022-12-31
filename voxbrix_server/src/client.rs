@@ -35,7 +35,10 @@ use voxbrix_common::{
         },
         server::InitRequest,
     },
-    pack::Pack,
+    pack::{
+        Pack,
+        PackZip,
+    },
     stream::StreamExt as _,
 };
 use voxbrix_protocol::{
