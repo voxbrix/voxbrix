@@ -12,6 +12,9 @@ pub mod client;
 #[cfg(any(feature = "server", test))]
 pub mod server;
 
+#[cfg(feature = "single")]
+pub mod local_oneshot;
+
 pub const MAX_PACKET_SIZE: usize = 508;
 pub const MAX_HEADER_SIZE: usize = 48;
 
