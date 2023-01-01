@@ -13,9 +13,19 @@ use super::{
     MAX_PACKET_SIZE,
     SERVER_ID,
 };
+#[cfg(feature = "single")]
+use crate::local_oneshot::{
+    oneshot as new_oneshot,
+    Sender as OneshotTx,
+};
 use async_io::{
     Async,
     Timer,
+};
+#[cfg(feature = "multi")]
+use async_oneshot::{
+    oneshot as new_oneshot,
+    Sender as OneshotTx,
 };
 #[cfg(feature = "multi")]
 use flume::{
@@ -71,7 +81,7 @@ struct TypedBuffer {
 async fn stream_send_ack(
     peer: Id,
     sequence: Sequence,
-    transport: &mut ChannelTx<(Id, Buffer, ChannelTx<Result<(), StdIoError>>)>,
+    transport: &mut ChannelTx<(Id, Buffer, OneshotTx<Result<(), StdIoError>>)>,
 ) -> Result<(), StdIoError> {
     let mut buffer = [0; MAX_PACKET_SIZE];
 
@@ -89,7 +99,7 @@ async fn stream_send_ack(
 
     let stop = cursor.position() as usize;
 
-    let (result_tx, mut result_rx) = new_channel();
+    let (result_tx, result_rx) = new_oneshot();
 
     transport
         .send((
@@ -105,14 +115,12 @@ async fn stream_send_ack(
 
     #[cfg(feature = "single")]
     result_rx
-        .recv()
         .await
         .ok_or_else(|| StdIoErrorKind::BrokenPipe)??;
     #[cfg(feature = "multi")]
     result_rx
-        .recv_async()
         .await
-        .map_err(|_| StdIoErrorKind::BrokenPipe)??;
+        .ok_or_else(|| StdIoErrorKind::BrokenPipe)??;
 
     Ok(())
 }
@@ -144,7 +152,7 @@ impl StreamSender {
 pub struct StreamUnreliableSender {
     peer: Id,
     unreliable_split_id: u16,
-    transport: ChannelTx<(Id, Buffer, ChannelTx<Result<(), StdIoError>>)>,
+    transport: ChannelTx<(Id, Buffer, OneshotTx<Result<(), StdIoError>>)>,
 }
 
 impl StreamUnreliableSender {
@@ -170,7 +178,7 @@ impl StreamUnreliableSender {
 
         let stop = cursor.position() as usize;
 
-        let (result_tx, mut result_rx) = new_channel();
+        let (result_tx, result_rx) = new_oneshot();
 
         self.transport
             .send((
@@ -186,14 +194,12 @@ impl StreamUnreliableSender {
 
         #[cfg(feature = "single")]
         result_rx
-            .recv()
             .await
             .ok_or_else(|| StdIoErrorKind::BrokenPipe)??;
         #[cfg(feature = "multi")]
         result_rx
-            .recv_async()
             .await
-            .map_err(|_| StdIoErrorKind::BrokenPipe)??;
+            .ok_or_else(|| StdIoErrorKind::BrokenPipe)??;
 
         Ok(())
     }
@@ -235,7 +241,7 @@ pub struct StreamReliableSender {
     peer: Id,
     sequence: Sequence,
     ack_receiver: ChannelRx<Sequence>,
-    transport: ChannelTx<(Id, Buffer, ChannelTx<Result<(), StdIoError>>)>,
+    transport: ChannelTx<(Id, Buffer, OneshotTx<Result<(), StdIoError>>)>,
 }
 
 impl StreamReliableSender {
@@ -258,7 +264,7 @@ impl StreamReliableSender {
         let stop = cursor.position() as usize;
 
         loop {
-            let (result_tx, mut result_rx) = new_channel();
+            let (result_tx, result_rx) = new_oneshot();
 
             self.transport
                 .send((
@@ -274,14 +280,12 @@ impl StreamReliableSender {
 
             #[cfg(feature = "single")]
             result_rx
-                .recv()
                 .await
                 .ok_or_else(|| StdIoErrorKind::BrokenPipe)??;
             #[cfg(feature = "multi")]
             result_rx
-                .recv_async()
                 .await
-                .map_err(|_| StdIoErrorKind::BrokenPipe)??;
+                .ok_or_else(|| StdIoErrorKind::BrokenPipe)??;
 
             let result: Result<_, StdIoError> = async {
                 #[cfg(feature = "single")]
@@ -343,7 +347,7 @@ pub struct StreamReceiver {
     split_buffer: Vec<u8>,
     split_channel: Option<Channel>,
     unreliable_split_buffers: HashMap<Channel, UnreliableBuffer>,
-    transport_sender: ChannelTx<(Id, Buffer, ChannelTx<Result<(), StdIoError>>)>,
+    transport_sender: ChannelTx<(Id, Buffer, OneshotTx<Result<(), StdIoError>>)>,
     transport_receiver: ChannelRx<TypedBuffer>,
 }
 
@@ -591,15 +595,15 @@ impl Clients {
 
 enum ServerPacket {
     In((usize, SocketAddr)),
-    Out((Id, Buffer, ChannelTx<Result<(), StdIoError>>)),
+    Out((Id, Buffer, OneshotTx<Result<(), StdIoError>>)),
 }
 
 pub struct Server {
     clients: Clients,
-    out_queue: ChannelRx<(Id, Buffer, ChannelTx<Result<(), StdIoError>>)>,
+    out_queue: ChannelRx<(Id, Buffer, OneshotTx<Result<(), StdIoError>>)>,
 
     // To prevent [1] from panic
-    out_queue_sender: ChannelTx<(Id, Buffer, ChannelTx<Result<(), StdIoError>>)>,
+    out_queue_sender: ChannelTx<(Id, Buffer, OneshotTx<Result<(), StdIoError>>)>,
 
     receive_buffer: [u8; MAX_PACKET_SIZE],
     transport: Async<UdpSocket>,
