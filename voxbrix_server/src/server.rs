@@ -32,12 +32,8 @@ use crate::{
         },
     },
     entity::{
-        block::{
-            Block,
-            BLOCKS_IN_CHUNK,
-        },
+        block::BLOCKS_IN_CHUNK,
         block_class::BlockClass,
-        chunk::Chunk,
         player::Player,
     },
     storage::{
@@ -52,7 +48,6 @@ use crate::{
     PLAYER_CHUNK_TICKET_RADIUS,
     PROCESS_INTERVAL,
 };
-use arrayvec::ArrayVec;
 use async_io::Timer;
 use flume::Receiver as SharedReceiver;
 use futures_lite::stream::StreamExt;
@@ -68,7 +63,6 @@ use voxbrix_common::{
         client::ClientAccept,
         server::ServerAccept,
     },
-    pack::Pack,
     pack::PackZip,
     // unblock,
     ChunkData,
@@ -172,7 +166,7 @@ pub async fn run(
                         table
                             .get(&chunk_key)
                             .unwrap()
-                            .and_then(|bytes| Blocks::unpack(&bytes).ok())
+                            .and_then(|bytes| Blocks::unpack(&bytes.value()).ok())
                     }
                     .unwrap_or_else(|| {
                         let block_classes = if chunk.position[2] < -1 {
