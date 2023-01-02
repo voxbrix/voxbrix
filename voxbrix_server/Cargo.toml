@@ -17,7 +17,7 @@ redb = "0.10"
 flume = "0.10"
 serde = "1.0"
 #postcard = "1.0"
-local-channel = "0.1"
+local_channel = { path = "../local_channel" }
 arrayvec = { version = "0.7", default-features = false }
 anyhow = "1.0"
 log = "0.4"

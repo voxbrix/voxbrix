@@ -4,6 +4,7 @@ members = [
     "voxbrix_common",
     "voxbrix_protocol",
     "voxbrix_server",
+    "local_channel"
 ]
 resolver = "2"
 
