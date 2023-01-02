@@ -114,19 +114,18 @@ pub async fn run(
                             .open_table(USERNAME_TABLE)
                             .expect("database table open");
 
-                        let player = match username_table
+                        let player = username_table
                             .get(username.as_bytes())
                             .expect("database read")
-                        {
-                            Some(p) => Player::unpack(p).unwrap(),
-                            None => {
+                            .map(|b| Player::unpack(b.value()).unwrap())
+                            .unwrap_or_else(|| {
                                 let player = player_table
                                     .iter()
                                     .expect("database read")
                                     .next_back()
                                     // TODO wrapping?
                                     .map(|(bytes, _)| {
-                                        let player = Player::read_key(bytes);
+                                        let player = Player::read_key(bytes.value());
                                         Player(player.0.checked_add(1).unwrap())
                                     })
                                     .unwrap_or(Player(0));
@@ -136,13 +135,12 @@ pub async fn run(
                                     .expect("database write");
 
                                 player
-                            },
-                        };
+                            });
 
                         match player_table
                             .get(&player.to_key())
                             .expect("database read")
-                            .map(|bytes| PlayerStorage::unpack(bytes))
+                            .map(|bytes| PlayerStorage::unpack(bytes.value()))
                             .transpose()
                             .map_err(|_| InitFailure::Unknown)?
                         {

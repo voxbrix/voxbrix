@@ -8,7 +8,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 integer-encoding = "3.0"
-async-io = "1.10"
+async-io = "1.12"
 futures-lite = "1.12"
 local_channel = { path = "../local_channel" , optional = true }
 flume = { version = "0.10", optional = true }

@@ -45,7 +45,7 @@ pub struct Shared {
 
 fn main() -> Result<()> {
     env_logger::init();
-    let database = unsafe { Database::create("/tmp/voxbrix.db")? };
+    let database = Database::create("/tmp/voxbrix.db")?;
 
     let write_tx = database.begin_write()?;
     {
