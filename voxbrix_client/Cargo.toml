@@ -25,7 +25,7 @@ anyhow = "1.0"
 serde = { version = "1.0", default-features = false, features = ["std", "derive"] } 
 voxbrix_protocol = { path = "../voxbrix_protocol", features = ["single", "client"] }
 voxbrix_common = { path = "../voxbrix_common" }
-local-channel = "0.1"
+local_channel = { path = "../local_channel" }
 bitmask = "0.5"
 arrayvec = { version = "0.7", default-features = false }
 ron = "0.8"

@@ -13,11 +13,6 @@ use super::{
     MAX_PACKET_SIZE,
     SERVER_ID,
 };
-#[cfg(feature = "single")]
-use crate::local_oneshot::{
-    oneshot as new_oneshot,
-    Sender as OneshotTx,
-};
 use async_io::{
     Async,
     Timer,
@@ -39,10 +34,16 @@ use integer_encoding::{
     VarIntWriter,
 };
 #[cfg(feature = "single")]
-use local_channel::mpsc::{
-    channel as new_channel,
-    Receiver as ChannelRx,
-    Sender as ChannelTx,
+use local_channel::{
+    mpsc::{
+        channel as new_channel,
+        Receiver as ChannelRx,
+        Sender as ChannelTx,
+    },
+    oneshot::{
+        oneshot as new_oneshot,
+        Sender as OneshotTx,
+    },
 };
 use log::warn;
 use std::{
