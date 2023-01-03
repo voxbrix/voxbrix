@@ -13,7 +13,10 @@ use crate::{
 use anyhow::Result;
 use async_executor::LocalExecutor;
 use async_io::Timer;
-use futures_lite::StreamExt as _;
+use futures_lite::{
+    future,
+    StreamExt as _,
+};
 use iced_wgpu::{
     Backend,
     Renderer,
@@ -283,31 +286,37 @@ impl MenuScene<'_> {
                                             .await
                                             .map_err(|_| "Connection error")?;
 
-                                        let init_response = self.rt.spawn(async move {
+                                        let req_result = async {
+                                            tx.send_reliable(
+                                                0,
+                                                &InitRequest {
+                                                    username: program.username.to_owned(),
+                                                    password: program
+                                                        .password
+                                                        .as_bytes()
+                                                        .to_owned(),
+                                                }
+                                                .pack_to_vec(),
+                                            )
+                                            .await
+                                            .map_err(|_| "Unable to send initialization request")
+                                        };
+
+                                        let init_response = async {
                                             let mut recv_buf = Vec::new();
                                             let (_channel, bytes) =
                                                 rx.recv(&mut recv_buf).await.map_err(|_| {
                                                     "Unable to get initialization response"
                                                 })?;
-                                            InitResponse::unpack(&bytes)
-                                                .map(|resp| (rx, resp))
-                                                .map_err(|_| {
-                                                    "Unable to unpack initialization response"
-                                                })
-                                        });
+                                            InitResponse::unpack(&bytes).map_err(|_| {
+                                                "Unable to unpack initialization response"
+                                            })
+                                        };
 
-                                        tx.send_reliable(
-                                            0,
-                                            &InitRequest {
-                                                username: program.username.to_owned(),
-                                                password: program.password.as_bytes().to_owned(),
-                                            }
-                                            .pack_to_vec(),
-                                        )
-                                        .await
-                                        .map_err(|_| "Unable to send initialization request")?;
-
-                                        let (rx, init_response) = init_response.await?;
+                                        let (req_result, init_response) =
+                                            future::zip(req_result, init_response).await;
+                                        req_result?;
+                                        let init_response = init_response?;
 
                                         let (player_actor, player_ticket_radius) =
                                             match init_response {

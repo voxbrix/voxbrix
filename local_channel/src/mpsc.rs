@@ -38,6 +38,10 @@ impl<T> Sender<T> {
             Err(SendError(value))
         }
     }
+
+    pub fn has_receiver(&self) -> bool {
+        self.shared.borrow().has_receiver
+    }
 }
 
 impl<T> Drop for Sender<T> {
