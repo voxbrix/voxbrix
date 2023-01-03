@@ -44,10 +44,10 @@ use std::{
         BTreeSet,
         HashMap,
     },
+    fmt,
     io::{
         Cursor,
         Error as StdIoError,
-        ErrorKind as StdIoErrorKind,
         Read,
         Write,
     },
@@ -60,12 +60,33 @@ use std::{
     time::Duration,
 };
 
+#[derive(Debug)]
+pub enum Error {
+    Io(StdIoError),
+    ReceiverWasDropped,
+    Disconnect,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl std::error::Error for Error {}
+
+impl From<StdIoError> for Error {
+    fn from(from: StdIoError) -> Self {
+        Self::Io(from)
+    }
+}
+
 pub struct Client {
     transport: Async<UdpSocket>,
 }
 
 impl Client {
-    pub fn bind<A>(bind_address: A) -> Result<Self, StdIoError>
+    pub fn bind<A>(bind_address: A) -> Result<Self, Error>
     where
         A: Into<SocketAddr>,
     {
@@ -73,7 +94,7 @@ impl Client {
         Ok(Self { transport })
     }
 
-    pub async fn connect<A>(self, server_address: A) -> Result<(Sender, Receiver), StdIoError>
+    pub async fn connect<A>(self, server_address: A) -> Result<(Sender, Receiver), Error>
     where
         A: Into<SocketAddr>,
     {
@@ -170,7 +191,7 @@ impl Receiver {
     pub async fn recv<'a>(
         &mut self,
         buf: &'a mut Vec<u8>,
-    ) -> Result<(Channel, &'a mut [u8]), StdIoError> {
+    ) -> Result<(Channel, &'a mut [u8]), Error> {
         loop {
             buf.resize(MAX_PACKET_SIZE, 0);
 
@@ -193,7 +214,7 @@ impl Receiver {
                     let _ = self.ack_sender.send(sequence);
                 },
                 Type::DISCONNECT => {
-                    return Err(StdIoErrorKind::NotConnected.into());
+                    return Err(Error::Disconnect);
                 },
                 Type::UNRELIABLE => {
                     let channel: usize = seek_read!(read_cursor.read_varint(), "channel");
@@ -370,11 +391,11 @@ pub struct Sender {
 }
 
 impl Sender {
-    pub async fn send_unreliable(&mut self, channel: usize, data: &[u8]) -> Result<(), StdIoError> {
+    pub async fn send_unreliable(&mut self, channel: usize, data: &[u8]) -> Result<(), Error> {
         self.unreliable.send_unreliable(channel, data).await
     }
 
-    pub async fn send_reliable(&mut self, channel: usize, data: &[u8]) -> Result<(), StdIoError> {
+    pub async fn send_reliable(&mut self, channel: usize, data: &[u8]) -> Result<(), Error> {
         self.reliable.send_reliable(channel, data).await
     }
 }
@@ -408,7 +429,7 @@ impl UnreliableSender {
         data: &[u8],
         message_type: u8,
         len_or_count: Option<usize>,
-    ) -> Result<(), StdIoError> {
+    ) -> Result<(), Error> {
         let mut buffer = [0; MAX_PACKET_SIZE];
 
         let mut cursor = Cursor::new(buffer.as_mut());
@@ -427,7 +448,7 @@ impl UnreliableSender {
         Ok(())
     }
 
-    pub async fn send_unreliable(&mut self, channel: usize, data: &[u8]) -> Result<(), StdIoError> {
+    pub async fn send_unreliable(&mut self, channel: usize, data: &[u8]) -> Result<(), Error> {
         if data.len() > MAX_DATA_SIZE {
             self.unreliable_split_id = self.unreliable_split_id.wrapping_add(1);
             let length = data.len() / MAX_DATA_SIZE + 1;
@@ -479,21 +500,19 @@ impl ReliableSender {
         channel: usize,
         data: &[u8],
         packet_type: u8,
-    ) -> Result<(), StdIoError> {
+    ) -> Result<(), Error> {
         let mut write_cursor = Cursor::new(self.buffer.as_mut());
 
         write_cursor.write_varint(self.id).unwrap();
         write_cursor.write_varint(packet_type).unwrap();
         write_cursor.write_varint(channel).unwrap();
         write_cursor.write_varint(self.sequence).unwrap();
-        write_cursor
-            .write_all(data)
-            .map_err(|_| StdIoErrorKind::OutOfMemory)?;
+        write_cursor.write_all(data).unwrap();
 
         loop {
             self.transport.send(write_cursor.slice()).await?;
 
-            let result: Result<_, StdIoError> = async {
+            let result = async {
                 #[cfg(feature = "single")]
                 while let Some(ack) = self.ack_receiver.recv().await {
                     if ack == self.sequence {
@@ -507,11 +526,11 @@ impl ReliableSender {
                     }
                 }
 
-                Err(StdIoErrorKind::BrokenPipe.into())
+                Err(Some(Error::ReceiverWasDropped))
             }
             .or(async {
                 Timer::after(Duration::from_secs(1)).await;
-                Err(StdIoErrorKind::TimedOut.into())
+                Err(None)
             })
             .await;
 
@@ -520,13 +539,13 @@ impl ReliableSender {
                     self.sequence = self.sequence.wrapping_add(1);
                     return Ok(());
                 },
-                Err(err) if err.kind() == StdIoErrorKind::BrokenPipe => return Err(err),
+                Err(Some(err)) => return Err(err),
                 _ => {},
             }
         }
     }
 
-    pub async fn send_reliable(&mut self, channel: usize, data: &[u8]) -> Result<(), StdIoError> {
+    pub async fn send_reliable(&mut self, channel: usize, data: &[u8]) -> Result<(), Error> {
         let mut start = 0;
 
         while data.len() - start > MAX_DATA_SIZE {

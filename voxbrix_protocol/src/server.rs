@@ -53,10 +53,10 @@ use std::{
         HashMap,
         VecDeque,
     },
+    fmt,
     io::{
         Cursor,
         Error as StdIoError,
-        ErrorKind as StdIoErrorKind,
         Read,
         Write,
     },
@@ -69,9 +69,27 @@ use std::{
     time::Duration,
 };
 
-// pub type Packet = Vec<u8>;
+#[derive(Debug)]
+pub enum Error {
+    Io(StdIoError),
+    ServerWasDropped,
+    Disconnect,
+    InvalidConnection,
+}
 
-// pub type Data = Vec<u8>;
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl std::error::Error for Error {}
+
+impl From<StdIoError> for Error {
+    fn from(from: StdIoError) -> Self {
+        Self::Io(from)
+    }
+}
 
 struct TypedBuffer {
     sender: Id,
@@ -82,21 +100,15 @@ struct TypedBuffer {
 async fn stream_send_ack(
     peer: Id,
     sequence: Sequence,
-    transport: &mut ChannelTx<(Id, Buffer, OneshotTx<Result<(), StdIoError>>)>,
-) -> Result<(), StdIoError> {
+    transport: &mut ChannelTx<(Id, Buffer, OneshotTx<Result<(), Error>>)>,
+) -> Result<(), Error> {
     let mut buffer = [0; MAX_PACKET_SIZE];
 
     let mut cursor = Cursor::new(buffer.as_mut());
 
-    cursor
-        .write_varint(SERVER_ID)
-        .map_err(|_| StdIoErrorKind::OutOfMemory)?;
-    cursor
-        .write_varint(Type::ACKNOWLEDGE)
-        .map_err(|_| StdIoErrorKind::OutOfMemory)?;
-    cursor
-        .write_varint(sequence)
-        .map_err(|_| StdIoErrorKind::OutOfMemory)?;
+    cursor.write_varint(SERVER_ID).unwrap();
+    cursor.write_varint(Type::ACKNOWLEDGE).unwrap();
+    cursor.write_varint(sequence).unwrap();
 
     let stop = cursor.position() as usize;
 
@@ -112,16 +124,12 @@ async fn stream_send_ack(
             },
             result_tx,
         ))
-        .map_err(|_| StdIoErrorKind::BrokenPipe)?;
+        .map_err(|_| Error::ServerWasDropped)?;
 
     #[cfg(feature = "single")]
-    result_rx
-        .await
-        .ok_or_else(|| StdIoErrorKind::BrokenPipe)??;
+    result_rx.await.ok_or_else(|| Error::ServerWasDropped)??;
     #[cfg(feature = "multi")]
-    result_rx
-        .await
-        .ok_or_else(|| StdIoErrorKind::BrokenPipe)??;
+    result_rx.await.ok_or_else(|| Error::ServerWasDropped)??;
 
     Ok(())
 }
@@ -132,11 +140,11 @@ pub struct StreamSender {
 }
 
 impl StreamSender {
-    pub async fn send_unreliable(&mut self, channel: usize, data: &[u8]) -> Result<(), StdIoError> {
+    pub async fn send_unreliable(&mut self, channel: usize, data: &[u8]) -> Result<(), Error> {
         self.unreliable.send_unreliable(channel, data).await
     }
 
-    pub async fn send_reliable(&mut self, channel: usize, data: &[u8]) -> Result<(), StdIoError> {
+    pub async fn send_reliable(&mut self, channel: usize, data: &[u8]) -> Result<(), Error> {
         self.reliable.send_reliable(channel, data).await
     }
 
@@ -153,7 +161,7 @@ impl StreamSender {
 pub struct StreamUnreliableSender {
     peer: Id,
     unreliable_split_id: u16,
-    transport: ChannelTx<(Id, Buffer, OneshotTx<Result<(), StdIoError>>)>,
+    transport: ChannelTx<(Id, Buffer, OneshotTx<Result<(), Error>>)>,
 }
 
 impl StreamUnreliableSender {
@@ -163,7 +171,7 @@ impl StreamUnreliableSender {
         data: &[u8],
         message_type: u8,
         len_or_count: Option<usize>,
-    ) -> Result<(), StdIoError> {
+    ) -> Result<(), Error> {
         let mut buffer = [0; MAX_PACKET_SIZE];
 
         let mut cursor = Cursor::new(buffer.as_mut());
@@ -191,21 +199,17 @@ impl StreamUnreliableSender {
                 },
                 result_tx,
             ))
-            .map_err(|_| StdIoErrorKind::BrokenPipe)?;
+            .map_err(|_| Error::ServerWasDropped)?;
 
         #[cfg(feature = "single")]
-        result_rx
-            .await
-            .ok_or_else(|| StdIoErrorKind::BrokenPipe)??;
+        result_rx.await.ok_or_else(|| Error::ServerWasDropped)??;
         #[cfg(feature = "multi")]
-        result_rx
-            .await
-            .ok_or_else(|| StdIoErrorKind::BrokenPipe)??;
+        result_rx.await.ok_or_else(|| Error::ServerWasDropped)??;
 
         Ok(())
     }
 
-    pub async fn send_unreliable(&mut self, channel: usize, data: &[u8]) -> Result<(), StdIoError> {
+    pub async fn send_unreliable(&mut self, channel: usize, data: &[u8]) -> Result<(), Error> {
         if data.len() > MAX_DATA_SIZE {
             self.unreliable_split_id = self.unreliable_split_id.wrapping_add(1);
             let length = data.len() / MAX_DATA_SIZE + 1;
@@ -242,7 +246,7 @@ pub struct StreamReliableSender {
     peer: Id,
     sequence: Sequence,
     ack_receiver: ChannelRx<Sequence>,
-    transport: ChannelTx<(Id, Buffer, OneshotTx<Result<(), StdIoError>>)>,
+    transport: ChannelTx<(Id, Buffer, OneshotTx<Result<(), Error>>)>,
 }
 
 impl StreamReliableSender {
@@ -251,7 +255,7 @@ impl StreamReliableSender {
         channel: usize,
         data: &[u8],
         packet_type: u8,
-    ) -> Result<(), StdIoError> {
+    ) -> Result<(), Error> {
         let mut buffer = [0; MAX_PACKET_SIZE];
 
         let mut cursor = Cursor::new(buffer.as_mut());
@@ -277,18 +281,14 @@ impl StreamReliableSender {
                     },
                     result_tx,
                 ))
-                .map_err(|_| StdIoErrorKind::BrokenPipe)?;
+                .map_err(|_| Error::ServerWasDropped)?;
 
             #[cfg(feature = "single")]
-            result_rx
-                .await
-                .ok_or_else(|| StdIoErrorKind::BrokenPipe)??;
+            result_rx.await.ok_or_else(|| Error::ServerWasDropped)??;
             #[cfg(feature = "multi")]
-            result_rx
-                .await
-                .ok_or_else(|| StdIoErrorKind::BrokenPipe)??;
+            result_rx.await.ok_or_else(|| Error::ServerWasDropped)??;
 
-            let result: Result<_, StdIoError> = async {
+            let result = async {
                 #[cfg(feature = "single")]
                 while let Some(ack) = self.ack_receiver.recv().await {
                     if ack == self.sequence {
@@ -303,11 +303,11 @@ impl StreamReliableSender {
                     }
                 }
 
-                Err(StdIoErrorKind::BrokenPipe.into())
+                Err(Some(Error::ServerWasDropped))
             }
             .or(async {
                 Timer::after(Duration::from_secs(1)).await;
-                Err(StdIoErrorKind::TimedOut.into())
+                Err(None)
             })
             .await;
 
@@ -316,13 +316,13 @@ impl StreamReliableSender {
                     self.sequence = self.sequence.wrapping_add(1);
                     return Ok(());
                 },
-                Err(err) if err.kind() == StdIoErrorKind::BrokenPipe => return Err(err),
+                Err(Some(err)) => return Err(err),
                 _ => {},
             }
         }
     }
 
-    pub async fn send_reliable(&mut self, channel: usize, data: &[u8]) -> Result<(), StdIoError> {
+    pub async fn send_reliable(&mut self, channel: usize, data: &[u8]) -> Result<(), Error> {
         let mut start = 0;
 
         while data.len() - start > MAX_DATA_SIZE {
@@ -348,12 +348,12 @@ pub struct StreamReceiver {
     split_buffer: Vec<u8>,
     split_channel: Option<Channel>,
     unreliable_split_buffers: HashMap<Channel, UnreliableBuffer>,
-    transport_sender: ChannelTx<(Id, Buffer, OneshotTx<Result<(), StdIoError>>)>,
+    transport_sender: ChannelTx<(Id, Buffer, OneshotTx<Result<(), Error>>)>,
     transport_receiver: ChannelRx<TypedBuffer>,
 }
 
 impl StreamReceiver {
-    pub async fn recv<'a>(&mut self) -> Result<(Channel, Packet), StdIoError> {
+    pub async fn recv<'a>(&mut self) -> Result<(Channel, Packet), Error> {
         loop {
             #[cfg(feature = "single")]
             let TypedBuffer {
@@ -364,7 +364,7 @@ impl StreamReceiver {
                 .transport_receiver
                 .recv()
                 .await
-                .ok_or_else(|| StdIoErrorKind::BrokenPipe)?;
+                .ok_or_else(|| Error::ServerWasDropped)?;
 
             #[cfg(feature = "multi")]
             let TypedBuffer {
@@ -375,13 +375,13 @@ impl StreamReceiver {
                 .transport_receiver
                 .recv_async()
                 .await
-                .map_err(|_| StdIoErrorKind::BrokenPipe)?;
+                .map_err(|_| Error::ServerWasDropped)?;
 
             let mut read_cursor = Cursor::new(packet.as_ref());
 
             match packet_type {
                 Type::DISCONNECT => {
-                    return Err(StdIoErrorKind::NotConnected.into());
+                    return Err(Error::Disconnect);
                 },
                 Type::UNRELIABLE => {
                     let channel: usize = seek_read!(read_cursor.read_varint(), "channel");
@@ -596,16 +596,13 @@ impl Clients {
 
 enum ServerPacket {
     In((usize, SocketAddr)),
-    Out((Id, Buffer, OneshotTx<Result<(), StdIoError>>)),
+    Out((Id, Buffer, OneshotTx<Result<(), Error>>)),
 }
 
 pub struct Server {
     clients: Clients,
-    out_queue: ChannelRx<(Id, Buffer, OneshotTx<Result<(), StdIoError>>)>,
-
-    // To prevent [1] from panic
-    out_queue_sender: ChannelTx<(Id, Buffer, OneshotTx<Result<(), StdIoError>>)>,
-
+    out_queue: ChannelRx<(Id, Buffer, OneshotTx<Result<(), Error>>)>,
+    out_queue_sender: ChannelTx<(Id, Buffer, OneshotTx<Result<(), Error>>)>,
     receive_buffer: [u8; MAX_PACKET_SIZE],
     transport: Async<UdpSocket>,
 }
@@ -629,13 +626,16 @@ impl Server {
     pub async fn accept(&mut self) -> Result<(StreamSender, StreamReceiver), StdIoError> {
         loop {
             let next: Result<_, StdIoError> = async {
+                // Server struct exists (because &mut self), the following will never panic,
+                // since we have one sender kept in the struct
+
                 #[cfg(feature = "single")]
                 let out_packet = self.out_queue.recv().await.unwrap();
 
                 #[cfg(feature = "multi")]
                 let out_packet = self.out_queue.recv_async().await.unwrap();
 
-                Ok(ServerPacket::Out(out_packet)) // [1]
+                Ok(ServerPacket::Out(out_packet))
             }
             .race(async {
                 Ok(ServerPacket::In(
@@ -705,7 +705,7 @@ impl Server {
 
                             if let Some(client) = self.clients.get_mut(sender) {
                                 if client.ack_sender.send(sequence).is_err() {
-                                    remove = true;
+                                    remove = client.in_queue.has_receiver();
                                 } else {
                                     client.address = addr;
                                 }
@@ -733,7 +733,7 @@ impl Server {
                                     },
                                 };
                                 if client.in_queue.send(data).is_err() {
-                                    remove = true;
+                                    remove = client.ack_sender.has_receiver();
                                 } else {
                                     client.address = addr;
                                 }
@@ -749,7 +749,7 @@ impl Server {
                     let client = match self.clients.get(id) {
                         Some(c) => c,
                         None => {
-                            let _ = res_sender.send(Err(StdIoErrorKind::NotConnected.into()));
+                            let _ = res_sender.send(Err(Error::InvalidConnection));
                             continue;
                         },
                     };
