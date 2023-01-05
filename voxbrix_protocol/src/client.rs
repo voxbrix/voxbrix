@@ -12,9 +12,18 @@ use super::{
     NEW_CONNECTION_ID,
     SERVER_ID,
 };
+use crate::{
+    Key,
+    KEY_BUFFER,
+    SECRET_BUFFER,
+};
 use async_io::{
     Async,
     Timer,
+};
+use chacha20poly1305::{
+    aead::KeyInit,
+    ChaCha20Poly1305,
 };
 #[cfg(feature = "multi")]
 use flume::{
@@ -27,6 +36,11 @@ use integer_encoding::{
     VarIntReader,
     VarIntWriter,
 };
+use k256::{
+    ecdh::EphemeralSecret,
+    EncodedPoint,
+    PublicKey,
+};
 #[cfg(feature = "single")]
 use local_channel::mpsc::{
     channel as new_channel,
@@ -34,6 +48,7 @@ use local_channel::mpsc::{
     Sender as ChannelTx,
 };
 use log::warn;
+use rand_core::OsRng;
 #[cfg(feature = "single")]
 use std::rc::Rc;
 #[cfg(feature = "multi")]
@@ -85,6 +100,13 @@ pub struct Client {
     transport: Async<UdpSocket>,
 }
 
+pub struct Connection {
+    pub self_key: Key,
+    pub peer_key: Key,
+    pub sender: Sender,
+    pub receiver: Receiver,
+}
+
 impl Client {
     pub fn bind<A>(bind_address: A) -> Result<Self, Error>
     where
@@ -94,7 +116,7 @@ impl Client {
         Ok(Self { transport })
     }
 
-    pub async fn connect<A>(self, server_address: A) -> Result<(Sender, Receiver), Error>
+    pub async fn connect<A>(self, server_address: A) -> Result<Connection, Error>
     where
         A: Into<SocketAddr>,
     {
@@ -108,16 +130,23 @@ impl Client {
 
         let (ack_sender, ack_receiver) = new_channel();
 
+        let keypair = EphemeralSecret::random(&mut OsRng);
+        let self_key: Key = EncodedPoint::from(keypair.public_key())
+            .as_ref()
+            .try_into()
+            .unwrap();
+
         let mut buf = [0u8; MAX_PACKET_SIZE];
 
         let mut write_cursor = Cursor::new(buf.as_mut());
 
         write_cursor.write_varint(NEW_CONNECTION_ID).unwrap();
         write_cursor.write_varint(Type::CONNECT).unwrap();
+        write_cursor.write_all(&self_key).unwrap();
 
         transport.send(write_cursor.slice()).await?;
 
-        let id = loop {
+        let (peer_key, deciphered_peer_key, id) = loop {
             let len = transport.recv(&mut buf).await?;
 
             let mut read_cursor = Cursor::new(&buf[.. len]);
@@ -132,17 +161,33 @@ impl Client {
             seek_read!(read_cursor.read(slice::from_mut(&mut packet_type)), "type");
 
             match packet_type {
-                Type::ASSIGN_ID => {
+                Type::ACCEPT => {
+                    let mut key = KEY_BUFFER;
+
+                    seek_read!(read_cursor.read_exact(&mut key), "peer key");
                     let id: usize = seek_read!(read_cursor.read_varint(), "id");
 
-                    break id;
+                    let deciphered_peer_key =
+                        seek_read!(PublicKey::from_sec1_bytes(&key), "deciphered peer key");
+
+                    break (key, deciphered_peer_key, id);
                 },
                 _ => {},
             }
         };
 
+        let mut secret = SECRET_BUFFER;
+        keypair
+            .diffie_hellman(&deciphered_peer_key)
+            .extract::<sha2::Sha256>(None)
+            .expand(&[], &mut secret)
+            .unwrap();
+
+        let cipher = ChaCha20Poly1305::new((&secret).into());
+
         let receiver = Receiver {
             id,
+            cipher: cipher.clone(),
             sequence: 0,
             reliable_split_buffer: Vec::new(),
             reliable_split_channel: None,
@@ -155,11 +200,13 @@ impl Client {
         let sender = Sender {
             unreliable: UnreliableSender {
                 id,
+                cipher: cipher.clone(),
                 unreliable_split_id: 0,
                 transport: transport.clone(),
             },
             reliable: ReliableSender {
                 id,
+                cipher,
                 sequence: 0,
                 buffer: [0; MAX_PACKET_SIZE],
                 ack_receiver,
@@ -167,12 +214,18 @@ impl Client {
             },
         };
 
-        Ok((sender, receiver))
+        Ok(Connection {
+            self_key,
+            peer_key,
+            sender,
+            receiver,
+        })
     }
 }
 
 pub struct Receiver {
     id: Id,
+    cipher: ChaCha20Poly1305,
     sequence: Sequence,
     reliable_split_buffer: Vec<u8>,
     reliable_split_channel: Option<Channel>,
@@ -188,6 +241,21 @@ pub struct Receiver {
 }
 
 impl Receiver {
+    async fn send_ack(&mut self, sequence: Sequence) -> Result<(), Error> {
+        let len = crate::encode_in_buffer(
+            &mut self.buffer,
+            &self.cipher,
+            self.id,
+            Type::ACKNOWLEDGE,
+            |cursor| {
+                cursor.write_varint(sequence).unwrap();
+            },
+        );
+
+        self.transport.send(&self.buffer[.. len]).await?;
+        Ok(())
+    }
+
     pub async fn recv<'a>(
         &mut self,
         buf: &'a mut Vec<u8>,
@@ -207,6 +275,17 @@ impl Receiver {
 
             let mut packet_type = Type::UNDEFINED;
             seek_read!(read_cursor.read(slice::from_mut(&mut packet_type)), "type");
+
+            let tag_start = read_cursor.position() as usize;
+
+            let decrypted_start =
+                match crate::decode_in_buffer(&mut buf[.. len], tag_start, &self.cipher) {
+                    Ok(s) => s,
+                    Err(()) => continue,
+                };
+
+            let mut read_cursor = Cursor::new(&buf[.. len]);
+            read_cursor.set_position(decrypted_start as u64);
 
             match packet_type {
                 Type::ACKNOWLEDGE => {
@@ -310,9 +389,6 @@ impl Receiver {
                             buf.extend_from_slice(&data[.. *len]);
                         }
 
-                        // TODO: also check CRC and if it's incorrect restore buf length to
-                        // MAX_PACKET_SIZE before continuing
-
                         return Ok((channel, buf.as_mut()));
                     }
                 },
@@ -321,13 +397,7 @@ impl Receiver {
                     let sequence: u16 = seek_read!(read_cursor.read_varint(), "sequence");
 
                     // TODO: do not answer if the sequence is not previous, but random?
-                    let mut write_cursor = Cursor::new(self.buffer.as_mut());
-
-                    seek_write!(write_cursor.write_varint(self.id), "sender");
-                    seek_write!(write_cursor.write_varint(Type::ACKNOWLEDGE), "type");
-                    seek_write!(write_cursor.write_varint(sequence), "sequence");
-
-                    self.transport.send(write_cursor.slice()).await?;
+                    seek_write!(self.send_ack(sequence).await, "ack message");
 
                     if sequence == self.sequence {
                         self.sequence = self.sequence.wrapping_add(1);
@@ -363,13 +433,7 @@ impl Receiver {
                     let sequence: u16 = seek_read!(read_cursor.read_varint(), "sequence");
 
                     // TODO: do not answer if the sequence is not previous, but random?
-                    let mut write_cursor = Cursor::new(self.buffer.as_mut());
-
-                    seek_write!(write_cursor.write_varint(self.id), "sender");
-                    seek_write!(write_cursor.write_varint(Type::ACKNOWLEDGE), "type");
-                    seek_write!(write_cursor.write_varint(sequence), "sequence");
-
-                    self.transport.send(write_cursor.slice()).await?;
+                    seek_write!(self.send_ack(sequence).await, "ack message");
 
                     if sequence == self.sequence {
                         self.sequence = self.sequence.wrapping_add(1);
@@ -413,6 +477,7 @@ impl Sender {
 
 pub struct UnreliableSender {
     id: Id,
+    cipher: ChaCha20Poly1305,
     unreliable_split_id: u16,
 
     #[cfg(feature = "single")]
@@ -432,18 +497,17 @@ impl UnreliableSender {
     ) -> Result<(), Error> {
         let mut buffer = [0; MAX_PACKET_SIZE];
 
-        let mut cursor = Cursor::new(buffer.as_mut());
+        let len =
+            crate::encode_in_buffer(&mut buffer, &self.cipher, self.id, message_type, |cursor| {
+                cursor.write_varint(channel).unwrap();
+                if let Some(len_or_count) = len_or_count {
+                    cursor.write_varint(self.unreliable_split_id).unwrap();
+                    cursor.write_varint(len_or_count).unwrap();
+                }
+                cursor.write_all(&data).unwrap();
+            });
 
-        cursor.write_varint(self.id).unwrap();
-        cursor.write_varint(message_type).unwrap();
-        cursor.write_varint(channel).unwrap();
-        if let Some(len_or_count) = len_or_count {
-            cursor.write_varint(self.unreliable_split_id).unwrap();
-            cursor.write_varint(len_or_count).unwrap();
-        }
-        cursor.write_all(&data)?;
-
-        self.transport.send(cursor.slice()).await?;
+        self.transport.send(&buffer[.. len]).await?;
 
         Ok(())
     }
@@ -483,6 +547,7 @@ impl UnreliableSender {
 
 pub struct ReliableSender {
     id: Id,
+    cipher: ChaCha20Poly1305,
     sequence: Sequence,
     buffer: [u8; MAX_PACKET_SIZE],
     ack_receiver: ChannelRx<Sequence>,
@@ -501,16 +566,20 @@ impl ReliableSender {
         data: &[u8],
         packet_type: u8,
     ) -> Result<(), Error> {
-        let mut write_cursor = Cursor::new(self.buffer.as_mut());
-
-        write_cursor.write_varint(self.id).unwrap();
-        write_cursor.write_varint(packet_type).unwrap();
-        write_cursor.write_varint(channel).unwrap();
-        write_cursor.write_varint(self.sequence).unwrap();
-        write_cursor.write_all(data).unwrap();
+        let len = crate::encode_in_buffer(
+            &mut self.buffer,
+            &self.cipher,
+            self.id,
+            packet_type,
+            |cursor| {
+                cursor.write_varint(channel).unwrap();
+                cursor.write_varint(self.sequence).unwrap();
+                cursor.write_all(data).unwrap();
+            },
+        );
 
         loop {
-            self.transport.send(write_cursor.slice()).await?;
+            self.transport.send(&self.buffer[.. len]).await?;
 
             let result = async {
                 #[cfg(feature = "single")]

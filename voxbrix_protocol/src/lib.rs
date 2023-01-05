@@ -1,9 +1,23 @@
+use chacha20poly1305::{
+    aead::{
+        rand_core::OsRng,
+        AeadCore,
+        AeadInPlace,
+    },
+    ChaCha20Poly1305,
+};
+use integer_encoding::VarIntWriter;
 use std::{
     collections::{
         BTreeMap,
         BTreeSet,
     },
-    io::Cursor,
+    io::{
+        Cursor,
+        Read,
+        Write,
+    },
+    mem,
 };
 
 #[cfg(any(feature = "client", test))]
@@ -13,10 +27,19 @@ pub mod client;
 pub mod server;
 
 pub const MAX_PACKET_SIZE: usize = 508;
-pub const MAX_HEADER_SIZE: usize = 48;
-
-// 508 - channel(16) - sender(16) - assign_id(16)
-pub const MAX_DATA_SIZE: usize = 460;
+pub const MAX_HEADER_SIZE: usize = mem::size_of::<Id>() // sender
+    + 1 // type
+    + 16 // tag
+    + 12 // nonce
+    + mem::size_of::<usize>()
+    + 2
+    + mem::size_of::<usize>();
+pub const MAX_DATA_SIZE: usize = MAX_PACKET_SIZE - MAX_HEADER_SIZE;
+pub const ACKNOWLEDGE_SIZE: usize = mem::size_of::<Id>() // sender
+    + 1 // type
+    + 16 // tag
+    + 12 // nonce
+    + 2;
 
 #[cfg(any(feature = "client", test))]
 const NEW_CONNECTION_ID: usize = 0;
@@ -128,6 +151,18 @@ macro_rules! seek_read {
     };
 }
 
+macro_rules! seek_read_return {
+    ($e:expr, $c:literal) => {
+        match $e {
+            Ok(r) => r,
+            Err(_) => {
+                log::warn!("read {} error", $c);
+                return Err(());
+            },
+        }
+    };
+}
+
 #[macro_export]
 macro_rules! seek_write {
     ($e:expr, $c:literal) => {
@@ -144,43 +179,73 @@ macro_rules! seek_write {
 pub type Id = usize;
 pub type Sequence = u16;
 pub type Channel = usize;
+pub type Key = [u8; 33];
+const KEY_BUFFER: Key = [0; 33];
+pub type Secret = [u8; 32];
+const SECRET_BUFFER: Secret = [0; 32];
+const TAG_SIZE: usize = 16;
+const TAG_BUFFER: [u8; TAG_SIZE] = [0; TAG_SIZE];
+const NONCE_SIZE: usize = 12;
+const NONCE_BUFFER: [u8; NONCE_SIZE] = [0; NONCE_SIZE];
 
 struct Type;
 
 #[rustfmt::skip]
 impl Type {
     const CONNECT: u8 = 0;
+        // key: [u8; 32]
 
-    const ASSIGN_ID: u8 = 1;
+    const ACCEPT: u8 = 1;
+        // key: [u8; 32]
         // id: usize,
 
     const ACKNOWLEDGE: u8 = 2;
+        // tag: [u8; 16]
+        // nonce: [u8; 12]
+        // encrypted:
         // sequence: u16
 
     const DISCONNECT: u8 = 3;
+        // tag: [u8; 16]
+        // nonce: [u8; 12]
 
     const UNRELIABLE: u8 = 4;
+        // tag: [u8; 16]
+        // nonce: [u8; 12]
+        // encrypted:
         // channel: usize,
         // data: &[u8],
 
     const UNRELIABLE_SPLIT_START: u8 = 5;
+        // tag: [u8; 16]
+        // nonce: [u8; 12]
+        // encrypted:
         // channel: usize,
         // split_id: u16,
         // length: usize,
         // data: &[u8],
 
     const UNRELIABLE_SPLIT: u8 = 6;
+        // tag: [u8; 16]
+        // nonce: [u8; 12]
+        // encrypted:
         // channel: usize,
         // split_id: u16,
         // count: usize,
         // data: &[u8],
 
     const RELIABLE: u8 = 7;
+        // tag: [u8; 16]
+        // nonce: [u8; 12]
+        // encrypted:
         // channel: usize,
         // sequence: u16,
         // data: &[u8],
 
     const RELIABLE_SPLIT: u8 = 8;
+        // tag: [u8; 16]
+        // nonce: [u8; 12]
+        // encrypted:
         // channel: usize,
         // sequence: u16,
         // data: &[u8],
@@ -190,11 +255,90 @@ impl Type {
     const UNDEFINED: u8 = u8::MAX;
 }
 
+fn encode_in_buffer<F>(
+    buffer: &mut [u8; MAX_PACKET_SIZE],
+    cipher: &ChaCha20Poly1305,
+    sender: Id,
+    packet_type: u8,
+    mut f: F,
+) -> usize
+where
+    F: FnMut(&mut Cursor<&mut [u8]>),
+{
+    let mut cursor = Cursor::new(buffer.as_mut());
+
+    let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
+
+    cursor.write_varint(sender).unwrap();
+    cursor.write_varint(packet_type).unwrap();
+    let tag_start = cursor.position() as usize;
+    let tag_finish = tag_start + TAG_SIZE;
+    cursor.set_position(tag_finish as u64);
+    cursor.write_all(&nonce).unwrap();
+    let encryption_start = cursor.position() as usize;
+    f(&mut cursor);
+
+    let buffer_finish = cursor.position() as usize;
+
+    let buffer = &mut buffer[.. buffer_finish];
+
+    let (buffer_pre_enc, buffer_enc) = buffer.split_at_mut(encryption_start);
+
+    let tag = cipher
+        .encrypt_in_place_detached(&nonce, &buffer_pre_enc[.. tag_start], buffer_enc)
+        .unwrap();
+
+    buffer[tag_start .. tag_finish].copy_from_slice(&tag);
+
+    buffer_finish
+}
+
+// returns start of a relevant data (that is right after the nonce)
+fn decode_in_buffer(
+    buffer: &mut [u8],
+    tag_start: usize,
+    cipher: &ChaCha20Poly1305,
+) -> Result<usize, ()> {
+    let mut cursor = Cursor::new(&buffer);
+    cursor.set_position(tag_start as u64);
+
+    let mut tag = TAG_BUFFER;
+    seek_read_return!(cursor.read_exact(&mut tag), "tag");
+
+    let mut nonce = NONCE_BUFFER;
+    seek_read_return!(cursor.read_exact(&mut nonce), "nonce");
+
+    let encrypted_start = cursor.position() as usize;
+
+    let (buffer_acc_data, buffer_encrypted) = {
+        let (buffer, buffer_encrypted) = buffer.split_at_mut(encrypted_start);
+        (&buffer[.. tag_start], buffer_encrypted)
+    };
+
+    seek_read_return!(
+        cipher.decrypt_in_place_detached(
+            (&nonce).into(),
+            buffer_acc_data,
+            buffer_encrypted,
+            (&tag).into(),
+        ),
+        "decrypted"
+    );
+
+    Ok(encrypted_start)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{
-        client::Client,
-        server::Server,
+        client::{
+            self,
+            Client,
+        },
+        server::{
+            self,
+            Server,
+        },
     };
     use async_executor::LocalExecutor;
     use async_io::Timer;
@@ -225,7 +369,11 @@ mod tests {
                 let mut server =
                     Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
                 loop {
-                    let (mut tx, mut rx) = server.accept().await.expect("connection accepted");
+                    let server::Connection {
+                        sender: mut tx,
+                        receiver: mut rx,
+                        ..
+                    } = server.accept().await.expect("connection accepted");
 
                     *task.borrow_mut() = Some(rt.spawn(async move {
                         tx.send_unreliable(0, b"1HelloWorld1")
@@ -245,7 +393,11 @@ mod tests {
 
             let client = Client::bind(([127, 0, 0, 1], client_port)).expect("client bound");
 
-            let (mut tx, mut rx) = client
+            let client::Connection {
+                sender: mut tx,
+                receiver: mut rx,
+                ..
+            } = client
                 .connect(([127, 0, 0, 1], server_port))
                 .await
                 .expect("client connection");
@@ -287,7 +439,8 @@ mod tests {
                 let mut server =
                     Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
                 loop {
-                    let (mut tx, _rx) = server.accept().await.expect("connection accepted");
+                    let server::Connection { sender: mut tx, .. } =
+                        server.accept().await.expect("connection accepted");
 
                     let data = &data;
 
@@ -305,7 +458,9 @@ mod tests {
 
             let client = Client::bind(([127, 0, 0, 1], client_port)).expect("client bound");
 
-            let (_tx, mut rx) = client
+            let client::Connection {
+                receiver: mut rx, ..
+            } = client
                 .connect(([127, 0, 0, 1], server_port))
                 .await
                 .expect("client connection");
@@ -342,7 +497,9 @@ mod tests {
                 let mut server =
                     Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
                 loop {
-                    let (_tx, mut rx) = server.accept().await.expect("connection accepted");
+                    let server::Connection {
+                        receiver: mut rx, ..
+                    } = server.accept().await.expect("connection accepted");
 
                     let data = &data;
 
@@ -360,7 +517,7 @@ mod tests {
 
             let client = Client::bind(([127, 0, 0, 1], client_port)).expect("client bound");
 
-            let (mut tx, _rx) = client
+            let client::Connection { sender: mut tx, .. } = client
                 .connect(([127, 0, 0, 1], server_port))
                 .await
                 .expect("client connection");
@@ -396,7 +553,9 @@ mod tests {
                 let mut server =
                     Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
                 loop {
-                    let (_tx, mut rx) = server.accept().await.expect("connection accepted");
+                    let server::Connection {
+                        receiver: mut rx, ..
+                    } = server.accept().await.expect("connection accepted");
 
                     let data = &data;
 
@@ -424,7 +583,7 @@ mod tests {
 
             let client = Client::bind(([127, 0, 0, 1], client_port)).expect("client bound");
 
-            let (mut tx, _rx) = client
+            let client::Connection { sender: mut tx, .. } = client
                 .connect(([127, 0, 0, 1], server_port))
                 .await
                 .expect("client connection");
@@ -470,7 +629,11 @@ mod tests {
                 let mut server =
                     Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
                 loop {
-                    let (mut tx, mut rx) = server.accept().await.expect("connection accepted");
+                    let server::Connection {
+                        sender: mut tx,
+                        receiver: mut rx,
+                        ..
+                    } = server.accept().await.expect("connection accepted");
 
                     let data = &data;
 
@@ -538,7 +701,11 @@ mod tests {
 
             let client = Client::bind(([127, 0, 0, 1], client_port)).expect("client bound");
 
-            let (mut tx, mut rx) = client
+            let client::Connection {
+                sender: mut tx,
+                receiver: mut rx,
+                ..
+            } = client
                 .connect(([127, 0, 0, 1], server_port))
                 .await
                 .expect("client connection");
@@ -623,7 +790,11 @@ mod tests {
                 let mut server =
                     Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
                 loop {
-                    let (mut tx, mut rx) = server.accept().await.expect("connection accepted");
+                    let server::Connection {
+                        sender: mut tx,
+                        receiver: mut rx,
+                        ..
+                    } = server.accept().await.expect("connection accepted");
 
                     rt.spawn(async move { while let Ok(_) = rx.recv().await {} })
                         .detach();
@@ -641,7 +812,9 @@ mod tests {
 
             let client = Client::bind(([127, 0, 0, 1], client_port)).expect("client bound");
 
-            let (_tx, mut rx) = client
+            let client::Connection {
+                receiver: mut rx, ..
+            } = client
                 .connect(([127, 0, 0, 1], server_port))
                 .await
                 .expect("client connection");
@@ -671,7 +844,8 @@ mod tests {
                 let mut server =
                     Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
                 loop {
-                    let (mut tx, _rx) = server.accept().await.expect("connection accepted");
+                    let server::Connection { sender: mut tx, .. } =
+                        server.accept().await.expect("connection accepted");
 
                     *task.borrow_mut() = Some(rt.spawn(async move {
                         tx.send_reliable(0, b"HelloWorld")
@@ -686,7 +860,9 @@ mod tests {
 
             let client = Client::bind(([127, 0, 0, 1], client_port)).expect("client bound");
 
-            let (_tx, mut rx) = client
+            let client::Connection {
+                receiver: mut rx, ..
+            } = client
                 .connect(([127, 0, 0, 1], server_port))
                 .await
                 .expect("client connection");
@@ -716,7 +892,8 @@ mod tests {
                 let mut server =
                     Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
                 loop {
-                    let (mut tx, _rx) = server.accept().await.expect("connection accepted");
+                    let server::Connection { sender: mut tx, .. } =
+                        server.accept().await.expect("connection accepted");
 
                     *task.borrow_mut() = Some(rt.spawn(async move {
                         for i in 0 .. 1000 {
@@ -733,7 +910,9 @@ mod tests {
 
             let client = Client::bind(([127, 0, 0, 1], client_port)).expect("client bound");
 
-            let (_tx, mut rx) = client
+            let client::Connection {
+                receiver: mut rx, ..
+            } = client
                 .connect(([127, 0, 0, 1], server_port))
                 .await
                 .expect("client connection");
@@ -765,7 +944,11 @@ mod tests {
                     Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
 
                 loop {
-                    let (mut tx, mut rx) = server.accept().await.expect("connection accepted");
+                    let server::Connection {
+                        sender: mut tx,
+                        receiver: mut rx,
+                        ..
+                    } = server.accept().await.expect("connection accepted");
 
                     *task.borrow_mut() = Some(rt.spawn(async move {
                         for i in 0 .. 1000 {
@@ -789,7 +972,11 @@ mod tests {
 
             let client = Client::bind(([127, 0, 0, 1], client_port)).expect("client bound");
 
-            let (mut tx, mut rx) = client
+            let client::Connection {
+                sender: mut tx,
+                receiver: mut rx,
+                ..
+            } = client
                 .connect(([127, 0, 0, 1], server_port))
                 .await
                 .expect("client connection");
@@ -841,7 +1028,11 @@ mod tests {
                     Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
 
                 loop {
-                    let (mut tx, mut rx) = server.accept().await.expect("connection accepted");
+                    let server::Connection {
+                        sender: mut tx,
+                        receiver: mut rx,
+                        ..
+                    } = server.accept().await.expect("connection accepted");
 
                     let data = &data;
 
@@ -862,7 +1053,11 @@ mod tests {
 
             let client = Client::bind(([127, 0, 0, 1], client_port)).expect("client bound");
 
-            let (mut tx, mut rx) = client
+            let client::Connection {
+                sender: mut tx,
+                receiver: mut rx,
+                ..
+            } = client
                 .connect(([127, 0, 0, 1], server_port))
                 .await
                 .expect("client connection");
@@ -903,7 +1098,11 @@ mod tests {
                     Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
 
                 loop {
-                    let (mut tx, mut rx) = server.accept().await.expect("connection accepted");
+                    let server::Connection {
+                        sender: mut tx,
+                        receiver: mut rx,
+                        ..
+                    } = server.accept().await.expect("connection accepted");
 
                     *task.borrow_mut() = Some(rt.spawn(async move {
                         for i in 0 .. 10 {
@@ -946,7 +1145,11 @@ mod tests {
 
             let client = Client::bind(([127, 0, 0, 1], client_port)).expect("client bound");
 
-            let (mut tx, mut rx) = client
+            let client::Connection {
+                sender: mut tx,
+                receiver: mut rx,
+                ..
+            } = client
                 .connect(([127, 0, 0, 1], server_port))
                 .await
                 .expect("client connection");
@@ -990,6 +1193,88 @@ mod tests {
             }
 
             task.borrow_mut().take().unwrap().await;
+        }));
+    }
+
+    #[test]
+    #[cfg(not(debug_assertions))]
+    fn reliable_test_6() {
+        let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
+
+        let client_port = 30000 + test_num * 10 + 1;
+        let server_port = 30000 + test_num * 10;
+
+        std::thread::spawn(move || {
+            let rt = LocalExecutor::new();
+            future::block_on(rt.run(async {
+                let mut server =
+                    Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
+
+                let server::Connection {
+                    sender: mut tx,
+                    receiver: mut rx,
+                    ..
+                } = server.accept().await.expect("connection accepted");
+
+                let task = async move {
+                    for i in 0 .. 10000 {
+                        tx.send_reliable(0, format!("HelloWorld{}", i).as_bytes())
+                            .await
+                            .expect("server sent packet");
+                    }
+
+                    for i in 0 .. 10000 {
+                        let (channel, result) = rx.recv().await.expect("client message receive");
+                        assert_eq!(result.as_ref(), format!("HelloWorld{}", i).as_bytes());
+                        assert_eq!(channel, 0);
+                    }
+                };
+
+                rt.spawn(async move {
+                    loop {
+                        let _ = server.accept().await.expect("connection accepted");
+                    }
+                })
+                .detach();
+
+                task.await;
+            }));
+        });
+
+        let rt = Box::leak(Box::new(LocalExecutor::new()));
+        future::block_on(rt.run(async {
+            Timer::after(Duration::from_millis(5)).await;
+
+            let client = Client::bind(([127, 0, 0, 1], client_port)).expect("client bound");
+
+            let client::Connection {
+                sender: mut tx,
+                receiver: mut rx,
+                ..
+            } = client
+                .connect(([127, 0, 0, 1], server_port))
+                .await
+                .expect("client connection");
+
+            let mut buf = vec![0u8; 508];
+
+            for i in 0 .. 10000 {
+                let (channel, result) = rx.recv(&mut buf).await.expect("client message receive");
+                assert_eq!(result, format!("HelloWorld{}", i).as_bytes());
+                assert_eq!(channel, 0);
+            }
+
+            rt.spawn(async move {
+                while let Ok(_) = rx.recv(&mut buf).await {}
+                panic!("recv loop ended");
+            })
+            .detach();
+
+            for i in 0 .. 10000 {
+                tx.send_reliable(0, format!("HelloWorld{}", i).as_bytes())
+                    .await
+                    .expect("server sent packet");
+            }
         }));
     }
 }
