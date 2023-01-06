@@ -12,6 +12,7 @@ use super::{
     MAX_PACKET_SIZE,
     NEW_CONNECTION_ID,
     SERVER_ID,
+    UNRELIABLE_BUFFERS,
 };
 use crate::{
     Key,
@@ -65,7 +66,6 @@ use std::{
     collections::{
         BTreeMap,
         BTreeSet,
-        HashMap,
         VecDeque,
     },
     fmt,
@@ -366,7 +366,7 @@ pub struct StreamReceiver {
     sequence: Sequence,
     split_buffer: Vec<u8>,
     split_channel: Option<Channel>,
-    unreliable_split_buffers: HashMap<Channel, UnreliableBuffer>,
+    unreliable_split_buffers: VecDeque<UnreliableBuffer>,
     transport_sender: ChannelTx<OutBuffer>,
     transport_receiver: ChannelRx<InBuffer>,
 }
@@ -412,26 +412,27 @@ impl StreamReceiver {
                     let split_id: u16 = seek_read!(read_cursor.read_varint(), "split_id");
                     let expected_length: usize = seek_read!(read_cursor.read_varint(), "length");
 
-                    let split_buffer = match self.unreliable_split_buffers.get_mut(&channel) {
-                        Some(b) => {
-                            b.split_id = split_id;
-                            b.expected_length = expected_length;
-                            b.existing_pieces.clear();
-                            b
-                        },
-                        None => {
-                            self.unreliable_split_buffers.insert(
-                                channel,
-                                UnreliableBuffer {
-                                    split_id,
-                                    expected_length,
-                                    existing_pieces: BTreeSet::new(),
-                                    buffer: BTreeMap::new(),
-                                },
-                            );
-
-                            self.unreliable_split_buffers.get_mut(&channel).unwrap()
-                        },
+                    let mut split_buffer = if self.unreliable_split_buffers.len()
+                        == UNRELIABLE_BUFFERS
+                        || self.unreliable_split_buffers.back().is_some()
+                            && self.unreliable_split_buffers.back().unwrap().complete
+                    {
+                        let mut b = self.unreliable_split_buffers.pop_back().unwrap();
+                        b.split_id = split_id;
+                        b.channel = channel;
+                        b.expected_length = expected_length;
+                        b.existing_pieces.clear();
+                        b.complete = false;
+                        b
+                    } else {
+                        UnreliableBuffer {
+                            split_id,
+                            channel,
+                            expected_length,
+                            existing_pieces: BTreeSet::new(),
+                            buffer: BTreeMap::new(),
+                            complete: false,
+                        }
                     };
 
                     packet.start += read_cursor.position() as usize;
@@ -450,6 +451,7 @@ impl StreamReceiver {
                     }
 
                     split_buffer.existing_pieces.insert(0);
+                    self.unreliable_split_buffers.push_front(split_buffer);
                 },
                 Type::UNRELIABLE_SPLIT => {
                     let channel: usize = seek_read!(read_cursor.read_varint(), "channel");
@@ -461,8 +463,8 @@ impl StreamReceiver {
 
                     let split_buffer = match self
                         .unreliable_split_buffers
-                        .get_mut(&channel)
-                        .filter(|b| b.split_id == split_id)
+                        .iter_mut()
+                        .find(|b| b.split_id == split_id && b.channel == channel && !b.complete)
                     {
                         Some(b) => b,
                         None => continue,
@@ -499,6 +501,8 @@ impl StreamReceiver {
 
                         // TODO: also check CRC and if it's incorrect restore buf length to
                         // MAX_PACKET_SIZE before continuing
+
+                        split_buffer.complete = true;
 
                         return Ok((channel, buf.into()));
                     }
@@ -808,7 +812,9 @@ impl Server {
                                     sequence: 0,
                                     split_buffer: Vec::new(),
                                     split_channel: None,
-                                    unreliable_split_buffers: HashMap::new(),
+                                    unreliable_split_buffers: VecDeque::with_capacity(
+                                        UNRELIABLE_BUFFERS,
+                                    ),
                                     transport_sender: self.out_queue_sender.clone(),
                                     transport_receiver: in_queue_rx,
                                 },

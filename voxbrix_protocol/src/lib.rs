@@ -39,6 +39,7 @@ pub const MAX_DATA_SIZE: usize = MAX_PACKET_SIZE - MAX_HEADER_SIZE;
 
 const SERVER_ID: usize = 0;
 const NEW_CONNECTION_ID: usize = 1;
+const UNRELIABLE_BUFFERS: usize = 8;
 
 trait AsSlice<T> {
     fn slice(&self) -> &[T];
@@ -128,9 +129,11 @@ impl AsMut<[u8]> for Packet {
 
 struct UnreliableBuffer {
     split_id: u16,
+    channel: Channel,
     expected_length: usize,
     existing_pieces: BTreeSet<usize>,
     buffer: BTreeMap<usize, (usize, [u8; MAX_DATA_SIZE])>,
+    complete: bool,
 }
 
 #[macro_export]
