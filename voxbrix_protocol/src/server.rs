@@ -1,6 +1,5 @@
 use super::{
     seek_read,
-    seek_write,
     AsSlice,
     Buffer,
     Channel,
@@ -9,9 +8,9 @@ use super::{
     Sequence,
     Type,
     UnreliableBuffer,
-    ACKNOWLEDGE_SIZE,
     MAX_DATA_SIZE,
     MAX_PACKET_SIZE,
+    NEW_CONNECTION_ID,
     SERVER_ID,
 };
 use crate::{
@@ -85,12 +84,15 @@ use std::{
     time::Duration,
 };
 
+pub const DEFAULT_MAX_CONNECTIONS: usize = 64;
+
 #[derive(Debug)]
 pub enum Error {
     Io(StdIoError),
     ServerWasDropped,
     Disconnect,
     InvalidConnection,
+    ServerIsFull,
 }
 
 impl fmt::Display for Error {
@@ -107,42 +109,44 @@ impl From<StdIoError> for Error {
     }
 }
 
-struct TypedBuffer {
+struct InBuffer {
     sender: Id,
     packet_type: u8,
-    packet: Buffer,
+    buffer: Buffer,
+}
+
+struct OutBuffer {
+    peer: Id,
+    buffer: Buffer,
+    tag_start: usize,
+    result_tx: OneshotTx<Result<(), Error>>,
 }
 
 async fn stream_send_ack(
-    cipher: &ChaCha20Poly1305,
     peer: Id,
     sequence: Sequence,
-    transport: &mut ChannelTx<(Id, Buffer, OneshotTx<Result<(), Error>>)>,
+    transport: &mut ChannelTx<OutBuffer>,
 ) -> Result<(), Error> {
     let mut buffer = [0; MAX_PACKET_SIZE];
 
-    let stop = crate::encode_in_buffer(
-        &mut buffer,
-        cipher,
-        SERVER_ID,
-        Type::ACKNOWLEDGE,
-        |cursor| {
+    let (tag_start, stop) =
+        crate::write_in_buffer(&mut buffer, SERVER_ID, Type::ACKNOWLEDGE, |cursor| {
             cursor.write_varint(sequence).unwrap();
-        },
-    );
+        });
 
     let (result_tx, result_rx) = new_oneshot();
 
     transport
-        .send((
+        .send(OutBuffer {
             peer,
-            Buffer {
+            buffer: Buffer {
                 buffer,
                 start: 0,
                 stop,
             },
+            tag_start,
             result_tx,
-        ))
+        })
         .map_err(|_| Error::ServerWasDropped)?;
 
     #[cfg(feature = "single")]
@@ -179,9 +183,8 @@ impl StreamSender {
 
 pub struct StreamUnreliableSender {
     peer: Id,
-    cipher: ChaCha20Poly1305,
     unreliable_split_id: u16,
-    transport: ChannelTx<(Id, Buffer, OneshotTx<Result<(), Error>>)>,
+    transport: ChannelTx<OutBuffer>,
 }
 
 impl StreamUnreliableSender {
@@ -194,33 +197,29 @@ impl StreamUnreliableSender {
     ) -> Result<(), Error> {
         let mut buffer = [0; MAX_PACKET_SIZE];
 
-        let stop = crate::encode_in_buffer(
-            &mut buffer,
-            &self.cipher,
-            SERVER_ID,
-            packet_type,
-            |cursor| {
+        let (tag_start, stop) =
+            crate::write_in_buffer(&mut buffer, SERVER_ID, packet_type, |cursor| {
                 cursor.write_varint(channel).unwrap();
                 if let Some(len_or_count) = len_or_count {
                     cursor.write_varint(self.unreliable_split_id).unwrap();
                     cursor.write_varint(len_or_count).unwrap();
                 }
                 cursor.write_all(&data).unwrap();
-            },
-        );
+            });
 
         let (result_tx, result_rx) = new_oneshot();
 
         self.transport
-            .send((
-                self.peer,
-                Buffer {
+            .send(OutBuffer {
+                peer: self.peer,
+                buffer: Buffer {
                     buffer,
                     start: 0,
                     stop,
                 },
+                tag_start,
                 result_tx,
-            ))
+            })
             .map_err(|_| Error::ServerWasDropped)?;
 
         #[cfg(feature = "single")]
@@ -266,10 +265,9 @@ impl StreamUnreliableSender {
 
 pub struct StreamReliableSender {
     peer: Id,
-    cipher: ChaCha20Poly1305,
     sequence: Sequence,
-    ack_receiver: ChannelRx<AckBuf>,
-    transport: ChannelTx<(Id, Buffer, OneshotTx<Result<(), Error>>)>,
+    ack_receiver: ChannelRx<Sequence>,
+    transport: ChannelTx<OutBuffer>,
 }
 
 impl StreamReliableSender {
@@ -281,31 +279,27 @@ impl StreamReliableSender {
     ) -> Result<(), Error> {
         let mut buffer = [0; MAX_PACKET_SIZE];
 
-        let stop = crate::encode_in_buffer(
-            &mut buffer,
-            &self.cipher,
-            SERVER_ID,
-            packet_type,
-            |cursor| {
+        let (tag_start, stop) =
+            crate::write_in_buffer(&mut buffer, SERVER_ID, packet_type, |cursor| {
                 cursor.write_varint(channel).unwrap();
                 cursor.write_varint(self.sequence).unwrap();
                 cursor.write_all(data).unwrap();
-            },
-        );
+            });
 
         loop {
             let (result_tx, result_rx) = new_oneshot();
 
             self.transport
-                .send((
-                    self.peer,
-                    Buffer {
+                .send(OutBuffer {
+                    peer: self.peer,
+                    buffer: Buffer {
                         buffer,
                         start: 0,
                         stop,
                     },
+                    tag_start,
                     result_tx,
-                ))
+                })
                 .map_err(|_| Error::ServerWasDropped)?;
 
             #[cfg(feature = "single")]
@@ -315,49 +309,15 @@ impl StreamReliableSender {
 
             let result = async {
                 #[cfg(feature = "single")]
-                while let Some(AckBuf {
-                    mut buffer,
-                    tag_start,
-                    length,
-                }) = self.ack_receiver.recv().await
-                {
-                    let buffer = &mut buffer[.. length];
-                    if crate::decode_in_buffer(buffer, tag_start, &self.cipher)
-                        .and_then(|data_start| {
-                            let sequence: u16 =
-                                (&buffer[data_start ..]).read_varint().map_err(|_| ())?;
-                            if sequence == self.sequence {
-                                Ok(())
-                            } else {
-                                Err(())
-                            }
-                        })
-                        .is_ok()
-                    {
+                while let Some(ack) = self.ack_receiver.recv().await {
+                    if ack == self.sequence {
                         return Ok(());
                     }
                 }
 
                 #[cfg(feature = "multi")]
-                while let Ok(AckBuf {
-                    mut buffer,
-                    tag_start,
-                    length,
-                }) = self.ack_receiver.recv_async().await
-                {
-                    let buffer = &mut buffer[.. length];
-                    if crate::decode_in_buffer(buffer, tag_start, &self.cipher)
-                        .and_then(|data_start| {
-                            let sequence: u16 =
-                                (&buffer[data_start ..]).read_varint().map_err(|_| ())?;
-                            if sequence == self.sequence {
-                                Ok(())
-                            } else {
-                                Err(())
-                            }
-                        })
-                        .is_ok()
-                    {
+                while let Ok(ack) = self.ack_receiver.recv_async().await {
+                    if ack == self.sequence {
                         return Ok(());
                     }
                 }
@@ -403,23 +363,22 @@ impl StreamReliableSender {
 }
 
 pub struct StreamReceiver {
-    cipher: ChaCha20Poly1305,
     sequence: Sequence,
     split_buffer: Vec<u8>,
     split_channel: Option<Channel>,
     unreliable_split_buffers: HashMap<Channel, UnreliableBuffer>,
-    transport_sender: ChannelTx<(Id, Buffer, OneshotTx<Result<(), Error>>)>,
-    transport_receiver: ChannelRx<TypedBuffer>,
+    transport_sender: ChannelTx<OutBuffer>,
+    transport_receiver: ChannelRx<InBuffer>,
 }
 
 impl StreamReceiver {
     pub async fn recv<'a>(&mut self) -> Result<(Channel, Packet), Error> {
         loop {
             #[cfg(feature = "single")]
-            let TypedBuffer {
+            let InBuffer {
                 sender,
                 packet_type,
-                mut packet,
+                buffer: mut packet,
             } = self
                 .transport_receiver
                 .recv()
@@ -427,26 +386,15 @@ impl StreamReceiver {
                 .ok_or_else(|| Error::ServerWasDropped)?;
 
             #[cfg(feature = "multi")]
-            let TypedBuffer {
+            let InBuffer {
                 sender,
                 packet_type,
-                mut packet,
+                buffer: mut packet,
             } = self
                 .transport_receiver
                 .recv_async()
                 .await
                 .map_err(|_| Error::ServerWasDropped)?;
-
-            let data_start = match crate::decode_in_buffer(
-                &mut packet.buffer[.. packet.stop],
-                packet.start,
-                &self.cipher,
-            ) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-
-            packet.start = data_start;
 
             let mut read_cursor = Cursor::new(packet.as_ref());
 
@@ -560,8 +508,7 @@ impl StreamReceiver {
                     let sequence: u16 = seek_read!(read_cursor.read_varint(), "sequence");
 
                     // TODO: do not answer if the sequence is not previous, but random?
-                    stream_send_ack(&self.cipher, sender, sequence, &mut self.transport_sender)
-                        .await?;
+                    stream_send_ack(sender, sequence, &mut self.transport_sender).await?;
 
                     if sequence == self.sequence {
                         self.sequence = self.sequence.wrapping_add(1);
@@ -599,8 +546,7 @@ impl StreamReceiver {
                     let sequence: u16 = seek_read!(read_cursor.read_varint(), "sequence");
 
                     // TODO: do not answer if the sequence is not previous, but random?
-                    stream_send_ack(&self.cipher, sender, sequence, &mut self.transport_sender)
-                        .await?;
+                    stream_send_ack(sender, sequence, &mut self.transport_sender).await?;
 
                     if sequence == self.sequence {
                         self.sequence = self.sequence.wrapping_add(1);
@@ -617,50 +563,85 @@ impl StreamReceiver {
 }
 
 struct Client {
+    cipher: ChaCha20Poly1305,
     address: SocketAddr,
-    ack_sender: ChannelTx<AckBuf>,
-    in_queue: ChannelTx<TypedBuffer>,
+    ack_sender: ChannelTx<Sequence>,
+    in_queue: ChannelTx<InBuffer>,
 }
 
 struct Clients {
+    max_clients: usize,
+    curr_clients: usize,
     clients: Vec<Option<Client>>,
-    free_ids: VecDeque<Id>,
+    free_indices: VecDeque<Id>,
 }
 
 impl Clients {
-    fn new() -> Self {
+    // first two ids are reserved for server and a new connection
+    const ID_OFFSET: usize = 2;
+
+    fn new(max_clients: usize) -> Self {
         Self {
-            clients: Vec::new(),
-            free_ids: VecDeque::new(),
+            max_clients,
+            curr_clients: 0,
+            clients: Vec::with_capacity(max_clients),
+            free_indices: VecDeque::new(),
         }
     }
 
     fn get(&self, id: Id) -> Option<&Client> {
-        self.clients.get(id)?.as_ref()
+        if id < Self::ID_OFFSET {
+            return None;
+        }
+        self.clients.get(id - Self::ID_OFFSET)?.as_ref()
     }
 
     fn get_mut(&mut self, id: Id) -> Option<&mut Client> {
-        self.clients.get_mut(id)?.as_mut()
+        if id < Self::ID_OFFSET {
+            return None;
+        }
+        self.clients.get_mut(id - Self::ID_OFFSET)?.as_mut()
     }
 
-    fn push(&mut self, client: Client) -> usize {
-        match self.free_ids.pop_front() {
-            Some(id) => {
-                *self.clients.get_mut(id).unwrap() = Some(client);
-                id
+    fn push(&mut self, client: Client) -> Option<usize> {
+        match self.free_indices.pop_front() {
+            Some(idx) => {
+                *self.clients.get_mut(idx).unwrap() = Some(client);
+                self.curr_clients += 1;
+                Some(idx + Self::ID_OFFSET)
             },
             None => {
-                self.clients.push(Some(client));
-                self.clients.len() - 1
+                if self.curr_clients < self.max_clients {
+                    self.clients.push(Some(client));
+                    self.curr_clients += 1;
+                    Some(self.clients.len() + Self::ID_OFFSET - 1)
+                } else {
+                    None
+                }
             },
         }
     }
 
     fn remove(&mut self, id: Id) -> Option<Client> {
-        let res = mem::replace(self.clients.get_mut(id)?, None);
+        if id < Self::ID_OFFSET {
+            return None;
+        }
+
+        let idx = id - Self::ID_OFFSET;
+        let res = mem::replace(self.clients.get_mut(idx)?, None);
 
         if res.is_some() {
-            self.free_ids.push_back(id);
+            self.curr_clients -= 1;
+            self.free_indices.push_back(idx);
+
+            loop {
+                match self.clients.last() {
+                    Some(None) => {
+                        self.clients.pop();
+                    },
+                    _ => break,
+                }
+            }
         }
 
         res
@@ -669,13 +650,7 @@ impl Clients {
 
 enum ServerPacket {
     In((usize, SocketAddr)),
-    Out((Id, Buffer, OneshotTx<Result<(), Error>>)),
-}
-
-struct AckBuf {
-    buffer: [u8; ACKNOWLEDGE_SIZE],
-    tag_start: usize,
-    length: usize,
+    Out(OutBuffer),
 }
 
 pub struct Connection {
@@ -685,30 +660,45 @@ pub struct Connection {
     pub receiver: StreamReceiver,
 }
 
-pub struct Server {
-    clients: Clients,
-    out_queue: ChannelRx<(Id, Buffer, OneshotTx<Result<(), Error>>)>,
-    out_queue_sender: ChannelTx<(Id, Buffer, OneshotTx<Result<(), Error>>)>,
-    receive_buffer: [u8; MAX_PACKET_SIZE],
-    transport: Async<UdpSocket>,
+#[derive(Debug)]
+pub struct ServerParameters {
+    pub max_connections: usize,
 }
 
-impl Server {
-    pub fn bind<A>(bind_address: A) -> Result<Self, StdIoError>
+impl Default for ServerParameters {
+    fn default() -> Self {
+        Self {
+            max_connections: DEFAULT_MAX_CONNECTIONS,
+        }
+    }
+}
+
+impl ServerParameters {
+    pub fn bind<A>(self, bind_address: A) -> Result<Server, StdIoError>
     where
         A: Into<SocketAddr>,
     {
         let transport = Async::<UdpSocket>::bind(bind_address.into())?;
         let (out_queue_sender, out_queue) = new_channel();
-        Ok(Self {
-            clients: Clients::new(),
+        Ok(Server {
+            clients: Clients::new(self.max_connections),
             out_queue,
             out_queue_sender,
             receive_buffer: [0; MAX_PACKET_SIZE],
             transport,
         })
     }
+}
 
+pub struct Server {
+    clients: Clients,
+    out_queue: ChannelRx<OutBuffer>,
+    out_queue_sender: ChannelTx<OutBuffer>,
+    receive_buffer: [u8; MAX_PACKET_SIZE],
+    transport: Async<UdpSocket>,
+}
+
+impl Server {
     pub async fn accept(&mut self) -> Result<Connection, StdIoError> {
         loop {
             let next: Result<_, StdIoError> = async {
@@ -740,15 +730,9 @@ impl Server {
 
                     match packet_type {
                         Type::CONNECT => {
-                            let (in_queue_tx, in_queue_rx) = new_channel();
-
-                            let (ack_sender, ack_receiver) = new_channel();
-
-                            let client = Client {
-                                address: addr,
-                                ack_sender,
-                                in_queue: in_queue_tx,
-                            };
+                            if sender != NEW_CONNECTION_ID {
+                                continue;
+                            }
 
                             let mut peer_key = KEY_BUFFER;
                             seek_read!(read_cursor.read_exact(&mut peer_key), "peer key");
@@ -764,23 +748,45 @@ impl Server {
                                 .extract::<sha2::Sha256>(None)
                                 .expand(&[], &mut secret)
                                 .unwrap();
+
+                            let cipher = ChaCha20Poly1305::new((&secret).into());
+
+                            let (in_queue_tx, in_queue_rx) = new_channel();
+
+                            let (ack_sender, ack_receiver) = new_channel();
+
+                            let client = Client {
+                                cipher,
+                                address: addr,
+                                ack_sender,
+                                in_queue: in_queue_tx,
+                            };
+
+                            let id = match self.clients.push(client) {
+                                Some(id) => id,
+                                None => {
+                                    // TODO send disconnect/decline?
+                                    continue;
+                                },
+                            };
+
                             let self_key: Key = EncodedPoint::from(keypair.public_key())
                                 .as_bytes()
                                 .try_into()
                                 .unwrap();
 
-                            let id = self.clients.push(client);
-
                             let mut write_cursor = Cursor::new(self.receive_buffer.as_mut());
 
-                            seek_write!(write_cursor.write_varint(SERVER_ID), "sender");
-                            seek_write!(write_cursor.write_varint(Type::ACCEPT), "type");
-                            seek_write!(write_cursor.write_all(&self_key), "key");
-                            seek_write!(write_cursor.write_varint(id), "id");
+                            write_cursor.write_varint(SERVER_ID).unwrap();
+                            write_cursor.write_varint(Type::ACCEPT).unwrap();
+                            write_cursor.write_all(&self_key).unwrap();
+                            write_cursor.write_varint(id).unwrap();
 
-                            self.transport.send_to(write_cursor.slice(), addr).await?;
-
-                            let cipher = ChaCha20Poly1305::new((&secret).into());
+                            if let Err(_) = self.transport.send_to(write_cursor.slice(), addr).await
+                            {
+                                self.clients.remove(id);
+                                continue;
+                            };
 
                             return Ok(Connection {
                                 self_key,
@@ -788,20 +794,17 @@ impl Server {
                                 sender: StreamSender {
                                     unreliable: StreamUnreliableSender {
                                         peer: id,
-                                        cipher: cipher.clone(),
                                         unreliable_split_id: 0,
                                         transport: self.out_queue_sender.clone(),
                                     },
                                     reliable: StreamReliableSender {
                                         peer: id,
-                                        cipher: cipher.clone(),
                                         sequence: 0,
                                         ack_receiver,
                                         transport: self.out_queue_sender.clone(),
                                     },
                                 },
                                 receiver: StreamReceiver {
-                                    cipher,
                                     sequence: 0,
                                     split_buffer: Vec::new(),
                                     split_channel: None,
@@ -814,29 +817,29 @@ impl Server {
                         Type::ACKNOWLEDGE => {
                             let mut remove = false;
 
-                            if len > ACKNOWLEDGE_SIZE {
-                                continue;
-                            }
-
                             if let Some(client) = self.clients.get_mut(sender) {
-                                let mut buffer = [0; ACKNOWLEDGE_SIZE];
-                                buffer.copy_from_slice(&self.receive_buffer[.. ACKNOWLEDGE_SIZE]);
-                                if client
-                                    .ack_sender
-                                    .send(AckBuf {
-                                        buffer,
-                                        tag_start: read_cursor.position() as usize,
-                                        length: len,
-                                    })
-                                    .is_err()
-                                {
+                                let tag_start = read_cursor.position() as usize;
+                                let decrypted_start = match crate::decode_in_buffer(
+                                    &mut self.receive_buffer[.. len],
+                                    tag_start,
+                                    &client.cipher,
+                                ) {
+                                    Ok(s) => s,
+                                    Err(()) => continue,
+                                };
+
+                                let mut read_cursor =
+                                    Cursor::new(&self.receive_buffer[decrypted_start .. len]);
+                                let sequence = seek_read!(read_cursor.read_varint(), "sequence");
+
+                                if client.ack_sender.send(sequence).is_err() {
                                     #[cfg(feature = "single")]
                                     {
-                                        remove = client.in_queue.has_receiver();
+                                        remove = !client.in_queue.has_receiver();
                                     }
                                     #[cfg(feature = "multi")]
                                     {
-                                        remove = !client.in_queue.is_disconnected();
+                                        remove = client.in_queue.is_disconnected();
                                     }
                                 } else {
                                     client.address = addr;
@@ -851,19 +854,26 @@ impl Server {
                             let mut remove = false;
 
                             if let Some(client) = self.clients.get_mut(sender) {
-                                let start = read_cursor.position() as usize;
-                                let data = TypedBuffer {
+                                let tag_start = read_cursor.position() as usize;
+                                let start = match crate::decode_in_buffer(
+                                    &mut self.receive_buffer[.. len],
+                                    tag_start,
+                                    &client.cipher,
+                                ) {
+                                    Ok(s) => s,
+                                    Err(()) => continue,
+                                };
+
+                                let data = InBuffer {
                                     sender,
                                     packet_type,
-                                    packet: Buffer {
-                                        buffer: mem::replace(
-                                            &mut self.receive_buffer,
-                                            [0; MAX_PACKET_SIZE],
-                                        ),
+                                    buffer: Buffer {
+                                        buffer: self.receive_buffer,
                                         start,
                                         stop: len,
                                     },
                                 };
+
                                 if client.in_queue.send(data).is_err() {
                                     #[cfg(feature = "single")]
                                     {
@@ -884,26 +894,38 @@ impl Server {
                         },
                     }
                 },
-                ServerPacket::Out((id, packet, res_sender)) => {
+                ServerPacket::Out(OutBuffer {
+                    peer,
+                    mut buffer,
+                    tag_start,
+                    result_tx,
+                }) => {
                     #[cfg(feature = "multi")]
-                    let mut res_sender = res_sender;
+                    let mut result_tx = result_tx;
 
-                    let client = match self.clients.get(id) {
+                    let client = match self.clients.get(peer) {
                         Some(c) => c,
                         None => {
-                            let _ = res_sender.send(Err(Error::InvalidConnection));
+                            let _ = result_tx.send(Err(Error::InvalidConnection));
                             continue;
                         },
                     };
 
+                    crate::encode_in_buffer(
+                        &mut buffer.buffer,
+                        &client.cipher,
+                        tag_start,
+                        buffer.stop,
+                    );
+
                     if let Err(err) = self
                         .transport
-                        .send_to(packet.as_ref(), client.address)
+                        .send_to(buffer.as_ref(), client.address)
                         .await
                     {
-                        let _ = res_sender.send(Err(err.into()));
+                        let _ = result_tx.send(Err(err.into()));
                     } else {
-                        let _ = res_sender.send(Ok(()));
+                        let _ = result_tx.send(Ok(()));
                     }
                 },
             }

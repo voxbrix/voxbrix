@@ -15,7 +15,6 @@ use std::{
     io::{
         Cursor,
         Read,
-        Write,
     },
     mem,
 };
@@ -27,23 +26,19 @@ pub mod client;
 pub mod server;
 
 pub const MAX_PACKET_SIZE: usize = 508;
+
 pub const MAX_HEADER_SIZE: usize = mem::size_of::<Id>() // sender
     + 1 // type
-    + 16 // tag
-    + 12 // nonce
+    + TAG_SIZE // tag
+    + NONCE_SIZE // nonce
     + mem::size_of::<usize>()
     + 2
     + mem::size_of::<usize>();
-pub const MAX_DATA_SIZE: usize = MAX_PACKET_SIZE - MAX_HEADER_SIZE;
-pub const ACKNOWLEDGE_SIZE: usize = mem::size_of::<Id>() // sender
-    + 1 // type
-    + 16 // tag
-    + 12 // nonce
-    + 2;
 
-#[cfg(any(feature = "client", test))]
-const NEW_CONNECTION_ID: usize = 0;
-const SERVER_ID: usize = 1;
+pub const MAX_DATA_SIZE: usize = MAX_PACKET_SIZE - MAX_HEADER_SIZE;
+
+const SERVER_ID: usize = 0;
+const NEW_CONNECTION_ID: usize = 1;
 
 trait AsSlice<T> {
     fn slice(&self) -> &[T];
@@ -193,61 +188,61 @@ struct Type;
 #[rustfmt::skip]
 impl Type {
     const CONNECT: u8 = 0;
-        // key: [u8; 32]
+        // key: Key,
 
     const ACCEPT: u8 = 1;
-        // key: [u8; 32]
-        // id: usize,
+        // key: Key,
+        // id: Id,
 
     const ACKNOWLEDGE: u8 = 2;
-        // tag: [u8; 16]
-        // nonce: [u8; 12]
-        // encrypted:
-        // sequence: u16
+        // tag: [u8; TAG_SIZE],
+        // nonce: [u8; NONCE_SIZE],
+        // encrypted fields:
+        // sequence: Sequence,
 
     const DISCONNECT: u8 = 3;
-        // tag: [u8; 16]
-        // nonce: [u8; 12]
+        // tag: [u8; TAG_SIZE],
+        // nonce: [u8; NONCE_SIZE],
 
     const UNRELIABLE: u8 = 4;
-        // tag: [u8; 16]
-        // nonce: [u8; 12]
-        // encrypted:
-        // channel: usize,
+        // tag: [u8; TAG_SIZE],
+        // nonce: [u8; NONCE_SIZE],
+        // encrypted fields:
+        // channel: Channel,
         // data: &[u8],
 
     const UNRELIABLE_SPLIT_START: u8 = 5;
-        // tag: [u8; 16]
-        // nonce: [u8; 12]
-        // encrypted:
-        // channel: usize,
+        // tag: [u8; TAG_SIZE],
+        // nonce: [u8; NONCE_SIZE],
+        // encrypted fields:
+        // channel: Channel,
         // split_id: u16,
         // length: usize,
         // data: &[u8],
 
     const UNRELIABLE_SPLIT: u8 = 6;
-        // tag: [u8; 16]
-        // nonce: [u8; 12]
-        // encrypted:
-        // channel: usize,
+        // tag: [u8; TAG_SIZE],
+        // nonce: [u8; NONCE_SIZE],
+        // encrypted fields:
+        // channel: Channel,
         // split_id: u16,
         // count: usize,
         // data: &[u8],
 
     const RELIABLE: u8 = 7;
-        // tag: [u8; 16]
-        // nonce: [u8; 12]
-        // encrypted:
-        // channel: usize,
-        // sequence: u16,
+        // tag: [u8; TAG_SIZE],
+        // nonce: [u8; NONCE_SIZE],
+        // encrypted fields:
+        // channel: Channel,
+        // sequence: Sequence,
         // data: &[u8],
 
     const RELIABLE_SPLIT: u8 = 8;
-        // tag: [u8; 16]
-        // nonce: [u8; 12]
-        // encrypted:
-        // channel: usize,
-        // sequence: u16,
+        // tag: [u8; TAG_SIZE],
+        // nonce: [u8; NONCE_SIZE],
+        // encrypted fields:
+        // channel: Channel,
+        // sequence: Sequence,
         // data: &[u8],
 
     //const PING: u8 = ?;
@@ -255,32 +250,40 @@ impl Type {
     const UNDEFINED: u8 = u8::MAX;
 }
 
-fn encode_in_buffer<F>(
+// returns tag start and total data length
+fn write_in_buffer<F>(
     buffer: &mut [u8; MAX_PACKET_SIZE],
-    cipher: &ChaCha20Poly1305,
     sender: Id,
     packet_type: u8,
     mut f: F,
-) -> usize
+) -> (usize, usize)
 where
     F: FnMut(&mut Cursor<&mut [u8]>),
 {
     let mut cursor = Cursor::new(buffer.as_mut());
 
-    let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
-
     cursor.write_varint(sender).unwrap();
     cursor.write_varint(packet_type).unwrap();
     let tag_start = cursor.position() as usize;
-    let tag_finish = tag_start + TAG_SIZE;
-    cursor.set_position(tag_finish as u64);
-    cursor.write_all(&nonce).unwrap();
-    let encryption_start = cursor.position() as usize;
+    cursor.set_position((tag_start + TAG_SIZE + NONCE_SIZE) as u64);
     f(&mut cursor);
 
-    let buffer_finish = cursor.position() as usize;
+    (tag_start, cursor.position() as usize)
+}
 
-    let buffer = &mut buffer[.. buffer_finish];
+// returns total data length
+fn encode_in_buffer(
+    buffer: &mut [u8; MAX_PACKET_SIZE],
+    cipher: &ChaCha20Poly1305,
+    tag_start: usize,
+    length: usize,
+) {
+    let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
+    let tag_finish = tag_start + TAG_SIZE;
+    let encryption_start = tag_finish + NONCE_SIZE;
+    (&mut buffer[tag_finish .. encryption_start]).copy_from_slice(&nonce);
+
+    let buffer = &mut buffer[.. length];
 
     let (buffer_pre_enc, buffer_enc) = buffer.split_at_mut(encryption_start);
 
@@ -289,8 +292,6 @@ where
         .unwrap();
 
     buffer[tag_start .. tag_finish].copy_from_slice(&tag);
-
-    buffer_finish
 }
 
 // returns start of a relevant data (that is right after the nonce)
@@ -337,7 +338,7 @@ mod tests {
         },
         server::{
             self,
-            Server,
+            ServerParameters,
         },
     };
     use async_executor::LocalExecutor;
@@ -366,8 +367,9 @@ mod tests {
         let task = Box::leak(Box::new(RefCell::new(None)));
         future::block_on(rt.run(async {
             rt.spawn(async {
-                let mut server =
-                    Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
+                let mut server = ServerParameters::default()
+                    .bind(([127, 0, 0, 1], server_port))
+                    .expect("server socket bind");
                 loop {
                     let server::Connection {
                         sender: mut tx,
@@ -436,8 +438,9 @@ mod tests {
 
         future::block_on(rt.run(async {
             rt.spawn(async {
-                let mut server =
-                    Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
+                let mut server = ServerParameters::default()
+                    .bind(([127, 0, 0, 1], server_port))
+                    .expect("server socket bind");
                 loop {
                     let server::Connection { sender: mut tx, .. } =
                         server.accept().await.expect("connection accepted");
@@ -494,8 +497,9 @@ mod tests {
 
         future::block_on(rt.run(async {
             rt.spawn(async {
-                let mut server =
-                    Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
+                let mut server = ServerParameters::default()
+                    .bind(([127, 0, 0, 1], server_port))
+                    .expect("server socket bind");
                 loop {
                     let server::Connection {
                         receiver: mut rx, ..
@@ -550,8 +554,9 @@ mod tests {
 
         future::block_on(rt.run(async {
             rt.spawn(async {
-                let mut server =
-                    Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
+                let mut server = ServerParameters::default()
+                    .bind(([127, 0, 0, 1], server_port))
+                    .expect("server socket bind");
                 loop {
                     let server::Connection {
                         receiver: mut rx, ..
@@ -626,8 +631,9 @@ mod tests {
 
         future::block_on(rt.run(async {
             rt.spawn(async {
-                let mut server =
-                    Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
+                let mut server = ServerParameters::default()
+                    .bind(([127, 0, 0, 1], server_port))
+                    .expect("server socket bind");
                 loop {
                     let server::Connection {
                         sender: mut tx,
@@ -787,8 +793,9 @@ mod tests {
         let task = Box::leak(Box::new(RefCell::new(None)));
         future::block_on(rt.run(async {
             rt.spawn(async {
-                let mut server =
-                    Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
+                let mut server = ServerParameters::default()
+                    .bind(([127, 0, 0, 1], server_port))
+                    .expect("server socket bind");
                 loop {
                     let server::Connection {
                         sender: mut tx,
@@ -841,8 +848,9 @@ mod tests {
         let task = Box::leak(Box::new(RefCell::new(None)));
         future::block_on(rt.run(async {
             rt.spawn(async {
-                let mut server =
-                    Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
+                let mut server = ServerParameters::default()
+                    .bind(([127, 0, 0, 1], server_port))
+                    .expect("server socket bind");
                 loop {
                     let server::Connection { sender: mut tx, .. } =
                         server.accept().await.expect("connection accepted");
@@ -889,8 +897,9 @@ mod tests {
         let task = Box::leak(Box::new(RefCell::new(None)));
         future::block_on(rt.run(async {
             rt.spawn(async {
-                let mut server =
-                    Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
+                let mut server = ServerParameters::default()
+                    .bind(([127, 0, 0, 1], server_port))
+                    .expect("server socket bind");
                 loop {
                     let server::Connection { sender: mut tx, .. } =
                         server.accept().await.expect("connection accepted");
@@ -940,8 +949,9 @@ mod tests {
         let task = Box::leak(Box::new(RefCell::new(None)));
         future::block_on(rt.run(async {
             rt.spawn(async {
-                let mut server =
-                    Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
+                let mut server = ServerParameters::default()
+                    .bind(([127, 0, 0, 1], server_port))
+                    .expect("server socket bind");
 
                 loop {
                     let server::Connection {
@@ -1024,8 +1034,9 @@ mod tests {
         }));
         future::block_on(rt.run(async {
             rt.spawn(async {
-                let mut server =
-                    Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
+                let mut server = ServerParameters::default()
+                    .bind(([127, 0, 0, 1], server_port))
+                    .expect("server socket bind");
 
                 loop {
                     let server::Connection {
@@ -1094,8 +1105,9 @@ mod tests {
 
         future::block_on(rt.run(async {
             rt.spawn(async {
-                let mut server =
-                    Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
+                let mut server = ServerParameters::default()
+                    .bind(([127, 0, 0, 1], server_port))
+                    .expect("server socket bind");
 
                 loop {
                     let server::Connection {
@@ -1207,8 +1219,9 @@ mod tests {
         std::thread::spawn(move || {
             let rt = LocalExecutor::new();
             future::block_on(rt.run(async {
-                let mut server =
-                    Server::bind(([127, 0, 0, 1], server_port)).expect("server socket bind");
+                let mut server = ServerParameters::default()
+                    .bind(([127, 0, 0, 1], server_port))
+                    .expect("server socket bind");
 
                 let server::Connection {
                     sender: mut tx,

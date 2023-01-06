@@ -242,15 +242,12 @@ pub struct Receiver {
 
 impl Receiver {
     async fn send_ack(&mut self, sequence: Sequence) -> Result<(), Error> {
-        let len = crate::encode_in_buffer(
-            &mut self.buffer,
-            &self.cipher,
-            self.id,
-            Type::ACKNOWLEDGE,
-            |cursor| {
+        let (tag_start, len) =
+            crate::write_in_buffer(&mut self.buffer, self.id, Type::ACKNOWLEDGE, |cursor| {
                 cursor.write_varint(sequence).unwrap();
-            },
-        );
+            });
+
+        crate::encode_in_buffer(&mut self.buffer, &self.cipher, tag_start, len);
 
         self.transport.send(&self.buffer[.. len]).await?;
         Ok(())
@@ -497,8 +494,8 @@ impl UnreliableSender {
     ) -> Result<(), Error> {
         let mut buffer = [0; MAX_PACKET_SIZE];
 
-        let len =
-            crate::encode_in_buffer(&mut buffer, &self.cipher, self.id, message_type, |cursor| {
+        let (tag_start, len) =
+            crate::write_in_buffer(&mut buffer, self.id, message_type, |cursor| {
                 cursor.write_varint(channel).unwrap();
                 if let Some(len_or_count) = len_or_count {
                     cursor.write_varint(self.unreliable_split_id).unwrap();
@@ -506,6 +503,8 @@ impl UnreliableSender {
                 }
                 cursor.write_all(&data).unwrap();
             });
+
+        crate::encode_in_buffer(&mut buffer, &self.cipher, tag_start, len);
 
         self.transport.send(&buffer[.. len]).await?;
 
@@ -566,17 +565,14 @@ impl ReliableSender {
         data: &[u8],
         packet_type: u8,
     ) -> Result<(), Error> {
-        let len = crate::encode_in_buffer(
-            &mut self.buffer,
-            &self.cipher,
-            self.id,
-            packet_type,
-            |cursor| {
+        let (tag_start, len) =
+            crate::write_in_buffer(&mut self.buffer, self.id, packet_type, |cursor| {
                 cursor.write_varint(channel).unwrap();
                 cursor.write_varint(self.sequence).unwrap();
                 cursor.write_all(data).unwrap();
-            },
-        );
+            });
+
+        crate::encode_in_buffer(&mut self.buffer, &self.cipher, tag_start, len);
 
         loop {
             self.transport.send(&self.buffer[.. len]).await?;
