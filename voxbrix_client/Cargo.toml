@@ -28,5 +28,7 @@ voxbrix_common = { path = "../voxbrix_common" }
 local_channel = { path = "../local_channel" }
 bitmask = "0.5"
 arrayvec = { version = "0.7", default-features = false }
+k256 = { version = "0.11.6", features = ["ecdsa"] }
+argon2 = { version = "0.4.1", default-features = false, features = ["alloc"] }
 log = "0.4"
 env_logger = "0.9"

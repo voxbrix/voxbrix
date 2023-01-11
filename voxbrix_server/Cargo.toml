@@ -16,7 +16,9 @@ voxbrix_common = { path = "../voxbrix_common" }
 redb = "0.11"
 flume = { version = "0.10", default-features = false, features = ["async"] }
 serde = "1.0"
+serde-big-array = "0.4"
 local_channel = { path = "../local_channel" }
+k256 = { version = "0.11.6", features = ["ecdsa"] }
 anyhow = "1.0"
 log = "0.4"
 env_logger = "0.9"

@@ -3,7 +3,10 @@ use async_executor::LocalExecutor;
 use flume::Sender as SharedSender;
 use futures_lite::future;
 use local_channel::mpsc::Sender;
-use log::error;
+use log::{
+    error,
+    warn,
+};
 use redb::{
     Database,
     TableDefinition,
@@ -14,7 +17,7 @@ use server::{
 };
 use std::time::Duration;
 use voxbrix_protocol::{
-    server::Server,
+    server::ServerParameters,
     Channel,
 };
 
@@ -65,7 +68,7 @@ fn main() -> Result<()> {
         event_tx,
     }));
 
-    let server = Server::bind(([0, 0, 0, 0], 12000))?;
+    let server = ServerParameters::default().bind(([0, 0, 0, 0], 12000))?;
 
     future::block_on(local.rt.run(async {
         local
@@ -74,8 +77,21 @@ fn main() -> Result<()> {
                 let mut server = server;
                 loop {
                     match server.accept().await {
-                        Ok((tx, rx)) => {
-                            local.rt.spawn(client::run(local, shared, tx, rx)).detach();
+                        Ok(connection) => {
+                            local
+                                .rt
+                                .spawn(async {
+                                    match client::run(local, shared, connection).await {
+                                        Ok(_) => {
+                                            warn!("client loop exited");
+                                        },
+                                        Err(err) => {
+                                            warn!("client loop exited: {:?}", err);
+                                        },
+                                    }
+                                    // TODO send disconnect
+                                })
+                                .detach();
                         },
                         Err(err) => {
                             error!("main: server.accept() error: {:?}", err);

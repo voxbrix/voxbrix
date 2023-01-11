@@ -9,12 +9,15 @@ use crate::{
         WindowHandle,
     },
     RenderHandle,
+    CONNECTION_TIMEOUT,
 };
 use anyhow::Result;
+use argon2::Argon2;
 use async_executor::LocalExecutor;
 use async_io::Timer;
 use futures_lite::{
     future,
+    FutureExt as _,
     StreamExt as _,
 };
 use iced_wgpu::{
@@ -45,32 +48,63 @@ use iced_winit::{
     Program,
     Size,
 };
+use k256::ecdsa::{
+    signature::{
+        Signature as _,
+        Signer as _,
+        Verifier as _,
+    },
+    Signature,
+    SigningKey,
+    VerifyingKey,
+};
+use local_channel::mpsc::Sender;
 use std::time::Duration;
 use voxbrix_common::{
     messages::{
-        client::InitResponse,
-        server::InitRequest,
+        client::{
+            InitData,
+            InitResponse,
+            LoginResult,
+            RegisterResult,
+        },
+        server::{
+            InitRequest,
+            LoginRequest,
+            RegisterRequest,
+        },
     },
-    pack::PackZip,
+    pack::Pack,
     stream::StreamExt as _,
 };
-use voxbrix_protocol::client::Client;
+use voxbrix_protocol::client::{
+    Client,
+    Connection,
+};
 use winit::{
     dpi::PhysicalPosition,
     event::ModifiersState,
 };
 
-enum MainMenuAction {
+pub enum MainMenuAction {
     Submit,
     Exit,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum FormType {
+    Login,
+    Registration,
+}
+
 pub struct MainMenu {
+    form_type: FormType,
     error_message: String,
     server_address: String,
     username: String,
     password: String,
-    command: Option<MainMenuAction>,
+    password_confirmation: String,
+    event_tx: Sender<MainMenuAction>,
 }
 
 #[derive(Debug, Clone)]
@@ -78,19 +112,23 @@ pub enum Message {
     UpdateServerAddress(String),
     UpdateUsername(String),
     UpdatePassword(String),
+    UpdatePasswordConfirmation(String),
     Error(String),
+    SwitchForm(FormType),
     Submit,
     Exit,
 }
 
 impl MainMenu {
-    pub fn new() -> MainMenu {
+    pub fn new(event_tx: Sender<MainMenuAction>) -> MainMenu {
         MainMenu {
+            form_type: FormType::Login,
             error_message: String::default(),
             server_address: String::default(),
             username: String::default(),
             password: String::default(),
-            command: None,
+            password_confirmation: String::default(),
+            event_tx,
         }
     }
 }
@@ -100,7 +138,6 @@ impl Program for MainMenu {
     type Renderer = Renderer;
 
     fn update(&mut self, message: Message) -> Command<Message> {
-        self.command = None;
         match message {
             Message::UpdateServerAddress(s) => {
                 self.server_address = s;
@@ -114,14 +151,21 @@ impl Program for MainMenu {
                 self.password = s;
                 self.error_message = String::default();
             },
+            Message::UpdatePasswordConfirmation(s) => {
+                self.password_confirmation = s;
+                self.error_message = String::default();
+            },
             Message::Error(s) => {
                 self.error_message = s;
             },
+            Message::SwitchForm(form_type) => {
+                self.form_type = form_type;
+            },
             Message::Submit => {
-                self.command = Some(MainMenuAction::Submit);
+                self.event_tx.send(MainMenuAction::Submit);
             },
             Message::Exit => {
-                self.command = Some(MainMenuAction::Exit);
+                self.event_tx.send(MainMenuAction::Exit);
             },
         }
 
@@ -129,6 +173,75 @@ impl Program for MainMenu {
     }
 
     fn view(&self) -> Element<Message, Renderer> {
+        let mut form = Column::new()
+            .padding(10)
+            .spacing(10)
+            .push(Text::new("voxbrix").style(Color::WHITE))
+            .push(Text::new(&self.error_message).style(Color {
+                r: 1.0,
+                g: 0.5,
+                b: 0.5,
+                a: 1.0,
+            }))
+            .push(text_input(
+                "Server address",
+                &self.server_address,
+                Message::UpdateServerAddress,
+            ))
+            .push(text_input(
+                "Username",
+                &self.username,
+                Message::UpdateUsername,
+            ))
+            .push(text_input(
+                "Password",
+                &self.password,
+                Message::UpdatePassword,
+            ));
+
+        if let FormType::Registration = self.form_type {
+            form = form.push(text_input(
+                "Password confirmation",
+                &self.password_confirmation,
+                Message::UpdatePasswordConfirmation,
+            ));
+        }
+
+        form = form.push(
+            button(text("Submit").horizontal_alignment(alignment::Horizontal::Center))
+                .padding(10)
+                .width(Length::Units(100))
+                .on_press(Message::Submit),
+        );
+
+        match self.form_type {
+            FormType::Login => {
+                form = form.push(
+                    button(
+                        text("Registration").horizontal_alignment(alignment::Horizontal::Center),
+                    )
+                    .padding(10)
+                    .width(Length::Units(100))
+                    .on_press(Message::SwitchForm(FormType::Registration)),
+                );
+            },
+            FormType::Registration => {
+                form = form.push(
+                    button(text("Login").horizontal_alignment(alignment::Horizontal::Center))
+                        .padding(10)
+                        .width(Length::Units(100))
+                        .on_press(Message::SwitchForm(FormType::Login)),
+                );
+            },
+        }
+
+        form = form.push(
+            button(text("Exit").horizontal_alignment(alignment::Horizontal::Center))
+                .padding(10)
+                .width(Length::Units(100))
+                .on_press(Message::Exit),
+        );
+
         Row::new()
             .width(Length::Fill)
             .height(Length::Fill)
@@ -137,51 +250,7 @@ impl Program for MainMenu {
                 Column::new()
                     .width(Length::Fill)
                     .align_items(Alignment::End)
-                    .push(
-                        Column::new()
-                            .padding(10)
-                            .spacing(10)
-                            .push(Text::new("voxbrix").style(Color::WHITE))
-                            .push(Text::new(&self.error_message).style(Color {
-                                r: 1.0,
-                                g: 0.5,
-                                b: 0.5,
-                                a: 1.0,
-                            }))
-                            .push(text_input(
-                                "Server address",
-                                &self.server_address,
-                                Message::UpdateServerAddress,
-                            ))
-                            .push(text_input(
-                                "Username",
-                                &self.username,
-                                Message::UpdateUsername,
-                            ))
-                            .push(text_input(
-                                "Password",
-                                &self.password,
-                                Message::UpdatePassword,
-                            ))
-                            .push(
-                                button(
-                                    text("Play")
-                                        .horizontal_alignment(alignment::Horizontal::Center),
-                                )
-                                .padding(10)
-                                .width(Length::Units(100))
-                                .on_press(Message::Submit),
-                            )
-                            .push(
-                                button(
-                                    text("Exit")
-                                        .horizontal_alignment(alignment::Horizontal::Center),
-                                )
-                                .padding(10)
-                                .width(Length::Units(100))
-                                .on_press(Message::Exit),
-                            ),
-                    ),
+                    .push(form),
             )
             .into()
     }
@@ -190,6 +259,7 @@ impl Program for MainMenu {
 enum Event {
     Process,
     Input(InputEvent),
+    Action(MainMenuAction),
 }
 
 pub struct MenuScene<'a> {
@@ -241,8 +311,10 @@ impl MenuScene<'_> {
 
         let mut debug = Debug::new();
 
+        let (event_tx, event_rx) = local_channel::mpsc::channel();
+
         let mut menu = program::State::new(
-            MainMenu::new(),
+            MainMenu::new(event_tx),
             viewport.logical_size(),
             &mut renderer,
             &mut debug,
@@ -257,7 +329,8 @@ impl MenuScene<'_> {
 
         let mut stream = Timer::interval(Duration::from_millis(20))
             .map(|_| Event::Process)
-            .or_ff(self.window_handle.event_rx.stream().map(Event::Input));
+            .or_ff(self.window_handle.event_rx.stream().map(Event::Input))
+            .or_ff(event_rx.map(Event::Action));
 
         // let server = match program.server_address.parse() {
         // Ok(s) => s,
@@ -268,95 +341,6 @@ impl MenuScene<'_> {
         while let Some(event) = stream.next().await {
             match event {
                 Event::Process => {
-                    let action = async {
-                        let program = menu.program();
-                        if let Some(action) = &program.command {
-                            match action {
-                                MainMenuAction::Submit => {
-                                    let connect_result = async {
-                                        let socket: std::net::SocketAddr = ([0, 0, 0, 0], 0).into();
-                                        let server: std::net::SocketAddr =
-                                            program.server_address.parse().map_err(|_| {
-                                                "Incorrect server socket address format"
-                                            })?;
-
-                                        let (mut tx, mut rx) = Client::bind(socket)
-                                            .map_err(|_| "Unable to bind socket")?
-                                            .connect(server)
-                                            .await
-                                            .map_err(|_| "Connection error")?;
-
-                                        let req_result = async {
-                                            tx.send_reliable(
-                                                0,
-                                                &InitRequest {
-                                                    username: program.username.to_owned(),
-                                                    password: program
-                                                        .password
-                                                        .as_bytes()
-                                                        .to_owned(),
-                                                }
-                                                .pack_to_vec(),
-                                            )
-                                            .await
-                                            .map_err(|_| "Unable to send initialization request")
-                                        };
-
-                                        let init_response = async {
-                                            let mut recv_buf = Vec::new();
-                                            let (_channel, bytes) =
-                                                rx.recv(&mut recv_buf).await.map_err(|_| {
-                                                    "Unable to get initialization response"
-                                                })?;
-                                            InitResponse::unpack(&bytes).map_err(|_| {
-                                                "Unable to unpack initialization response"
-                                            })
-                                        };
-
-                                        let (req_result, init_response) =
-                                            future::zip(req_result, init_response).await;
-                                        req_result?;
-                                        let init_response = init_response?;
-
-                                        let (player_actor, player_ticket_radius) =
-                                            match init_response {
-                                                InitResponse::Success {
-                                                    actor,
-                                                    player_ticket_radius,
-                                                } => (actor, player_ticket_radius),
-                                                InitResponse::Failure(_err) => {
-                                                    return Err("Incorrect password");
-                                                },
-                                            };
-                                        return Ok::<_, &str>(GameSceneParameters {
-                                            connection: (tx, rx),
-                                            player_actor,
-                                            player_ticket_radius,
-                                        });
-                                    };
-
-                                    match connect_result.await {
-                                        Ok(parameters) => {
-                                            return Some(SceneSwitch::Game { parameters });
-                                        },
-                                        Err(err) => {
-                                            menu.queue_message(Message::Error(err.to_owned()));
-                                            return None;
-                                        },
-                                    };
-                                },
-                                MainMenuAction::Exit => {
-                                    return Some(SceneSwitch::Exit);
-                                },
-                            }
-                        }
-                        None
-                    };
-
-                    if let Some(action) = action.await {
-                        return Ok(action);
-                    }
-
                     match self.render_handle.surface.get_current_texture() {
                         Ok(frame) => {
                             let _ = menu.update(
@@ -433,6 +417,203 @@ impl MenuScene<'_> {
                         {
                             menu.queue_event(event);
                         }
+                    }
+                },
+                Event::Action(action) => {
+                    let program = menu.program();
+                    match action {
+                        MainMenuAction::Submit => {
+                            let connection_result = async {
+                                let form_type = program.form_type;
+                                let mut tx_buffer = Vec::new();
+                                let mut rx_buffer = Vec::new();
+                                let socket: std::net::SocketAddr = ([0, 0, 0, 0], 0).into();
+                                let server: std::net::SocketAddr =
+                                    program
+                                        .server_address
+                                        .parse()
+                                        .map_err(|_| "Incorrect server socket address format")?;
+
+                                let Connection {
+                                    self_key,
+                                    peer_key,
+                                    sender: mut tx,
+                                    receiver: mut rx,
+                                } = Client::bind(socket)
+                                    .map_err(|_| "Unable to bind socket")?
+                                    .connect(server)
+                                    .await
+                                    .map_err(|_| "Connection error")?;
+
+                                let (_req_result, response) = async {
+                                    Ok(future::zip(
+                                        async {
+                                            match form_type {
+                                                FormType::Login => {
+                                                    InitRequest::Login.pack(&mut tx_buffer)
+                                                },
+                                                FormType::Registration => {
+                                                    InitRequest::Register.pack(&mut tx_buffer)
+                                                },
+                                            };
+
+                                            tx.send_reliable(0, &tx_buffer).await.map_err(|_| {
+                                                "Unable to send initialization request"
+                                            })
+                                        },
+                                        async {
+                                            let (_channel, bytes) =
+                                                rx.recv(&mut rx_buffer).await.map_err(|_| {
+                                                    "Unable to get initialization response"
+                                                })?;
+                                            InitResponse::unpack(&bytes).map_err(|_| {
+                                                "Unable to unpack initialization response"
+                                            })
+                                        },
+                                    )
+                                    .await)
+                                }
+                                .or(async {
+                                    Timer::interval(CONNECTION_TIMEOUT).await;
+                                    Err("Connection timeout")
+                                })
+                                .await?;
+
+                                let InitResponse {
+                                    public_key: server_key,
+                                    key_signature,
+                                } = response?;
+
+                                let server_key = VerifyingKey::from_sec1_bytes(&server_key)
+                                    .map_err(|_| "Server provided incorrect public key")?;
+
+                                let key_signature = Signature::from_bytes(&key_signature)
+                                    .map_err(|_| "Server provided incorrect signature")?;
+
+                                server_key.verify(&peer_key, &key_signature).map_err(|_| {
+                                    "Server signature does not match the public key provided"
+                                })?;
+
+                                if let FormType::Registration = form_type {
+                                    if program.password != program.password_confirmation {
+                                        return Err(
+                                            "Password and password confirmation do not match"
+                                        );
+                                    }
+                                }
+
+                                let mut signing_key = [0; 32];
+                                Argon2::default()
+                                    .hash_password_into(
+                                        program.password.as_bytes(),
+                                        program.username.as_bytes(),
+                                        &mut signing_key,
+                                    )
+                                    .unwrap();
+
+                                let signing_key = SigningKey::from_bytes(&signing_key)
+                                    .expect("signing key derive");
+
+                                match form_type {
+                                    FormType::Login => {
+                                        let signature: Signature = signing_key.sign(&self_key);
+                                        LoginRequest {
+                                            username: program.username.clone(),
+                                            key_signature: signature.as_bytes().try_into().unwrap(),
+                                        }
+                                        .pack(&mut tx_buffer)
+                                    },
+                                    FormType::Registration => {
+                                        RegisterRequest {
+                                            username: program.username.clone(),
+                                            public_key: signing_key
+                                                .verifying_key()
+                                                .to_bytes()
+                                                .try_into()
+                                                .unwrap(),
+                                        }
+                                        .pack(&mut tx_buffer)
+                                    },
+                                }
+
+                                let (_req_result, response_bytes) = async {
+                                    Ok(future::zip(
+                                        async {
+                                            tx.send_reliable(0, &tx_buffer)
+                                                .await
+                                                .map_err(|_| "Unable to send initial data request")
+                                        },
+                                        async {
+                                            let (_channel, bytes) =
+                                                rx.recv(&mut rx_buffer).await.map_err(|_| {
+                                                    "Unable to get initial data response"
+                                                })?;
+                                            Ok::<&mut [u8], &str>(bytes)
+                                        },
+                                    )
+                                    .await)
+                                }
+                                .or(async {
+                                    Timer::interval(CONNECTION_TIMEOUT).await;
+                                    Err("Connection timeout")
+                                })
+                                .await?;
+
+                                let response_bytes = response_bytes?;
+
+                                let init_data = match form_type {
+                                    FormType::Login => {
+                                        let res = LoginResult::unpack(&response_bytes)
+                                            .map_err(|_| "Incorrect response format")?;
+
+                                        match res {
+                                            LoginResult::Success(data) => data,
+                                            LoginResult::Failure(_) => {
+                                                // TODO: display actual error
+                                                return Err("Incorrect login credentials");
+                                            },
+                                        }
+                                    },
+                                    FormType::Registration => {
+                                        let res = RegisterResult::unpack(response_bytes)
+                                            .map_err(|_| "Incorrect response format")?;
+
+                                        match res {
+                                            RegisterResult::Success(data) => data,
+                                            RegisterResult::Failure(_) => {
+                                                // TODO: display actual error
+                                                return Err("Username already taken");
+                                            },
+                                        }
+                                    },
+                                };
+
+                                Ok((tx, rx, init_data))
+                            };
+
+                            match connection_result.await {
+                                Ok((tx, rx, init_data)) => {
+                                    let InitData {
+                                        actor,
+                                        player_ticket_radius,
+                                    } = init_data;
+
+                                    return Ok(SceneSwitch::Game {
+                                        parameters: GameSceneParameters {
+                                            connection: (tx, rx),
+                                            player_actor: actor,
+                                            player_ticket_radius,
+                                        },
+                                    });
+                                },
+                                Err(message) => {
+                                    menu.queue_message(Message::Error(message.to_string()));
+                                },
+                            }
+                        },
+                        MainMenuAction::Exit => {
+                            return Ok(SceneSwitch::Exit);
+                        },
                     }
                 },
             }

@@ -24,28 +24,40 @@ use futures_lite::{
         StreamExt,
     },
 };
+use k256::ecdsa::{
+    signature::{
+        Signature as _,
+        Signer,
+        Verifier,
+    },
+    Signature,
+    SigningKey,
+    VerifyingKey,
+};
 use log::warn;
 use redb::ReadableTable;
 use std::rc::Rc;
 use voxbrix_common::{
     messages::{
         client::{
-            InitFailure,
+            InitData,
             InitResponse,
+            LoginFailure,
+            LoginResult,
+            RegisterFailure,
+            RegisterResult,
         },
-        server::InitRequest,
+        server::{
+            InitRequest,
+            LoginRequest,
+            RegisterRequest,
+        },
     },
-    pack::{
-        Pack,
-        PackZip,
-    },
+    pack::Pack,
     stream::StreamExt as _,
 };
 use voxbrix_protocol::{
-    server::{
-        StreamReceiver,
-        StreamSender,
-    },
+    server::Connection,
     Channel,
     Packet,
 };
@@ -81,108 +93,252 @@ impl SendData {
     }
 }
 
+#[derive(Debug)]
+pub enum Error {
+    UnexpectedMessage,
+    Timeout,
+    Io,
+    FailedRegistration,
+    FailedLogin,
+    ReceiverClosed,
+    SenderClosed,
+}
+
+trait ConvertResultError<T> {
+    fn error(self, error: Error) -> Result<T, Error>;
+}
+
+impl<T, E> ConvertResultError<T> for Result<T, E> {
+    fn error(self, error: Error) -> Result<T, Error> {
+        self.map_err(|_| error)
+    }
+}
+
+trait ConvertOption<T> {
+    fn error(self, error: Error) -> Result<T, Error>;
+}
+
+impl<T> ConvertResultError<T> for Option<T> {
+    fn error(self, error: Error) -> Result<T, Error> {
+        self.ok_or(error)
+    }
+}
+
 pub async fn run(
     local: &'static Local,
     shared: &'static Shared,
-    tx: StreamSender,
-    mut rx: StreamReceiver,
-) {
+    connection: Connection,
+) -> Result<(), Error> {
+    let mut buffer = Vec::new();
+
+    let Connection {
+        self_key,
+        peer_key,
+        sender: tx,
+        receiver: mut rx,
+    } = connection;
+
     let (mut unreliable_tx, mut reliable_tx) = tx.split();
 
     // Lookup for the player in the database,
     // if there's none - register,
     // if the password is not correct - send error
-    let player_res = {
-        match async { rx.recv().await.ok() }
-            .or(async {
-                Timer::after(CLIENT_CONNECTION_TIMEOUT).await;
-                None
-            })
+    let request = async { rx.recv().await.error(Error::ReceiverClosed) }
+        .or(async {
+            Timer::after(CLIENT_CONNECTION_TIMEOUT).await;
+            Err(Error::Timeout)
+        })
+        .await
+        .and_then(|(_channel, data)| InitRequest::unpack(&data).error(Error::UnexpectedMessage))?;
+
+    // TODO: read from config
+    let private_key = SigningKey::from_bytes(&[3; 32]).unwrap();
+    let public_key = private_key.verifying_key().to_bytes().into();
+
+    let key_signature: Signature = private_key.sign(&self_key);
+
+    InitResponse {
+        public_key,
+        key_signature: key_signature.as_bytes().try_into().unwrap(),
+    }
+    .pack(&mut buffer);
+
+    async {
+        reliable_tx
+            .send_reliable(BASE_CHANNEL, &buffer)
             .await
-            .and_then(|(_channel, data)| InitRequest::unpack(&data).ok())
-        {
-            Some(req) => {
-                blocking::unblock(|| {
-                    let InitRequest { username, password } = req;
+            .error(Error::Io)
+    }
+    .or(async {
+        Timer::after(CLIENT_CONNECTION_TIMEOUT).await;
+        Err(Error::Timeout)
+    })
+    .await?;
 
-                    let db_write = shared.database.begin_write().expect("database write");
-                    let player = {
-                        let mut player_table = db_write
-                            .open_table(PLAYER_TABLE)
-                            .expect("database table open");
-                        let mut username_table = db_write
-                            .open_table(USERNAME_TABLE)
-                            .expect("database table open");
-
-                        let player = username_table
-                            .get(username.as_bytes())
-                            .expect("database read")
-                            .map(|b| Player::unpack(b.value()).unwrap())
-                            .unwrap_or_else(|| {
-                                let player = player_table
-                                    .iter()
-                                    .expect("database read")
-                                    .next_back()
-                                    // TODO wrapping?
-                                    .map(|(bytes, _)| {
-                                        let player = Player::read_key(bytes.value());
-                                        Player(player.0.checked_add(1).unwrap())
-                                    })
-                                    .unwrap_or(Player(0));
-
-                                username_table
-                                    .insert(username.as_bytes(), &player.pack_to_vec())
-                                    .expect("database write");
-
-                                player
-                            });
-
-                        match player_table
-                            .get(&player.to_key())
-                            .expect("database read")
-                            .map(|bytes| PlayerStorage::unpack(bytes.value()))
-                            .transpose()
-                            .map_err(|_| InitFailure::Unknown)?
-                        {
-                            Some(PlayerStorage {
-                                username: st_un,
-                                password: st_ps,
-                            }) => {
-                                if username == st_un && password == st_ps {
-                                    Ok(player)
-                                } else {
-                                    Err(InitFailure::IncorrectPassword)
-                                }
-                            },
-                            None => {
-                                player_table
-                                    .insert(
-                                        &player.to_key(),
-                                        &PlayerStorage { username, password }.pack_to_vec(),
-                                    )
-                                    .expect("database write");
-
-                                Ok(player)
-                            },
-                        }
-                    }?;
-                    db_write.commit().expect("database commit");
-
-                    Ok(player)
+    let player = match request {
+        InitRequest::Login => {
+            let LoginRequest {
+                username,
+                key_signature,
+            } = async { rx.recv().await.error(Error::ReceiverClosed) }
+                .or(async {
+                    Timer::after(CLIENT_CONNECTION_TIMEOUT).await;
+                    Err(Error::Timeout)
                 })
                 .await
-            },
-            None => return,
-        }
-    };
+                .and_then(|(_channel, data)| {
+                    LoginRequest::unpack(&data).error(Error::UnexpectedMessage)
+                })?;
 
-    let player = match player_res {
-        Ok(p) => p,
-        Err(err) => {
-            let _ = reliable_tx
-                .send_reliable(BASE_CHANNEL, &InitResponse::Failure(err).pack_to_vec())
-                .await;
-            return;
+            let player_res = blocking::unblock(move || {
+                let db_read = shared.database.begin_read().expect("database write");
+
+                let username_table = db_read
+                    .open_table(USERNAME_TABLE)
+                    .expect("database table open");
+
+                let player_table = db_read
+                    .open_table(PLAYER_TABLE)
+                    .expect("database table open");
+
+                let player_id = username_table
+                    .get(username.as_bytes())
+                    .expect("database read")
+                    .and_then(|bytes| Player::unpack(&bytes.value()).ok())
+                    .ok_or(LoginFailure::IncorrectCredentials)?;
+
+                let player = player_table
+                    .get(&player_id.to_key())
+                    .expect("database read")
+                    .and_then(|bytes| PlayerStorage::unpack(&bytes.value()).ok())
+                    .ok_or(LoginFailure::IncorrectCredentials)?;
+
+                let public_key =
+                    VerifyingKey::from_sec1_bytes(&player.public_key).map_err(|_| {
+                        warn!("client login: unable to parse client key in the database");
+                        LoginFailure::IncorrectCredentials
+                    })?;
+
+                let signature = Signature::from_bytes(&key_signature).map_err(|_| {
+                    warn!("client login: incorrect key signature format");
+                    LoginFailure::IncorrectCredentials
+                })?;
+
+                public_key
+                    .verify(&peer_key, &signature)
+                    .map_err(|_| LoginFailure::IncorrectCredentials)?;
+
+                Ok(player_id)
+            })
+            .await;
+
+            match player_res {
+                Ok(p) => p,
+                Err(failure) => {
+                    LoginResult::Failure(failure).pack(&mut buffer);
+                    async {
+                        reliable_tx
+                            .send_reliable(BASE_CHANNEL, &buffer)
+                            .await
+                            .error(Error::Io)
+                    }
+                    .or(async {
+                        Timer::after(CLIENT_CONNECTION_TIMEOUT).await;
+                        Err(Error::Timeout)
+                    })
+                    .await;
+
+                    return Err(Error::FailedLogin);
+                },
+            }
+        },
+        InitRequest::Register => {
+            let RegisterRequest {
+                username,
+                public_key,
+            } = async { rx.recv().await.error(Error::ReceiverClosed) }
+                .or(async {
+                    Timer::after(CLIENT_CONNECTION_TIMEOUT).await;
+                    Err(Error::Timeout)
+                })
+                .await
+                .and_then(|(_channel, data)| {
+                    RegisterRequest::unpack(&data).error(Error::UnexpectedMessage)
+                })?;
+
+            let player_res = blocking::unblock(move || {
+                let db_write = shared.database.begin_write().expect("database write");
+                let player = {
+                    let mut username_table = db_write
+                        .open_table(USERNAME_TABLE)
+                        .expect("database table open");
+
+                    if username_table
+                        .get(username.as_bytes())
+                        .expect("database read")
+                        .is_some()
+                    {
+                        return Err(RegisterFailure::UsernameTaken);
+                    }
+
+                    let mut player_table = db_write
+                        .open_table(PLAYER_TABLE)
+                        .expect("database table open");
+
+                    let player = player_table
+                        .iter()
+                        .expect("database read")
+                        .next_back()
+                        // TODO wrapping?
+                        .map(|(bytes, _)| {
+                            let player = Player::read_key(bytes.value());
+                            // TODO: some kind of wrapping?
+                            Player(player.0.checked_add(1).unwrap())
+                        })
+                        .unwrap_or(Player(0));
+
+                    username_table
+                        .insert(username.as_bytes(), &player.pack_to_vec())
+                        .expect("database write");
+
+                    player_table
+                        .insert(
+                            &player.to_key(),
+                            &PlayerStorage {
+                                username,
+                                public_key,
+                            }
+                            .pack_to_vec(),
+                        )
+                        .expect("database write");
+
+                    player
+                };
+                db_write.commit().expect("database commit");
+
+                Ok(player)
+            })
+            .await;
+
+            match player_res {
+                Ok(p) => p,
+                Err(failure) => {
+                    RegisterResult::Failure(failure).pack(&mut buffer);
+                    async {
+                        reliable_tx
+                            .send_reliable(BASE_CHANNEL, &buffer)
+                            .await
+                            .error(Error::Io)
+                    }
+                    .or(async {
+                        Timer::after(CLIENT_CONNECTION_TIMEOUT).await;
+                        Err(Error::Timeout)
+                    })
+                    .await;
+
+                    return Err(Error::FailedRegistration);
+                },
+            }
         },
     };
 
@@ -246,23 +402,31 @@ pub async fn run(
         })
         .detach();
 
-    // Finalize successful connection
-    if let Err(err) = reliable_loop_tx.send((
-        BASE_CHANNEL,
-        SendData::Owned(
-            InitResponse::Success {
+    let init_data_response = match request {
+        InitRequest::Login => {
+            LoginResult::Success(InitData {
                 actor,
                 player_ticket_radius: PLAYER_CHUNK_TICKET_RADIUS,
-            }
-            .pack_to_vec(),
-        ),
-    )) {
+            })
+            .pack_to_vec()
+        },
+        InitRequest::Register => {
+            RegisterResult::Success(InitData {
+                actor,
+                player_ticket_radius: PLAYER_CHUNK_TICKET_RADIUS,
+            })
+            .pack_to_vec()
+        },
+    };
+
+    // Finalize successful connection
+    if let Err(err) = reliable_loop_tx.send((BASE_CHANNEL, SendData::Owned(init_data_response))) {
         warn!(
             "client_loop: unable to send initialization response: {:?}",
             err
         );
         let _ = local.event_tx.send(ServerEvent::RemovePlayer { player });
-        return;
+        return Err(Error::SenderClosed);
     }
 
     let mut events = Box::pin(
@@ -301,14 +465,15 @@ pub async fn run(
                 }
             },
             LoopEvent::PeerMessage { channel, data } => {
-                if let Err(_) = local.event_tx.send(ServerEvent::PlayerEvent {
-                    player,
-                    channel,
-                    data,
-                }) {
-                    // Server loop is down
-                    return;
-                }
+                // Server loop is down
+                local
+                    .event_tx
+                    .send(ServerEvent::PlayerEvent {
+                        player,
+                        channel,
+                        data,
+                    })
+                    .error(Error::SenderClosed)?;
             },
             LoopEvent::SelfEvent(event) => {
                 match event {
@@ -319,4 +484,5 @@ pub async fn run(
     }
 
     let _ = local.event_tx.send(ServerEvent::RemovePlayer { player });
+    Ok(())
 }
