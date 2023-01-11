@@ -2,7 +2,10 @@ use async_executor::LocalExecutor;
 use futures_lite::future;
 use log::error;
 use scene::MainScene;
-use std::thread;
+use std::{
+    thread,
+    time::Duration,
+};
 use window::{
     WindowCommand,
     WindowHandle,
@@ -16,6 +19,8 @@ mod manager;
 mod scene;
 mod system;
 mod window;
+
+const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 
 // fn print_panic_info(panic_info: &PanicInfo<'_>) {
 // error!("panic in: {:?}", panic_info.location());

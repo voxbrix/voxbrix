@@ -5,13 +5,64 @@ use crate::{
         block_class::BlockClass,
         chunk::Chunk,
     },
-    pack::PackZipDefault,
+    pack::{
+        PackDefault,
+        PackZipDefault,
+    },
     ChunkData,
 };
 use serde::{
     Deserialize,
     Serialize,
 };
+use serde_big_array::BigArray;
+
+#[derive(Serialize, Deserialize)]
+pub struct InitResponse {
+    #[serde(with = "BigArray")]
+    pub public_key: [u8; 33],
+    #[serde(with = "BigArray")]
+    pub key_signature: [u8; 64],
+}
+
+impl PackDefault for InitResponse {}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum LoginFailure {
+    IncorrectCredentials,
+    Unknown,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum RegisterFailure {
+    UsernameTaken,
+    Unknown,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct InitData {
+    pub actor: Actor,
+    // position: GlobalPosition,
+    pub player_ticket_radius: i32,
+}
+
+impl PackDefault for InitData {}
+
+#[derive(Serialize, Deserialize)]
+pub enum LoginResult {
+    Success(InitData),
+    Failure(LoginFailure),
+}
+
+impl PackDefault for LoginResult {}
+
+#[derive(Serialize, Deserialize)]
+pub enum RegisterResult {
+    Success(InitData),
+    Failure(RegisterFailure),
+}
+
+impl PackDefault for RegisterResult {}
 
 #[derive(Serialize, Deserialize)]
 pub enum ClientAccept {
@@ -24,21 +75,3 @@ pub enum ClientAccept {
 }
 
 impl PackZipDefault for ClientAccept {}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub enum InitFailure {
-    IncorrectPassword,
-    Unknown,
-}
-
-#[derive(Serialize, Deserialize)]
-pub enum InitResponse {
-    Success {
-        actor: Actor,
-        // position: GlobalPosition,
-        player_ticket_radius: i32,
-    },
-    Failure(InitFailure),
-}
-
-impl PackZipDefault for InitResponse {}

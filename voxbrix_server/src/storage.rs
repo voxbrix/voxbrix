@@ -44,12 +44,14 @@ pub mod player {
         Deserialize,
         Serialize,
     };
+    use serde_big_array::BigArray;
     use voxbrix_common::pack::PackDefault;
 
     #[derive(Serialize, Deserialize)]
     pub struct Player {
         pub username: String,
-        pub password: Vec<u8>,
+        #[serde(with = "BigArray")]
+        pub public_key: [u8; 33],
     }
 
     impl PackDefault for Player {}
