@@ -883,11 +883,11 @@ impl Server {
                                 if client.in_queue.send(data).is_err() {
                                     #[cfg(feature = "single")]
                                     {
-                                        remove = client.in_queue.has_receiver();
+                                        remove = client.ack_sender.has_receiver();
                                     }
                                     #[cfg(feature = "multi")]
                                     {
-                                        remove = !client.in_queue.is_disconnected();
+                                        remove = !client.ack_sender.is_disconnected();
                                     }
                                 } else {
                                     client.address = addr;
