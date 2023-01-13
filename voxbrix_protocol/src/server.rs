@@ -717,7 +717,7 @@ impl Server {
 
                 Ok(ServerPacket::Out(out_packet))
             }
-            .race(async {
+            .or(async {
                 Ok(ServerPacket::In(
                     self.transport.recv_from(&mut self.receive_buffer).await?,
                 ))

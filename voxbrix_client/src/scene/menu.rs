@@ -36,6 +36,7 @@ use iced_winit::{
         text_input,
         Column,
         Row,
+        Space,
         Text,
     },
     Alignment,
@@ -174,7 +175,7 @@ impl Program for MainMenu {
 
     fn view(&self) -> Element<Message, Renderer> {
         let mut form = Column::new()
-            .padding(10)
+            .align_items(Alignment::Center)
             .spacing(10)
             .push(Text::new("voxbrix").style(Color::WHITE))
             .push(Text::new(&self.error_message).style(Color {
@@ -214,43 +215,57 @@ impl Program for MainMenu {
                 .on_press(Message::Submit),
         );
 
-        match self.form_type {
-            FormType::Login => {
-                form = form.push(
-                    button(
-                        text("Registration").horizontal_alignment(alignment::Horizontal::Center),
-                    )
-                    .padding(10)
-                    .width(Length::Units(100))
-                    .on_press(Message::SwitchForm(FormType::Registration)),
-                );
-            },
-            FormType::Registration => {
-                form = form.push(
-                    button(text("Login").horizontal_alignment(alignment::Horizontal::Center))
-                        .padding(10)
-                        .width(Length::Units(100))
-                        .on_press(Message::SwitchForm(FormType::Login)),
-                );
-            },
-        }
-
-        form = form.push(
-            button(text("Exit").horizontal_alignment(alignment::Horizontal::Center))
-                .padding(10)
-                .width(Length::Units(100))
-                .on_press(Message::Exit),
-        );
-
-        Row::new()
+        Column::new()
             .width(Length::Fill)
             .height(Length::Fill)
-            .align_items(Alignment::End)
+            .padding(10)
             .push(
-                Column::new()
+                Row::new()
                     .width(Length::Fill)
-                    .align_items(Alignment::End)
-                    .push(form),
+                    .height(Length::Fill)
+                    .align_items(Alignment::Center)
+                    .push(Space::new(Length::FillPortion(1), Length::Fill))
+                    .push(
+                        Column::new()
+                            .width(Length::FillPortion(1))
+                            .align_items(Alignment::Center)
+                            .push(Space::new(Length::Fill, Length::Fill))
+                            .push(form)
+                            .push(Space::new(Length::Fill, Length::Fill)),
+                    )
+                    .push(Space::new(Length::FillPortion(1), Length::Fill)),
+            )
+            .push(
+                Row::new()
+                    .width(Length::Fill)
+                    .height(Length::Shrink)
+                    .align_items(Alignment::Center)
+                    .push(match self.form_type {
+                        FormType::Login => {
+                            button(
+                                text("Registration")
+                                    .horizontal_alignment(alignment::Horizontal::Center),
+                            )
+                            .padding(10)
+                            .width(Length::Units(150))
+                            .on_press(Message::SwitchForm(FormType::Registration))
+                        },
+                        FormType::Registration => {
+                            button(
+                                text("Login").horizontal_alignment(alignment::Horizontal::Center),
+                            )
+                            .padding(10)
+                            .width(Length::Units(150))
+                            .on_press(Message::SwitchForm(FormType::Login))
+                        },
+                    })
+                    .push(Space::new(Length::Fill, Length::Shrink))
+                    .push(
+                        button(text("Exit").horizontal_alignment(alignment::Horizontal::Center))
+                            .padding(10)
+                            .width(Length::Units(150))
+                            .on_press(Message::Exit),
+                    ),
             )
             .into()
     }

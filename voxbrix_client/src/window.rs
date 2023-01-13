@@ -30,6 +30,7 @@ use winit::{
         EventLoopProxy,
     },
     window::{
+        Fullscreen,
         Window,
         WindowBuilder,
     },
@@ -300,6 +301,8 @@ pub fn create_window(
         .map_err(|_| Error::msg("event proxy channel is closed"))?;
 
     let window = WindowBuilder::new().build(&event_loop)?;
+
+    window.set_fullscreen(Some(Fullscreen::Borderless(None)));
 
     let (event_tx, event_rx) = flume::bounded(32);
 
