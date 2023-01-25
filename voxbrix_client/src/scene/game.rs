@@ -168,7 +168,7 @@ impl GameScene<'_> {
         mbcc.set(
             BlockClass(1),
             Model::Cube(Cube {
-                textures: [1, 1, 1, 1, 1, 0],
+                textures: [2, 2, 2, 2, 2, 1],
             }),
         );
 
@@ -264,6 +264,18 @@ impl GameScene<'_> {
                     );
                     direct_control_system.process(elapsed, &mut vac, &mut oac);
                     render_system.update(&gpac, &oac);
+
+                    let position = gpac.get(&player_actor).unwrap();
+                    let orientation = oac.get(&player_actor).unwrap();
+
+                    let target =
+                        PositionSystem::get_target_block(position, orientation, |chunk, block| {
+                            cbc.get_chunk(&chunk)
+                                .map(|blocks| blocks.get(block).unwrap() == &BlockClass(1))
+                                .unwrap_or(false)
+                        });
+
+                    render_system.build_target_highlight(target);
 
                     unblock!((render_system) {
                         render_system.render()

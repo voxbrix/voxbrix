@@ -53,6 +53,8 @@ fn main() -> Result<()> {
     let write_tx = database.begin_write()?;
     {
         // Initialize all tables
+        write_tx.open_table(USERNAME_TABLE)?;
+        write_tx.open_table(PLAYER_TABLE)?;
         write_tx.open_table(BLOCK_CLASS_TABLE)?;
     }
     write_tx.commit()?;

@@ -59,6 +59,104 @@ impl CullMaskSides {
 }
 
 impl Cube {
+    pub fn add_side_highlighting(
+        chunk: Vec3<i32>,
+        vertices: &mut Vec<Vertex>,
+        indices: &mut Vec<u32>,
+        block_coords: [usize; 3],
+        side: usize,
+    ) {
+        const ELEVATION: f32 = 0.01;
+        const TEXTURE_INDEX: u32 = 0;
+
+        let [x, y, z] = block_coords;
+
+        let positions = match side {
+            0 => [[x, y, z + 1], [x, y + 1, z + 1], [x, y + 1, z], [x, y, z]],
+            1 => {
+                [
+                    [x + 1, y + 1, z + 1],
+                    [x + 1, y, z + 1],
+                    [x + 1, y, z],
+                    [x + 1, y + 1, z],
+                ]
+            },
+            2 => [[x + 1, y, z + 1], [x, y, z + 1], [x, y, z], [x + 1, y, z]],
+            3 => {
+                [
+                    [x, y + 1, z + 1],
+                    [x + 1, y + 1, z + 1],
+                    [x + 1, y + 1, z],
+                    [x, y + 1, z],
+                ]
+            },
+            4 => [[x, y, z], [x, y + 1, z], [x + 1, y + 1, z], [x + 1, y, z]],
+            5 => {
+                [
+                    [x + 1, y, z + 1],
+                    [x + 1, y + 1, z + 1],
+                    [x, y + 1, z + 1],
+                    [x, y, z + 1],
+                ]
+            },
+            _ => panic!("build_target_hightlight: incorrect side index"),
+        };
+
+        let base = vertices.len() as u32;
+
+        let (change_axis, change_amount) = match side {
+            0 => (0, -ELEVATION),
+            1 => (0, ELEVATION),
+            2 => (1, -ELEVATION),
+            3 => (1, ELEVATION),
+            4 => (2, -ELEVATION),
+            5 => (2, ELEVATION),
+            _ => unreachable!(),
+        };
+
+        let positions = positions.map(|a| {
+            let mut result = a.map(|i| i as f32);
+            result[change_axis] += change_amount;
+            result
+        });
+
+        vertices.push(Vertex {
+            chunk: chunk.into(),
+            position: positions[0],
+            texture_index: TEXTURE_INDEX,
+            texture_position: [0.0, 0.0],
+        });
+
+        vertices.push(Vertex {
+            chunk: chunk.into(),
+            position: positions[1],
+            texture_index: TEXTURE_INDEX,
+            texture_position: [1.0, 0.0],
+        });
+
+        vertices.push(Vertex {
+            chunk: chunk.into(),
+            position: positions[2],
+            texture_index: TEXTURE_INDEX,
+            texture_position: [1.0, 1.0],
+        });
+
+        vertices.push(Vertex {
+            chunk: chunk.into(),
+            position: positions[3],
+            texture_index: TEXTURE_INDEX,
+            texture_position: [0.0, 1.0],
+        });
+
+        indices.push(base);
+        indices.push(base + 1);
+        indices.push(base + 3);
+
+        indices.push(base + 2);
+        indices.push(base + 3);
+        indices.push(base + 1);
+    }
+
     fn add_side(
         chunk: Vec3<i32>,
         vertices: &mut Vec<Vertex>,
