@@ -14,6 +14,7 @@ use crate::{
             Blocks,
         },
         block_class::model::{
+            Cube,
             CullMask,
             CullMaskSides,
             ModelBlockClassComponent,
@@ -22,6 +23,7 @@ use crate::{
     entity::{
         actor::Actor,
         block::{
+            Block,
             Neighbor,
             BLOCKS_IN_CHUNK,
         },
@@ -221,6 +223,11 @@ pub struct RenderSystem<'a> {
     projection: Projection,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+    render_target_highlight: bool,
+    target_highlight_vertices: Vec<Vertex>,
+    target_highlight_indices: Vec<u32>,
+    target_highlight_vertex_buffer: wgpu::Buffer,
+    target_highlight_index_buffer: wgpu::Buffer,
 }
 
 impl<'a> RenderSystem<'a> {
@@ -298,13 +305,13 @@ impl<'a> RenderSystem<'a> {
                             view_dimension: wgpu::TextureViewDimension::D2,
                             multisampled: false,
                         },
-                        count: NonZeroU32::new(2),
+                        count: NonZeroU32::new(files.len() as u32),
                     },
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
                         visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: NonZeroU32::new(2),
+                        count: NonZeroU32::new(files.len() as u32),
                     },
                 ],
             });
@@ -319,7 +326,9 @@ impl<'a> RenderSystem<'a> {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::SamplerArray(&[&sampler, &sampler]),
+                    resource: wgpu::BindingResource::SamplerArray(
+                        &files.iter().map(|_| &sampler).collect::<Vec<_>>(),
+                    ),
                 },
             ],
             layout: &texture_bind_group_layout,
@@ -383,7 +392,7 @@ impl<'a> RenderSystem<'a> {
             Self::load_block_textures(
                 &render_handle.device,
                 &render_handle.queue,
-                &["grass.png", "dirt.png"],
+                &["highlight.png", "grass.png", "dirt.png"],
             )
             .await;
 
@@ -471,7 +480,7 @@ impl<'a> RenderSystem<'a> {
                         entry_point: "fs_main",
                         targets: &[Some(wgpu::ColorTargetState {
                             format: config.format,
-                            blend: Some(wgpu::BlendState::REPLACE),
+                            blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                             write_mask: wgpu::ColorWrites::ALL,
                         })],
                     }),
@@ -517,6 +526,23 @@ impl<'a> RenderSystem<'a> {
 
         let depth_texture_view = Self::build_depth_texture_view(&render_handle.device, &config);
 
+        // Target block hightlighting
+        let target_highlight_vertex_buffer =
+            render_handle.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Vertex Buffer"),
+                size: 4 * Vertex::size(),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+
+        let target_highlight_index_buffer =
+            render_handle.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Index Buffer"),
+                size: 6 * 4,
+                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+
         Self {
             render_handle,
             config,
@@ -534,6 +560,11 @@ impl<'a> RenderSystem<'a> {
             camera_uniform,
             camera_buffer,
             camera_bind_group,
+            render_target_highlight: false,
+            target_highlight_vertices: Vec::with_capacity(4),
+            target_highlight_indices: Vec::with_capacity(6),
+            target_highlight_vertex_buffer,
+            target_highlight_index_buffer,
         }
     }
 
@@ -666,6 +697,37 @@ impl<'a> RenderSystem<'a> {
         self.update_chunk_buffer = true;
     }
 
+    pub fn build_target_highlight(&mut self, target: Option<(Chunk, Block, usize)>) {
+        if let Some((chunk, block, side)) = target {
+            self.target_highlight_vertices.clear();
+            self.target_highlight_indices.clear();
+
+            Cube::add_side_highlighting(
+                chunk.position,
+                &mut self.target_highlight_vertices,
+                &mut self.target_highlight_indices,
+                block.to_coords(),
+                side,
+            );
+
+            self.render_handle.queue.write_buffer(
+                &self.target_highlight_vertex_buffer,
+                0,
+                bytemuck::cast_slice(&self.target_highlight_vertices),
+            );
+
+            self.render_handle.queue.write_buffer(
+                &self.target_highlight_index_buffer,
+                0,
+                bytemuck::cast_slice(&self.target_highlight_indices),
+            );
+
+            self.render_target_highlight = true;
+        } else {
+            self.render_target_highlight = false;
+        }
+    }
+
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         if self.update_chunk_buffer {
             let mut chunk_info = Vec::with_capacity(self.chunk_buffer_shards.len());
@@ -768,9 +830,9 @@ impl<'a> RenderSystem<'a> {
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.0,
-                        g: 0.0,
-                        b: 0.0,
+                        r: 0.5,
+                        g: 0.6,
+                        b: 0.7,
                         a: 0.0,
                     }),
                     store: true,
@@ -793,11 +855,19 @@ impl<'a> RenderSystem<'a> {
         render_pass.set_index_buffer(self.prepared_index_buffer.slice(..), INDEX_FORMAT);
         render_pass.draw_indexed(0 .. self.num_indices, 0, 0 .. 1);
 
+        if self.render_target_highlight {
+            render_pass.set_vertex_buffer(0, self.target_highlight_vertex_buffer.slice(..));
+            render_pass
+                .set_index_buffer(self.target_highlight_index_buffer.slice(..), INDEX_FORMAT);
+            render_pass.draw_indexed(0 .. 6, 0, 0 .. 1);
+        }
+
         drop(render_pass);
 
         self.render_handle
             .queue
             .submit(iter::once(encoder.finish()));
+
         output.present();
 
         Ok(())
