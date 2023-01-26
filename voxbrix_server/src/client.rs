@@ -5,8 +5,9 @@ use crate::{
     },
     server::ServerEvent,
     storage::{
-        player::Player as PlayerStorage,
-        AsKey,
+        player::PlayerProfile,
+        Store,
+        StoreSized,
     },
     Local,
     Shared,
@@ -202,15 +203,15 @@ pub async fn run(
                     .expect("database table open");
 
                 let player_id = username_table
-                    .get(username.as_bytes())
+                    .get(username.as_str())
                     .expect("database read")
-                    .and_then(|bytes| Player::unpack(&bytes.value()).ok())
+                    .and_then(|bytes| bytes.value().unstore_sized().ok())
                     .ok_or(LoginFailure::IncorrectCredentials)?;
 
                 let player = player_table
-                    .get(&player_id.to_key())
+                    .get(player_id.store_sized())
                     .expect("database read")
-                    .and_then(|bytes| PlayerStorage::unpack(&bytes.value()).ok())
+                    .and_then(|bytes| bytes.value().unstore().ok())
                     .ok_or(LoginFailure::IncorrectCredentials)?;
 
                 let public_key =
@@ -267,6 +268,7 @@ pub async fn run(
                 })?;
 
             let player_res = blocking::unblock(move || {
+                let mut buffer = Vec::new();
                 let db_write = shared.database.begin_write().expect("database write");
                 let player = {
                     let mut username_table = db_write
@@ -274,7 +276,7 @@ pub async fn run(
                         .expect("database table open");
 
                     if username_table
-                        .get(username.as_bytes())
+                        .get(username.as_str())
                         .expect("database read")
                         .is_some()
                     {
@@ -291,24 +293,24 @@ pub async fn run(
                         .next_back()
                         // TODO wrapping?
                         .map(|(bytes, _)| {
-                            let player = Player::read_key(bytes.value());
+                            let player = bytes.value().unstore_sized().unwrap();
                             // TODO: some kind of wrapping?
                             Player(player.0.checked_add(1).unwrap())
                         })
                         .unwrap_or(Player(0));
 
                     username_table
-                        .insert(username.as_bytes(), &player.pack_to_vec())
+                        .insert(username.as_str(), player.store_sized())
                         .expect("database write");
 
                     player_table
                         .insert(
-                            &player.to_key(),
-                            &PlayerStorage {
+                            player.store_sized(),
+                            PlayerProfile {
                                 username,
                                 public_key,
                             }
-                            .pack_to_vec(),
+                            .store(&mut buffer),
                         )
                         .expect("database write");
 

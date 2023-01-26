@@ -13,10 +13,12 @@ futures-lite = "1.12"
 async-io = "1.12"
 voxbrix_protocol = { path = "../voxbrix_protocol", features = ["single", "server"] }
 voxbrix_common = { path = "../voxbrix_common" }
-redb = "0.11"
+redb = "0.12"
 flume = { version = "0.10", default-features = false, features = ["async"] }
 serde = "1.0"
 serde-big-array = "0.4"
+postcard = { version = "1.0", default-features = false, features = ["use-std"] }
+lz4_flex = { version = "0.9", default-features = false, features = ["checked-decode"] }
 local_channel = { path = "../local_channel" }
 k256 = { version = "0.11.6", features = ["ecdsa"] }
 anyhow = "1.0"

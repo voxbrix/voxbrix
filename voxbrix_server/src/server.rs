@@ -37,8 +37,9 @@ use crate::{
         player::Player,
     },
     storage::{
-        AsKey,
         StorageThread,
+        Store,
+        StoreSized,
     },
     system::chunk_ticket::ChunkTicketSystem,
     Local,
@@ -156,7 +157,7 @@ pub async fn run(
                 cts.clear();
                 cts.actor_tickets(&ctac);
                 cts.apply(&mut scc, &mut cbc, &mut ccc, |chunk| {
-                    let chunk_key = chunk.to_key();
+                    let chunk_key = chunk.store_sized();
 
                     let block_classes = {
                         let db_read = shared.database.begin_read().unwrap();
@@ -166,7 +167,7 @@ pub async fn run(
                         table
                             .get(&chunk_key)
                             .unwrap()
-                            .and_then(|bytes| Blocks::unpack(&bytes.value()).ok())
+                            .and_then(|bytes| bytes.value().unstore().ok())
                     }
                     .unwrap_or_else(|| {
                         let block_classes = if chunk.position[2] < -1 {
@@ -175,11 +176,12 @@ pub async fn run(
                             Blocks::new(vec![BlockClass(0); BLOCKS_IN_CHUNK])
                         };
 
+                        let mut buf = Vec::new();
                         let db_write = shared.database.begin_write().unwrap();
                         {
                             let mut table = db_write.open_table(BLOCK_CLASS_TABLE).unwrap();
                             table
-                                .insert(&chunk_key, block_classes.pack_to_vec().as_slice())
+                                .insert(&chunk_key, block_classes.store(&mut buf))
                                 .expect("server_loop: database write");
                         }
                         db_write.commit().unwrap();
@@ -345,10 +347,8 @@ pub async fn run(
                                         let mut table =
                                             db_write.open_table(BLOCK_CLASS_TABLE).unwrap();
 
-                                        blocks_cache.pack(buf);
-
                                         table
-                                            .insert(&chunk.to_key(), buf.as_slice())
+                                            .insert(chunk.store_sized(), blocks_cache.store(buf))
                                             .expect("server_loop: database write");
                                     }
                                     db_write.commit().unwrap();
