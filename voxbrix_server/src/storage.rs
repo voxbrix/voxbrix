@@ -1,17 +1,15 @@
 use flume::Sender;
-use std::thread;
-
-pub trait AsKey<const KEY_LENGTH: usize> {
-    const KEY_LENGTH: usize = KEY_LENGTH;
-
-    fn write_key(&self, buf: &mut [u8]);
-    fn read_key<B>(buf: B) -> Self
-    where
-        Self: Sized,
-        B: AsRef<[u8]>;
-    fn to_key(self) -> [u8; KEY_LENGTH];
-    fn from_key(from: [u8; KEY_LENGTH]) -> Self;
-}
+use lz4_flex::block as lz4;
+use postcard::Error;
+use serde::{
+    de::DeserializeOwned,
+    Serialize,
+};
+use std::{
+    marker::PhantomData,
+    mem,
+    thread,
+};
 
 pub struct StorageThread {
     tx: Sender<Box<dyn FnMut(&mut Vec<u8>) + Send>>,
@@ -39,20 +37,191 @@ impl StorageThread {
     }
 }
 
+#[derive(Debug)]
+pub struct UnstoreError;
+
+#[derive(Debug)]
+pub struct DataSized<T, const SIZE: usize> {
+    kind: PhantomData<T>,
+    pub data: [u8; SIZE],
+}
+
+impl<T, const SIZE: usize> DataSized<T, SIZE> {
+    pub fn new(data: [u8; SIZE]) -> Self {
+        DataSized {
+            kind: PhantomData::<T>,
+            data,
+        }
+    }
+}
+
+impl<T, const SIZE: usize> DataSized<T, SIZE>
+where
+    T: StoreSized<SIZE>,
+{
+    pub fn unstore_sized(self) -> Result<T, UnstoreError> {
+        T::unstore_sized(self)
+    }
+}
+
+pub trait StoreSized<const SIZE: usize> {
+    fn store_sized(&self) -> DataSized<Self, SIZE>
+    where
+        Self: Sized;
+    fn unstore_sized(stored: DataSized<Self, SIZE>) -> Result<Self, UnstoreError>
+    where
+        Self: Sized;
+}
+
+#[derive(Debug)]
+pub struct Data<'a, T> {
+    kind: PhantomData<T>,
+    pub data: &'a [u8],
+}
+
+const COMPRESS_LENGTH: usize = 100;
+
+impl<'a, T> Data<'a, T> {
+    pub fn new(data: &'a [u8]) -> Self {
+        Self {
+            kind: PhantomData::<T>,
+            data,
+        }
+    }
+}
+
+impl<'a, T> Data<'a, T>
+where
+    T: Store,
+{
+    pub fn unstore(self) -> Result<T, UnstoreError> {
+        T::unstore(self)
+    }
+}
+
+pub trait Store {
+    fn store<'a>(&'_ self, buf: &'a mut Vec<u8>) -> Data<'a, Self>
+    where
+        Self: Sized;
+    fn unstore(stored: Data<Self>) -> Result<Self, UnstoreError>
+    where
+        Self: Sized;
+}
+
+pub trait StoreDefault {}
+
+// TODO fix if Write and Read gets implemented for the postcard
+impl<T> Store for T
+where
+    T: Serialize + DeserializeOwned + StoreDefault,
+{
+    fn store<'a>(&'_ self, buf: &'a mut Vec<u8>) -> Data<'a, Self> {
+        buf.clear();
+        match postcard::to_slice(self, buf.as_mut_slice()) {
+            Ok(_) => {},
+            Err(Error::SerializeBufferFull) => {
+                let mut new_buf = postcard::to_allocvec(self).unwrap();
+
+                mem::swap(&mut new_buf, buf);
+            },
+            Err(err) => panic!("serialization error: {:?}", err),
+        }
+
+        if buf.len() > COMPRESS_LENGTH {
+            // 1 is compression flag, 4 is uncompressed size
+            let max_output_size = 5 + lz4::get_maximum_output_size(buf.len());
+            let mut compressed = Vec::with_capacity(max_output_size.max(buf.capacity()));
+            compressed.resize(max_output_size, 0);
+            compressed[0] = 1;
+            compressed[1 .. 5].copy_from_slice(&(buf.len() as u32).to_le_bytes());
+            let len = lz4::compress_into(&buf, &mut compressed[5 ..]).unwrap();
+            compressed.truncate(5 + len);
+            mem::swap(buf, &mut compressed);
+        } else {
+            buf.insert(0, 0);
+        }
+
+        Data {
+            kind: PhantomData::<T>,
+            data: buf.as_slice(),
+        }
+    }
+
+    fn unstore(stored: Data<T>) -> Result<Self, UnstoreError>
+    where
+        Self: Sized,
+    {
+        let buf = stored.data.as_ref();
+
+        match buf.get(0) {
+            Some(0) => Ok(postcard::from_bytes::<Self>(&buf[1 ..]).map_err(|_| UnstoreError)?),
+            Some(1) => {
+                let size = u32::from_le_bytes(buf[1 .. 5].try_into().unwrap());
+
+                let decompressed =
+                    lz4::decompress(&buf[5 ..], size as usize).map_err(|_| UnstoreError)?;
+
+                Ok(postcard::from_bytes::<Self>(&decompressed).map_err(|_| UnstoreError)?)
+            },
+            _ => Err(UnstoreError),
+        }
+    }
+}
+
 pub mod player {
+    use crate::storage::{
+        Data,
+        StoreDefault,
+    };
+    use redb::{
+        RedbValue,
+        TypeName,
+    };
     use serde::{
         Deserialize,
         Serialize,
     };
     use serde_big_array::BigArray;
-    use voxbrix_common::pack::PackDefault;
 
-    #[derive(Serialize, Deserialize)]
-    pub struct Player {
+    #[derive(Serialize, Deserialize, Debug)]
+    pub struct PlayerProfile {
         pub username: String,
         #[serde(with = "BigArray")]
         pub public_key: [u8; 33],
     }
 
-    impl PackDefault for Player {}
+    impl StoreDefault for PlayerProfile {}
+
+    impl RedbValue for Data<'_, PlayerProfile> {
+        type AsBytes<'a> = &'a [u8]
+        where
+            Self: 'a;
+        type SelfType<'a> = Data<'a, PlayerProfile>
+        where
+            Self: 'a;
+
+        const ALIGNMENT: usize = 1usize;
+
+        fn fixed_width() -> Option<usize> {
+            None
+        }
+
+        fn from_bytes<'a>(data: &'a [u8]) -> Self::SelfType<'a>
+        where
+            Self: 'a,
+        {
+            Data::new(data)
+        }
+
+        fn as_bytes<'a, 'b: 'a>(value: &'a Self::SelfType<'b>) -> Self::AsBytes<'a>
+        where
+            Self: 'a + 'b,
+        {
+            value.data
+        }
+
+        fn type_name() -> TypeName {
+            TypeName::new("PlayerProfile")
+        }
+    }
 }
