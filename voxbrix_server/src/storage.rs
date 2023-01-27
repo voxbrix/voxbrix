@@ -74,18 +74,40 @@ pub trait StoreSized<const SIZE: usize> {
 }
 
 #[derive(Debug)]
+pub enum DataContainer<'a> {
+    Shared(&'a [u8]),
+    Owned(Vec<u8>),
+}
+
+impl<'a> AsRef<[u8]> for DataContainer<'a> {
+    fn as_ref(&self) -> &[u8] {
+        match self {
+            Self::Shared(r) => r,
+            Self::Owned(d) => d.as_slice(),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct Data<'a, T> {
     kind: PhantomData<T>,
-    pub data: &'a [u8],
+    pub data: DataContainer<'a>,
 }
 
 const COMPRESS_LENGTH: usize = 100;
 
 impl<'a, T> Data<'a, T> {
-    pub fn new(data: &'a [u8]) -> Self {
+    pub fn new_shared(data: &'a [u8]) -> Self {
         Self {
             kind: PhantomData::<T>,
-            data,
+            data: DataContainer::Shared(data),
+        }
+    }
+
+    pub fn new_owned(data: Vec<u8>) -> Self {
+        Self {
+            kind: PhantomData::<T>,
+            data: DataContainer::Owned(data),
         }
     }
 }
@@ -101,6 +123,9 @@ where
 
 pub trait Store {
     fn store<'a>(&'_ self, buf: &'a mut Vec<u8>) -> Data<'a, Self>
+    where
+        Self: Sized;
+    fn store_owned(&self) -> Data<Self>
     where
         Self: Sized;
     fn unstore(stored: Data<Self>) -> Result<Self, UnstoreError>
@@ -141,10 +166,27 @@ where
             buf.insert(0, 0);
         }
 
-        Data {
-            kind: PhantomData::<T>,
-            data: buf.as_slice(),
+        Data::new_shared(buf)
+    }
+
+    fn store_owned(&self) -> Data<Self> {
+        let mut buf = postcard::to_allocvec(&self).unwrap();
+
+        if buf.len() > COMPRESS_LENGTH {
+            // 1 is compression flag, 4 is uncompressed size
+            let max_output_size = 5 + lz4::get_maximum_output_size(buf.len());
+            let mut compressed = Vec::with_capacity(max_output_size.max(buf.capacity()));
+            compressed.resize(max_output_size, 0);
+            compressed[0] = 1;
+            compressed[1 .. 5].copy_from_slice(&(buf.len() as u32).to_le_bytes());
+            let len = lz4::compress_into(&buf, &mut compressed[5 ..]).unwrap();
+            compressed.truncate(5 + len);
+            mem::swap(&mut buf, &mut compressed);
+        } else {
+            buf.insert(0, 0);
         }
+
+        Data::new_owned(buf)
     }
 
     fn unstore(stored: Data<T>) -> Result<Self, UnstoreError>
@@ -210,14 +252,14 @@ pub mod player {
         where
             Self: 'a,
         {
-            Data::new(data)
+            Data::new_shared(data)
         }
 
         fn as_bytes<'a, 'b: 'a>(value: &'a Self::SelfType<'b>) -> Self::AsBytes<'a>
         where
             Self: 'a + 'b,
         {
-            value.data
+            value.data.as_ref()
         }
 
         fn type_name() -> TypeName {

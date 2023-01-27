@@ -176,12 +176,11 @@ pub async fn run(
                             Blocks::new(vec![BlockClass(0); BLOCKS_IN_CHUNK])
                         };
 
-                        let mut buf = Vec::new();
                         let db_write = shared.database.begin_write().unwrap();
                         {
                             let mut table = db_write.open_table(BLOCK_CLASS_TABLE).unwrap();
                             table
-                                .insert(&chunk_key, block_classes.store(&mut buf))
+                                .insert(&chunk_key, block_classes.store_owned())
                                 .expect("server_loop: database write");
                         }
                         db_write.commit().unwrap();
