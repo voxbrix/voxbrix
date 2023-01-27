@@ -268,7 +268,6 @@ pub async fn run(
                 })?;
 
             let player_res = blocking::unblock(move || {
-                let mut buffer = Vec::new();
                 let db_write = shared.database.begin_write().expect("database write");
                 let player = {
                     let mut username_table = db_write
@@ -310,7 +309,7 @@ pub async fn run(
                                 username,
                                 public_key,
                             }
-                            .store(&mut buffer),
+                            .store_owned(),
                         )
                         .expect("database write");
 

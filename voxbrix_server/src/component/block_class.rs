@@ -32,14 +32,14 @@ impl RedbValue for Data<'_, Blocks<BlockClass>> {
     where
         Self: 'a,
     {
-        Data::new(data)
+        Data::new_shared(data)
     }
 
     fn as_bytes<'a, 'b: 'a>(value: &'a Self::SelfType<'b>) -> Self::AsBytes<'a>
     where
         Self: 'a + 'b,
     {
-        value.data
+        value.data.as_ref()
     }
 
     fn type_name() -> TypeName {
