@@ -210,26 +210,6 @@ impl GameScene<'_> {
             })?;
         self.window_handle.window.set_cursor_visible(false);
 
-        let size = self.window_handle.window.inner_size();
-
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: self
-                .render_handle
-                .surface
-                .get_supported_formats(&self.render_handle.adapter)[0],
-            width: size.width,
-            height: size.height,
-            // Fifo makes SurfaceTexture::present() block
-            // which is bad for current rendering implementation
-            present_mode: wgpu::PresentMode::Mailbox,
-            alpha_mode: wgpu::CompositeAlphaMode::Auto,
-        };
-
-        self.render_handle
-            .surface
-            .configure(&self.render_handle.device, &config);
-
         let mut render_system = RenderSystem::new(
             self.render_handle,
             self.window_handle.window.inner_size(),
