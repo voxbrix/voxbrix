@@ -372,6 +372,13 @@ impl<'a> RenderSystem<'a> {
         gpac: &GlobalPositionActorComponent,
         oac: &OrientationActorComponent,
     ) -> RenderSystem<'a> {
+        let present_mode = render_handle
+            .surface
+            .get_supported_present_modes(&render_handle.adapter)
+            .into_iter()
+            .find(|pm| *pm == wgpu::PresentMode::Mailbox)
+            .unwrap_or(wgpu::PresentMode::Immediate);
+
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: render_handle
@@ -380,7 +387,7 @@ impl<'a> RenderSystem<'a> {
             width: surface_size.width,
             height: surface_size.height,
             // Fifo makes SurfaceTexture::present() block
-            present_mode: wgpu::PresentMode::Mailbox,
+            present_mode,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
         };
 

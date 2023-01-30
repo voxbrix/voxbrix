@@ -297,6 +297,14 @@ impl MenuScene<'_> {
             .surface
             .get_supported_formats(&self.render_handle.adapter)[0];
 
+        let present_mode = self
+            .render_handle
+            .surface
+            .get_supported_present_modes(&self.render_handle.adapter)
+            .into_iter()
+            .find(|pm| *pm == wgpu::PresentMode::Mailbox)
+            .unwrap_or(wgpu::PresentMode::Immediate);
+
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
@@ -304,7 +312,7 @@ impl MenuScene<'_> {
             height: physical_size.height,
             // Fifo makes SurfaceTexture::present() block
             // which is bad for current rendering implementation
-            present_mode: wgpu::PresentMode::Mailbox,
+            present_mode,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
         };
 
