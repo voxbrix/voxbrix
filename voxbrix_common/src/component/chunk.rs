@@ -19,11 +19,11 @@ impl<T> ChunkComponent<T> {
     }
 
     pub fn get(&self, chunk: &Chunk) -> Option<&T> {
-        self.chunks.get(&chunk)
+        self.chunks.get(chunk)
     }
 
     pub fn get_mut(&mut self, chunk: &Chunk) -> Option<&mut T> {
-        self.chunks.get_mut(&chunk)
+        self.chunks.get_mut(chunk)
     }
 
     pub fn insert(&mut self, chunk: Chunk, value: T) -> Option<T> {

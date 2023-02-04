@@ -78,7 +78,7 @@ impl Block {
 
             if block < 0 {
                 chunk_offset -= 1;
-                block = BLOCKS_IN_CHUNK_EDGE_I32 + block;
+                block += BLOCKS_IN_CHUNK_EDGE_I32;
             }
 
             (chunk_offset, block)

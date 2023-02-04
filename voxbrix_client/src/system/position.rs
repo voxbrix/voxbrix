@@ -233,8 +233,7 @@ impl PositionSystem {
                 if finish_position
                     .as_ref()
                     .iter()
-                    .find(|dist| dist.abs() > BLOCKS_IN_CHUNK_EDGE as f32)
-                    .is_some()
+                    .any(|dist| dist.abs() > BLOCKS_IN_CHUNK_EDGE as f32)
                 {
                     let chunk_diff_vec =
                         finish_position.map(|f| f as i32 / BLOCKS_IN_CHUNK_EDGE as i32);

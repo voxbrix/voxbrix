@@ -82,11 +82,11 @@ impl<T> BlockComponent<T> {
     }
 
     pub fn get_chunk(&self, chunk: &Chunk) -> Option<&Blocks<T>> {
-        self.chunks.get(&chunk)
+        self.chunks.get(chunk)
     }
 
     pub fn get_mut_chunk(&mut self, chunk: &Chunk) -> Option<&mut Blocks<T>> {
-        self.chunks.get_mut(&chunk)
+        self.chunks.get_mut(chunk)
     }
 
     pub fn insert_chunk(&mut self, chunk: Chunk, blocks: Blocks<T>) {

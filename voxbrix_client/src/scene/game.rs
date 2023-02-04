@@ -44,17 +44,22 @@ use crate::{
         WindowHandle,
     },
     RenderHandle,
+    CONNECTION_TIMEOUT,
 };
 use anyhow::Result;
 use async_executor::LocalExecutor;
 use async_io::Timer;
 use futures_lite::{
-    stream::StreamExt,
     future::FutureExt,
+    stream::StreamExt,
 };
-use std::time::{
-    Duration,
-    Instant,
+use log::error;
+use std::{
+    io::ErrorKind as StdIoErrorKind,
+    time::{
+        Duration,
+        Instant,
+    },
 };
 use voxbrix_common::{
     math::Vec3,
@@ -68,8 +73,8 @@ use voxbrix_common::{
     ChunkData,
 };
 use voxbrix_protocol::client::{
-    Receiver,
     Error as ClientError,
+    Receiver,
     Sender,
 };
 use winit::event::{
@@ -77,9 +82,6 @@ use winit::event::{
     ElementState,
     MouseButton,
 };
-use crate::CONNECTION_TIMEOUT;
-use std::io::ErrorKind as StdIoErrorKind;
-use log::error;
 
 pub enum Event {
     Process,
@@ -133,7 +135,6 @@ impl GameScene<'_> {
             })
             .detach();
 
-
         let event_tx_network = event_tx.clone();
 
         self.rt
@@ -171,13 +172,16 @@ impl GameScene<'_> {
                             break;
                         },
                     };
-                    
-                    let message = match ClientAccept::unpack(&data) {
+
+                    let message = match ClientAccept::unpack(data) {
                         Ok(m) => m,
                         Err(_) => continue,
                     };
 
-                    if let Err(_) = event_tx_network.send(Event::NetworkInput(Ok(message))) {
+                    if event_tx_network
+                        .send(Event::NetworkInput(Ok(message)))
+                        .is_err()
+                    {
                         break;
                     };
                 }
@@ -322,7 +326,9 @@ impl GameScene<'_> {
                                     input,
                                     is_synthetic: _,
                                 } => {
-                                    if let Some(winit::event::VirtualKeyCode::Escape) = input.virtual_keycode {
+                                    if let Some(winit::event::VirtualKeyCode::Escape) =
+                                        input.virtual_keycode
+                                    {
                                         break;
                                     }
                                     direct_control_system.process_keyboard(&input);
@@ -338,45 +344,47 @@ impl GameScene<'_> {
                                                 let position = gpac.get(&player_actor).unwrap();
                                                 let orientation = oac.get(&player_actor).unwrap();
 
-                                                PositionSystem::get_target_block(
-                                                    position,
-                                                    orientation,
-                                                    |chunk, block| {
-                                                        cbc.get_chunk(&chunk)
-                                                            .map(|blocks| {
-                                                                blocks.get(block).unwrap()
-                                                                    == &BlockClass(1)
-                                                            })
-                                                            .unwrap_or(false)
-                                                    },
-                                                )
-                                                .and_then(|(chunk, block, _side)| {
-                                                    let _ = reliable_tx.send(ServerAccept::AlterBlock {
-                                                        chunk,
-                                                        block,
-                                                        block_class: BlockClass(0),
-                                                    });
-
-                                                    Some(())
-                                                });
+                                                if let Some((chunk, block, _side)) =
+                                                    PositionSystem::get_target_block(
+                                                        position,
+                                                        orientation,
+                                                        |chunk, block| {
+                                                            cbc.get_chunk(&chunk)
+                                                                .map(|blocks| {
+                                                                    blocks.get(block).unwrap()
+                                                                        == &BlockClass(1)
+                                                                })
+                                                                .unwrap_or(false)
+                                                        },
+                                                    )
+                                                {
+                                                    let _ = reliable_tx.send(
+                                                        ServerAccept::AlterBlock {
+                                                            chunk,
+                                                            block,
+                                                            block_class: BlockClass(0),
+                                                        },
+                                                    );
+                                                }
                                             },
                                             MouseButton::Right => {
                                                 let position = gpac.get(&player_actor).unwrap();
                                                 let orientation = oac.get(&player_actor).unwrap();
 
-                                                PositionSystem::get_target_block(
-                                                    position,
-                                                    orientation,
-                                                    |chunk, block| {
-                                                        cbc.get_chunk(&chunk)
-                                                            .map(|blocks| {
-                                                                blocks.get(block).unwrap()
-                                                                    == &BlockClass(1)
-                                                            })
-                                                            .unwrap_or(false)
-                                                    },
-                                                )
-                                                .and_then(|(chunk, block, side)| {
+                                                if let Some((chunk, block, side)) =
+                                                    PositionSystem::get_target_block(
+                                                        position,
+                                                        orientation,
+                                                        |chunk, block| {
+                                                            cbc.get_chunk(&chunk)
+                                                                .map(|blocks| {
+                                                                    blocks.get(block).unwrap()
+                                                                        == &BlockClass(1)
+                                                                })
+                                                                .unwrap_or(false)
+                                                        },
+                                                    )
+                                                {
                                                     let axis = side / 2;
                                                     let direction = match side % 2 {
                                                         0 => -1,
@@ -389,14 +397,14 @@ impl GameScene<'_> {
                                                     let (chunk, block) =
                                                         Block::from_chunk_offset(chunk, block);
 
-                                                    let _ = reliable_tx.send(ServerAccept::AlterBlock {
-                                                        chunk,
-                                                        block,
-                                                        block_class: BlockClass(1),
-                                                    });
-
-                                                    Some(())
-                                                });
+                                                    let _ = reliable_tx.send(
+                                                        ServerAccept::AlterBlock {
+                                                            chunk,
+                                                            block,
+                                                            block_class: BlockClass(1),
+                                                        },
+                                                    );
+                                                }
                                             },
                                             _ => {},
                                         }
@@ -411,12 +419,12 @@ impl GameScene<'_> {
                     let message = match result {
                         Ok(m) => m,
                         Err(err) => {
-                            //TODO handle properly, pass error to menu to display there
+                            // TODO handle properly, pass error to menu to display there
                             error!("game::run: connection error: {:?}", err);
                             return Ok(SceneSwitch::Menu);
                         },
                     };
-                    
+
                     match message {
                         ClientAccept::ChunkData(ChunkData {
                             chunk,

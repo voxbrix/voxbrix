@@ -150,7 +150,7 @@ async fn stream_send_ack(
         .map_err(|_| Error::ServerWasDropped)?;
 
     #[cfg(feature = "single")]
-    result_rx.await.ok_or_else(|| Error::ServerWasDropped)??;
+    result_rx.await.ok_or(Error::ServerWasDropped)??;
     #[cfg(feature = "multi")]
     result_rx.await.map_err(|_| Error::ServerWasDropped)??;
 
@@ -204,7 +204,7 @@ impl StreamUnreliableSender {
                     cursor.write_varint(self.unreliable_split_id).unwrap();
                     cursor.write_varint(len_or_count).unwrap();
                 }
-                cursor.write_all(&data).unwrap();
+                cursor.write_all(data).unwrap();
             });
 
         let (result_tx, result_rx) = new_oneshot();
@@ -223,7 +223,7 @@ impl StreamUnreliableSender {
             .map_err(|_| Error::ServerWasDropped)?;
 
         #[cfg(feature = "single")]
-        result_rx.await.ok_or_else(|| Error::ServerWasDropped)??;
+        result_rx.await.ok_or(Error::ServerWasDropped)??;
         #[cfg(feature = "multi")]
         result_rx.await.map_err(|_| Error::ServerWasDropped)??;
 
@@ -303,7 +303,7 @@ impl StreamReliableSender {
                 .map_err(|_| Error::ServerWasDropped)?;
 
             #[cfg(feature = "single")]
-            result_rx.await.ok_or_else(|| Error::ServerWasDropped)??;
+            result_rx.await.ok_or(Error::ServerWasDropped)??;
             #[cfg(feature = "multi")]
             result_rx.await.map_err(|_| Error::ServerWasDropped)??;
 
@@ -383,7 +383,7 @@ impl StreamReceiver {
                 .transport_receiver
                 .recv()
                 .await
-                .ok_or_else(|| Error::ServerWasDropped)?;
+                .ok_or(Error::ServerWasDropped)?;
 
             #[cfg(feature = "multi")]
             let InBuffer {
@@ -440,12 +440,12 @@ impl StreamReceiver {
 
                     match split_buffer.buffer.get_mut(&0) {
                         Some((current_length, shard)) => {
-                            (&mut shard[.. packet.len()]).copy_from_slice(&packet);
+                            shard[.. packet.len()].copy_from_slice(packet);
                             *current_length = packet.len();
                         },
                         None => {
                             let mut new_shard = [0u8; MAX_DATA_SIZE];
-                            (&mut new_shard[.. packet.len()]).copy_from_slice(&packet);
+                            new_shard[.. packet.len()].copy_from_slice(packet);
                             split_buffer.buffer.insert(0, (packet.len(), new_shard));
                         },
                     }
@@ -472,12 +472,12 @@ impl StreamReceiver {
 
                     match split_buffer.buffer.get_mut(&count) {
                         Some((current_length, shard)) => {
-                            (&mut shard[.. packet.len()]).copy_from_slice(&packet);
+                            shard[.. packet.len()].copy_from_slice(packet);
                             *current_length = packet.len();
                         },
                         None => {
                             let mut new_shard = [0u8; MAX_DATA_SIZE];
-                            (&mut new_shard[.. packet.len()]).copy_from_slice(&packet);
+                            new_shard[.. packet.len()].copy_from_slice(packet);
                             split_buffer.buffer.insert(count, (packet.len(), new_shard));
                         },
                     }
@@ -528,10 +528,7 @@ impl StreamReceiver {
 
                             self.split_channel = None;
 
-                            return Ok((
-                                channel,
-                                mem::replace(&mut self.split_buffer, Vec::new()).into(),
-                            ));
+                            return Ok((channel, mem::take(&mut self.split_buffer).into()));
                         }
                     }
                 },
@@ -638,13 +635,8 @@ impl Clients {
             self.curr_clients -= 1;
             self.free_indices.push_back(idx);
 
-            loop {
-                match self.clients.last() {
-                    Some(None) => {
-                        self.clients.pop();
-                    },
-                    _ => break,
-                }
+            while let Some(None) = self.clients.last() {
+                self.clients.pop();
             }
         }
 
@@ -730,7 +722,10 @@ impl Server {
                     let sender: usize = seek_read!(read_cursor.read_varint(), "sender");
 
                     let mut packet_type = Type::UNDEFINED;
-                    seek_read!(read_cursor.read(slice::from_mut(&mut packet_type)), "type");
+                    seek_read!(
+                        read_cursor.read_exact(slice::from_mut(&mut packet_type)),
+                        "type"
+                    );
 
                     match packet_type {
                         Type::CONNECT => {
@@ -786,7 +781,11 @@ impl Server {
                             write_cursor.write_all(&self_key).unwrap();
                             write_cursor.write_varint(id).unwrap();
 
-                            if let Err(_) = self.transport.send_to(write_cursor.slice(), addr).await
+                            if self
+                                .transport
+                                .send_to(write_cursor.slice(), addr)
+                                .await
+                                .is_err()
                             {
                                 self.clients.remove(id);
                                 continue;

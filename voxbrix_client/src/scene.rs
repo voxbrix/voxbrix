@@ -30,7 +30,7 @@ impl MainScene<'_> {
         let mut next_loop = Some(SceneSwitch::Menu);
 
         loop {
-            match next_loop.take().unwrap_or_else(|| SceneSwitch::Exit) {
+            match next_loop.take().unwrap_or(SceneSwitch::Exit) {
                 SceneSwitch::Menu => {
                     next_loop = Some(
                         MenuScene {
@@ -43,14 +43,15 @@ impl MainScene<'_> {
                     );
                 },
                 SceneSwitch::Game { parameters } => {
-                    next_loop = Some(GameScene {
+                    next_loop = Some(
+                        GameScene {
                             rt: self.rt,
                             window_handle: self.window_handle,
                             render_handle: self.render_handle,
                             parameters,
                         }
                         .run()
-                        .await?
+                        .await?,
                     );
                 },
                 SceneSwitch::Exit => return Ok(()),

@@ -150,7 +150,7 @@ pub async fn run(
             Err(Error::Timeout)
         })
         .await
-        .and_then(|(_channel, data)| InitRequest::unpack(&data).error(Error::UnexpectedMessage))?;
+        .and_then(|(_channel, data)| InitRequest::unpack(data).error(Error::UnexpectedMessage))?;
 
     // TODO: read from config
     let private_key = SigningKey::from_bytes(&[3; 32]).unwrap();
@@ -188,7 +188,7 @@ pub async fn run(
                 })
                 .await
                 .and_then(|(_channel, data)| {
-                    LoginRequest::unpack(&data).error(Error::UnexpectedMessage)
+                    LoginRequest::unpack(data).error(Error::UnexpectedMessage)
                 })?;
 
             let player_res = blocking::unblock(move || {
@@ -237,7 +237,7 @@ pub async fn run(
                 Ok(p) => p,
                 Err(failure) => {
                     LoginResult::Failure(failure).pack(&mut buffer);
-                    async {
+                    let _ = async {
                         reliable_tx
                             .send_reliable(BASE_CHANNEL, &buffer)
                             .await
@@ -264,7 +264,7 @@ pub async fn run(
                 })
                 .await
                 .and_then(|(_channel, data)| {
-                    RegisterRequest::unpack(&data).error(Error::UnexpectedMessage)
+                    RegisterRequest::unpack(data).error(Error::UnexpectedMessage)
                 })?;
 
             let player_res = blocking::unblock(move || {
@@ -325,7 +325,7 @@ pub async fn run(
                 Ok(p) => p,
                 Err(failure) => {
                     RegisterResult::Failure(failure).pack(&mut buffer);
-                    async {
+                    let _ = async {
                         reliable_tx
                             .send_reliable(BASE_CHANNEL, &buffer)
                             .await
@@ -432,7 +432,7 @@ pub async fn run(
 
     let mut events = Box::pin(
         server_rx
-            .map(|le| LoopEvent::ServerLoop(le))
+            .map(LoopEvent::ServerLoop)
             .or_ff(stream::unfold(rx, |mut rx| {
                 (async move {
                     match rx.recv().await {
@@ -449,7 +449,7 @@ pub async fn run(
                     None
                 })
             }))
-            .or_ff(self_rx.map(|le| LoopEvent::SelfEvent(le))),
+            .or_ff(self_rx.map(LoopEvent::SelfEvent)),
     );
 
     while let Some(event) = events.next().await {

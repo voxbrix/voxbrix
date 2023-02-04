@@ -159,7 +159,7 @@ where
             compressed.resize(max_output_size, 0);
             compressed[0] = 1;
             compressed[1 .. 5].copy_from_slice(&(buf.len() as u32).to_le_bytes());
-            let len = lz4::compress_into(&buf, &mut compressed[5 ..]).unwrap();
+            let len = lz4::compress_into(buf, &mut compressed[5 ..]).unwrap();
             compressed.truncate(5 + len);
             mem::swap(buf, &mut compressed);
         } else {
@@ -195,7 +195,7 @@ where
     {
         let buf = stored.data.as_ref();
 
-        match buf.get(0) {
+        match buf.first() {
             Some(0) => Ok(postcard::from_bytes::<Self>(&buf[1 ..]).map_err(|_| UnstoreError)?),
             Some(1) => {
                 let size = u32::from_le_bytes(buf[1 .. 5].try_into().unwrap());

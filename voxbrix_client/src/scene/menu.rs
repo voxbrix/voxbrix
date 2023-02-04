@@ -387,7 +387,10 @@ impl MenuScene<'_> {
                             .configure(&self.render_handle.device, &config);
                     }
 
-                    let frame = self.render_handle.surface.get_current_texture()
+                    let frame = self
+                        .render_handle
+                        .surface
+                        .get_current_texture()
                         .expect("getting texture");
 
                     let _ = menu.update(
@@ -405,9 +408,10 @@ impl MenuScene<'_> {
                         &mut debug,
                     );
 
-                    let mut encoder = self.render_handle.device.create_command_encoder(
-                        &wgpu::CommandEncoderDescriptor { label: None },
-                    );
+                    let mut encoder = self
+                        .render_handle
+                        .device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
                     let view = frame
                         .texture
@@ -508,7 +512,7 @@ impl MenuScene<'_> {
                                                 rx.recv(&mut rx_buffer).await.map_err(|_| {
                                                     "Unable to get initialization response"
                                                 })?;
-                                            InitResponse::unpack(&bytes).map_err(|_| {
+                                            InitResponse::unpack(bytes).map_err(|_| {
                                                 "Unable to unpack initialization response"
                                             })
                                         },

@@ -35,7 +35,7 @@ impl ChunkTicketSystem {
     pub fn actor_tickets(&mut self, ctac: &ChunkTicketActorComponent) {
         let iter = ctac.iter().flat_map(|(_, chunk_ticket)| {
             let ActorChunkTicket { chunk, radius } = chunk_ticket;
-            let radius = chunk.radius(*radius as i32);
+            let radius = chunk.radius(*radius);
             radius.into_iter()
         });
 
@@ -55,7 +55,7 @@ impl ChunkTicketSystem {
             .data
             .iter()
             .filter(|chunk| {
-                let is_new = scc.get(&chunk).is_none();
+                let is_new = scc.get(chunk).is_none();
                 if is_new {
                     scc.insert(**chunk, ChunkStatus::Loading);
                 }

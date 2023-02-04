@@ -55,7 +55,7 @@ impl RedbKey for DataSized<Chunk, KEY_LENGTH> {
 impl StoreSized<KEY_LENGTH> for Chunk {
     fn store_sized(&self) -> DataSized<Self, KEY_LENGTH> {
         let mut data = [0; KEY_LENGTH];
-        let position = self.position.map(|x| u32_from_i32(x));
+        let position = self.position.map(u32_from_i32);
 
         data[0 .. 4].copy_from_slice(&self.dimension.to_be_bytes());
         data[4 .. 8].copy_from_slice(&position[2].to_be_bytes());
@@ -73,7 +73,7 @@ impl StoreSized<KEY_LENGTH> for Chunk {
         ];
 
         Ok(Self {
-            position: position.map(|x| i32_from_u32(x)).into(),
+            position: position.map(i32_from_u32).into(),
             dimension: u32::from_be_bytes(from.data[0 .. 4].try_into().unwrap()),
         })
     }
