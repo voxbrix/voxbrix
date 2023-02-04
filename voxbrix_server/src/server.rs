@@ -211,7 +211,10 @@ pub async fn run(
                 cpc.insert(player, Client { tx });
                 apc.insert(player, actor);
 
-                tx_init.send(ClientEvent::AssignActor { actor });
+                if tx_init.send(ClientEvent::AssignActor { actor }).is_err() {
+                    // TODO consider removing player instantly?
+                    let _ = local.event_tx.send(ServerEvent::RemovePlayer { player });
+                }
             },
             ServerEvent::PlayerEvent {
                 player,
@@ -266,11 +269,13 @@ pub async fn run(
                                     ccc.get(&chunk)
                                 }) {
                                     if let Some(client) = cpc.get(&player) {
-                                        if let Err(_) =
-                                            client.tx.send(ClientEvent::SendDataReliable {
+                                        if client
+                                            .tx
+                                            .send(ClientEvent::SendDataReliable {
                                                 channel: BASE_CHANNEL,
                                                 data: SendData::Ref(chunk_data.clone()),
                                             })
+                                            .is_err()
                                         {
                                             let _ = local
                                                 .event_tx
@@ -291,8 +296,6 @@ pub async fn run(
                             {
                                 *block_class_ref = block_class;
 
-                                drop(block_class_ref);
-
                                 let data_buf = Rc::new(
                                     ClientAccept::AlterBlock {
                                         chunk,
@@ -312,10 +315,14 @@ pub async fn run(
                                     let client = cpc.get(player)?;
                                     Some((player, client))
                                 }) {
-                                    if let Err(_) = client.tx.send(ClientEvent::SendDataReliable {
-                                        channel: BASE_CHANNEL,
-                                        data: SendData::Ref(data_buf.clone()),
-                                    }) {
+                                    if client
+                                        .tx
+                                        .send(ClientEvent::SendDataReliable {
+                                            channel: BASE_CHANNEL,
+                                            data: SendData::Ref(data_buf.clone()),
+                                        })
+                                        .is_err()
+                                    {
                                         let _ = local
                                             .event_tx
                                             .send(ServerEvent::RemovePlayer { player: *player });
@@ -396,10 +403,14 @@ pub async fn run(
                                 None
                             }
                         }) {
-                            if let Err(_) = client.tx.send(ClientEvent::SendDataReliable {
-                                channel: BASE_CHANNEL,
-                                data: SendData::Ref(chunk_data_buf.clone()),
-                            }) {
+                            if client
+                                .tx
+                                .send(ClientEvent::SendDataReliable {
+                                    channel: BASE_CHANNEL,
+                                    data: SendData::Ref(chunk_data_buf.clone()),
+                                })
+                                .is_err()
+                            {
                                 let _ = local
                                     .event_tx
                                     .send(ServerEvent::RemovePlayer { player: *player });

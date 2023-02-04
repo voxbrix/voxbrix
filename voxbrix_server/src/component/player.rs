@@ -20,7 +20,7 @@ impl<T> PlayerComponent<T> {
     }
 
     pub fn get(&self, player: &Player) -> Option<&T> {
-        self.data.get(&player)
+        self.data.get(player)
     }
 
     pub fn insert(&mut self, player: Player, value: T) -> Option<T> {

@@ -49,13 +49,13 @@ trait AsMutSlice<T> {
     fn mut_slice(&mut self) -> &mut [T];
 }
 
-impl<'a, T> AsSlice<T> for Cursor<&[T]> {
+impl<T> AsSlice<T> for Cursor<&[T]> {
     fn slice(&self) -> &[T] {
         &self.get_ref()[.. self.position() as usize]
     }
 }
 
-impl<'a, T> AsSlice<T> for Cursor<&mut [T]> {
+impl<T> AsSlice<T> for Cursor<&mut [T]> {
     fn slice(&self) -> &[T] {
         &self.get_ref()[.. self.position() as usize]
     }
@@ -74,12 +74,14 @@ pub struct Buffer {
     stop: usize,
 }
 
-impl Buffer {
-    pub fn as_ref(&self) -> &[u8] {
+impl AsRef<[u8]> for Buffer {
+    fn as_ref(&self) -> &[u8] {
         &self.buffer[self.start .. self.stop]
     }
+}
 
-    pub fn as_mut(&mut self) -> &mut [u8] {
+impl AsMut<[u8]> for Buffer {
+    fn as_mut(&mut self) -> &mut [u8] {
         &mut self.buffer[self.start .. self.stop]
     }
 }
@@ -284,7 +286,7 @@ fn encode_in_buffer(
     let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
     let tag_finish = tag_start + TAG_SIZE;
     let encryption_start = tag_finish + NONCE_SIZE;
-    (&mut buffer[tag_finish .. encryption_start]).copy_from_slice(&nonce);
+    buffer[tag_finish .. encryption_start].copy_from_slice(&nonce);
 
     let buffer = &mut buffer[.. length];
 

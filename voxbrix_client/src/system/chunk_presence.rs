@@ -32,7 +32,7 @@ impl ChunkPresenceSystem {
             chunk: player_chunk,
             offset: _,
         } = gpc.get(player).unwrap();
-        let radius = player_chunk.radius(radius as i32);
+        let radius = player_chunk.radius(radius);
 
         scc.retain(|chunk, _| {
             let retain = radius.is_within(chunk);

@@ -128,20 +128,16 @@ impl DirectControl {
         self.rotate_horizontal = 0.0;
         self.rotate_vertical = 0.0;
 
-        if self.pitch < -SAFE_FRAC_PI_2 {
-            self.pitch = -SAFE_FRAC_PI_2;
-        } else if self.pitch > SAFE_FRAC_PI_2 {
-            self.pitch = SAFE_FRAC_PI_2;
-        }
+        self.pitch = self.pitch.clamp(-SAFE_FRAC_PI_2, SAFE_FRAC_PI_2);
 
         if self.yaw.abs() > PI_2 {
             self.yaw = self.yaw - (self.yaw / PI_2).trunc() * PI_2;
         }
 
         if self.yaw > PI {
-            self.yaw = self.yaw - PI_2;
+            self.yaw -= PI_2;
         } else if self.yaw < -PI {
-            self.yaw = self.yaw + PI_2;
+            self.yaw += PI_2;
         }
 
         *actor_orientation = Orientation::from_yaw_pitch(self.yaw, self.pitch);

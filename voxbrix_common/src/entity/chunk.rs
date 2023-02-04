@@ -19,13 +19,13 @@ impl Ord for Chunk {
                     Ordering::Equal => {
                         match self.position[1].cmp(&other.position[1]) {
                             Ordering::Equal => self.position[0].cmp(&other.position[0]),
-                            o => return o,
+                            o => o,
                         }
                     },
-                    o => return o,
+                    o => o,
                 }
             },
-            o => return o,
+            o => o,
         }
     }
 }

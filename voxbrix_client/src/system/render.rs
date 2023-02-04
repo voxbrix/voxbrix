@@ -75,10 +75,10 @@ const VERTEX_SIZE: usize = Vertex::size() as usize;
 const VERTEX_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK * 6 /*sides*/ * 4 /*vertices*/;
 const INDEX_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK * 6 /*sides*/ * 2 /*polygons*/ * 3 /*vertices*/;
 
-async fn load_block_textures<'a, T>(
+async fn load_block_textures<T>(
     base_path: PathBuf,
-    file_names: &'a [T],
-) -> Result<(Vec<RgbaImage>, HashMap<&'a T, usize>)>
+    file_names: &[T],
+) -> Result<(Vec<RgbaImage>, HashMap<&T, usize>)>
 where
     T: AsRef<Path> + Hash + Eq,
 {
@@ -86,9 +86,9 @@ where
     let mut texture_names = HashMap::with_capacity(file_names.len());
     let mut buf = Vec::with_capacity(1024);
 
-    for (index, file_name) in file_names.into_iter().enumerate() {
+    for (index, file_name) in file_names.iter().enumerate() {
         let mut file_path = base_path.clone();
-        file_path.push(&file_name);
+        file_path.push(file_name);
 
         let mut file = File::open(file_path).await?;
 
@@ -189,11 +189,11 @@ struct ChunkInfo<'a> {
 }
 
 fn slice_buffers<'a>(
-    chunk_info: &mut Vec<ChunkInfo<'a>>,
+    chunk_info: &mut [ChunkInfo<'a>],
     mut vertex_buffer: &'a mut [u8],
     mut index_buffer: &'a mut [u8],
 ) {
-    for chunk in chunk_info.into_iter() {
+    for chunk in chunk_info.iter_mut() {
         let (vertex_buffer_shard, residue) =
             vertex_buffer.split_at_mut(chunk.vertex_length * VERTEX_SIZE);
         vertex_buffer = residue;
@@ -609,36 +609,30 @@ impl<'a> RenderSystem<'a> {
 
         let blocks = cbc.get_chunk(chunk).unwrap();
 
-        let chunk_x_minus = Some(chunk).and_then(|cz| {
-            let mut chunk = cz.clone();
-            chunk.position[0] = cz.position[0].checked_sub(1)?;
+        let chunk_x_minus = Some(*chunk).and_then(|mut chunk| {
+            chunk.position[0] = chunk.position[0].checked_sub(1)?;
             cbc.get_chunk(&chunk)
         });
-        let chunk_x_plus = Some(chunk).and_then(|cz| {
-            let mut chunk = cz.clone();
-            chunk.position[0] = cz.position[0].checked_add(1)?;
-            cbc.get_chunk(&chunk)
-        });
-
-        let chunk_y_minus = Some(chunk).and_then(|cz| {
-            let mut chunk = cz.clone();
-            chunk.position[1] = cz.position[1].checked_sub(1)?;
-            cbc.get_chunk(&chunk)
-        });
-        let chunk_y_plus = Some(chunk).and_then(|cz| {
-            let mut chunk = cz.clone();
-            chunk.position[1] = cz.position[1].checked_add(1)?;
+        let chunk_x_plus = Some(*chunk).and_then(|mut chunk| {
+            chunk.position[0] = chunk.position[0].checked_add(1)?;
             cbc.get_chunk(&chunk)
         });
 
-        let chunk_z_minus = Some(chunk).and_then(|cz| {
-            let mut chunk = cz.clone();
-            chunk.position[2] = cz.position[2].checked_sub(1)?;
+        let chunk_y_minus = Some(*chunk).and_then(|mut chunk| {
+            chunk.position[1] = chunk.position[1].checked_sub(1)?;
             cbc.get_chunk(&chunk)
         });
-        let chunk_z_plus = Some(chunk).and_then(|cz| {
-            let mut chunk = cz.clone();
-            chunk.position[2] = cz.position[2].checked_add(1)?;
+        let chunk_y_plus = Some(*chunk).and_then(|mut chunk| {
+            chunk.position[1] = chunk.position[1].checked_add(1)?;
+            cbc.get_chunk(&chunk)
+        });
+
+        let chunk_z_minus = Some(*chunk).and_then(|mut chunk| {
+            chunk.position[2] = chunk.position[2].checked_sub(1)?;
+            cbc.get_chunk(&chunk)
+        });
+        let chunk_z_plus = Some(*chunk).and_then(|mut chunk| {
+            chunk.position[2] = chunk.position[2].checked_add(1)?;
             cbc.get_chunk(&chunk)
         });
 
@@ -646,7 +640,7 @@ impl<'a> RenderSystem<'a> {
             if let Some(model) = mbcc.get(*block_class) {
                 let cull_mask = neighbors_to_cull_mask(
                     &block.neighbors_in_coords(block_coords),
-                    &blocks,
+                    blocks,
                     &[
                         chunk_x_minus.as_ref(),
                         chunk_x_plus.as_ref(),
@@ -655,12 +649,12 @@ impl<'a> RenderSystem<'a> {
                         chunk_z_minus.as_ref(),
                         chunk_z_plus.as_ref(),
                     ],
-                    &mbcc,
+                    mbcc,
                 );
                 model.to_vertices(
                     &mut vertex_buffer,
                     &mut index_buffer,
-                    &chunk,
+                    chunk,
                     block_coords,
                     cull_mask,
                 );
@@ -773,7 +767,7 @@ impl<'a> RenderSystem<'a> {
                     .device
                     .create_buffer(&wgpu::BufferDescriptor {
                         label: Some("Index Buffer"),
-                        size: index_byte_size as u64,
+                        size: index_byte_size,
                         usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
                         mapped_at_creation: false,
                     });
@@ -811,7 +805,7 @@ impl<'a> RenderSystem<'a> {
                         .vertex_buffer
                         .as_mut()
                         .unwrap()
-                        .copy_from_slice(bytemuck::cast_slice(&vertex_vec));
+                        .copy_from_slice(bytemuck::cast_slice(vertex_vec));
                 });
             }
 

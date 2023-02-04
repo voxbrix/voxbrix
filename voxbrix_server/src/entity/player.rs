@@ -35,13 +35,13 @@ impl StoreSized<KEY_LENGTH> for Player {
     }
 }
 
-impl<'a> RedbValue for DataSized<Player, KEY_LENGTH> {
-    type AsBytes<'b> = &'b [u8]
+impl RedbValue for DataSized<Player, KEY_LENGTH> {
+    type AsBytes<'a> = &'a [u8]
     where
-        Self: 'b;
-    type SelfType<'b> = DataSized<Player, KEY_LENGTH>
+        Self: 'a;
+    type SelfType<'a> = DataSized<Player, KEY_LENGTH>
     where
-        Self: 'b;
+        Self: 'a;
 
     const ALIGNMENT: usize = 1usize;
 
@@ -49,16 +49,16 @@ impl<'a> RedbValue for DataSized<Player, KEY_LENGTH> {
         None
     }
 
-    fn from_bytes<'b>(data: &'b [u8]) -> Self::SelfType<'b>
+    fn from_bytes<'a>(data: &'a [u8]) -> Self::SelfType<'a>
     where
-        Self: 'b,
+        Self: 'a,
     {
         DataSized::new(data.try_into().unwrap())
     }
 
-    fn as_bytes<'b, 'c: 'b>(value: &'b Self::SelfType<'c>) -> Self::AsBytes<'b>
+    fn as_bytes<'a, 'b: 'a>(value: &'a Self::SelfType<'b>) -> Self::AsBytes<'a>
     where
-        Self: 'b + 'c,
+        Self: 'a + 'b,
     {
         &value.data
     }

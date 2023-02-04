@@ -61,13 +61,8 @@ impl<T> SparseVec<T> {
         if res.is_some() {
             self.free_ids.push_back(id);
 
-            loop {
-                match self.values.last() {
-                    Some(None) => {
-                        self.values.pop();
-                    },
-                    _ => break,
-                }
+            while let Some(None) = self.values.last() {
+                self.values.pop();
             }
         }
 
@@ -75,7 +70,7 @@ impl<T> SparseVec<T> {
     }
 
     pub fn values(&self) -> impl Iterator<Item = &T> {
-        self.values.iter().filter_map(|v| Some(v.as_ref()?))
+        self.values.iter().filter_map(|v| v.as_ref())
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (usize, &T)> {

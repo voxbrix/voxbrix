@@ -157,21 +157,21 @@ impl Client {
             }
 
             let mut packet_type = Type::UNDEFINED;
-            seek_read!(read_cursor.read(slice::from_mut(&mut packet_type)), "type");
+            seek_read!(
+                read_cursor.read_exact(slice::from_mut(&mut packet_type)),
+                "type"
+            );
 
-            match packet_type {
-                Type::ACCEPT => {
-                    let mut key = KEY_BUFFER;
+            if packet_type == Type::ACCEPT {
+                let mut key = KEY_BUFFER;
 
-                    seek_read!(read_cursor.read_exact(&mut key), "peer key");
-                    let id: usize = seek_read!(read_cursor.read_varint(), "id");
+                seek_read!(read_cursor.read_exact(&mut key), "peer key");
+                let id: usize = seek_read!(read_cursor.read_varint(), "id");
 
-                    let deciphered_peer_key =
-                        seek_read!(PublicKey::from_sec1_bytes(&key), "deciphered peer key");
+                let deciphered_peer_key =
+                    seek_read!(PublicKey::from_sec1_bytes(&key), "deciphered peer key");
 
-                    break (key, deciphered_peer_key, id);
-                },
-                _ => {},
+                break (key, deciphered_peer_key, id);
             }
         };
 
@@ -270,7 +270,10 @@ impl Receiver {
             }
 
             let mut packet_type = Type::UNDEFINED;
-            seek_read!(read_cursor.read(slice::from_mut(&mut packet_type)), "type");
+            seek_read!(
+                read_cursor.read_exact(slice::from_mut(&mut packet_type)),
+                "type"
+            );
 
             let tag_start = read_cursor.position() as usize;
 
@@ -330,12 +333,12 @@ impl Receiver {
 
                     match split_buffer.buffer.get_mut(&0) {
                         Some((current_length, shard)) => {
-                            (&mut shard[.. data_length]).copy_from_slice(&buf[start .. len]);
+                            shard[.. data_length].copy_from_slice(&buf[start .. len]);
                             *current_length = data_length;
                         },
                         None => {
                             let mut new_shard = [0u8; MAX_DATA_SIZE];
-                            (&mut new_shard[.. data_length]).copy_from_slice(&buf[start .. len]);
+                            new_shard[.. data_length].copy_from_slice(&buf[start .. len]);
                             split_buffer.buffer.insert(0, (data_length, new_shard));
                         },
                     }
@@ -361,12 +364,12 @@ impl Receiver {
 
                     match split_buffer.buffer.get_mut(&count) {
                         Some((current_length, shard)) => {
-                            (&mut shard[.. data_length]).copy_from_slice(&buf[start .. len]);
+                            shard[.. data_length].copy_from_slice(&buf[start .. len]);
                             *current_length = data_length;
                         },
                         None => {
                             let mut new_shard = [0u8; MAX_DATA_SIZE];
-                            (&mut new_shard[.. data_length]).copy_from_slice(&buf[start .. len]);
+                            new_shard[.. data_length].copy_from_slice(&buf[start .. len]);
                             split_buffer.buffer.insert(count, (data_length, new_shard));
                         },
                     }
@@ -410,7 +413,7 @@ impl Receiver {
                             return Ok((channel, &mut buf[start .. len]));
                         } else {
                             self.reliable_split_buffer
-                                .extend_from_slice(&mut buf[start .. len]);
+                                .extend_from_slice(&buf[start .. len]);
 
                             mem::swap(&mut self.reliable_split_buffer, buf);
 
@@ -443,7 +446,7 @@ impl Receiver {
                         let start = read_cursor.position() as usize;
 
                         self.reliable_split_buffer
-                            .extend_from_slice(&mut buf[start .. len]);
+                            .extend_from_slice(&buf[start .. len]);
                     }
                 },
                 _ => {},
@@ -507,7 +510,7 @@ impl UnreliableSender {
                     cursor.write_varint(self.unreliable_split_id).unwrap();
                     cursor.write_varint(len_or_count).unwrap();
                 }
-                cursor.write_all(&data).unwrap();
+                cursor.write_all(data).unwrap();
             });
 
         crate::encode_in_buffer(&mut buffer, &self.cipher, tag_start, len);

@@ -102,7 +102,7 @@ fn main() {
                             queue,
                         }));
                         let main_loop = MainScene {
-                            rt: &main_loop_rt,
+                            rt: main_loop_rt,
                             window_handle,
                             render_handle,
                         };
