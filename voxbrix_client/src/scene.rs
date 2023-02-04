@@ -43,14 +43,15 @@ impl MainScene<'_> {
                     );
                 },
                 SceneSwitch::Game { parameters } => {
-                    GameScene {
-                        rt: self.rt,
-                        window_handle: self.window_handle,
-                        render_handle: self.render_handle,
-                        parameters,
-                    }
-                    .run()
-                    .await?;
+                    next_loop = Some(GameScene {
+                            rt: self.rt,
+                            window_handle: self.window_handle,
+                            render_handle: self.render_handle,
+                            parameters,
+                        }
+                        .run()
+                        .await?
+                    );
                 },
                 SceneSwitch::Exit => return Ok(()),
             }
