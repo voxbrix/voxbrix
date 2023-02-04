@@ -127,7 +127,7 @@ async fn stream_send_ack(
     sequence: Sequence,
     transport: &mut ChannelTx<OutBuffer>,
 ) -> Result<(), Error> {
-    let mut buffer = [0; MAX_PACKET_SIZE];
+    let mut buffer = Buffer::allocate();
 
     let (tag_start, stop) =
         crate::write_in_buffer(&mut buffer, SERVER_ID, Type::ACKNOWLEDGE, |cursor| {
@@ -195,7 +195,7 @@ impl StreamUnreliableSender {
         packet_type: u8,
         len_or_count: Option<usize>,
     ) -> Result<(), Error> {
-        let mut buffer = [0; MAX_PACKET_SIZE];
+        let mut buffer = Buffer::allocate();
 
         let (tag_start, stop) =
             crate::write_in_buffer(&mut buffer, SERVER_ID, packet_type, |cursor| {
@@ -277,16 +277,16 @@ impl StreamReliableSender {
         data: &[u8],
         packet_type: u8,
     ) -> Result<(), Error> {
-        let mut buffer = [0; MAX_PACKET_SIZE];
-
-        let (tag_start, stop) =
-            crate::write_in_buffer(&mut buffer, SERVER_ID, packet_type, |cursor| {
-                cursor.write_varint(channel).unwrap();
-                cursor.write_varint(self.sequence).unwrap();
-                cursor.write_all(data).unwrap();
-            });
-
         loop {
+            let mut buffer = Buffer::allocate();
+
+            let (tag_start, stop) =
+                crate::write_in_buffer(&mut buffer, SERVER_ID, packet_type, |cursor| {
+                    cursor.write_varint(channel).unwrap();
+                    cursor.write_varint(self.sequence).unwrap();
+                    cursor.write_all(data).unwrap();
+                });
+
             let (result_tx, result_rx) = new_oneshot();
 
             self.transport
@@ -680,7 +680,7 @@ impl ServerParameters {
             clients: Clients::new(self.max_connections),
             out_queue,
             out_queue_sender,
-            receive_buffer: [0; MAX_PACKET_SIZE],
+            receive_buffer: Buffer::allocate(),
             transport,
         })
     }
@@ -690,7 +690,7 @@ pub struct Server {
     clients: Clients,
     out_queue: ChannelRx<OutBuffer>,
     out_queue_sender: ChannelTx<OutBuffer>,
-    receive_buffer: [u8; MAX_PACKET_SIZE],
+    receive_buffer: Box<[u8; MAX_PACKET_SIZE]>,
     transport: Async<UdpSocket>,
 }
 
@@ -711,14 +711,16 @@ impl Server {
             }
             .or(async {
                 Ok(ServerPacket::In(
-                    self.transport.recv_from(&mut self.receive_buffer).await?,
+                    self.transport
+                        .recv_from(self.receive_buffer.as_mut_slice())
+                        .await?,
                 ))
             })
             .await;
 
             match next? {
                 ServerPacket::In((len, addr)) => {
-                    let mut read_cursor = Cursor::new(&self.receive_buffer);
+                    let mut read_cursor = Cursor::new(self.receive_buffer.as_slice());
                     let sender: usize = seek_read!(read_cursor.read_varint(), "sender");
 
                     let mut packet_type = Type::UNDEFINED;
@@ -774,7 +776,7 @@ impl Server {
                                 .try_into()
                                 .unwrap();
 
-                            let mut write_cursor = Cursor::new(self.receive_buffer.as_mut());
+                            let mut write_cursor = Cursor::new(self.receive_buffer.as_mut_slice());
 
                             write_cursor.write_varint(SERVER_ID).unwrap();
                             write_cursor.write_varint(Type::ACCEPT).unwrap();
@@ -873,7 +875,10 @@ impl Server {
                                     sender,
                                     packet_type,
                                     buffer: Buffer {
-                                        buffer: self.receive_buffer,
+                                        buffer: mem::replace(
+                                            &mut self.receive_buffer,
+                                            Buffer::allocate(),
+                                        ),
                                         start,
                                         stop: len,
                                     },

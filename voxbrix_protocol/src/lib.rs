@@ -8,6 +8,10 @@ use chacha20poly1305::{
 };
 use integer_encoding::VarIntWriter;
 use std::{
+    alloc::{
+        self,
+        Layout,
+    },
     collections::{
         BTreeMap,
         BTreeSet,
@@ -68,10 +72,27 @@ impl<T> AsMutSlice<T> for Cursor<&mut [T]> {
     }
 }
 
-pub struct Buffer {
-    buffer: [u8; MAX_PACKET_SIZE],
+struct Buffer {
+    // Box to avoid bloating enums that use Packet
+    buffer: Box<[u8; MAX_PACKET_SIZE]>,
     start: usize,
     stop: usize,
+}
+
+impl Buffer {
+    fn allocate() -> Box<[u8; MAX_PACKET_SIZE]> {
+        // SAFETY: fast and safe way to get Box of [0u8; MAX_PACKET_SIZE]
+        // without copying stack to heap (as would be with Box::new())
+        // https://doc.rust-lang.org/std/boxed/index.html#memory-layout
+        unsafe {
+            let layout = Layout::new::<[u8; MAX_PACKET_SIZE]>();
+            let ptr = alloc::alloc_zeroed(layout);
+            if ptr.is_null() {
+                alloc::handle_alloc_error(layout);
+            }
+            Box::from_raw(ptr.cast())
+        }
+    }
 }
 
 impl AsRef<[u8]> for Buffer {
