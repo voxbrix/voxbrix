@@ -48,7 +48,10 @@ use crate::{
 use anyhow::Result;
 use async_executor::LocalExecutor;
 use async_io::Timer;
-use futures_lite::stream::StreamExt;
+use futures_lite::{
+    stream::StreamExt,
+    future::FutureExt,
+};
 use std::time::{
     Duration,
     Instant,
@@ -66,6 +69,7 @@ use voxbrix_common::{
 };
 use voxbrix_protocol::client::{
     Receiver,
+    Error as ClientError,
     Sender,
 };
 use winit::event::{
@@ -73,14 +77,16 @@ use winit::event::{
     ElementState,
     MouseButton,
 };
+use crate::CONNECTION_TIMEOUT;
+use std::io::ErrorKind as StdIoErrorKind;
+use log::error;
 
 pub enum Event {
     Process,
     SendPosition,
     Input(InputEvent),
-    NetworkInput(ClientAccept),
+    NetworkInput(Result<ClientAccept, ClientError>),
     DrawChunk(Chunk),
-    Shutdown,
 }
 
 pub struct GameSceneParameters {
@@ -127,6 +133,9 @@ impl GameScene<'_> {
             })
             .detach();
 
+
+        let event_tx_network = event_tx.clone();
+
         self.rt
             .spawn(async move {
                 let mut send_buf = Vec::new();
@@ -134,10 +143,17 @@ impl GameScene<'_> {
                 while let Some(msg) = reliable_rx.recv().await {
                     msg.pack(&mut send_buf);
 
-                    reliable
+                    if let Err(err) = reliable
                         .send_reliable(0, &send_buf)
+                        .or(async {
+                            Timer::after(CONNECTION_TIMEOUT).await;
+                            Err(ClientError::Io(StdIoErrorKind::TimedOut.into()))
+                        })
                         .await
-                        .expect("message sent");
+                    {
+                        let _ = event_tx_network.send(Event::NetworkInput(Err(err)));
+                        break;
+                    }
                 }
             })
             .detach();
@@ -147,13 +163,21 @@ impl GameScene<'_> {
         self.rt
             .spawn(async move {
                 let mut buf = Vec::new();
-                while let Ok((_channel, data)) = rx.recv(&mut buf).await {
+                loop {
+                    let data = match rx.recv(&mut buf).await {
+                        Ok((_channel, data)) => data,
+                        Err(err) => {
+                            let _ = event_tx_network.send(Event::NetworkInput(Err(err)));
+                            break;
+                        },
+                    };
+                    
                     let message = match ClientAccept::unpack(&data) {
                         Ok(m) => m,
                         Err(_) => continue,
                     };
 
-                    if let Err(_) = event_tx_network.send(Event::NetworkInput(message)) {
+                    if let Err(_) = event_tx_network.send(Event::NetworkInput(Ok(message))) {
                         break;
                     };
                 }
@@ -265,7 +289,7 @@ impl GameScene<'_> {
                 },
                 Event::SendPosition => {
                     let player_position = gpac.get(&player_actor).unwrap();
-                    unreliable_tx.send(ServerAccept::PlayerPosition {
+                    let _ = unreliable_tx.send(ServerAccept::PlayerPosition {
                         position: player_position.clone(),
                     });
                 },
@@ -298,6 +322,9 @@ impl GameScene<'_> {
                                     input,
                                     is_synthetic: _,
                                 } => {
+                                    if let Some(winit::event::VirtualKeyCode::Escape) = input.virtual_keycode {
+                                        break;
+                                    }
                                     direct_control_system.process_keyboard(&input);
                                 },
                                 WindowEvent::MouseInput {
@@ -324,7 +351,7 @@ impl GameScene<'_> {
                                                     },
                                                 )
                                                 .and_then(|(chunk, block, _side)| {
-                                                    reliable_tx.send(ServerAccept::AlterBlock {
+                                                    let _ = reliable_tx.send(ServerAccept::AlterBlock {
                                                         chunk,
                                                         block,
                                                         block_class: BlockClass(0),
@@ -362,7 +389,7 @@ impl GameScene<'_> {
                                                     let (chunk, block) =
                                                         Block::from_chunk_offset(chunk, block);
 
-                                                    reliable_tx.send(ServerAccept::AlterBlock {
+                                                    let _ = reliable_tx.send(ServerAccept::AlterBlock {
                                                         chunk,
                                                         block,
                                                         block_class: BlockClass(1),
@@ -380,7 +407,16 @@ impl GameScene<'_> {
                         },
                     }
                 },
-                Event::NetworkInput(message) => {
+                Event::NetworkInput(result) => {
+                    let message = match result {
+                        Ok(m) => m,
+                        Err(err) => {
+                            //TODO handle properly, pass error to menu to display there
+                            error!("game::run: connection error: {:?}", err);
+                            return Ok(SceneSwitch::Menu);
+                        },
+                    };
+                    
                     match message {
                         ClientAccept::ChunkData(ChunkData {
                             chunk,
@@ -406,11 +442,12 @@ impl GameScene<'_> {
                     }
                 },
                 Event::DrawChunk(chunk) => {
+                    // TODO: use separate *set* as a queue and take up to num_cpus each time the event
+                    // comes
                     unblock!((render_system, cbc, mbcc) {
                         render_system.build_chunk(&chunk, &cbc, &mbcc);
                     });
                 },
-                Event::Shutdown => break,
             }
         }
 

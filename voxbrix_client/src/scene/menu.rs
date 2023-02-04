@@ -163,10 +163,10 @@ impl Program for MainMenu {
                 self.form_type = form_type;
             },
             Message::Submit => {
-                self.event_tx.send(MainMenuAction::Submit);
+                let _ = self.event_tx.send(MainMenuAction::Submit);
             },
             Message::Exit => {
-                self.event_tx.send(MainMenuAction::Exit);
+                let _ = self.event_tx.send(MainMenuAction::Exit);
             },
         }
 
@@ -287,7 +287,7 @@ impl MenuScene<'_> {
     pub async fn run(self) -> Result<SceneSwitch> {
         let physical_size = self.window_handle.window.inner_size();
 
-        let viewport = Viewport::with_physical_size(
+        let mut viewport = Viewport::with_physical_size(
             Size::new(physical_size.width, physical_size.height),
             self.window_handle.window.scale_factor(),
         );
@@ -364,59 +364,78 @@ impl MenuScene<'_> {
         while let Some(event) = stream.next().await {
             match event {
                 Event::Process => {
-                    match self.render_handle.surface.get_current_texture() {
-                        Ok(frame) => {
-                            let _ = menu.update(
-                                viewport.logical_size(),
-                                iced_winit::conversion::cursor_position(
-                                    cursor_position,
-                                    viewport.scale_factor(),
-                                ),
-                                &mut renderer,
-                                &iced_wgpu::Theme::Dark,
-                                &renderer::Style {
-                                    text_color: Color::WHITE,
-                                },
-                                &mut clipboard,
-                                &mut debug,
-                            );
+                    if resized {
+                        let physical_size = self.window_handle.window.inner_size();
+                        viewport = Viewport::with_physical_size(
+                            Size::new(physical_size.width, physical_size.height),
+                            self.window_handle.window.scale_factor(),
+                        );
 
-                            let mut encoder = self.render_handle.device.create_command_encoder(
-                                &wgpu::CommandEncoderDescriptor { label: None },
-                            );
+                        let config = wgpu::SurfaceConfiguration {
+                            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                            format,
+                            width: physical_size.width,
+                            height: physical_size.height,
+                            // Fifo makes SurfaceTexture::present() block
+                            // which is bad for current rendering implementation
+                            present_mode,
+                            alpha_mode: wgpu::CompositeAlphaMode::Auto,
+                        };
 
-                            let view = frame
-                                .texture
-                                .create_view(&wgpu::TextureViewDescriptor::default());
-
-                            renderer.with_primitives(|backend, primitive| {
-                                backend.present(
-                                    &self.render_handle.device,
-                                    &mut staging_belt,
-                                    &mut encoder,
-                                    &view,
-                                    primitive,
-                                    &viewport,
-                                    &debug.overlay(),
-                                );
-                            });
-
-                            staging_belt.finish();
-                            self.render_handle.queue.submit(Some(encoder.finish()));
-                            frame.present();
-
-                            // Update the mouse cursor
-                            self.window_handle.window.set_cursor_icon(
-                                iced_winit::conversion::mouse_interaction(menu.mouse_interaction()),
-                            );
-
-                            // And recall staging buffers
-                            staging_belt.recall();
-                        },
-                        Err(error) => {
-                            panic!("Swapchain error: {}. Rendering cannot continue.", error);
-                        },
+                        self.render_handle
+                            .surface
+                            .configure(&self.render_handle.device, &config);
                     }
+
+                    let frame = self.render_handle.surface.get_current_texture()
+                        .expect("getting texture");
+
+                    let _ = menu.update(
+                        viewport.logical_size(),
+                        iced_winit::conversion::cursor_position(
+                            cursor_position,
+                            viewport.scale_factor(),
+                        ),
+                        &mut renderer,
+                        &iced_wgpu::Theme::Dark,
+                        &renderer::Style {
+                            text_color: Color::WHITE,
+                        },
+                        &mut clipboard,
+                        &mut debug,
+                    );
+
+                    let mut encoder = self.render_handle.device.create_command_encoder(
+                        &wgpu::CommandEncoderDescriptor { label: None },
+                    );
+
+                    let view = frame
+                        .texture
+                        .create_view(&wgpu::TextureViewDescriptor::default());
+
+                    renderer.with_primitives(|backend, primitive| {
+                        backend.present(
+                            &self.render_handle.device,
+                            &mut staging_belt,
+                            &mut encoder,
+                            &view,
+                            primitive,
+                            &viewport,
+                            &debug.overlay(),
+                        );
+                    });
+
+                    staging_belt.finish();
+                    self.render_handle.queue.submit(Some(encoder.finish()));
+                    frame.present();
+
+                    // Update the mouse cursor
+                    self.window_handle.window.set_cursor_icon(
+                        iced_winit::conversion::mouse_interaction(menu.mouse_interaction()),
+                    );
+
+                    // And recall staging buffers
+                    staging_belt.recall();
                 },
                 Event::Input(event) => {
                     if let InputEvent::WindowEvent { event } = event {
