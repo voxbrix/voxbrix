@@ -385,6 +385,8 @@ impl MenuScene<'_> {
                         self.render_handle
                             .surface
                             .configure(&self.render_handle.device, &config);
+
+                        resized = false;
                     }
 
                     let frame = self
