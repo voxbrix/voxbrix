@@ -34,12 +34,14 @@ use server::{
     ServerEvent,
     SharedEvent,
 };
-use std::time::Duration;
+use std::{
+    env,
+    time::Duration,
+};
 use voxbrix_protocol::{
     server::ServerParameters,
     Channel,
 };
-use std::env;
 
 const BASE_CHANNEL: Channel = 0;
 const PLAYER_CHUNK_TICKET_RADIUS: i32 = 4;

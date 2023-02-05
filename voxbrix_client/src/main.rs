@@ -21,16 +21,6 @@ mod window;
 
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 
-// fn print_panic_info(panic_info: &PanicInfo<'_>) {
-// error!("panic in: {:?}", panic_info.location());
-//
-// if let Some(panic_payload) = panic_info.payload().downcast_ref::<&str>() {
-// error!("panic with: \"{}\"", panic_payload);
-// } else if let Some(panic_payload) = panic_info.payload().downcast_ref::<String>() {
-// error!("panic with: \"{}\"", panic_payload);
-// }
-// }
-
 pub struct RenderHandle {
     pub surface: wgpu::Surface,
     pub adapter: wgpu::Adapter,
@@ -40,10 +30,6 @@ pub struct RenderHandle {
 
 fn main() {
     env_logger::init();
-
-    // panic::set_hook(Box::new(move |panic_info| {
-    // print_panic_info(panic_info);
-    // }));
 
     let (window_tx, window_rx) = flume::bounded::<WindowHandle>(1);
     let (event_proxy_tx, event_proxy_rx) = flume::bounded::<EventLoopProxy<WindowCommand>>(1);
