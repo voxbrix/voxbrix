@@ -1,23 +1,19 @@
-use super::{
+use crate::{
     seek_read,
     AsSlice,
-    Buffer,
     Channel,
     Id,
-    Packet,
+    Key,
     Sequence,
     Type,
     UnreliableBuffer,
+    KEY_BUFFER,
     MAX_DATA_SIZE,
     MAX_PACKET_SIZE,
     NEW_CONNECTION_ID,
+    SECRET_BUFFER,
     SERVER_ID,
     UNRELIABLE_BUFFERS,
-};
-use crate::{
-    Key,
-    KEY_BUFFER,
-    SECRET_BUFFER,
 };
 use async_io::{
     Async,
@@ -63,6 +59,10 @@ use local_channel::{
 use log::warn;
 use rand_core::OsRng;
 use std::{
+    alloc::{
+        self,
+        Layout,
+    },
     collections::{
         BTreeMap,
         BTreeSet,
@@ -106,6 +106,84 @@ impl std::error::Error for Error {}
 impl From<StdIoError> for Error {
     fn from(from: StdIoError) -> Self {
         Self::Io(from)
+    }
+}
+
+struct Buffer {
+    // Box to avoid bloating enums that use Packet
+    buffer: Box<[u8; MAX_PACKET_SIZE]>,
+    start: usize,
+    stop: usize,
+}
+
+impl Buffer {
+    fn allocate() -> Box<[u8; MAX_PACKET_SIZE]> {
+        // SAFETY: fast and safe way to get Box of [0u8; MAX_PACKET_SIZE]
+        // without copying stack to heap (as would be with Box::new())
+        // https://doc.rust-lang.org/std/boxed/index.html#memory-layout
+        unsafe {
+            let layout = Layout::new::<[u8; MAX_PACKET_SIZE]>();
+            let ptr = alloc::alloc_zeroed(layout);
+            if ptr.is_null() {
+                alloc::handle_alloc_error(layout);
+            }
+            Box::from_raw(ptr.cast())
+        }
+    }
+}
+
+impl AsRef<[u8]> for Buffer {
+    fn as_ref(&self) -> &[u8] {
+        &self.buffer[self.start .. self.stop]
+    }
+}
+
+impl AsMut<[u8]> for Buffer {
+    fn as_mut(&mut self) -> &mut [u8] {
+        &mut self.buffer[self.start .. self.stop]
+    }
+}
+
+pub struct Packet {
+    data: Data,
+}
+
+impl From<Buffer> for Packet {
+    fn from(from: Buffer) -> Self {
+        Packet {
+            data: Data::Single(from),
+        }
+    }
+}
+
+impl From<Vec<u8>> for Packet {
+    fn from(from: Vec<u8>) -> Self {
+        Packet {
+            data: Data::Collection(from),
+        }
+    }
+}
+
+enum Data {
+    Collection(Vec<u8>),
+    Single(Buffer),
+}
+
+impl AsRef<[u8]> for Packet {
+    fn as_ref(&self) -> &[u8] {
+        match &self.data {
+            Data::Collection(v) => v.as_ref(),
+            Data::Single(a) => a.as_ref(),
+        }
+    }
+}
+
+impl AsMut<[u8]> for Packet {
+    fn as_mut(&mut self) -> &mut [u8] {
+        match &mut self.data {
+            Data::Collection(v) => v.as_mut(),
+            Data::Single(a) => a.as_mut(),
+        }
     }
 }
 

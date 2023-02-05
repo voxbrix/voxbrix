@@ -58,9 +58,11 @@ use voxbrix_common::{
     stream::StreamExt as _,
 };
 use voxbrix_protocol::{
-    server::Connection,
+    server::{
+        Connection,
+        Packet,
+    },
     Channel,
-    Packet,
 };
 
 // Client loop input
