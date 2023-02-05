@@ -39,6 +39,7 @@ use voxbrix_protocol::{
     server::ServerParameters,
     Channel,
 };
+use std::env;
 
 const BASE_CHANNEL: Channel = 0;
 const PLAYER_CHUNK_TICKET_RADIUS: i32 = 4;
@@ -96,7 +97,12 @@ fn main() -> Result<()> {
         event_tx,
     }));
 
-    let server = ServerParameters::default().bind(([0, 0, 0, 0], 12000))?;
+    let port = env::var("VOXBRIX_PORT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(12000);
+
+    let server = ServerParameters::default().bind(([0, 0, 0, 0], port))?;
 
     future::block_on(local.rt.run(async {
         local
