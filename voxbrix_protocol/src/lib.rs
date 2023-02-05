@@ -8,10 +8,6 @@ use chacha20poly1305::{
 };
 use integer_encoding::VarIntWriter;
 use std::{
-    alloc::{
-        self,
-        Layout,
-    },
     collections::{
         BTreeMap,
         BTreeSet,
@@ -29,9 +25,9 @@ pub mod client;
 #[cfg(any(feature = "server", test))]
 pub mod server;
 
-pub const MAX_PACKET_SIZE: usize = 508;
+const MAX_PACKET_SIZE: usize = 508;
 
-pub const MAX_HEADER_SIZE: usize = mem::size_of::<Id>() // sender
+const MAX_HEADER_SIZE: usize = mem::size_of::<Id>() // sender
     + 1 // type
     + TAG_SIZE // tag
     + NONCE_SIZE // nonce
@@ -39,7 +35,7 @@ pub const MAX_HEADER_SIZE: usize = mem::size_of::<Id>() // sender
     + 2
     + mem::size_of::<usize>();
 
-pub const MAX_DATA_SIZE: usize = MAX_PACKET_SIZE - MAX_HEADER_SIZE;
+const MAX_DATA_SIZE: usize = MAX_PACKET_SIZE - MAX_HEADER_SIZE;
 
 const SERVER_ID: usize = 0;
 const NEW_CONNECTION_ID: usize = 1;
@@ -69,84 +65,6 @@ impl<T> AsMutSlice<T> for Cursor<&mut [T]> {
     fn mut_slice(&mut self) -> &mut [T] {
         let len = self.position() as usize;
         &mut self.get_mut()[.. len]
-    }
-}
-
-struct Buffer {
-    // Box to avoid bloating enums that use Packet
-    buffer: Box<[u8; MAX_PACKET_SIZE]>,
-    start: usize,
-    stop: usize,
-}
-
-impl Buffer {
-    fn allocate() -> Box<[u8; MAX_PACKET_SIZE]> {
-        // SAFETY: fast and safe way to get Box of [0u8; MAX_PACKET_SIZE]
-        // without copying stack to heap (as would be with Box::new())
-        // https://doc.rust-lang.org/std/boxed/index.html#memory-layout
-        unsafe {
-            let layout = Layout::new::<[u8; MAX_PACKET_SIZE]>();
-            let ptr = alloc::alloc_zeroed(layout);
-            if ptr.is_null() {
-                alloc::handle_alloc_error(layout);
-            }
-            Box::from_raw(ptr.cast())
-        }
-    }
-}
-
-impl AsRef<[u8]> for Buffer {
-    fn as_ref(&self) -> &[u8] {
-        &self.buffer[self.start .. self.stop]
-    }
-}
-
-impl AsMut<[u8]> for Buffer {
-    fn as_mut(&mut self) -> &mut [u8] {
-        &mut self.buffer[self.start .. self.stop]
-    }
-}
-
-pub struct Packet {
-    data: Data,
-}
-
-impl From<Buffer> for Packet {
-    fn from(from: Buffer) -> Self {
-        Packet {
-            data: Data::Single(from),
-        }
-    }
-}
-
-impl From<Vec<u8>> for Packet {
-    fn from(from: Vec<u8>) -> Self {
-        Packet {
-            data: Data::Collection(from),
-        }
-    }
-}
-
-enum Data {
-    Collection(Vec<u8>),
-    Single(Buffer),
-}
-
-impl AsRef<[u8]> for Packet {
-    fn as_ref(&self) -> &[u8] {
-        match &self.data {
-            Data::Collection(v) => v.as_ref(),
-            Data::Single(a) => a.as_ref(),
-        }
-    }
-}
-
-impl AsMut<[u8]> for Packet {
-    fn as_mut(&mut self) -> &mut [u8] {
-        match &mut self.data {
-            Data::Collection(v) => v.as_mut(),
-            Data::Single(a) => a.as_mut(),
-        }
     }
 }
 

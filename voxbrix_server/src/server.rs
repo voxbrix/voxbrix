@@ -69,8 +69,8 @@ use voxbrix_common::{
     ChunkData,
 };
 use voxbrix_protocol::{
+    server::Packet,
     Channel,
-    Packet,
 };
 
 pub enum SharedEvent {
