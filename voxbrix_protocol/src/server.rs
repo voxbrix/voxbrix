@@ -58,6 +58,10 @@ use local_channel::{
 };
 use log::warn;
 use rand_core::OsRng;
+#[cfg(feature = "single")]
+use std::rc::Rc;
+#[cfg(feature = "multi")]
+use std::sync::Arc;
 use std::{
     alloc::{
         self,
@@ -188,23 +192,23 @@ impl AsMut<[u8]> for Packet {
 }
 
 struct InBuffer {
-    sender: Id,
     packet_type: u8,
     buffer: Buffer,
 }
 
-struct OutBuffer {
-    peer: Id,
-    buffer: Buffer,
-    tag_start: usize,
-    result_tx: OneshotTx<Result<(), Error>>,
+enum Out {
+    Buffer {
+        peer: Id,
+        buffer: Buffer,
+        tag_start: usize,
+        result_tx: OneshotTx<Result<(), Error>>,
+    },
+    DropClient {
+        peer: Id,
+    },
 }
 
-async fn stream_send_ack(
-    peer: Id,
-    sequence: Sequence,
-    transport: &mut ChannelTx<OutBuffer>,
-) -> Result<(), Error> {
+async fn stream_send_ack(shared: &Shared, sequence: Sequence) -> Result<(), Error> {
     let mut buffer = Buffer::allocate();
 
     let (tag_start, stop) =
@@ -214,9 +218,10 @@ async fn stream_send_ack(
 
     let (result_tx, result_rx) = new_oneshot();
 
-    transport
-        .send(OutBuffer {
-            peer,
+    shared
+        .transport_sender
+        .send(Out::Buffer {
+            peer: shared.peer,
             buffer: Buffer {
                 buffer,
                 start: 0,
@@ -233,6 +238,19 @@ async fn stream_send_ack(
     result_rx.await.map_err(|_| Error::ServerWasDropped)??;
 
     Ok(())
+}
+
+struct Shared {
+    peer: Id,
+    transport_sender: ChannelTx<Out>,
+}
+
+impl Drop for Shared {
+    fn drop(&mut self) {
+        let _ = self
+            .transport_sender
+            .send(Out::DropClient { peer: self.peer });
+    }
 }
 
 pub struct StreamSender {
@@ -260,9 +278,11 @@ impl StreamSender {
 }
 
 pub struct StreamUnreliableSender {
-    peer: Id,
+    #[cfg(feature = "single")]
+    shared: Rc<Shared>,
+    #[cfg(feature = "multi")]
+    shared: Arc<Shared>,
     unreliable_split_id: u16,
-    transport: ChannelTx<OutBuffer>,
 }
 
 impl StreamUnreliableSender {
@@ -287,9 +307,10 @@ impl StreamUnreliableSender {
 
         let (result_tx, result_rx) = new_oneshot();
 
-        self.transport
-            .send(OutBuffer {
-                peer: self.peer,
+        self.shared
+            .transport_sender
+            .send(Out::Buffer {
+                peer: self.shared.peer,
                 buffer: Buffer {
                     buffer,
                     start: 0,
@@ -342,10 +363,12 @@ impl StreamUnreliableSender {
 }
 
 pub struct StreamReliableSender {
-    peer: Id,
+    #[cfg(feature = "single")]
+    shared: Rc<Shared>,
+    #[cfg(feature = "multi")]
+    shared: Arc<Shared>,
     sequence: Sequence,
     ack_receiver: ChannelRx<Sequence>,
-    transport: ChannelTx<OutBuffer>,
 }
 
 impl StreamReliableSender {
@@ -367,9 +390,10 @@ impl StreamReliableSender {
 
             let (result_tx, result_rx) = new_oneshot();
 
-            self.transport
-                .send(OutBuffer {
-                    peer: self.peer,
+            self.shared
+                .transport_sender
+                .send(Out::Buffer {
+                    peer: self.shared.peer,
                     buffer: Buffer {
                         buffer,
                         start: 0,
@@ -441,11 +465,14 @@ impl StreamReliableSender {
 }
 
 pub struct StreamReceiver {
+    #[cfg(feature = "single")]
+    shared: Rc<Shared>,
+    #[cfg(feature = "multi")]
+    shared: Arc<Shared>,
     sequence: Sequence,
     split_buffer: Vec<u8>,
     split_channel: Option<Channel>,
     unreliable_split_buffers: VecDeque<UnreliableBuffer>,
-    transport_sender: ChannelTx<OutBuffer>,
     transport_receiver: ChannelRx<InBuffer>,
 }
 
@@ -454,7 +481,6 @@ impl StreamReceiver {
         loop {
             #[cfg(feature = "single")]
             let InBuffer {
-                sender,
                 packet_type,
                 buffer: mut packet,
             } = self
@@ -465,7 +491,6 @@ impl StreamReceiver {
 
             #[cfg(feature = "multi")]
             let InBuffer {
-                sender,
                 packet_type,
                 buffer: mut packet,
             } = self
@@ -590,7 +615,7 @@ impl StreamReceiver {
                     let sequence: u16 = seek_read!(read_cursor.read_varint(), "sequence");
 
                     // TODO: do not answer if the sequence is not previous, but random?
-                    stream_send_ack(sender, sequence, &mut self.transport_sender).await?;
+                    stream_send_ack(&self.shared, sequence).await?;
 
                     if sequence == self.sequence {
                         self.sequence = self.sequence.wrapping_add(1);
@@ -625,7 +650,7 @@ impl StreamReceiver {
                     let sequence: u16 = seek_read!(read_cursor.read_varint(), "sequence");
 
                     // TODO: do not answer if the sequence is not previous, but random?
-                    stream_send_ack(sender, sequence, &mut self.transport_sender).await?;
+                    stream_send_ack(&self.shared, sequence).await?;
 
                     if sequence == self.sequence {
                         self.sequence = self.sequence.wrapping_add(1);
@@ -724,7 +749,7 @@ impl Clients {
 
 enum ServerPacket {
     In((usize, SocketAddr)),
-    Out(OutBuffer),
+    Out(Out),
 }
 
 pub struct Connection {
@@ -766,8 +791,8 @@ impl ServerParameters {
 
 pub struct Server {
     clients: Clients,
-    out_queue: ChannelRx<OutBuffer>,
-    out_queue_sender: ChannelTx<OutBuffer>,
+    out_queue: ChannelRx<Out>,
+    out_queue_sender: ChannelTx<Out>,
     receive_buffer: Box<[u8; MAX_PACKET_SIZE]>,
     transport: Async<UdpSocket>,
 }
@@ -871,37 +896,44 @@ impl Server {
                                 continue;
                             };
 
+                            let shared = Shared {
+                                peer: id,
+                                transport_sender: self.out_queue_sender.clone(),
+                            };
+
+                            #[cfg(feature = "single")]
+                            let shared = Rc::new(shared);
+
+                            #[cfg(feature = "multi")]
+                            let shared = Arc::new(shared);
+
                             return Ok(Connection {
                                 self_key,
                                 peer_key,
                                 sender: StreamSender {
                                     unreliable: StreamUnreliableSender {
-                                        peer: id,
+                                        shared: shared.clone(),
                                         unreliable_split_id: 0,
-                                        transport: self.out_queue_sender.clone(),
                                     },
                                     reliable: StreamReliableSender {
-                                        peer: id,
+                                        shared: shared.clone(),
                                         sequence: 0,
                                         ack_receiver,
-                                        transport: self.out_queue_sender.clone(),
                                     },
                                 },
                                 receiver: StreamReceiver {
+                                    shared: shared.clone(),
                                     sequence: 0,
                                     split_buffer: Vec::new(),
                                     split_channel: None,
                                     unreliable_split_buffers: VecDeque::with_capacity(
                                         UNRELIABLE_BUFFERS,
                                     ),
-                                    transport_sender: self.out_queue_sender.clone(),
                                     transport_receiver: in_queue_rx,
                                 },
                             });
                         },
                         Type::ACKNOWLEDGE => {
-                            let mut remove = false;
-
                             if let Some(client) = self.clients.get_mut(sender) {
                                 let tag_start = read_cursor.position() as usize;
                                 let decrypted_start = match crate::decode_in_buffer(
@@ -917,27 +949,10 @@ impl Server {
                                     Cursor::new(&self.receive_buffer[decrypted_start .. len]);
                                 let sequence = seek_read!(read_cursor.read_varint(), "sequence");
 
-                                if client.ack_sender.send(sequence).is_err() {
-                                    #[cfg(feature = "single")]
-                                    {
-                                        remove = !client.in_queue.has_receiver();
-                                    }
-                                    #[cfg(feature = "multi")]
-                                    {
-                                        remove = client.in_queue.is_disconnected();
-                                    }
-                                } else {
-                                    client.address = addr;
-                                }
-                            }
-
-                            if remove {
-                                self.clients.remove(sender);
+                                let _ = client.ack_sender.send(sequence);
                             }
                         },
                         _ => {
-                            let mut remove = false;
-
                             if let Some(client) = self.clients.get_mut(sender) {
                                 let tag_start = read_cursor.position() as usize;
                                 let start = match crate::decode_in_buffer(
@@ -950,7 +965,6 @@ impl Server {
                                 };
 
                                 let data = InBuffer {
-                                    sender,
                                     packet_type,
                                     buffer: Buffer {
                                         buffer: mem::replace(
@@ -962,58 +976,50 @@ impl Server {
                                     },
                                 };
 
-                                if client.in_queue.send(data).is_err() {
-                                    #[cfg(feature = "single")]
-                                    {
-                                        remove = client.ack_sender.has_receiver();
-                                    }
-                                    #[cfg(feature = "multi")]
-                                    {
-                                        remove = !client.ack_sender.is_disconnected();
-                                    }
-                                } else {
-                                    client.address = addr;
-                                }
-                            }
-
-                            if remove {
-                                self.clients.remove(sender);
+                                let _ = client.in_queue.send(data);
                             }
                         },
                     }
                 },
-                ServerPacket::Out(OutBuffer {
-                    peer,
-                    mut buffer,
-                    tag_start,
-                    result_tx,
-                }) => {
-                    #[cfg(feature = "multi")]
-                    let mut result_tx = result_tx;
+                ServerPacket::Out(out) => {
+                    match out {
+                        Out::Buffer {
+                            peer,
+                            mut buffer,
+                            tag_start,
+                            result_tx,
+                        } => {
+                            #[cfg(feature = "multi")]
+                            let mut result_tx = result_tx;
 
-                    let client = match self.clients.get(peer) {
-                        Some(c) => c,
-                        None => {
-                            let _ = result_tx.send(Err(Error::InvalidConnection));
-                            continue;
+                            let client = match self.clients.get(peer) {
+                                Some(c) => c,
+                                None => {
+                                    let _ = result_tx.send(Err(Error::InvalidConnection));
+                                    continue;
+                                },
+                            };
+
+                            crate::encode_in_buffer(
+                                &mut buffer.buffer,
+                                &client.cipher,
+                                tag_start,
+                                buffer.stop,
+                            );
+
+                            if let Err(err) = self
+                                .transport
+                                .send_to(buffer.as_ref(), client.address)
+                                .await
+                            {
+                                let _ = result_tx.send(Err(err.into()));
+                            } else {
+                                let _ = result_tx.send(Ok(()));
+                            }
                         },
-                    };
-
-                    crate::encode_in_buffer(
-                        &mut buffer.buffer,
-                        &client.cipher,
-                        tag_start,
-                        buffer.stop,
-                    );
-
-                    if let Err(err) = self
-                        .transport
-                        .send_to(buffer.as_ref(), client.address)
-                        .await
-                    {
-                        let _ = result_tx.send(Err(err.into()));
-                    } else {
-                        let _ = result_tx.send(Ok(()));
+                        Out::DropClient { peer } => {
+                            self.clients.remove(peer);
+                        },
                     }
                 },
             }
