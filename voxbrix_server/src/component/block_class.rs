@@ -1,5 +1,5 @@
 use crate::{
-    component::block::Blocks,
+    component::block::BlocksVec,
     entity::block_class::BlockClass,
     storage::{
         Data,
@@ -12,13 +12,13 @@ use redb::{
 };
 pub use voxbrix_common::component::block_class::*;
 
-impl StoreDefault for Blocks<BlockClass> {}
+impl StoreDefault for BlocksVec<BlockClass> {}
 
-impl RedbValue for Data<'_, Blocks<BlockClass>> {
+impl RedbValue for Data<'_, BlocksVec<BlockClass>> {
     type AsBytes<'a> = &'a [u8]
     where
         Self: 'a;
-    type SelfType<'a> = Data<'a, Blocks<BlockClass>>
+    type SelfType<'a> = Data<'a, BlocksVec<BlockClass>>
     where
         Self: 'a;
 
@@ -43,6 +43,6 @@ impl RedbValue for Data<'_, Blocks<BlockClass>> {
     }
 
     fn type_name() -> TypeName {
-        TypeName::new("Blocks<BlockClass>")
+        TypeName::new("BlocksVec<BlockClass>")
     }
 }

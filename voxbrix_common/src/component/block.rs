@@ -27,7 +27,7 @@ pub mod class;
 // }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Blocks<T> {
+pub struct BlocksVec<T> {
     blocks: Vec<T>,
 }
 
@@ -38,7 +38,7 @@ pub fn coords_iter() -> impl Iterator<Item = [usize; 3]> {
     })
 }
 
-impl<T> Blocks<T> {
+impl<T> BlocksVec<T> {
     pub fn new(blocks: Vec<T>) -> Self {
         Self { blocks }
     }
@@ -64,10 +64,35 @@ impl<T> Blocks<T> {
     }
 }
 
-impl<T> PackZipDefault for Blocks<T> {}
+impl<T> PackZipDefault for BlocksVec<T> {}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct BlocksMap<T> {
+    blocks: BTreeMap<Block, T>,
+}
+
+impl<T> BlocksMap<T> {
+    pub fn new(blocks: BTreeMap<Block, T>) -> Self {
+        Self { blocks }
+    }
+
+    pub fn get(&self, i: Block) -> Option<&T> {
+        self.blocks.get(&i)
+    }
+
+    pub fn get_mut(&mut self, i: Block) -> Option<&mut T> {
+        self.blocks.get_mut(&i)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (Block, &T)> {
+        self.blocks.iter().map(|(i, t)| (*i, t))
+    }
+}
+
+impl<T> PackZipDefault for BlocksMap<T> {}
 
 pub struct BlockComponent<T> {
-    chunks: BTreeMap<Chunk, Blocks<T>>,
+    chunks: BTreeMap<Chunk, T>,
 }
 
 impl<T> BlockComponent<T> {
@@ -81,15 +106,15 @@ impl<T> BlockComponent<T> {
         self.chunks.len()
     }
 
-    pub fn get_chunk(&self, chunk: &Chunk) -> Option<&Blocks<T>> {
+    pub fn get_chunk(&self, chunk: &Chunk) -> Option<&T> {
         self.chunks.get(chunk)
     }
 
-    pub fn get_mut_chunk(&mut self, chunk: &Chunk) -> Option<&mut Blocks<T>> {
+    pub fn get_mut_chunk(&mut self, chunk: &Chunk) -> Option<&mut T> {
         self.chunks.get_mut(chunk)
     }
 
-    pub fn insert_chunk(&mut self, chunk: Chunk, blocks: Blocks<T>) {
+    pub fn insert_chunk(&mut self, chunk: Chunk, blocks: T) {
         self.chunks.insert(chunk, blocks);
     }
 
@@ -104,7 +129,7 @@ impl<T> BlockComponent<T> {
         self.chunks.retain(|c, _| retain_fn(c));
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&Chunk, &Blocks<T>)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&Chunk, &T)> {
         self.chunks.iter()
     }
 }
