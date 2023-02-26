@@ -10,3 +10,18 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
+
+[workspace.dependencies]
+async-executor = "1.5"
+blocking = "1.3"
+futures-lite = "1.12"
+async-io = "1.12"
+flume = { version = "0.10", default-features = false, features = ["async"] }
+serde = { version = "1.0", default-features = false, features = ["std", "derive"] } 
+serde-big-array = "0.4"
+k256 = { version = "0.11.6", features = ["ecdsa"] }
+lz4_flex = { version = "0.9", default-features = false, features = ["checked-decode"] }
+postcard = { version = "1.0", default-features = false, features = ["use-std"] }
+anyhow = "1.0"
+log = "0.4"
+env_logger = "0.9"
