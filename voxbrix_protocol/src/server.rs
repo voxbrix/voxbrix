@@ -79,7 +79,6 @@ use std::{
         Read,
         Write,
     },
-    iter,
     mem,
     net::{
         SocketAddr,
@@ -675,8 +674,6 @@ struct Client {
 }
 
 struct Clients {
-    max_clients: usize,
-    curr_clients: usize,
     clients: Vec<Option<Client>>,
     free_indices: VecDeque<Id>,
 }
@@ -687,10 +684,8 @@ impl Clients {
 
     fn new(max_clients: usize) -> Self {
         Self {
-            max_clients,
-            curr_clients: 0,
-            clients: Vec::with_capacity(max_clients),
-            free_indices: VecDeque::new(),
+            clients: (0 .. max_clients).map(|_| None).collect(),
+            free_indices: (0 .. max_clients).collect(),
         }
     }
 
@@ -709,24 +704,10 @@ impl Clients {
     }
 
     fn push(&mut self, client: Client) -> Option<usize> {
-        match iter::from_fn(|| self.free_indices.pop_front())
-            .find(|idx| self.clients.get(*idx).is_some())
-        {
-            Some(idx) => {
-                *self.clients.get_mut(idx).unwrap() = Some(client);
-                self.curr_clients += 1;
-                Some(idx + Self::ID_OFFSET)
-            },
-            None => {
-                if self.curr_clients < self.max_clients {
-                    self.clients.push(Some(client));
-                    self.curr_clients += 1;
-                    Some(self.clients.len() + Self::ID_OFFSET - 1)
-                } else {
-                    None
-                }
-            },
-        }
+        self.free_indices.pop_front().map(|idx| {
+            *self.clients.get_mut(idx).unwrap() = Some(client);
+            idx + Self::ID_OFFSET
+        })
     }
 
     fn remove(&mut self, id: Id) -> Option<Client> {
@@ -738,12 +719,7 @@ impl Clients {
         let res = mem::replace(self.clients.get_mut(idx)?, None);
 
         if res.is_some() {
-            self.curr_clients -= 1;
-            self.free_indices.push_back(idx);
-
-            while let Some(None) = self.clients.last() {
-                self.clients.pop();
-            }
+            self.free_indices.push_front(idx);
         }
 
         res
