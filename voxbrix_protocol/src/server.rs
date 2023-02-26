@@ -79,6 +79,7 @@ use std::{
         Read,
         Write,
     },
+    iter,
     mem,
     net::{
         SocketAddr,
@@ -708,7 +709,9 @@ impl Clients {
     }
 
     fn push(&mut self, client: Client) -> Option<usize> {
-        match self.free_indices.pop_front() {
+        match iter::from_fn(|| self.free_indices.pop_front())
+            .find(|idx| self.clients.get(*idx).is_some())
+        {
             Some(idx) => {
                 *self.clients.get_mut(idx).unwrap() = Some(client);
                 self.curr_clients += 1;
