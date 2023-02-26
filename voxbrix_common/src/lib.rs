@@ -6,7 +6,7 @@ pub mod pack;
 pub mod sparse_vec;
 pub mod stream;
 
-use component::block::Blocks;
+use component::block::BlocksVec;
 use entity::{
     block_class::BlockClass,
     chunk::Chunk,
@@ -35,5 +35,5 @@ macro_rules! unblock {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ChunkData {
     pub chunk: Chunk,
-    pub block_classes: Blocks<BlockClass>,
+    pub block_classes: BlocksVec<BlockClass>,
 }

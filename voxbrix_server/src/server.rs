@@ -17,7 +17,7 @@ use crate::{
         },
         block::{
             class::ClassBlockComponent,
-            Blocks,
+            BlocksVec,
         },
         chunk::{
             cache::CacheChunkComponent,
@@ -171,9 +171,9 @@ pub async fn run(
                     }
                     .unwrap_or_else(|| {
                         let block_classes = if chunk.position[2] < -1 {
-                            Blocks::new(vec![BlockClass(1); BLOCKS_IN_CHUNK])
+                            BlocksVec::new(vec![BlockClass(1); BLOCKS_IN_CHUNK])
                         } else {
-                            Blocks::new(vec![BlockClass(0); BLOCKS_IN_CHUNK])
+                            BlocksVec::new(vec![BlockClass(0); BLOCKS_IN_CHUNK])
                         };
 
                         let db_write = shared.database.begin_write().unwrap();

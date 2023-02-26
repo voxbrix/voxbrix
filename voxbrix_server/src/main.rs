@@ -1,5 +1,5 @@
 use crate::{
-    component::block::Blocks,
+    component::block::BlocksVec,
     entity::{
         block_class::BlockClass,
         chunk::{
@@ -49,7 +49,7 @@ const PROCESS_INTERVAL: Duration = Duration::from_millis(50);
 const CLIENT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 const BLOCK_CLASS_TABLE: TableDefinition<
     DataSized<Chunk, { chunk::KEY_LENGTH }>,
-    Data<Blocks<BlockClass>>,
+    Data<BlocksVec<BlockClass>>,
 > = TableDefinition::new("block_class");
 const PLAYER_TABLE: TableDefinition<
     DataSized<Player, { player::KEY_LENGTH }>,

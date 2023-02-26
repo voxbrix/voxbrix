@@ -11,7 +11,7 @@ use crate::{
         },
         block::{
             class::ClassBlockComponent,
-            Blocks,
+            BlocksVec,
         },
         block_class::model::{
             Cube,
@@ -108,12 +108,12 @@ where
 
 fn neighbors_to_cull_mask<'a, T>(
     neighbors: &[Neighbor; 6],
-    this_chunk: &Blocks<BlockClass>,
+    this_chunk: &BlocksVec<BlockClass>,
     neighbor_chunks: &[Option<T>; 6],
     model_bcc: &ModelBlockClassComponent,
 ) -> CullMask
 where
-    T: Deref<Target = &'a Blocks<BlockClass>>,
+    T: Deref<Target = &'a BlocksVec<BlockClass>>,
 {
     let mut cull_mask = CullMask::all();
     for (i, (neighbor, neighbor_chunk)) in neighbors.iter().zip(neighbor_chunks.iter()).enumerate()
