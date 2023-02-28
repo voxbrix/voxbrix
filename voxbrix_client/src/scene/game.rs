@@ -161,32 +161,31 @@ impl GameScene<'_> {
 
         let event_tx_network = event_tx.clone();
 
-        self.rt
-            .spawn(async move {
-                let mut buf = Vec::new();
-                loop {
-                    let data = match rx.recv(&mut buf).await {
-                        Ok((_channel, data)) => data,
-                        Err(err) => {
-                            let _ = event_tx_network.send(Event::NetworkInput(Err(err)));
-                            break;
-                        },
-                    };
-
-                    let message = match ClientAccept::unpack(data) {
-                        Ok(m) => m,
-                        Err(_) => continue,
-                    };
-
-                    if event_tx_network
-                        .send(Event::NetworkInput(Ok(message)))
-                        .is_err()
-                    {
+        // Should be dropped when the loop ends
+        let _recv_task = self.rt.spawn(async move {
+            let mut buf = Vec::new();
+            loop {
+                let data = match rx.recv(&mut buf).await {
+                    Ok((_channel, data)) => data,
+                    Err(err) => {
+                        let _ = event_tx_network.send(Event::NetworkInput(Err(err)));
                         break;
-                    };
-                }
-            })
-            .detach();
+                    },
+                };
+
+                let message = match ClientAccept::unpack(data) {
+                    Ok(m) => m,
+                    Err(_) => continue,
+                };
+
+                if event_tx_network
+                    .send(Event::NetworkInput(Ok(message)))
+                    .is_err()
+                {
+                    break;
+                };
+            }
+        });
 
         let mut scc = StatusChunkComponent::new();
 

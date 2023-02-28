@@ -119,13 +119,9 @@ impl Client {
     where
         A: Into<SocketAddr>,
     {
-        self.transport.get_ref().connect(server_address.into())?;
+        let Client { transport } = self;
 
-        #[cfg(feature = "single")]
-        let transport = Rc::new(self.transport);
-
-        #[cfg(feature = "multi")]
-        let transport = Arc::new(self.transport);
+        transport.get_ref().connect(server_address.into())?;
 
         let (ack_sender, ack_receiver) = new_channel();
 
@@ -184,32 +180,44 @@ impl Client {
 
         let cipher = ChaCha20Poly1305::new((&secret).into());
 
+        let shared = {
+            let shared = Shared {
+                id,
+                cipher,
+                transport,
+            };
+
+            #[cfg(feature = "single")]
+            {
+                Rc::new(shared)
+            }
+
+            #[cfg(feature = "multi")]
+            {
+                Arc::new(shared)
+            }
+        };
+
         let receiver = Receiver {
-            id,
-            cipher: cipher.clone(),
+            shared: shared.clone(),
             sequence: 0,
             reliable_split_buffer: Vec::new(),
             reliable_split_channel: None,
             buffer: [0; MAX_PACKET_SIZE],
             ack_sender,
-            transport: transport.clone(),
             unreliable_split_buffers: VecDeque::with_capacity(UNRELIABLE_BUFFERS),
         };
 
         let sender = Sender {
             unreliable: UnreliableSender {
-                id,
-                cipher: cipher.clone(),
+                shared: shared.clone(),
                 unreliable_split_id: 0,
-                transport: transport.clone(),
             },
             reliable: ReliableSender {
-                id,
-                cipher,
+                shared,
                 sequence: 0,
                 buffer: [0; MAX_PACKET_SIZE],
                 ack_receiver,
-                transport,
             },
         };
 
@@ -222,33 +230,58 @@ impl Client {
     }
 }
 
-pub struct Receiver {
+struct Shared {
     id: Id,
     cipher: ChaCha20Poly1305,
+    transport: Async<UdpSocket>,
+}
+
+impl Drop for Shared {
+    fn drop(&mut self) {
+        let mut buffer = [0; MAX_PACKET_SIZE];
+
+        let mut write_cursor = Cursor::new(buffer.as_mut_slice());
+
+        write_cursor.write_varint(self.id).unwrap();
+        write_cursor.write_varint(Type::DISCONNECT).unwrap();
+
+        let tag_start = write_cursor.position();
+
+        let len = crate::tag_sign_in_buffer(&mut buffer, &self.cipher, tag_start as usize);
+
+        let _ = self.transport.get_ref().send(&buffer[0 .. len]);
+    }
+}
+
+pub struct Receiver {
+    #[cfg(feature = "single")]
+    shared: Rc<Shared>,
+
+    #[cfg(feature = "multi")]
+    shared: Arc<Shared>,
+
     sequence: Sequence,
     reliable_split_buffer: Vec<u8>,
     reliable_split_channel: Option<Channel>,
     buffer: [u8; MAX_PACKET_SIZE],
     ack_sender: ChannelTx<Sequence>,
-
-    #[cfg(feature = "single")]
-    transport: Rc<Async<UdpSocket>>,
-
-    #[cfg(feature = "multi")]
-    transport: Arc<Async<UdpSocket>>,
     unreliable_split_buffers: VecDeque<UnreliableBuffer>,
 }
 
 impl Receiver {
     async fn send_ack(&mut self, sequence: Sequence) -> Result<(), Error> {
-        let (tag_start, len) =
-            crate::write_in_buffer(&mut self.buffer, self.id, Type::ACKNOWLEDGE, |cursor| {
+        let (tag_start, len) = crate::write_in_buffer(
+            &mut self.buffer,
+            self.shared.id,
+            Type::ACKNOWLEDGE,
+            |cursor| {
                 cursor.write_varint(sequence).unwrap();
-            });
+            },
+        );
 
-        crate::encode_in_buffer(&mut self.buffer, &self.cipher, tag_start, len);
+        crate::encode_in_buffer(&mut self.buffer, &self.shared.cipher, tag_start, len);
 
-        self.transport.send(&self.buffer[.. len]).await?;
+        self.shared.transport.send(&self.buffer[.. len]).await?;
         Ok(())
     }
 
@@ -259,7 +292,7 @@ impl Receiver {
         loop {
             buf.resize(MAX_PACKET_SIZE, 0);
 
-            let len = self.transport.recv(buf).await?;
+            let len = self.shared.transport.recv(buf).await?;
 
             let mut read_cursor = Cursor::new(&buf[.. len]);
 
@@ -278,7 +311,7 @@ impl Receiver {
             let tag_start = read_cursor.position() as usize;
 
             let decrypted_start =
-                match crate::decode_in_buffer(&mut buf[.. len], tag_start, &self.cipher) {
+                match crate::decode_in_buffer(&mut buf[.. len], tag_start, &self.shared.cipher) {
                     Ok(s) => s,
                     Err(()) => continue,
                 };
@@ -482,15 +515,13 @@ impl Sender {
 }
 
 pub struct UnreliableSender {
-    id: Id,
-    cipher: ChaCha20Poly1305,
-    unreliable_split_id: u16,
-
     #[cfg(feature = "single")]
-    transport: Rc<Async<UdpSocket>>,
+    shared: Rc<Shared>,
 
     #[cfg(feature = "multi")]
-    transport: Arc<Async<UdpSocket>>,
+    shared: Arc<Shared>,
+
+    unreliable_split_id: u16,
 }
 
 impl UnreliableSender {
@@ -504,7 +535,7 @@ impl UnreliableSender {
         let mut buffer = [0; MAX_PACKET_SIZE];
 
         let (tag_start, len) =
-            crate::write_in_buffer(&mut buffer, self.id, message_type, |cursor| {
+            crate::write_in_buffer(&mut buffer, self.shared.id, message_type, |cursor| {
                 cursor.write_varint(channel).unwrap();
                 if let Some(len_or_count) = len_or_count {
                     cursor.write_varint(self.unreliable_split_id).unwrap();
@@ -513,9 +544,9 @@ impl UnreliableSender {
                 cursor.write_all(data).unwrap();
             });
 
-        crate::encode_in_buffer(&mut buffer, &self.cipher, tag_start, len);
+        crate::encode_in_buffer(&mut buffer, &self.shared.cipher, tag_start, len);
 
-        self.transport.send(&buffer[.. len]).await?;
+        self.shared.transport.send(&buffer[.. len]).await?;
 
         Ok(())
     }
@@ -554,17 +585,15 @@ impl UnreliableSender {
 }
 
 pub struct ReliableSender {
-    id: Id,
-    cipher: ChaCha20Poly1305,
+    #[cfg(feature = "single")]
+    shared: Rc<Shared>,
+
+    #[cfg(feature = "multi")]
+    shared: Arc<Shared>,
+
     sequence: Sequence,
     buffer: [u8; MAX_PACKET_SIZE],
     ack_receiver: ChannelRx<Sequence>,
-
-    #[cfg(feature = "single")]
-    transport: Rc<Async<UdpSocket>>,
-
-    #[cfg(feature = "multi")]
-    transport: Arc<Async<UdpSocket>>,
 }
 
 impl ReliableSender {
@@ -575,16 +604,16 @@ impl ReliableSender {
         packet_type: u8,
     ) -> Result<(), Error> {
         let (tag_start, len) =
-            crate::write_in_buffer(&mut self.buffer, self.id, packet_type, |cursor| {
+            crate::write_in_buffer(&mut self.buffer, self.shared.id, packet_type, |cursor| {
                 cursor.write_varint(channel).unwrap();
                 cursor.write_varint(self.sequence).unwrap();
                 cursor.write_all(data).unwrap();
             });
 
-        crate::encode_in_buffer(&mut self.buffer, &self.cipher, tag_start, len);
+        crate::encode_in_buffer(&mut self.buffer, &self.shared.cipher, tag_start, len);
 
         loop {
-            self.transport.send(&self.buffer[.. len]).await?;
+            self.shared.transport.send(&self.buffer[.. len]).await?;
 
             let result = async {
                 #[cfg(feature = "single")]

@@ -280,8 +280,10 @@ impl StreamSender {
 pub struct StreamUnreliableSender {
     #[cfg(feature = "single")]
     shared: Rc<Shared>,
+
     #[cfg(feature = "multi")]
     shared: Arc<Shared>,
+
     unreliable_split_id: u16,
 }
 
@@ -365,8 +367,10 @@ impl StreamUnreliableSender {
 pub struct StreamReliableSender {
     #[cfg(feature = "single")]
     shared: Rc<Shared>,
+
     #[cfg(feature = "multi")]
     shared: Arc<Shared>,
+
     sequence: Sequence,
     ack_receiver: ChannelRx<Sequence>,
 }
@@ -467,8 +471,10 @@ impl StreamReliableSender {
 pub struct StreamReceiver {
     #[cfg(feature = "single")]
     shared: Rc<Shared>,
+
     #[cfg(feature = "multi")]
     shared: Arc<Shared>,
+
     sequence: Sequence,
     split_buffer: Vec<u8>,
     split_channel: Option<Channel>,
@@ -997,7 +1003,26 @@ impl Server {
                             }
                         },
                         Out::DropClient { peer } => {
-                            self.clients.remove(peer);
+                            if let Some(client) = self.clients.remove(peer) {
+                                let mut write_cursor =
+                                    Cursor::new(self.receive_buffer.as_mut_slice());
+
+                                write_cursor.write_varint(SERVER_ID).unwrap();
+                                write_cursor.write_varint(Type::DISCONNECT).unwrap();
+
+                                let tag_start = write_cursor.position();
+
+                                let len = crate::tag_sign_in_buffer(
+                                    &mut self.receive_buffer,
+                                    &client.cipher,
+                                    tag_start as usize,
+                                );
+
+                                let _ = self
+                                    .transport
+                                    .send_to(&self.receive_buffer[.. len], client.address)
+                                    .await;
+                            }
                         },
                     }
                 },

@@ -215,7 +215,6 @@ where
     (tag_start, cursor.position() as usize)
 }
 
-// returns total data length
 fn encode_in_buffer(
     buffer: &mut [u8; MAX_PACKET_SIZE],
     cipher: &ChaCha20Poly1305,
@@ -236,6 +235,26 @@ fn encode_in_buffer(
         .unwrap();
 
     buffer[tag_start .. tag_finish].copy_from_slice(&tag);
+}
+
+// returns total data length
+fn tag_sign_in_buffer(
+    buffer: &mut [u8; MAX_PACKET_SIZE],
+    cipher: &ChaCha20Poly1305,
+    tag_start: usize,
+) -> usize {
+    let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
+    let tag_finish = tag_start + TAG_SIZE;
+    let length = tag_finish + NONCE_SIZE;
+    buffer[tag_finish .. length].copy_from_slice(&nonce);
+
+    let tag = cipher
+        .encrypt_in_place_detached(&nonce, &buffer[.. tag_start], &mut [])
+        .unwrap();
+
+    buffer[tag_start .. tag_finish].copy_from_slice(&tag);
+
+    length
 }
 
 // returns start of a relevant data (that is right after the nonce)
@@ -943,11 +962,8 @@ mod tests {
                 assert_eq!(channel, 0);
             }
 
-            rt.spawn(async move {
-                while let Ok(_) = rx.recv(&mut buf).await {}
-                panic!("recv loop ended");
-            })
-            .detach();
+            rt.spawn(async move { while let Ok(_) = rx.recv(&mut buf).await {} })
+                .detach();
 
             for i in 0 .. 1000 {
                 tx.send_reliable(0, format!("HelloWorld{}", i).as_bytes())
@@ -1023,11 +1039,8 @@ mod tests {
             assert_eq!(result.as_ref(), data.as_slice());
             assert_eq!(channel, 0);
 
-            rt.spawn(async move {
-                while let Ok(_) = rx.recv(&mut buf).await {}
-                panic!("recv loop ended");
-            })
-            .detach();
+            rt.spawn(async move { while let Ok(_) = rx.recv(&mut buf).await {} })
+                .detach();
 
             tx.send_reliable(0, data.as_ref())
                 .await
@@ -1128,11 +1141,8 @@ mod tests {
                 assert_eq!(channel, 0);
             }
 
-            rt.spawn(async move {
-                while let Ok(_) = rx.recv(&mut buf).await {}
-                panic!("recv loop ended");
-            })
-            .detach();
+            rt.spawn(async move { while let Ok(_) = rx.recv(&mut buf).await {} })
+                .detach();
 
             for i in 0 .. 10 {
                 let data = Box::leak(Box::new({
