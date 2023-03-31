@@ -22,9 +22,12 @@ impl Model {
         chunk: &Chunk,
         block: [usize; 3],
         cull_mask: CullMask,
+        sky_light_level: [u8; 6],
     ) {
         match self {
-            Self::Cube(cube) => cube.to_vertices(chunk, vertices, indices, block, cull_mask),
+            Self::Cube(cube) => {
+                cube.to_vertices(chunk, vertices, indices, block, cull_mask, sky_light_level)
+            },
         }
     }
 }
@@ -125,6 +128,7 @@ impl Cube {
             position: positions[0],
             texture_index: TEXTURE_INDEX,
             texture_position: [0.0, 0.0],
+            light_level: [16, 0, 0, 0],
         });
 
         vertices.push(Vertex {
@@ -132,6 +136,7 @@ impl Cube {
             position: positions[1],
             texture_index: TEXTURE_INDEX,
             texture_position: [1.0, 0.0],
+            light_level: [16, 0, 0, 0],
         });
 
         vertices.push(Vertex {
@@ -139,6 +144,7 @@ impl Cube {
             position: positions[2],
             texture_index: TEXTURE_INDEX,
             texture_position: [1.0, 1.0],
+            light_level: [16, 0, 0, 0],
         });
 
         vertices.push(Vertex {
@@ -146,6 +152,7 @@ impl Cube {
             position: positions[3],
             texture_index: TEXTURE_INDEX,
             texture_position: [0.0, 1.0],
+            light_level: [16, 0, 0, 0],
         });
 
         indices.push(base);
@@ -163,14 +170,18 @@ impl Cube {
         indices: &mut Vec<u32>,
         positions: [[usize; 3]; 4],
         texture_index: u32,
+        sky_light_level: u8,
     ) {
         let base = vertices.len() as u32;
+
+        let light_level = [sky_light_level, 0, 0, 0];
 
         vertices.push(Vertex {
             chunk: chunk.into(),
             position: positions[0].map(|c| c as f32),
             texture_index,
             texture_position: [0.0, 0.0],
+            light_level,
         });
 
         vertices.push(Vertex {
@@ -178,6 +189,7 @@ impl Cube {
             position: positions[1].map(|c| c as f32),
             texture_index,
             texture_position: [1.0, 0.0],
+            light_level,
         });
 
         vertices.push(Vertex {
@@ -185,6 +197,7 @@ impl Cube {
             position: positions[2].map(|c| c as f32),
             texture_index,
             texture_position: [1.0, 1.0],
+            light_level,
         });
 
         vertices.push(Vertex {
@@ -192,6 +205,7 @@ impl Cube {
             position: positions[3].map(|c| c as f32),
             texture_index,
             texture_position: [0.0, 1.0],
+            light_level,
         });
 
         indices.push(base);
@@ -210,6 +224,7 @@ impl Cube {
         indices: &mut Vec<u32>,
         block: [usize; 3],
         cull_mask: CullMask,
+        sky_light_level: [u8; 6],
     ) {
         let x = block[0];
         let y = block[1];
@@ -223,6 +238,7 @@ impl Cube {
                 indices,
                 [[x, y, z + 1], [x, y + 1, z + 1], [x, y + 1, z], [x, y, z]],
                 self.textures[0],
+                sky_light_level[0],
             );
         }
 
@@ -239,6 +255,7 @@ impl Cube {
                     [x + 1, y + 1, z],
                 ],
                 self.textures[1],
+                sky_light_level[1],
             );
         }
 
@@ -250,6 +267,7 @@ impl Cube {
                 indices,
                 [[x + 1, y, z + 1], [x, y, z + 1], [x, y, z], [x + 1, y, z]],
                 self.textures[2],
+                sky_light_level[2],
             );
         }
 
@@ -266,6 +284,7 @@ impl Cube {
                     [x, y + 1, z],
                 ],
                 self.textures[3],
+                sky_light_level[3],
             );
         }
 
@@ -277,6 +296,7 @@ impl Cube {
                 indices,
                 [[x, y, z], [x, y + 1, z], [x + 1, y + 1, z], [x + 1, y, z]],
                 self.textures[4],
+                sky_light_level[4],
             );
         }
 
@@ -293,6 +313,7 @@ impl Cube {
                     [x, y, z + 1],
                 ],
                 self.textures[5],
+                sky_light_level[5],
             );
         }
     }

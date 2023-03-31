@@ -15,6 +15,7 @@ pub struct Vertex {
     pub position: [f32; 3],
     pub texture_index: u32,
     pub texture_position: [f32; 2],
+    pub light_level: [u8; 4],
 }
 
 impl Vertex {
@@ -45,6 +46,14 @@ impl Vertex {
                         + mem::size_of::<u32>()) as BufferAddress,
                     shader_location: 3,
                     format: VertexFormat::Float32x2,
+                },
+                VertexAttribute {
+                    offset: (mem::size_of::<[i32; 3]>()
+                        + mem::size_of::<[f32; 3]>()
+                        + mem::size_of::<u32>()
+                        + mem::size_of::<[f32; 2]>()) as BufferAddress,
+                    shader_location: 4,
+                    format: VertexFormat::Uint8x4,
                 },
             ],
         }

@@ -22,6 +22,7 @@ serde-big-array = "0.4"
 k256 = { version = "0.11.6", features = ["ecdsa"] }
 lz4_flex = { version = "0.9", default-features = false, features = ["checked-decode"] }
 postcard = { version = "1.0", default-features = false, features = ["use-std"] }
+arrayvec = { version = "0.7", default-features = false }
 anyhow = "1.0"
 log = "0.4"
 env_logger = "0.9"

@@ -53,7 +53,12 @@ use futures_lite::{
     future::FutureExt,
     stream::StreamExt,
 };
+use local_channel::mpsc::Sender as ChannelSender;
 use log::error;
+use rayon::iter::{
+    IntoParallelIterator,
+    ParallelIterator,
+};
 use std::{
     io::ErrorKind as StdIoErrorKind,
     time::{
@@ -62,6 +67,7 @@ use std::{
     },
 };
 use voxbrix_common::{
+    component::block::sky_light::SkyLightBlockComponent,
     math::Vec3,
     messages::{
         client::ClientAccept,
@@ -69,6 +75,7 @@ use voxbrix_common::{
     },
     pack::PackZip,
     stream::StreamExt as _,
+    system::sky_light::SkyLightSystem,
     unblock,
     ChunkData,
 };
@@ -190,6 +197,7 @@ impl GameScene<'_> {
         let mut scc = StatusChunkComponent::new();
 
         let mut cbc = ClassBlockComponent::new();
+        let mut slbc = SkyLightBlockComponent::new();
         let mut mbcc = ModelBlockClassComponent::new();
 
         mbcc.set(
@@ -204,6 +212,7 @@ impl GameScene<'_> {
         let mut position_system = PositionSystem::new();
         let mut direct_control_system = DirectControl::new(player_actor, 10.0, 0.4);
         let chunk_presence_system = ChunkPresenceSystem::new();
+        let sky_light_system = SkyLightSystem::new();
 
         let mut gpac = GlobalPositionActorComponent::new();
         let mut vac = VelocityActorComponent::new();
@@ -278,7 +287,7 @@ impl GameScene<'_> {
                     let target =
                         PositionSystem::get_target_block(position, orientation, |chunk, block| {
                             cbc.get_chunk(&chunk)
-                                .map(|blocks| blocks.get(block).unwrap() == &BlockClass(1))
+                                .map(|blocks| blocks.get(block) == &BlockClass(1))
                                 .unwrap_or(false)
                         });
 
@@ -350,7 +359,7 @@ impl GameScene<'_> {
                                                         |chunk, block| {
                                                             cbc.get_chunk(&chunk)
                                                                 .map(|blocks| {
-                                                                    blocks.get(block).unwrap()
+                                                                    blocks.get(block)
                                                                         == &BlockClass(1)
                                                                 })
                                                                 .unwrap_or(false)
@@ -377,7 +386,7 @@ impl GameScene<'_> {
                                                         |chunk, block| {
                                                             cbc.get_chunk(&chunk)
                                                                 .map(|blocks| {
-                                                                    blocks.get(block).unwrap()
+                                                                    blocks.get(block)
                                                                         == &BlockClass(1)
                                                                 })
                                                                 .unwrap_or(false)
@@ -431,7 +440,10 @@ impl GameScene<'_> {
                         }) => {
                             cbc.insert_chunk(chunk, block_classes);
                             scc.insert(chunk, ChunkStatus::Active);
+
                             let _ = event_tx.send(Event::DrawChunk(chunk));
+
+                            calc_light(&sky_light_system, chunk, &cbc, &mut slbc, &event_tx);
                         },
                         ClientAccept::AlterBlock {
                             chunk,
@@ -439,11 +451,13 @@ impl GameScene<'_> {
                             block_class,
                         } => {
                             if let Some(block_class_ref) =
-                                cbc.get_mut_chunk(&chunk).and_then(|c| c.get_mut(block))
+                                cbc.get_mut_chunk(&chunk).map(|c| c.get_mut(block))
                             {
                                 *block_class_ref = block_class;
 
                                 let _ = event_tx.send(Event::DrawChunk(chunk));
+
+                                calc_light(&sky_light_system, chunk, &cbc, &mut slbc, &event_tx);
                             }
                         },
                     }
@@ -451,13 +465,67 @@ impl GameScene<'_> {
                 Event::DrawChunk(chunk) => {
                     // TODO: use separate *set* as a queue and take up to num_cpus each time the event
                     // comes
-                    unblock!((render_system, cbc, mbcc) {
-                        render_system.build_chunk(&chunk, &cbc, &mbcc);
+                    unblock!((render_system, cbc, mbcc, slbc) {
+                        render_system.build_chunk(&chunk, &cbc, &mbcc, &slbc);
                     });
                 },
             }
         }
 
         Ok(SceneSwitch::Menu)
+    }
+}
+
+// TODO move to more appropriate place
+fn calc_light(
+    sky_light_system: &SkyLightSystem,
+    chunk: Chunk,
+    cbc: &ClassBlockComponent,
+    slbc: &mut SkyLightBlockComponent,
+    event_tx: &ChannelSender<Event>,
+) {
+    let (light_component, chunks_to_recalc) =
+        sky_light_system.recalculate_chunk(chunk, None, &cbc, &slbc);
+
+    let mut chunks_to_recalc: std::collections::BTreeSet<_> =
+        chunks_to_recalc.into_iter().collect();
+
+    slbc.insert_chunk(chunk, light_component);
+
+    loop {
+        let results = chunks_to_recalc
+            .iter()
+            .filter_map(|chunk| Some((chunk, slbc.remove_chunk(chunk)?)))
+            .collect::<Vec<_>>();
+
+        if results.is_empty() {
+            break;
+        }
+
+        let results = results
+            .into_par_iter()
+            .map(|(chunk, old_light_component)| {
+                let (light_component, chunks_to_recalc) = sky_light_system.recalculate_chunk(
+                    *chunk,
+                    Some(old_light_component),
+                    &cbc,
+                    &slbc,
+                );
+
+                (*chunk, light_component, chunks_to_recalc)
+            })
+            .collect::<Vec<_>>();
+
+        let expansion =
+            results
+                .into_iter()
+                .flat_map(|(chunk, light_component, chunks_to_recalc)| {
+                    slbc.insert_chunk(chunk, light_component);
+                    let _ = event_tx.send(Event::DrawChunk(chunk));
+                    chunks_to_recalc.into_iter()
+                });
+
+        chunks_to_recalc.clear();
+        chunks_to_recalc.extend(expansion);
     }
 }

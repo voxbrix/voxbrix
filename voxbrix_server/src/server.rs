@@ -292,7 +292,7 @@ pub async fn run(
                         } => {
                             if let Some(block_class_ref) = cbc
                                 .get_mut_chunk(&chunk)
-                                .and_then(|blocks| blocks.get_mut(block))
+                                .map(|blocks| blocks.get_mut(block))
                             {
                                 *block_class_ref = block_class;
 

@@ -52,6 +52,17 @@ impl Chunk {
             ),
         }
     }
+
+    pub fn offset(&self, offset: Vec3<i32>) -> Option<Self> {
+        Some(Self {
+            position: Vec3::new(
+                self.position[0].checked_add(offset[0])?,
+                self.position[1].checked_add(offset[1])?,
+                self.position[2].checked_add(offset[2])?,
+            ),
+            dimension: self.dimension,
+        })
+    }
 }
 
 pub struct ChunkRadius {

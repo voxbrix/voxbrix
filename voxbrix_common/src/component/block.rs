@@ -15,6 +15,7 @@ use serde::{
 use std::collections::BTreeMap;
 
 pub mod class;
+pub mod sky_light;
 
 // #[derive(Serialize, Deserialize, Debug)]
 // struct BlockDefinition {
@@ -43,12 +44,12 @@ impl<T> BlocksVec<T> {
         Self { blocks }
     }
 
-    pub fn get(&self, i: Block) -> Option<&T> {
-        self.blocks.get(i.0)
+    pub fn get(&self, i: Block) -> &T {
+        self.blocks.get(i.0).unwrap()
     }
 
-    pub fn get_mut(&mut self, i: Block) -> Option<&mut T> {
-        self.blocks.get_mut(i.0)
+    pub fn get_mut(&mut self, i: Block) -> &mut T {
+        self.blocks.get_mut(i.0).unwrap()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (Block, &T)> {
@@ -118,8 +119,8 @@ impl<T> BlockComponent<T> {
         self.chunks.insert(chunk, blocks);
     }
 
-    pub fn remove_chunk(&mut self, chunk: &Chunk) {
-        self.chunks.remove(chunk);
+    pub fn remove_chunk(&mut self, chunk: &Chunk) -> Option<T> {
+        self.chunks.remove(chunk)
     }
 
     pub fn retain<F>(&mut self, mut retain_fn: F)

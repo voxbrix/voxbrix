@@ -29,6 +29,9 @@ impl Block {
         Self(z * BLOCKS_IN_CHUNK_LAYER + y * BLOCKS_IN_CHUNK_EDGE + x)
     }
 
+    /// Must provide correct block coords,
+    /// you have to make `Block` from coords with `.from_coords()` or
+    /// extract coords from the `Block` with `.to_coords()`
     pub fn neighbors_in_coords(&self, [x, y, z]: [usize; 3]) -> [Neighbor; 6] {
         let x_m = if x == 0 {
             Neighbor::OtherChunk(Block(self.0 + BLOCKS_IN_CHUNK_EDGE - 1))
@@ -69,6 +72,149 @@ impl Block {
         [x_m, x_p, y_m, y_p, z_m, z_p]
     }
 
+    /// Must provide correct block coords,
+    /// you have to make `Block` from coords with `.from_coords()` or
+    /// extract coords from the `Block` with `.to_coords()`
+    pub fn neighbors_with_coords(&self, [x, y, z]: [usize; 3]) -> [NeighborWithCoords; 6] {
+        let x_m = if x == 0 {
+            NeighborWithCoords::OtherChunk(
+                Block(self.0 + BLOCKS_IN_CHUNK_EDGE - 1),
+                [BLOCKS_IN_CHUNK_EDGE - 1, y, z],
+            )
+        } else {
+            NeighborWithCoords::ThisChunk(Block(self.0 - 1), [x - 1, y, z])
+        };
+
+        let x_p = if x + 1 < BLOCKS_IN_CHUNK_EDGE {
+            NeighborWithCoords::ThisChunk(Block(self.0 + 1), [x + 1, y, z])
+        } else {
+            NeighborWithCoords::OtherChunk(Block(self.0 + 1 - BLOCKS_IN_CHUNK_EDGE), [0, y, z])
+        };
+
+        let y_m = if y == 0 {
+            NeighborWithCoords::OtherChunk(
+                Block(self.0 + BLOCKS_IN_CHUNK_LAYER - BLOCKS_IN_CHUNK_EDGE),
+                [x, BLOCKS_IN_CHUNK_EDGE - 1, z],
+            )
+        } else {
+            NeighborWithCoords::ThisChunk(Block(self.0 - BLOCKS_IN_CHUNK_EDGE), [x, y - 1, z])
+        };
+
+        let y_p = if y + 1 < BLOCKS_IN_CHUNK_EDGE {
+            NeighborWithCoords::ThisChunk(Block(self.0 + BLOCKS_IN_CHUNK_EDGE), [x, y + 1, z])
+        } else {
+            NeighborWithCoords::OtherChunk(
+                Block(self.0 + BLOCKS_IN_CHUNK_EDGE - BLOCKS_IN_CHUNK_LAYER),
+                [x, 0, z],
+            )
+        };
+
+        let z_m = if z == 0 {
+            NeighborWithCoords::OtherChunk(
+                Block(self.0 + BLOCKS_IN_CHUNK - BLOCKS_IN_CHUNK_LAYER),
+                [x, y, BLOCKS_IN_CHUNK_EDGE - 1],
+            )
+        } else {
+            NeighborWithCoords::ThisChunk(Block(self.0 - BLOCKS_IN_CHUNK_LAYER), [x, y, z - 1])
+        };
+
+        let z_p = if z + 1 < BLOCKS_IN_CHUNK_EDGE {
+            NeighborWithCoords::ThisChunk(Block(self.0 + BLOCKS_IN_CHUNK_LAYER), [x, y, z + 1])
+        } else {
+            NeighborWithCoords::OtherChunk(
+                Block(self.0 + BLOCKS_IN_CHUNK_LAYER - BLOCKS_IN_CHUNK),
+                [x, y, 0],
+            )
+        };
+
+        [x_m, x_p, y_m, y_p, z_m, z_p]
+    }
+
+    /// Must provide correct block coords,
+    /// you have to make `Block` from coords with `.from_coords()` or
+    /// extract coords from the `Block` with `.to_coords()`
+    pub fn neighbor_with_coords_side(
+        &self,
+        side: usize,
+        [x, y, z]: [usize; 3],
+    ) -> NeighborWithCoords {
+        match side {
+            0 => {
+                if x == 0 {
+                    NeighborWithCoords::OtherChunk(
+                        Block(self.0 + BLOCKS_IN_CHUNK_EDGE - 1),
+                        [BLOCKS_IN_CHUNK_EDGE - 1, y, z],
+                    )
+                } else {
+                    NeighborWithCoords::ThisChunk(Block(self.0 - 1), [x - 1, y, z])
+                }
+            },
+            1 => {
+                if x + 1 < BLOCKS_IN_CHUNK_EDGE {
+                    NeighborWithCoords::ThisChunk(Block(self.0 + 1), [x + 1, y, z])
+                } else {
+                    NeighborWithCoords::OtherChunk(
+                        Block(self.0 + 1 - BLOCKS_IN_CHUNK_EDGE),
+                        [0, y, z],
+                    )
+                }
+            },
+            2 => {
+                if y == 0 {
+                    NeighborWithCoords::OtherChunk(
+                        Block(self.0 + BLOCKS_IN_CHUNK_LAYER - BLOCKS_IN_CHUNK_EDGE),
+                        [x, BLOCKS_IN_CHUNK_EDGE - 1, z],
+                    )
+                } else {
+                    NeighborWithCoords::ThisChunk(
+                        Block(self.0 - BLOCKS_IN_CHUNK_EDGE),
+                        [x, y - 1, z],
+                    )
+                }
+            },
+            3 => {
+                if y + 1 < BLOCKS_IN_CHUNK_EDGE {
+                    NeighborWithCoords::ThisChunk(
+                        Block(self.0 + BLOCKS_IN_CHUNK_EDGE),
+                        [x, y + 1, z],
+                    )
+                } else {
+                    NeighborWithCoords::OtherChunk(
+                        Block(self.0 + BLOCKS_IN_CHUNK_EDGE - BLOCKS_IN_CHUNK_LAYER),
+                        [x, 0, z],
+                    )
+                }
+            },
+            4 => {
+                if z == 0 {
+                    NeighborWithCoords::OtherChunk(
+                        Block(self.0 + BLOCKS_IN_CHUNK - BLOCKS_IN_CHUNK_LAYER),
+                        [x, y, BLOCKS_IN_CHUNK_EDGE - 1],
+                    )
+                } else {
+                    NeighborWithCoords::ThisChunk(
+                        Block(self.0 - BLOCKS_IN_CHUNK_LAYER),
+                        [x, y, z - 1],
+                    )
+                }
+            },
+            5 => {
+                if z + 1 < BLOCKS_IN_CHUNK_EDGE {
+                    NeighborWithCoords::ThisChunk(
+                        Block(self.0 + BLOCKS_IN_CHUNK_LAYER),
+                        [x, y, z + 1],
+                    )
+                } else {
+                    NeighborWithCoords::OtherChunk(
+                        Block(self.0 + BLOCKS_IN_CHUNK_LAYER - BLOCKS_IN_CHUNK),
+                        [x, y, 0],
+                    )
+                }
+            },
+            i => panic!("incorrect side index: {}", i),
+        }
+    }
+
     pub fn from_chunk_offset(chunk: Chunk, offset: [i32; 3]) -> (Chunk, Block) {
         const BLOCKS_IN_CHUNK_EDGE_I32: i32 = BLOCKS_IN_CHUNK_EDGE as i32;
 
@@ -106,4 +252,9 @@ impl Block {
 pub enum Neighbor {
     ThisChunk(Block),
     OtherChunk(Block),
+}
+
+pub enum NeighborWithCoords {
+    ThisChunk(Block, [usize; 3]),
+    OtherChunk(Block, [usize; 3]),
 }

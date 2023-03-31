@@ -5,6 +5,7 @@ pub mod messages;
 pub mod pack;
 pub mod sparse_vec;
 pub mod stream;
+pub mod system;
 
 use component::block::BlocksVec;
 use entity::{

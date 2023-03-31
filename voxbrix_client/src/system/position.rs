@@ -153,7 +153,7 @@ impl PositionSystem {
                                     Block::from_chunk_offset(*center_chunk, chunk_offset);
 
                                 if let Some(block_class) =
-                                    cbc.get_chunk(&chunk).and_then(|b| b.get(block))
+                                    cbc.get_chunk(&chunk).map(|b| b.get(block))
                                 {
                                     // TODO better block analysis
                                     if block_class.0 == 1 {

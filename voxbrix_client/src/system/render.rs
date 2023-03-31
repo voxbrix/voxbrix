@@ -11,6 +11,10 @@ use crate::{
         },
         block::{
             class::ClassBlockComponent,
+            sky_light::{
+                SkyLight,
+                SkyLightBlockComponent,
+            },
             BlocksVec,
         },
         block_class::model::{
@@ -34,6 +38,7 @@ use crate::{
     RenderHandle,
 };
 use anyhow::Result;
+use arrayvec::ArrayVec;
 use async_fs::File;
 use futures_lite::io::AsyncReadExt;
 use image::{
@@ -52,7 +57,6 @@ use std::{
         NonZeroU32,
         NonZeroU64,
     },
-    ops::Deref,
     path::{
         Path,
         PathBuf,
@@ -106,15 +110,12 @@ where
     Ok((textures, texture_names))
 }
 
-fn neighbors_to_cull_mask<'a, T>(
+fn neighbors_to_cull_mask(
     neighbors: &[Neighbor; 6],
     this_chunk: &BlocksVec<BlockClass>,
-    neighbor_chunks: &[Option<T>; 6],
+    neighbor_chunks: &[Option<&BlocksVec<BlockClass>>; 6],
     model_bcc: &ModelBlockClassComponent,
-) -> CullMask
-where
-    T: Deref<Target = &'a BlocksVec<BlockClass>>,
-{
+) -> CullMask {
     let mut cull_mask = CullMask::all();
     for (i, (neighbor, neighbor_chunk)) in neighbors.iter().zip(neighbor_chunks.iter()).enumerate()
     {
@@ -122,14 +123,16 @@ where
 
         match neighbor {
             Neighbor::ThisChunk(n) => {
-                let model = this_chunk.get(*n).and_then(|bc| model_bcc.get(*bc));
+                let class = this_chunk.get(*n);
+                let model = model_bcc.get(*class);
                 if model.is_some() {
                     cull_mask.unset(side);
                 }
             },
             Neighbor::OtherChunk(n) => {
                 if let Some(chunk) = neighbor_chunk {
-                    let model = chunk.get(*n).and_then(|bc| model_bcc.get(*bc));
+                    let class = chunk.get(*n);
+                    let model = model_bcc.get(*class);
                     if model.is_some() {
                         cull_mask.unset(side);
                     }
@@ -603,60 +606,68 @@ impl<'a> RenderSystem<'a> {
         chunk: &Chunk,
         cbc: &ClassBlockComponent,
         mbcc: &ModelBlockClassComponent,
+        slbc: &SkyLightBlockComponent,
     ) -> (Vec<Vertex>, Vec<u32>) {
         let mut vertex_buffer = Vec::with_capacity(VERTEX_BUFFER_CAPACITY);
         let mut index_buffer = Vec::with_capacity(INDEX_BUFFER_CAPACITY);
 
-        let blocks = cbc.get_chunk(chunk).unwrap();
+        let neighbor_chunk_ids = [
+            Vec3::new(-1, 0, 0),
+            Vec3::new(1, 0, 0),
+            Vec3::new(0, -1, 0),
+            Vec3::new(0, 1, 0),
+            Vec3::new(0, 0, -1),
+            Vec3::new(0, 0, 1),
+        ]
+        .map(|offset| chunk.offset(offset));
 
-        let chunk_x_minus = Some(*chunk).and_then(|mut chunk| {
-            chunk.position[0] = chunk.position[0].checked_sub(1)?;
-            cbc.get_chunk(&chunk)
-        });
-        let chunk_x_plus = Some(*chunk).and_then(|mut chunk| {
-            chunk.position[0] = chunk.position[0].checked_add(1)?;
-            cbc.get_chunk(&chunk)
-        });
+        let this_chunk_class = cbc.get_chunk(chunk).unwrap();
+        let this_chunk_light = slbc.get_chunk(chunk).unwrap();
 
-        let chunk_y_minus = Some(*chunk).and_then(|mut chunk| {
-            chunk.position[1] = chunk.position[1].checked_sub(1)?;
-            cbc.get_chunk(&chunk)
-        });
-        let chunk_y_plus = Some(*chunk).and_then(|mut chunk| {
-            chunk.position[1] = chunk.position[1].checked_add(1)?;
-            cbc.get_chunk(&chunk)
-        });
+        let neighbor_chunk_class = neighbor_chunk_ids.map(|chunk| {
+            let block_classes = cbc.get_chunk(&chunk?)?;
 
-        let chunk_z_minus = Some(*chunk).and_then(|mut chunk| {
-            chunk.position[2] = chunk.position[2].checked_sub(1)?;
-            cbc.get_chunk(&chunk)
-        });
-        let chunk_z_plus = Some(*chunk).and_then(|mut chunk| {
-            chunk.position[2] = chunk.position[2].checked_add(1)?;
-            cbc.get_chunk(&chunk)
+            Some(block_classes)
         });
 
-        for (block, block_coords, block_class) in blocks.iter_with_coords() {
+        let neighbor_chunk_light = neighbor_chunk_ids.map(|chunk| {
+            let block_light = slbc.get_chunk(&chunk?)?;
+
+            Some(block_light)
+        });
+
+        for (block, block_coords, block_class) in this_chunk_class.iter_with_coords() {
             if let Some(model) = mbcc.get(*block_class) {
+                let neighbors = block.neighbors_in_coords(block_coords);
+
                 let cull_mask = neighbors_to_cull_mask(
-                    &block.neighbors_in_coords(block_coords),
-                    blocks,
-                    &[
-                        chunk_x_minus.as_ref(),
-                        chunk_x_plus.as_ref(),
-                        chunk_y_minus.as_ref(),
-                        chunk_y_plus.as_ref(),
-                        chunk_z_minus.as_ref(),
-                        chunk_z_plus.as_ref(),
-                    ],
+                    &neighbors,
+                    this_chunk_class,
+                    &neighbor_chunk_class,
                     mbcc,
                 );
+
+                let sky_light_levels = neighbors
+                    .iter()
+                    .zip(neighbor_chunk_light)
+                    .map(|(neighbor, neighbor_chunk_light)| {
+                        Some(match neighbor {
+                            Neighbor::ThisChunk(block) => *this_chunk_light.get(*block),
+                            Neighbor::OtherChunk(block) => *neighbor_chunk_light?.get(*block),
+                        })
+                    })
+                    .map(|light| light.unwrap_or(SkyLight::MIN).value())
+                    .collect::<ArrayVec<_, 6>>()
+                    .into_inner()
+                    .unwrap_or_else(|_| unreachable!());
+
                 model.to_vertices(
                     &mut vertex_buffer,
                     &mut index_buffer,
                     chunk,
                     block_coords,
                     cull_mask,
+                    sky_light_levels,
                 );
             }
         }
@@ -669,6 +680,7 @@ impl<'a> RenderSystem<'a> {
         chunk: &Chunk,
         cbc: &ClassBlockComponent,
         mbcc: &ModelBlockClassComponent,
+        slbc: &SkyLightBlockComponent,
     ) {
         if cbc.get_chunk(chunk).is_none() {
             self.chunk_buffer_shards.remove(chunk);
@@ -684,13 +696,14 @@ impl<'a> RenderSystem<'a> {
             Vec3::new(0, 0, 1),
         ]
         .into_par_iter()
-        .filter_map(|shift| {
-            let mut chunk = *chunk;
-
-            chunk.position = chunk.position + shift;
+        .filter_map(|offset| {
+            let chunk = chunk.offset(offset)?;
             cbc.get_chunk(&chunk)?;
 
-            Some((chunk, Self::build_chunk_buffer_shard(&chunk, cbc, mbcc)))
+            Some((
+                chunk,
+                Self::build_chunk_buffer_shard(&chunk, cbc, mbcc, slbc),
+            ))
         });
 
         self.chunk_buffer_shards.par_extend(par_iter);
