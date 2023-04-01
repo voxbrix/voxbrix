@@ -215,7 +215,9 @@ impl LightDispersion<'_> {
     }
 }
 
-// Fills 1-block layers on each side with light from the neighbor chunks
+// Fills 1-block layers on each side with light from the neighbor chunks.
+// As this is prerequisite process to light spill, chunk_light
+// is intended to be filled with SkyLight::MIN.
 struct AddSide<'a> {
     side: usize,
     old_chunk_light: Option<&'a BlocksVec<SkyLight>>,
@@ -265,23 +267,23 @@ impl AddSide<'_> {
                 if block_class.0 == 1 {
                     *block_light = SkyLight::MIN;
 
-                    if old_block_light.is_none() || old_block_light != Some(*block_light) {
+                    if old_block_light != Some(*block_light) {
                         *recalc_inner_blocks = true;
                     }
 
                     continue;
                 }
 
-                let mut block_above_coords = [0; 3];
+                let mut neighbor_block_coords = [0; 3];
 
-                block_above_coords[axis0] = a0;
-                block_above_coords[axis1] = a1;
-                block_above_coords[fixed_axis] = neighbor_fixed_axis_value;
+                neighbor_block_coords[axis0] = a0;
+                neighbor_block_coords[axis1] = a1;
+                neighbor_block_coords[fixed_axis] = neighbor_fixed_axis_value;
 
-                let block_above = Block::from_coords(block_above_coords);
+                let neighbor_block = Block::from_coords(neighbor_block_coords);
 
-                let block_above_light = match &neighbor_chunks[side] {
-                    Some((_chunks, _classes, light)) => *light.get(block_above),
+                let neighbor_block_light = match &neighbor_chunks[side] {
+                    Some((_chunks, _classes, light)) => *light.get(neighbor_block),
                     None => {
                         if side == SKY_SIDE {
                             SkyLight::MAX
@@ -291,13 +293,16 @@ impl AddSide<'_> {
                     },
                 };
 
-                *block_light = if side == SKY_SIDE && block_above_light == SkyLight::MAX {
+                let new_block_light = if side == SKY_SIDE && neighbor_block_light == SkyLight::MAX {
                     SkyLight::MAX
                 } else {
-                    block_above_light.fade()
+                    neighbor_block_light.fade()
                 };
 
-                if old_block_light.is_none() || old_block_light != Some(*block_light) {
+                // Corners of the chunk should inherit the light from the brighter side
+                *block_light = new_block_light.max(*block_light);
+
+                if old_block_light != Some(*block_light) {
                     *recalc_inner_blocks = true;
                 }
             }
