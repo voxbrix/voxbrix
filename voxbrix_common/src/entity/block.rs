@@ -75,56 +75,41 @@ impl Block {
     /// Must provide correct block coords,
     /// you have to make `Block` from coords with `.from_coords()` or
     /// extract coords from the `Block` with `.to_coords()`
-    pub fn neighbors_with_coords(&self, [x, y, z]: [usize; 3]) -> [NeighborWithCoords; 6] {
+    pub fn same_chunk_neighbors(&self, [x, y, z]: [usize; 3]) -> [Option<(Block, [usize; 3])>; 6] {
         let x_m = if x == 0 {
-            NeighborWithCoords::OtherChunk(
-                Block(self.0 + BLOCKS_IN_CHUNK_EDGE - 1),
-                [BLOCKS_IN_CHUNK_EDGE - 1, y, z],
-            )
+            None
         } else {
-            NeighborWithCoords::ThisChunk(Block(self.0 - 1), [x - 1, y, z])
+            Some((Block(self.0 - 1), [x - 1, y, z]))
         };
 
         let x_p = if x + 1 < BLOCKS_IN_CHUNK_EDGE {
-            NeighborWithCoords::ThisChunk(Block(self.0 + 1), [x + 1, y, z])
+            Some((Block(self.0 + 1), [x + 1, y, z]))
         } else {
-            NeighborWithCoords::OtherChunk(Block(self.0 + 1 - BLOCKS_IN_CHUNK_EDGE), [0, y, z])
+            None
         };
 
         let y_m = if y == 0 {
-            NeighborWithCoords::OtherChunk(
-                Block(self.0 + BLOCKS_IN_CHUNK_LAYER - BLOCKS_IN_CHUNK_EDGE),
-                [x, BLOCKS_IN_CHUNK_EDGE - 1, z],
-            )
+            None
         } else {
-            NeighborWithCoords::ThisChunk(Block(self.0 - BLOCKS_IN_CHUNK_EDGE), [x, y - 1, z])
+            Some((Block(self.0 - BLOCKS_IN_CHUNK_EDGE), [x, y - 1, z]))
         };
 
         let y_p = if y + 1 < BLOCKS_IN_CHUNK_EDGE {
-            NeighborWithCoords::ThisChunk(Block(self.0 + BLOCKS_IN_CHUNK_EDGE), [x, y + 1, z])
+            Some((Block(self.0 + BLOCKS_IN_CHUNK_EDGE), [x, y + 1, z]))
         } else {
-            NeighborWithCoords::OtherChunk(
-                Block(self.0 + BLOCKS_IN_CHUNK_EDGE - BLOCKS_IN_CHUNK_LAYER),
-                [x, 0, z],
-            )
+            None
         };
 
         let z_m = if z == 0 {
-            NeighborWithCoords::OtherChunk(
-                Block(self.0 + BLOCKS_IN_CHUNK - BLOCKS_IN_CHUNK_LAYER),
-                [x, y, BLOCKS_IN_CHUNK_EDGE - 1],
-            )
+            None
         } else {
-            NeighborWithCoords::ThisChunk(Block(self.0 - BLOCKS_IN_CHUNK_LAYER), [x, y, z - 1])
+            Some((Block(self.0 - BLOCKS_IN_CHUNK_LAYER), [x, y, z - 1]))
         };
 
         let z_p = if z + 1 < BLOCKS_IN_CHUNK_EDGE {
-            NeighborWithCoords::ThisChunk(Block(self.0 + BLOCKS_IN_CHUNK_LAYER), [x, y, z + 1])
+            Some((Block(self.0 + BLOCKS_IN_CHUNK_LAYER), [x, y, z + 1]))
         } else {
-            NeighborWithCoords::OtherChunk(
-                Block(self.0 + BLOCKS_IN_CHUNK_LAYER - BLOCKS_IN_CHUNK),
-                [x, y, 0],
-            )
+            None
         };
 
         [x_m, x_p, y_m, y_p, z_m, z_p]

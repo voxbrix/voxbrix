@@ -10,7 +10,6 @@ use crate::{
     entity::{
         block::{
             Block,
-            NeighborWithCoords,
             BLOCKS_IN_CHUNK,
             BLOCKS_IN_CHUNK_EDGE,
         },
@@ -23,6 +22,7 @@ use arrayvec::ArrayVec;
 use std::collections::VecDeque;
 
 const SKY_SIDE: usize = 5;
+const GROUND_SIDE: usize = 4;
 
 pub struct SkyLightSystem;
 
@@ -45,7 +45,6 @@ impl SkyLightSystem {
         slbc: &SkyLightBlockComponent,
     ) -> (BlocksVec<SkyLight>, ArrayVec<Chunk, 6>) {
         let mut queue = VecDeque::new();
-        let mut neighbor_chunks_recalc = [false; 6];
 
         let chunk_class = cbc
             .get_chunk(&chunk)
@@ -119,19 +118,15 @@ impl SkyLightSystem {
                     let block = Block::from_coords(block_coords);
 
                     let block_light = chunk_light.get_mut(block);
-                    let old_block_light = old_chunk_light.as_ref().map(|c| *c.get(block));
 
                     if *block_light > SkyLight::MIN {
                         LightDispersion {
                             block,
                             block_coords,
                             block_light: *block_light,
-                            old_block_light,
                             chunk_class,
                             chunk_light: &mut chunk_light,
                             queue: &mut queue,
-                            neighbor_chunks_recalc: &mut neighbor_chunks_recalc,
-                            neighbor_chunks,
                         }
                         .disperse();
                     }
@@ -142,32 +137,30 @@ impl SkyLightSystem {
         while let Some((block, block_coords)) = queue.pop_front() {
             let block_light = chunk_light.get_mut(block);
 
-            let old_block_light = old_chunk_light.as_ref().map(|c| *c.get(block));
-
             LightDispersion {
                 block,
                 block_coords,
                 block_light: *block_light,
-                old_block_light,
                 chunk_class,
                 chunk_light: &mut chunk_light,
                 queue: &mut queue,
-                neighbor_chunks_recalc: &mut neighbor_chunks_recalc,
-                neighbor_chunks,
             }
             .disperse();
         }
 
-        let chunks_to_recalculate = neighbor_chunk_ids
-            .iter()
-            .zip(neighbor_chunks_recalc)
-            .filter_map(|(&chunk_opt, recalc)| {
-                // if neighbor chunk exists and recalc == true for it
-                recalc.then_some(chunk_opt?)
+        let chunks_to_recalc = (0 .. 6)
+            .filter_map(|side| {
+                CheckSide {
+                    side,
+                    old_chunk_light: old_chunk_light.as_ref(),
+                    chunk_light: &chunk_light,
+                    neighbor_chunks,
+                }
+                .needs_recalculation()
             })
             .collect();
 
-        (chunk_light, chunks_to_recalculate)
+        (chunk_light, chunks_to_recalc)
     }
 }
 
@@ -175,12 +168,9 @@ struct LightDispersion<'a> {
     block: Block,
     block_coords: [usize; 3],
     block_light: SkyLight,
-    old_block_light: Option<SkyLight>,
     chunk_class: &'a BlocksVec<BlockClass>,
     chunk_light: &'a mut BlocksVec<SkyLight>,
     queue: &'a mut VecDeque<(Block, [usize; 3])>,
-    neighbor_chunks_recalc: &'a mut [bool; 6],
-    neighbor_chunks: [Option<(Chunk, &'a BlocksVec<BlockClass>, &'a BlocksVec<SkyLight>)>; 6],
 }
 
 // Assigns light to the neighbor blocks within the chunk
@@ -191,60 +181,35 @@ impl LightDispersion<'_> {
             block,
             block_coords,
             block_light,
-            old_block_light,
             chunk_class,
             chunk_light,
             queue,
-            neighbor_chunks_recalc,
-            neighbor_chunks,
         } = self;
 
-        let neighbors = block.neighbors_with_coords(block_coords);
+        let neighbors = block.same_chunk_neighbors(block_coords);
 
-        for ((side, neighbor), neighbor_chunk) in
-            neighbors.iter().enumerate().zip(neighbor_chunks.iter())
-        {
-            match neighbor {
-                NeighborWithCoords::ThisChunk(neighbor_block, neighbor_coords) => {
-                    let neighbor_class = chunk_class.get(*neighbor_block);
-                    let neighbor_light = chunk_light.get_mut(*neighbor_block);
+        for (side, neighbor) in neighbors.iter().enumerate() {
+            if let Some((neighbor_block, neighbor_coords)) = neighbor {
+                let neighbor_class = chunk_class.get(*neighbor_block);
+                let neighbor_light = chunk_light.get_mut(*neighbor_block);
 
-                    // TODO block transparency analysis
-                    if neighbor_class.0 == 1 {
-                        // Do nothing
-                    } else if side == 4 && block_light == SkyLight::MAX {
-                        // Side index 4 is z_m (block below)
-                        // we want max-level light to spread below indefinitely
-                        *neighbor_light = SkyLight::MAX;
+                // TODO block transparency analysis
+                if neighbor_class.0 == 1 {
+                    // Do nothing
+                } else if side == 4 && block_light == SkyLight::MAX {
+                    // Side index 4 is z_m (block below)
+                    // we want max-level light to spread below indefinitely
+                    *neighbor_light = SkyLight::MAX;
+                    queue.push_back((*neighbor_block, *neighbor_coords));
+                } else {
+                    let new_light = block_light.fade();
+
+                    if new_light > SkyLight::MIN && new_light > *neighbor_light {
+                        *neighbor_light = new_light;
+
                         queue.push_back((*neighbor_block, *neighbor_coords));
-                    } else {
-                        let new_light = block_light.fade();
-
-                        if new_light > SkyLight::MIN && new_light > *neighbor_light {
-                            *neighbor_light = new_light;
-
-                            queue.push_back((*neighbor_block, *neighbor_coords));
-                        }
                     }
-                },
-                NeighborWithCoords::OtherChunk(neighbor_block, _neighbor_coords) => {
-                    let (_neighbor_chunk, neighbor_class, neighbor_light) = match neighbor_chunk {
-                        Some(c) => c,
-                        None => continue,
-                    };
-
-                    let neighbor_class = neighbor_class.get(*neighbor_block);
-                    let neighbor_light = neighbor_light.get(*neighbor_block);
-
-                    // TODO block transparency analysis
-                    if neighbor_class.0 != 1 // transparency check
-                        && *neighbor_light != SkyLight::MAX // if under direct skylight check
-                        && (old_block_light.is_none() // if light cast from this chunk changed
-                            || old_block_light != Some(block_light))
-                    {
-                        neighbor_chunks_recalc[side] = true;
-                    }
-                },
+                }
             }
         }
     }
@@ -337,5 +302,84 @@ impl AddSide<'_> {
                 }
             }
         }
+    }
+}
+
+// Checks if light in 1-block layers on the side changed and returns
+// if neighbor chunk needs to be recalculated
+struct CheckSide<'a> {
+    side: usize,
+    old_chunk_light: Option<&'a BlocksVec<SkyLight>>,
+    chunk_light: &'a BlocksVec<SkyLight>,
+    neighbor_chunks: [Option<(Chunk, &'a BlocksVec<BlockClass>, &'a BlocksVec<SkyLight>)>; 6],
+}
+
+impl CheckSide<'_> {
+    fn needs_recalculation(self) -> Option<Chunk> {
+        let Self {
+            side,
+            old_chunk_light,
+            chunk_light,
+            neighbor_chunks,
+        } = self;
+
+        let (axis0, axis1, fixed_axis, fixed_axis_value, neighbor_fixed_axis_value) = match side {
+            0 => (1, 2, 0, 0, BLOCKS_IN_CHUNK_EDGE - 1),
+            1 => (1, 2, 0, BLOCKS_IN_CHUNK_EDGE - 1, 0),
+            2 => (0, 2, 1, 0, BLOCKS_IN_CHUNK_EDGE - 1),
+            3 => (0, 2, 1, BLOCKS_IN_CHUNK_EDGE - 1, 0),
+            4 => (0, 1, 2, 0, BLOCKS_IN_CHUNK_EDGE - 1),
+            5 => (0, 1, 2, BLOCKS_IN_CHUNK_EDGE - 1, 0),
+            i => panic!("incorrect side index: {}", i),
+        };
+
+        for a0 in 0 .. BLOCKS_IN_CHUNK_EDGE {
+            for a1 in 0 .. BLOCKS_IN_CHUNK_EDGE {
+                let mut block_coords = [0; 3];
+
+                block_coords[axis0] = a0;
+                block_coords[axis1] = a1;
+                block_coords[fixed_axis] = fixed_axis_value;
+
+                let block = Block::from_coords(block_coords);
+
+                let new_block_light = chunk_light.get(block);
+                let old_block_light = old_chunk_light.as_ref().map(|c| c.get(block));
+
+                let mut neighbor_block_coords = [0; 3];
+
+                neighbor_block_coords[axis0] = a0;
+                neighbor_block_coords[axis1] = a1;
+                neighbor_block_coords[fixed_axis] = neighbor_fixed_axis_value;
+
+                let neighbor_block = Block::from_coords(neighbor_block_coords);
+
+                let (neighbor_chunk, neighbor_block_class, neighbor_block_light) =
+                    if let Some((chunk, classes, light)) = &neighbor_chunks[side] {
+                        (
+                            chunk,
+                            classes.get(neighbor_block),
+                            light.get(neighbor_block),
+                        )
+                    } else {
+                        continue;
+                    };
+
+                // Light levels differ, we should recalculate
+                if old_block_light != Some(new_block_light)
+                    // ... unless the neighbor block is opaque and will not pass the light anyway
+                    // TODO neighbor block transparency check
+                    && neighbor_block_class.0 != 1
+                    // ... and unless the neighbor is on NOT ground side and light is already MAX,
+                    // if the neighbor block is on the opposite side from the sky,
+                    // it can only receive direct (MAX) light from us
+                    && (side == GROUND_SIDE || *neighbor_block_light != SkyLight::MAX)
+                {
+                    return Some(*neighbor_chunk);
+                }
+            }
+        }
+
+        None
     }
 }

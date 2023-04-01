@@ -40,6 +40,10 @@ fn vs_main(
     let sky_light_level: u32 = in.light_level >> 0u & 0xFFu;
     out.sky_light_level = f32(sky_light_level) / MAX_LIGHT_LEVEL_F32;
     out.sky_light_level = pow(out.sky_light_level, 3.0);
+
+    // let light_r: u32 = in.joints >>  8u & 0xFFu;
+    // let light_g: u32 = in.joints >> 16u & 0xFFu;
+    // let light_b: u32 = in.joints >> 24u & 0xFFu;
     
     return out;
 }
