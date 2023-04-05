@@ -12,6 +12,9 @@ serde = { workspace = true }
 serde-big-array = { workspace = true }
 lz4_flex = { workspace = true }
 arrayvec = { workspace = true }
+ron = { workspace = true }
+blocking = { workspace = true }
+anyhow = { workspace = true }
 futures-core = { version = "0.3", default-features = false }
 pin-project-lite = "0.2"
 
