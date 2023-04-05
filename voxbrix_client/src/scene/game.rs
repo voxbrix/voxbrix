@@ -19,6 +19,7 @@ use crate::{
             Cube,
             Model,
             ModelBlockClassComponent,
+            ModelDescriptor,
         },
         chunk::status::{
             ChunkStatus,
@@ -33,6 +34,7 @@ use crate::{
     },
     scene::SceneSwitch,
     system::{
+        block_texture_loading::BlockTextureLoadingSystem,
         chunk_presence::ChunkPresenceSystem,
         controller::DirectControl,
         position::PositionSystem,
@@ -75,7 +77,10 @@ use voxbrix_common::{
     },
     pack::PackZip,
     stream::StreamExt as _,
-    system::sky_light::SkyLightSystem,
+    system::{
+        block_class_loading::BlockClassLoadingSystem,
+        sky_light::SkyLightSystem,
+    },
     unblock,
     ChunkData,
 };
@@ -194,18 +199,43 @@ impl GameScene<'_> {
             }
         });
 
+        let block_class_loading_system = BlockClassLoadingSystem::load_data().await?;
+        let block_texture_loading_system = BlockTextureLoadingSystem::load_data().await?;
+
         let mut scc = StatusChunkComponent::new();
 
         let mut cbc = ClassBlockComponent::new();
         let mut slbc = SkyLightBlockComponent::new();
         let mut mbcc = ModelBlockClassComponent::new();
 
-        mbcc.set(
-            BlockClass(1),
-            Model::Cube(Cube {
-                textures: [2, 2, 2, 2, 2, 1],
-            }),
-        );
+        block_class_loading_system.load_component(
+            "model",
+            &mut mbcc,
+            |desc: ModelDescriptor| {
+                match desc {
+                    ModelDescriptor::Cube {
+                        textures: textures_desc,
+                    } => {
+                        let mut textures = [0; 6];
+
+                        for (i, texture) in textures.iter_mut().enumerate() {
+                            *texture = match textures_desc[i].as_str() {
+                                "grass" => 1,
+                                "dirt" => 2,
+                                name => {
+                                    return Err(anyhow::Error::msg(format!(
+                                        "Texture not found: {}",
+                                        name
+                                    )))
+                                },
+                            }
+                        }
+
+                        Ok(Model::Cube(Cube { textures }))
+                    },
+                }
+            },
+        )?;
 
         let mut last_render_time = Instant::now();
 
@@ -252,6 +282,7 @@ impl GameScene<'_> {
             player_actor,
             &gpac,
             &oac,
+            block_texture_loading_system.textures,
         )
         .await;
 

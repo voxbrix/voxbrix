@@ -39,27 +39,14 @@ use crate::{
 };
 use anyhow::Result;
 use arrayvec::ArrayVec;
-use async_fs::File;
-use futures_lite::io::AsyncReadExt;
-use image::{
-    ImageFormat,
-    RgbaImage,
-};
+use image::ImageFormat;
 use rayon::prelude::*;
 use std::{
-    collections::{
-        BTreeMap,
-        HashMap,
-    },
-    hash::Hash,
+    collections::BTreeMap,
     iter,
     num::{
         NonZeroU32,
         NonZeroU64,
-    },
-    path::{
-        Path,
-        PathBuf,
     },
 };
 use voxbrix_common::math::{
@@ -78,37 +65,6 @@ const INDEX_SIZE: usize = std::mem::size_of::<u32>();
 const VERTEX_SIZE: usize = Vertex::size() as usize;
 const VERTEX_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK * 6 /*sides*/ * 4 /*vertices*/;
 const INDEX_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK * 6 /*sides*/ * 2 /*polygons*/ * 3 /*vertices*/;
-
-async fn load_block_textures<T>(
-    base_path: PathBuf,
-    file_names: &[T],
-) -> Result<(Vec<RgbaImage>, HashMap<&T, usize>)>
-where
-    T: AsRef<Path> + Hash + Eq,
-{
-    let mut textures = Vec::with_capacity(file_names.len());
-    let mut texture_names = HashMap::with_capacity(file_names.len());
-    let mut buf = Vec::with_capacity(1024);
-
-    for (index, file_name) in file_names.iter().enumerate() {
-        let mut file_path = base_path.clone();
-        file_path.push(file_name);
-
-        let mut file = File::open(file_path).await?;
-
-        file.read_to_end(&mut buf).await?;
-
-        let bytes_rgba =
-            image::load_from_memory_with_format(buf.as_slice(), BLOCK_TEXTURE_FORMAT)?.to_rgba8();
-
-        textures.push(bytes_rgba);
-        texture_names.insert(file_name, index);
-
-        buf.clear();
-    }
-
-    Ok((textures, texture_names))
-}
 
 fn neighbors_to_cull_mask(
     neighbors: &[Neighbor; 6],
@@ -237,10 +193,19 @@ impl<'a> RenderSystem<'a> {
     pub async fn load_block_textures(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        files: &[&str],
+        textures: &[Vec<u8>],
     ) -> (wgpu::BindGroupLayout, wgpu::BindGroup) {
-        let (block_texture_bytes, _block_texture_names) =
-            load_block_textures("./assets".into(), files).await.unwrap();
+        let block_texture_bytes = textures
+            .iter()
+            .map(|buf| {
+                let bytes_rgba =
+                    image::load_from_memory_with_format(buf.as_ref(), BLOCK_TEXTURE_FORMAT)?
+                        .to_rgba8();
+
+                Ok(bytes_rgba)
+            })
+            .collect::<Result<Vec<_>, anyhow::Error>>()
+            .unwrap();
 
         // TODO
         let texture_size = block_texture_bytes[0].dimensions();
@@ -308,13 +273,13 @@ impl<'a> RenderSystem<'a> {
                             view_dimension: wgpu::TextureViewDimension::D2,
                             multisampled: false,
                         },
-                        count: NonZeroU32::new(files.len() as u32),
+                        count: NonZeroU32::new(textures.len() as u32),
                     },
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
                         visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: NonZeroU32::new(files.len() as u32),
+                        count: NonZeroU32::new(textures.len() as u32),
                     },
                 ],
             });
@@ -330,7 +295,7 @@ impl<'a> RenderSystem<'a> {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::SamplerArray(
-                        &files.iter().map(|_| &sampler).collect::<Vec<_>>(),
+                        &textures.iter().map(|_| &sampler).collect::<Vec<_>>(),
                     ),
                 },
             ],
@@ -374,6 +339,7 @@ impl<'a> RenderSystem<'a> {
         player_actor: Actor,
         gpac: &GlobalPositionActorComponent,
         oac: &OrientationActorComponent,
+        block_textures: Vec<Vec<u8>>,
     ) -> RenderSystem<'a> {
         let present_mode = render_handle
             .surface
@@ -399,12 +365,8 @@ impl<'a> RenderSystem<'a> {
             .configure(&render_handle.device, &config);
 
         let (block_texture_bind_group_layout, block_texture_bind_group) =
-            Self::load_block_textures(
-                &render_handle.device,
-                &render_handle.queue,
-                &["highlight.png", "grass.png", "dirt.png"],
-            )
-            .await;
+            Self::load_block_textures(&render_handle.device, &render_handle.queue, &block_textures)
+                .await;
 
         let camera = Camera::new(player_actor);
         let projection = Projection::new(

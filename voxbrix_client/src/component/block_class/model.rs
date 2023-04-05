@@ -6,6 +6,7 @@ use crate::{
     },
 };
 use bitmask::bitmask;
+use serde::Deserialize;
 use voxbrix_common::math::Vec3;
 
 pub type ModelBlockClassComponent = BlockClassComponent<Model>;
@@ -317,4 +318,10 @@ impl Cube {
             );
         }
     }
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(tag = "type")]
+pub enum ModelDescriptor {
+    Cube { textures: [String; 6] },
 }

@@ -14,7 +14,7 @@ use std::{
     path::Path,
 };
 
-const PATH: &str = "assets/block_classes";
+const PATH: &str = "assets/common/block_classes";
 const LIST_FILE_NAME: &str = "list.ron";
 
 pub struct BlockClassLoadingSystem {
@@ -72,21 +72,31 @@ impl BlockClassLoadingSystem {
         .await
     }
 
-    pub fn load_component<T>(
+    pub fn load_component<D, C, F>(
         &self,
         component_label: &str,
-        component: &mut BlockClassComponent<T>,
+        component: &mut BlockClassComponent<C>,
+        conversion: F,
     ) -> Result<(), Error>
     where
-        T: DeserializeOwned,
+        D: DeserializeOwned,
+        F: Fn(D) -> Result<C, Error>,
     {
         let data = self
             .components
             .get(component_label)
             .unwrap_or(&Vec::new())
             .into_iter()
-            .filter_map(|x| x.as_ref())
-            .map(|val| val.clone().into_rust())
+            .map(|val_opt| {
+                val_opt
+                    .as_ref()
+                    .map(|val| {
+                        let descriptor = val.clone().into_rust::<D>()?;
+
+                        conversion(descriptor)
+                    })
+                    .transpose()
+            })
             .collect::<Result<Vec<_>, _>>()?;
 
         component.reload(data);
