@@ -1,7 +1,7 @@
 # Voxbrix Protocol
 Voxbrix uses custom protocol for client-server communication. Main reason for implementing this, instead of using either TCP or UDP, is need in both reliable and unreliable messages.  
   
-The protocol is a relatively thin layer over UDP. To authenticate messages (and to increase privacy a bit) the ChaCha20-Poly1305 is used, with secp256k1 ECDH handshake.  
+The protocol is a relatively thin layer over UDP. To authenticate messages (and to increase privelocity_acy a bit) the ChaCha20-Poly1305 is used, with secp256k1 ECDH handshake.  
   
 Generally, messages have the following structure:
 ```

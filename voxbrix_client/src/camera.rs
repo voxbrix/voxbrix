@@ -1,7 +1,7 @@
 use crate::{
     component::actor::{
         orientation::OrientationActorComponent,
-        position::GlobalPositionActorComponent,
+        position::PositionActorComponent,
     },
     entity::actor::Actor,
 };
@@ -24,7 +24,7 @@ impl Camera {
 
     pub fn calc_matrix(
         &self,
-        position: &GlobalPositionActorComponent,
+        position: &PositionActorComponent,
         orientation: &OrientationActorComponent,
     ) -> Option<Mat4<f32>> {
         let actor_orientation = orientation.get(&self.actor).unwrap();

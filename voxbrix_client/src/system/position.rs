@@ -3,8 +3,8 @@ use crate::{
         actor::{
             orientation::Orientation,
             position::{
-                GlobalPosition,
-                GlobalPositionActorComponent,
+                Position,
+                PositionActorComponent,
             },
             velocity::VelocityActorComponent,
         },
@@ -48,9 +48,9 @@ impl PositionSystem {
     pub fn process(
         &mut self,
         dt: Duration,
-        cbc: &ClassBlockComponent,
-        clbcc: &CollisionBlockClassComponent,
-        gpc: &mut GlobalPositionActorComponent,
+        class_bc: &ClassBlockComponent,
+        collision_bcc: &CollisionBlockClassComponent,
+        gpc: &mut PositionActorComponent,
         vc: &VelocityActorComponent,
     ) {
         enum MoveDirection {
@@ -71,7 +71,7 @@ impl PositionSystem {
         let v_radius = 0.95;
 
         for (actor, velocity) in vc.iter() {
-            if let Some(GlobalPosition {
+            if let Some(Position {
                 chunk: center_chunk,
                 offset: start_position,
             }) = gpc.get_mut(&actor)
@@ -160,9 +160,9 @@ impl PositionSystem {
                                     Block::from_chunk_offset(*center_chunk, chunk_offset);
 
                                 if let Some(block_class) =
-                                    cbc.get_chunk(&chunk).map(|b| b.get(block))
+                                    class_bc.get_chunk(&chunk).map(|b| b.get(block))
                                 {
-                                    if let Some(collision) = clbcc.get(*block_class) {
+                                    if let Some(collision) = collision_bcc.get(*block_class) {
                                         match collision {
                                             Collision::SolidCube => {
                                                 return Some(MoveLimit {
@@ -264,7 +264,7 @@ impl PositionSystem {
     }
 
     pub fn get_target_block<F>(
-        position: &GlobalPosition,
+        position: &Position,
         orientation: &Orientation,
         mut targeting: F,
     ) -> Option<(Chunk, Block, usize)>

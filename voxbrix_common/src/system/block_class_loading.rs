@@ -127,6 +127,7 @@ struct BlockClassDescriptior {
     components: BTreeMap<String, Value>,
 }
 
+#[derive(Clone)]
 pub struct BlockClassMap(BTreeMap<String, BlockClass>);
 
 impl BlockClassMap {

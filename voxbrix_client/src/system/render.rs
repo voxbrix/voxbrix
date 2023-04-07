@@ -7,7 +7,7 @@ use crate::{
     component::{
         actor::{
             orientation::OrientationActorComponent,
-            position::GlobalPositionActorComponent,
+            position::PositionActorComponent,
         },
         block::{
             class::ClassBlockComponent,
@@ -136,14 +136,14 @@ impl CameraUniform {
     fn update_view_projection(
         &mut self,
         camera: &Camera,
-        gpac: &GlobalPositionActorComponent,
-        oac: &OrientationActorComponent,
+        position_ac: &PositionActorComponent,
+        orientation_ac: &OrientationActorComponent,
         projection: &Projection,
     ) {
-        let pos = gpac.get(&camera.actor).unwrap();
+        let pos = position_ac.get(&camera.actor).unwrap();
         self.chunk = pos.chunk.position.into();
         self.view_position = pos.offset.to_homogeneous();
-        self.view_projection = match camera.calc_matrix(gpac, oac) {
+        self.view_projection = match camera.calc_matrix(position_ac, orientation_ac) {
             Some(camera_matrix) => (projection.calc_matrix() * camera_matrix).into(),
             None => self.view_projection,
         };
@@ -349,8 +349,8 @@ impl<'a> RenderSystem<'a> {
         render_handle: &'a RenderHandle,
         surface_size: PhysicalSize<u32>,
         player_actor: Actor,
-        gpac: &GlobalPositionActorComponent,
-        oac: &OrientationActorComponent,
+        position_ac: &PositionActorComponent,
+        orientation_ac: &OrientationActorComponent,
         block_textures: Vec<Vec<u8>>,
     ) -> RenderSystem<'a> {
         let present_mode = render_handle
@@ -390,7 +390,7 @@ impl<'a> RenderSystem<'a> {
         );
 
         let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_projection(&camera, gpac, oac, &projection);
+        camera_uniform.update_view_projection(&camera, position_ac, orientation_ac, &projection);
 
         let camera_buffer = render_handle
             .device
@@ -566,9 +566,17 @@ impl<'a> RenderSystem<'a> {
         }
     }
 
-    pub fn update(&mut self, gpac: &GlobalPositionActorComponent, oac: &OrientationActorComponent) {
-        self.camera_uniform
-            .update_view_projection(&self.camera, gpac, oac, &self.projection);
+    pub fn update(
+        &mut self,
+        position_ac: &PositionActorComponent,
+        orientation_ac: &OrientationActorComponent,
+    ) {
+        self.camera_uniform.update_view_projection(
+            &self.camera,
+            position_ac,
+            orientation_ac,
+            &self.projection,
+        );
         self.render_handle.queue.write_buffer(
             &self.camera_buffer,
             0,
@@ -578,10 +586,10 @@ impl<'a> RenderSystem<'a> {
 
     fn build_chunk_buffer_shard(
         chunk: &Chunk,
-        cbc: &ClassBlockComponent,
-        mbcc: &ModelBlockClassComponent,
-        cbcc: &CullingBlockClassComponent,
-        slbc: &SkyLightBlockComponent,
+        class_bc: &ClassBlockComponent,
+        model_bcc: &ModelBlockClassComponent,
+        culling_bcc: &CullingBlockClassComponent,
+        sky_light_bc: &SkyLightBlockComponent,
     ) -> (Vec<Vertex>, Vec<u32>) {
         let mut vertex_buffer = Vec::with_capacity(VERTEX_BUFFER_CAPACITY);
         let mut index_buffer = Vec::with_capacity(INDEX_BUFFER_CAPACITY);
@@ -596,30 +604,30 @@ impl<'a> RenderSystem<'a> {
         ]
         .map(|offset| chunk.offset(offset));
 
-        let this_chunk_class = cbc.get_chunk(chunk).unwrap();
-        let this_chunk_light = slbc.get_chunk(chunk).unwrap();
+        let this_chunk_class = class_bc.get_chunk(chunk).unwrap();
+        let this_chunk_light = sky_light_bc.get_chunk(chunk).unwrap();
 
         let neighbor_chunk_class = neighbor_chunk_ids.map(|chunk| {
-            let block_classes = cbc.get_chunk(&chunk?)?;
+            let block_classes = class_bc.get_chunk(&chunk?)?;
 
             Some(block_classes)
         });
 
         let neighbor_chunk_light = neighbor_chunk_ids.map(|chunk| {
-            let block_light = slbc.get_chunk(&chunk?)?;
+            let block_light = sky_light_bc.get_chunk(&chunk?)?;
 
             Some(block_light)
         });
 
         for (block, block_coords, block_class) in this_chunk_class.iter_with_coords() {
-            if let Some(model) = mbcc.get(*block_class) {
+            if let Some(model) = model_bcc.get(*block_class) {
                 let neighbors = block.neighbors_in_coords(block_coords);
 
                 let cull_mask = neighbors_to_cull_mask(
                     &neighbors,
                     this_chunk_class,
                     &neighbor_chunk_class,
-                    cbcc,
+                    culling_bcc,
                 );
 
                 let sky_light_levels = neighbors
@@ -653,12 +661,12 @@ impl<'a> RenderSystem<'a> {
     pub fn build_chunk(
         &mut self,
         chunk: &Chunk,
-        cbc: &ClassBlockComponent,
-        mbcc: &ModelBlockClassComponent,
-        cbcc: &CullingBlockClassComponent,
-        slbc: &SkyLightBlockComponent,
+        class_bc: &ClassBlockComponent,
+        model_bcc: &ModelBlockClassComponent,
+        culling_bcc: &CullingBlockClassComponent,
+        sky_light_bc: &SkyLightBlockComponent,
     ) {
-        if cbc.get_chunk(chunk).is_none() {
+        if class_bc.get_chunk(chunk).is_none() {
             self.chunk_buffer_shards.remove(chunk);
         }
 
@@ -674,11 +682,17 @@ impl<'a> RenderSystem<'a> {
         .into_par_iter()
         .filter_map(|offset| {
             let chunk = chunk.offset(offset)?;
-            cbc.get_chunk(&chunk)?;
+            class_bc.get_chunk(&chunk)?;
 
             Some((
                 chunk,
-                Self::build_chunk_buffer_shard(&chunk, cbc, mbcc, cbcc, slbc),
+                Self::build_chunk_buffer_shard(
+                    &chunk,
+                    class_bc,
+                    model_bcc,
+                    culling_bcc,
+                    sky_light_bc,
+                ),
             ))
         });
 

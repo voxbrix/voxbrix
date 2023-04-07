@@ -9,11 +9,11 @@ use serde::{
 };
 use std::ops::Add;
 
-pub type GlobalPositionActorComponent = ActorComponent<GlobalPosition>;
+pub type PositionActorComponent = ActorComponent<Position>;
 pub type LocalPositionActorComponent = ActorComponent<LocalPosition>;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct GlobalPosition {
+pub struct Position {
     pub chunk: Chunk,
     pub offset: Vec3<f32>,
 }

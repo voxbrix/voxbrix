@@ -25,7 +25,14 @@ use crate::{
     math::Vec3,
 };
 use arrayvec::ArrayVec;
-use std::collections::VecDeque;
+use rayon::iter::{
+    IntoParallelIterator,
+    ParallelIterator,
+};
+use std::collections::{
+    BTreeSet,
+    VecDeque,
+};
 
 const SKY_SIDE: usize = 5;
 const GROUND_SIDE: usize = 4;
@@ -43,17 +50,17 @@ impl SkyLightSystem {
     /// If the old light block component for the target chunk exists, it should be removed from
     /// the SkyLightBlockComponent structure and provided as argument to the function,
     /// the returned light block component should be inserted instead.
-    pub fn recalculate_chunk(
+    pub fn calc_chunk(
         &self,
         chunk: Chunk,
         old_chunk_light: Option<BlocksVec<SkyLight>>,
-        cbc: &ClassBlockComponent,
-        obcc: &OpacityBlockClassComponent,
-        slbc: &SkyLightBlockComponent,
+        class_bc: &ClassBlockComponent,
+        opacity_bcc: &OpacityBlockClassComponent,
+        sky_light_bc: &SkyLightBlockComponent,
     ) -> (BlocksVec<SkyLight>, ArrayVec<Chunk, 6>) {
         let mut queue = VecDeque::new();
 
-        let chunk_class = cbc
+        let chunk_class = class_bc
             .get_chunk(&chunk)
             .expect("calculating light for existing chunk");
 
@@ -73,8 +80,8 @@ impl SkyLightSystem {
             .into_iter()
             .map(|chunk| {
                 let chunk = chunk?;
-                let block_classes = cbc.get_chunk(&chunk)?;
-                let block_light = slbc.get_chunk(&chunk)?;
+                let block_classes = class_bc.get_chunk(&chunk)?;
+                let block_light = sky_light_bc.get_chunk(&chunk)?;
 
                 Some((chunk, block_classes, block_light))
             })
@@ -92,7 +99,7 @@ impl SkyLightSystem {
                 side,
                 old_chunk_light: old_chunk_light.as_ref(),
                 chunk_class,
-                obcc,
+                opacity_bcc,
                 chunk_light: &mut chunk_light,
                 neighbor_chunks,
                 recalc_inner_blocks: &mut recalc_inner_blocks,
@@ -133,7 +140,7 @@ impl SkyLightSystem {
                             block_coords,
                             block_light: *block_light,
                             chunk_class,
-                            obcc,
+                            opacity_bcc,
                             chunk_light: &mut chunk_light,
                             queue: &mut queue,
                         }
@@ -151,7 +158,7 @@ impl SkyLightSystem {
                 block_coords,
                 block_light: *block_light,
                 chunk_class,
-                obcc,
+                opacity_bcc,
                 chunk_light: &mut chunk_light,
                 queue: &mut queue,
             }
@@ -165,13 +172,73 @@ impl SkyLightSystem {
                     old_chunk_light: old_chunk_light.as_ref(),
                     chunk_light: &chunk_light,
                     neighbor_chunks,
-                    obcc,
+                    opacity_bcc,
                 }
                 .needs_recalculation()
             })
             .collect();
 
         (chunk_light, chunks_to_recalc)
+    }
+
+    /// Calculates light for chunk an all required neighbors recursively
+    pub fn calc_chunk_finalize(
+        &self,
+        chunk: Chunk,
+        class_bc: &ClassBlockComponent,
+        opacity_bcc: &OpacityBlockClassComponent,
+        sky_light_bc: &mut SkyLightBlockComponent,
+    ) -> BTreeSet<Chunk> {
+        let mut processed_chunks = BTreeSet::new();
+
+        let (light_component, chunks_to_recalc) =
+            self.calc_chunk(chunk, None, &class_bc, &opacity_bcc, &sky_light_bc);
+
+        let mut chunks_to_recalc: BTreeSet<_> = chunks_to_recalc.into_iter().collect();
+
+        sky_light_bc.insert_chunk(chunk, light_component);
+
+        processed_chunks.insert(chunk);
+
+        loop {
+            let results = chunks_to_recalc
+                .iter()
+                .filter_map(|chunk| Some((chunk, sky_light_bc.remove_chunk(chunk)?)))
+                .collect::<Vec<_>>();
+
+            if results.is_empty() {
+                break;
+            }
+
+            let results = results
+                .into_par_iter()
+                .map(|(chunk, old_light_component)| {
+                    let (light_component, chunks_to_recalc) = self.calc_chunk(
+                        *chunk,
+                        Some(old_light_component),
+                        &class_bc,
+                        &opacity_bcc,
+                        &sky_light_bc,
+                    );
+
+                    (*chunk, light_component, chunks_to_recalc)
+                })
+                .collect::<Vec<_>>();
+
+            let expansion =
+                results
+                    .into_iter()
+                    .flat_map(|(chunk, light_component, chunks_to_recalc)| {
+                        sky_light_bc.insert_chunk(chunk, light_component);
+                        processed_chunks.insert(chunk);
+                        chunks_to_recalc.into_iter()
+                    });
+
+            chunks_to_recalc.clear();
+            chunks_to_recalc.extend(expansion);
+        }
+
+        processed_chunks
     }
 }
 
@@ -180,7 +247,7 @@ struct LightDispersion<'a> {
     block_coords: [usize; 3],
     block_light: SkyLight,
     chunk_class: &'a BlocksVec<BlockClass>,
-    obcc: &'a OpacityBlockClassComponent,
+    opacity_bcc: &'a OpacityBlockClassComponent,
     chunk_light: &'a mut BlocksVec<SkyLight>,
     queue: &'a mut VecDeque<(Block, [usize; 3])>,
 }
@@ -194,7 +261,7 @@ impl LightDispersion<'_> {
             block_coords,
             block_light,
             chunk_class,
-            obcc,
+            opacity_bcc,
             chunk_light,
             queue,
         } = self;
@@ -206,7 +273,7 @@ impl LightDispersion<'_> {
                 let neighbor_class = chunk_class.get(*neighbor_block);
                 let neighbor_light = chunk_light.get_mut(*neighbor_block);
 
-                match obcc.get(*neighbor_class) {
+                match opacity_bcc.get(*neighbor_class) {
                     Some(Opacity::Full) => {},
                     None => {
                         if side == 4 && block_light == SkyLight::MAX {
@@ -237,7 +304,7 @@ struct AddSide<'a> {
     side: usize,
     old_chunk_light: Option<&'a BlocksVec<SkyLight>>,
     chunk_class: &'a BlocksVec<BlockClass>,
-    obcc: &'a OpacityBlockClassComponent,
+    opacity_bcc: &'a OpacityBlockClassComponent,
     chunk_light: &'a mut BlocksVec<SkyLight>,
     neighbor_chunks: [Option<(Chunk, &'a BlocksVec<BlockClass>, &'a BlocksVec<SkyLight>)>; 6],
     recalc_inner_blocks: &'a mut bool,
@@ -249,7 +316,7 @@ impl AddSide<'_> {
             side,
             old_chunk_light,
             chunk_class,
-            obcc,
+            opacity_bcc,
             chunk_light,
             neighbor_chunks,
             recalc_inner_blocks,
@@ -281,7 +348,7 @@ impl AddSide<'_> {
                 let old_block_light = old_chunk_light.as_ref().map(|c| *c.get(block));
 
                 // TODO block transparency analysis
-                if let Some(Opacity::Full) = obcc.get(*block_class) {
+                if let Some(Opacity::Full) = opacity_bcc.get(*block_class) {
                     *block_light = SkyLight::MIN;
 
                     if old_block_light != Some(*block_light) {
@@ -334,7 +401,7 @@ struct CheckSide<'a> {
     old_chunk_light: Option<&'a BlocksVec<SkyLight>>,
     chunk_light: &'a BlocksVec<SkyLight>,
     neighbor_chunks: [Option<(Chunk, &'a BlocksVec<BlockClass>, &'a BlocksVec<SkyLight>)>; 6],
-    obcc: &'a OpacityBlockClassComponent,
+    opacity_bcc: &'a OpacityBlockClassComponent,
 }
 
 impl CheckSide<'_> {
@@ -344,7 +411,7 @@ impl CheckSide<'_> {
             old_chunk_light,
             chunk_light,
             neighbor_chunks,
-            obcc,
+            opacity_bcc,
         } = self;
 
         let (axis0, axis1, fixed_axis, fixed_axis_value, neighbor_fixed_axis_value) = match side {
@@ -389,7 +456,7 @@ impl CheckSide<'_> {
                         continue;
                     };
 
-                let neighbor_transparent = match obcc.get(*neighbor_block_class) {
+                let neighbor_transparent = match opacity_bcc.get(*neighbor_block_class) {
                     Some(Opacity::Full) => false,
                     None => true,
                 };

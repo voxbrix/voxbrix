@@ -51,7 +51,7 @@ fn main() {
                 },
                 Ok(window_handle) => {
                     // Mailbox (Fast Vsync) and Immediate (No Vsync) work best with
-                    // the current rendering approach
+                    // the current rendering approrientation_ach
                     // Vulkan supports Mailbox present mode reliably and is cross-platform
                     // https://github.com/gfx-rs/wgpu/issues/2128
                     let instance = wgpu::Instance::new(wgpu::Backends::VULKAN);

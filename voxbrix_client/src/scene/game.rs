@@ -6,8 +6,8 @@ use crate::{
                 OrientationActorComponent,
             },
             position::{
-                GlobalPosition,
-                GlobalPositionActorComponent,
+                Position,
+                PositionActorComponent,
             },
             velocity::{
                 Velocity,
@@ -60,12 +60,7 @@ use futures_lite::{
     future::FutureExt,
     stream::StreamExt,
 };
-use local_channel::mpsc::Sender as ChannelSender;
 use log::error;
-use rayon::iter::{
-    IntoParallelIterator,
-    ParallelIterator,
-};
 use std::{
     io::ErrorKind as StdIoErrorKind,
     time::{
@@ -219,19 +214,19 @@ impl GameScene<'_> {
         let block_class_loading_system = BlockClassLoadingSystem::load_data().await?;
         let block_texture_loading_system = BlockTextureLoadingSystem::load_data().await?;
 
-        let mut scc = StatusChunkComponent::new();
+        let mut status_cc = StatusChunkComponent::new();
 
-        let mut cbc = ClassBlockComponent::new();
-        let mut slbc = SkyLightBlockComponent::new();
+        let mut class_bc = ClassBlockComponent::new();
+        let mut sky_light_bc = SkyLightBlockComponent::new();
 
-        let mut mbcc = ModelBlockClassComponent::new();
-        let mut cbcc = CullingBlockClassComponent::new();
-        let mut clbcc = CollisionBlockClassComponent::new();
-        let mut obcc = OpacityBlockClassComponent::new();
+        let mut model_bcc = ModelBlockClassComponent::new();
+        let mut culling_bcc = CullingBlockClassComponent::new();
+        let mut collision_bcc = CollisionBlockClassComponent::new();
+        let mut opacity_bcc = OpacityBlockClassComponent::new();
 
         block_class_loading_system.load_component(
             "model",
-            &mut mbcc,
+            &mut model_bcc,
             |desc: ModelDescriptor| {
                 match desc {
                     ModelDescriptor::Cube {
@@ -258,14 +253,23 @@ impl GameScene<'_> {
             },
         )?;
 
-        block_class_loading_system
-            .load_component("culling", &mut cbcc, |desc: Culling| Ok(desc))?;
+        block_class_loading_system.load_component(
+            "culling",
+            &mut culling_bcc,
+            |desc: Culling| Ok(desc),
+        )?;
 
-        block_class_loading_system
-            .load_component("collision", &mut clbcc, |desc: Collision| Ok(desc))?;
+        block_class_loading_system.load_component(
+            "collision",
+            &mut collision_bcc,
+            |desc: Collision| Ok(desc),
+        )?;
 
-        block_class_loading_system
-            .load_component("opacity", &mut obcc, |desc: Opacity| Ok(desc))?;
+        block_class_loading_system.load_component(
+            "opacity",
+            &mut opacity_bcc,
+            |desc: Opacity| Ok(desc),
+        )?;
 
         let block_class_map = block_class_loading_system.into_label_map();
 
@@ -276,13 +280,13 @@ impl GameScene<'_> {
         let chunk_presence_system = ChunkPresenceSystem::new();
         let sky_light_system = SkyLightSystem::new();
 
-        let mut gpac = GlobalPositionActorComponent::new();
-        let mut vac = VelocityActorComponent::new();
-        let mut oac = OrientationActorComponent::new();
+        let mut position_ac = PositionActorComponent::new();
+        let mut velocity_ac = VelocityActorComponent::new();
+        let mut orientation_ac = OrientationActorComponent::new();
 
-        gpac.insert(
+        position_ac.insert(
             player_actor,
-            GlobalPosition {
+            Position {
                 chunk: Chunk {
                     position: [0, 0, 0].into(),
                     dimension: 0,
@@ -290,13 +294,13 @@ impl GameScene<'_> {
                 offset: Vec3::new(0.0, 0.0, 4.0),
             },
         );
-        vac.insert(
+        velocity_ac.insert(
             player_actor,
             Velocity {
                 vector: Vec3::new(0.0, 0.0, 0.0),
             },
         );
-        oac.insert(player_actor, Orientation::from_yaw_pitch(0.0, 0.0));
+        orientation_ac.insert(player_actor, Orientation::from_yaw_pitch(0.0, 0.0));
 
         self.window_handle
             .window
@@ -312,8 +316,8 @@ impl GameScene<'_> {
             self.render_handle,
             self.window_handle.window.inner_size(),
             player_actor,
-            &gpac,
-            &oac,
+            &position_ac,
+            &orientation_ac,
             block_texture_loading_system.textures,
         )
         .await;
@@ -332,28 +336,35 @@ impl GameScene<'_> {
 
                     // TODO consider what should really be unblocked?
                     // let time_test = Instant::now();
-                    position_system.process(elapsed, &cbc, &clbcc, &mut gpac, &vac);
+                    position_system.process(
+                        elapsed,
+                        &class_bc,
+                        &collision_bcc,
+                        &mut position_ac,
+                        &velocity_ac,
+                    );
                     chunk_presence_system.process(
                         player_ticket_radius,
                         &player_actor,
-                        &gpac,
-                        &mut cbc,
-                        &mut scc,
+                        &position_ac,
+                        &mut class_bc,
+                        &mut status_cc,
                         &event_tx,
                     );
-                    direct_control_system.process(elapsed, &mut vac, &mut oac);
-                    render_system.update(&gpac, &oac);
+                    direct_control_system.process(elapsed, &mut velocity_ac, &mut orientation_ac);
+                    render_system.update(&position_ac, &orientation_ac);
 
-                    let position = gpac.get(&player_actor).unwrap();
-                    let orientation = oac.get(&player_actor).unwrap();
+                    let position = position_ac.get(&player_actor).unwrap();
+                    let orientation = orientation_ac.get(&player_actor).unwrap();
 
                     let target =
                         PositionSystem::get_target_block(position, orientation, |chunk, block| {
                             // TODO: better targeting collision?
-                            cbc.get_chunk(&chunk)
+                            class_bc
+                                .get_chunk(&chunk)
                                 .map(|blocks| {
                                     let class = blocks.get(block);
-                                    clbcc.get(*class).is_some()
+                                    collision_bcc.get(*class).is_some()
                                 })
                                 .unwrap_or(false)
                         });
@@ -367,7 +378,7 @@ impl GameScene<'_> {
                     // log::error!("Elapsed: {:?}", time_test.elapsed());
                 },
                 Event::SendPosition => {
-                    let player_position = gpac.get(&player_actor).unwrap();
+                    let player_position = position_ac.get(&player_actor).unwrap();
                     let _ = unreliable_tx.send(ServerAccept::PlayerPosition {
                         position: player_position.clone(),
                     });
@@ -416,18 +427,23 @@ impl GameScene<'_> {
                                     if state == ElementState::Pressed {
                                         match button {
                                             MouseButton::Left => {
-                                                let position = gpac.get(&player_actor).unwrap();
-                                                let orientation = oac.get(&player_actor).unwrap();
+                                                let position =
+                                                    position_ac.get(&player_actor).unwrap();
+                                                let orientation =
+                                                    orientation_ac.get(&player_actor).unwrap();
 
                                                 if let Some((chunk, block, _side)) =
                                                     PositionSystem::get_target_block(
                                                         position,
                                                         orientation,
                                                         |chunk, block| {
-                                                            cbc.get_chunk(&chunk)
+                                                            class_bc
+                                                                .get_chunk(&chunk)
                                                                 .map(|blocks| {
                                                                     let class = blocks.get(block);
-                                                                    clbcc.get(*class).is_some()
+                                                                    collision_bcc
+                                                                        .get(*class)
+                                                                        .is_some()
                                                                 })
                                                                 .unwrap_or(false)
                                                         },
@@ -443,18 +459,23 @@ impl GameScene<'_> {
                                                 }
                                             },
                                             MouseButton::Right => {
-                                                let position = gpac.get(&player_actor).unwrap();
-                                                let orientation = oac.get(&player_actor).unwrap();
+                                                let position =
+                                                    position_ac.get(&player_actor).unwrap();
+                                                let orientation =
+                                                    orientation_ac.get(&player_actor).unwrap();
 
                                                 if let Some((chunk, block, side)) =
                                                     PositionSystem::get_target_block(
                                                         position,
                                                         orientation,
                                                         |chunk, block| {
-                                                            cbc.get_chunk(&chunk)
+                                                            class_bc
+                                                                .get_chunk(&chunk)
                                                                 .map(|blocks| {
                                                                     let class = blocks.get(block);
-                                                                    clbcc.get(*class).is_some()
+                                                                    collision_bcc
+                                                                        .get(*class)
+                                                                        .is_some()
                                                                 })
                                                                 .unwrap_or(false)
                                                         },
@@ -506,12 +527,19 @@ impl GameScene<'_> {
                             chunk,
                             block_classes,
                         }) => {
-                            cbc.insert_chunk(chunk, block_classes);
-                            scc.insert(chunk, ChunkStatus::Active);
+                            class_bc.insert_chunk(chunk, block_classes);
+                            status_cc.insert(chunk, ChunkStatus::Active);
 
-                            let _ = event_tx.send(Event::DrawChunk(chunk));
+                            let chunks_to_redraw = sky_light_system.calc_chunk_finalize(
+                                chunk,
+                                &class_bc,
+                                &opacity_bcc,
+                                &mut sky_light_bc,
+                            );
 
-                            calc_light(&sky_light_system, chunk, &cbc, &obcc, &mut slbc, &event_tx);
+                            for chunk in chunks_to_redraw {
+                                let _ = event_tx.send(Event::DrawChunk(chunk));
+                            }
                         },
                         ClientAccept::AlterBlock {
                             chunk,
@@ -519,20 +547,20 @@ impl GameScene<'_> {
                             block_class,
                         } => {
                             if let Some(block_class_ref) =
-                                cbc.get_mut_chunk(&chunk).map(|c| c.get_mut(block))
+                                class_bc.get_mut_chunk(&chunk).map(|c| c.get_mut(block))
                             {
                                 *block_class_ref = block_class;
 
-                                let _ = event_tx.send(Event::DrawChunk(chunk));
-
-                                calc_light(
-                                    &sky_light_system,
+                                let chunks_to_redraw = sky_light_system.calc_chunk_finalize(
                                     chunk,
-                                    &cbc,
-                                    &obcc,
-                                    &mut slbc,
-                                    &event_tx,
+                                    &class_bc,
+                                    &opacity_bcc,
+                                    &mut sky_light_bc,
                                 );
+
+                                for chunk in chunks_to_redraw {
+                                    let _ = event_tx.send(Event::DrawChunk(chunk));
+                                }
                             }
                         },
                     }
@@ -540,69 +568,13 @@ impl GameScene<'_> {
                 Event::DrawChunk(chunk) => {
                     // TODO: use separate *set* as a queue and take up to num_cpus each time the event
                     // comes
-                    unblock!((render_system, cbc, mbcc, cbcc, slbc) {
-                        render_system.build_chunk(&chunk, &cbc, &mbcc, &cbcc, &slbc);
+                    unblock!((render_system, class_bc, model_bcc, culling_bcc, sky_light_bc) {
+                        render_system.build_chunk(&chunk, &class_bc, &model_bcc, &culling_bcc, &sky_light_bc);
                     });
                 },
             }
         }
 
         Ok(SceneSwitch::Menu)
-    }
-}
-
-// TODO move to more appropriate place
-fn calc_light(
-    sky_light_system: &SkyLightSystem,
-    chunk: Chunk,
-    cbc: &ClassBlockComponent,
-    obcc: &OpacityBlockClassComponent,
-    slbc: &mut SkyLightBlockComponent,
-    event_tx: &ChannelSender<Event>,
-) {
-    let (light_component, chunks_to_recalc) =
-        sky_light_system.recalculate_chunk(chunk, None, &cbc, &obcc, &slbc);
-
-    let mut chunks_to_recalc: std::collections::BTreeSet<_> =
-        chunks_to_recalc.into_iter().collect();
-
-    slbc.insert_chunk(chunk, light_component);
-
-    loop {
-        let results = chunks_to_recalc
-            .iter()
-            .filter_map(|chunk| Some((chunk, slbc.remove_chunk(chunk)?)))
-            .collect::<Vec<_>>();
-
-        if results.is_empty() {
-            break;
-        }
-
-        let results = results
-            .into_par_iter()
-            .map(|(chunk, old_light_component)| {
-                let (light_component, chunks_to_recalc) = sky_light_system.recalculate_chunk(
-                    *chunk,
-                    Some(old_light_component),
-                    &cbc,
-                    &obcc,
-                    &slbc,
-                );
-
-                (*chunk, light_component, chunks_to_recalc)
-            })
-            .collect::<Vec<_>>();
-
-        let expansion =
-            results
-                .into_iter()
-                .flat_map(|(chunk, light_component, chunks_to_recalc)| {
-                    slbc.insert_chunk(chunk, light_component);
-                    let _ = event_tx.send(Event::DrawChunk(chunk));
-                    chunks_to_recalc.into_iter()
-                });
-
-        chunks_to_recalc.clear();
-        chunks_to_recalc.extend(expansion);
     }
 }

@@ -8,8 +8,9 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 async-executor = { workspace = true }
-futures-lite = { workspace = true }
+rayon = { workspace = true }
 blocking = { workspace = true }
+futures-lite = { workspace = true }
 async-io = { workspace = true }
 flume = { workspace = true }
 serde = { workspace = true } 
@@ -22,7 +23,6 @@ env_logger = { workspace = true }
 voxbrix_protocol = { path = "../voxbrix_protocol", features = ["single", "client"] }
 voxbrix_common = { path = "../voxbrix_common" }
 local_channel = { path = "../local_channel" }
-rayon = "1.6"
 async-fs = "1.6"
 either = "1.8"
 winit = "0.27"

@@ -42,7 +42,7 @@ pub enum RegisterFailure {
 #[derive(Serialize, Deserialize)]
 pub struct InitData {
     pub actor: Actor,
-    // position: GlobalPosition,
+    // position: Position,
     pub player_ticket_radius: i32,
 }
 

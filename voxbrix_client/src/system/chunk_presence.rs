@@ -1,8 +1,8 @@
 use crate::{
     component::{
         actor::position::{
-            GlobalPosition,
-            GlobalPositionActorComponent,
+            Position,
+            PositionActorComponent,
         },
         block::class::ClassBlockComponent,
         chunk::status::StatusChunkComponent,
@@ -23,21 +23,21 @@ impl ChunkPresenceSystem {
         &self,
         radius: i32,
         player: &Actor,
-        gpc: &GlobalPositionActorComponent,
-        cbc: &mut ClassBlockComponent,
-        scc: &mut StatusChunkComponent,
+        gpc: &PositionActorComponent,
+        class_bc: &mut ClassBlockComponent,
+        status_cc: &mut StatusChunkComponent,
         event_tx: &Sender<Event>,
     ) {
-        let GlobalPosition {
+        let Position {
             chunk: player_chunk,
             offset: _,
         } = gpc.get(player).unwrap();
         let radius = player_chunk.radius(radius);
 
-        scc.retain(|chunk, _| {
+        status_cc.retain(|chunk, _| {
             let retain = radius.is_within(chunk);
             if !retain {
-                cbc.remove_chunk(chunk);
+                class_bc.remove_chunk(chunk);
                 let _ = event_tx.send(Event::DrawChunk(*chunk));
             }
             retain
