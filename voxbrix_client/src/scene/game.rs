@@ -15,11 +15,17 @@ use crate::{
             },
         },
         block::class::ClassBlockComponent,
-        block_class::model::{
-            Cube,
-            Model,
-            ModelBlockClassComponent,
-            ModelDescriptor,
+        block_class::{
+            culling::{
+                Culling,
+                CullingBlockClassComponent,
+            },
+            model::{
+                Cube,
+                Model,
+                ModelBlockClassComponent,
+                ModelDescriptor,
+            },
         },
         chunk::status::{
             ChunkStatus,
@@ -29,7 +35,6 @@ use crate::{
     entity::{
         actor::Actor,
         block::Block,
-        block_class::BlockClass,
         chunk::Chunk,
     },
     scene::SceneSwitch,
@@ -69,7 +74,19 @@ use std::{
     },
 };
 use voxbrix_common::{
-    component::block::sky_light::SkyLightBlockComponent,
+    component::{
+        block::sky_light::SkyLightBlockComponent,
+        block_class::{
+            collision::{
+                Collision,
+                CollisionBlockClassComponent,
+            },
+            opacity::{
+                Opacity,
+                OpacityBlockClassComponent,
+            },
+        },
+    },
     math::Vec3,
     messages::{
         client::ClientAccept,
@@ -206,7 +223,11 @@ impl GameScene<'_> {
 
         let mut cbc = ClassBlockComponent::new();
         let mut slbc = SkyLightBlockComponent::new();
+
         let mut mbcc = ModelBlockClassComponent::new();
+        let mut cbcc = CullingBlockClassComponent::new();
+        let mut clbcc = CollisionBlockClassComponent::new();
+        let mut obcc = OpacityBlockClassComponent::new();
 
         block_class_loading_system.load_component(
             "model",
@@ -219,16 +240,16 @@ impl GameScene<'_> {
                         let mut textures = [0; 6];
 
                         for (i, texture) in textures.iter_mut().enumerate() {
-                            *texture = match textures_desc[i].as_str() {
-                                "grass" => 1,
-                                "dirt" => 2,
-                                name => {
-                                    return Err(anyhow::Error::msg(format!(
-                                        "Texture not found: {}",
-                                        name
-                                    )))
-                                },
-                            }
+                            let texture_name = textures_desc[i].as_str();
+                            *texture = *block_texture_loading_system
+                                .label_map
+                                .get(texture_name)
+                                .ok_or_else(|| {
+                                    anyhow::Error::msg(format!(
+                                        "texture \"{}\" not found",
+                                        texture_name
+                                    ))
+                                })?;
                         }
 
                         Ok(Model::Cube(Cube { textures }))
@@ -236,6 +257,17 @@ impl GameScene<'_> {
                 }
             },
         )?;
+
+        block_class_loading_system
+            .load_component("culling", &mut cbcc, |desc: Culling| Ok(desc))?;
+
+        block_class_loading_system
+            .load_component("collision", &mut clbcc, |desc: Collision| Ok(desc))?;
+
+        block_class_loading_system
+            .load_component("opacity", &mut obcc, |desc: Opacity| Ok(desc))?;
+
+        let block_class_map = block_class_loading_system.into_label_map();
 
         let mut last_render_time = Instant::now();
 
@@ -300,7 +332,7 @@ impl GameScene<'_> {
 
                     // TODO consider what should really be unblocked?
                     // let time_test = Instant::now();
-                    position_system.process(elapsed, &cbc, &mut gpac, &vac);
+                    position_system.process(elapsed, &cbc, &clbcc, &mut gpac, &vac);
                     chunk_presence_system.process(
                         player_ticket_radius,
                         &player_actor,
@@ -317,8 +349,12 @@ impl GameScene<'_> {
 
                     let target =
                         PositionSystem::get_target_block(position, orientation, |chunk, block| {
+                            // TODO: better targeting collision?
                             cbc.get_chunk(&chunk)
-                                .map(|blocks| blocks.get(block) == &BlockClass(1))
+                                .map(|blocks| {
+                                    let class = blocks.get(block);
+                                    clbcc.get(*class).is_some()
+                                })
                                 .unwrap_or(false)
                         });
 
@@ -390,8 +426,8 @@ impl GameScene<'_> {
                                                         |chunk, block| {
                                                             cbc.get_chunk(&chunk)
                                                                 .map(|blocks| {
-                                                                    blocks.get(block)
-                                                                        == &BlockClass(1)
+                                                                    let class = blocks.get(block);
+                                                                    clbcc.get(*class).is_some()
                                                                 })
                                                                 .unwrap_or(false)
                                                         },
@@ -401,7 +437,7 @@ impl GameScene<'_> {
                                                         ServerAccept::AlterBlock {
                                                             chunk,
                                                             block,
-                                                            block_class: BlockClass(0),
+                                                            block_class: block_class_map.get("air"),
                                                         },
                                                     );
                                                 }
@@ -417,8 +453,8 @@ impl GameScene<'_> {
                                                         |chunk, block| {
                                                             cbc.get_chunk(&chunk)
                                                                 .map(|blocks| {
-                                                                    blocks.get(block)
-                                                                        == &BlockClass(1)
+                                                                    let class = blocks.get(block);
+                                                                    clbcc.get(*class).is_some()
                                                                 })
                                                                 .unwrap_or(false)
                                                         },
@@ -440,7 +476,8 @@ impl GameScene<'_> {
                                                         ServerAccept::AlterBlock {
                                                             chunk,
                                                             block,
-                                                            block_class: BlockClass(1),
+                                                            block_class: block_class_map
+                                                                .get("grass"),
                                                         },
                                                     );
                                                 }
@@ -474,7 +511,7 @@ impl GameScene<'_> {
 
                             let _ = event_tx.send(Event::DrawChunk(chunk));
 
-                            calc_light(&sky_light_system, chunk, &cbc, &mut slbc, &event_tx);
+                            calc_light(&sky_light_system, chunk, &cbc, &obcc, &mut slbc, &event_tx);
                         },
                         ClientAccept::AlterBlock {
                             chunk,
@@ -488,7 +525,14 @@ impl GameScene<'_> {
 
                                 let _ = event_tx.send(Event::DrawChunk(chunk));
 
-                                calc_light(&sky_light_system, chunk, &cbc, &mut slbc, &event_tx);
+                                calc_light(
+                                    &sky_light_system,
+                                    chunk,
+                                    &cbc,
+                                    &obcc,
+                                    &mut slbc,
+                                    &event_tx,
+                                );
                             }
                         },
                     }
@@ -496,8 +540,8 @@ impl GameScene<'_> {
                 Event::DrawChunk(chunk) => {
                     // TODO: use separate *set* as a queue and take up to num_cpus each time the event
                     // comes
-                    unblock!((render_system, cbc, mbcc, slbc) {
-                        render_system.build_chunk(&chunk, &cbc, &mbcc, &slbc);
+                    unblock!((render_system, cbc, mbcc, cbcc, slbc) {
+                        render_system.build_chunk(&chunk, &cbc, &mbcc, &cbcc, &slbc);
                     });
                 },
             }
@@ -512,11 +556,12 @@ fn calc_light(
     sky_light_system: &SkyLightSystem,
     chunk: Chunk,
     cbc: &ClassBlockComponent,
+    obcc: &OpacityBlockClassComponent,
     slbc: &mut SkyLightBlockComponent,
     event_tx: &ChannelSender<Event>,
 ) {
     let (light_component, chunks_to_recalc) =
-        sky_light_system.recalculate_chunk(chunk, None, &cbc, &slbc);
+        sky_light_system.recalculate_chunk(chunk, None, &cbc, &obcc, &slbc);
 
     let mut chunks_to_recalc: std::collections::BTreeSet<_> =
         chunks_to_recalc.into_iter().collect();
@@ -540,6 +585,7 @@ fn calc_light(
                     *chunk,
                     Some(old_light_component),
                     &cbc,
+                    &obcc,
                     &slbc,
                 );
 

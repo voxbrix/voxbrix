@@ -12,5 +12,14 @@
                 "grass",
             ],
         ),
+        "culling": (
+            type: "Full",
+        ),
+        "collision": (
+            type: "SolidCube",
+        ),
+        "opacity": (
+            type: "Full",
+        ),
     },
 )

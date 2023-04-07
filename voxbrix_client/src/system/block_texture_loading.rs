@@ -12,7 +12,7 @@ const LIST_FILE_NAME: &str = "list.ron";
 pub struct BlockTextureLoadingSystem {
     pub size: usize,
     pub textures: Vec<Vec<u8>>,
-    pub label_map: BTreeMap<String, usize>,
+    pub label_map: BTreeMap<String, u32>,
 }
 
 impl BlockTextureLoadingSystem {
@@ -38,7 +38,7 @@ impl BlockTextureLoadingSystem {
                 .list
                 .into_iter()
                 .enumerate()
-                .map(|(i, t)| (t, i))
+                .map(|(i, t)| (t, i as u32))
                 .collect();
 
             Ok(Self {

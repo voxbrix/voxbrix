@@ -24,9 +24,15 @@ use std::{
     cmp::Ordering,
     time::Duration,
 };
-use voxbrix_common::math::{
-    Round,
-    Vec3,
+use voxbrix_common::{
+    component::block_class::collision::{
+        Collision,
+        CollisionBlockClassComponent,
+    },
+    math::{
+        Round,
+        Vec3,
+    },
 };
 
 const COLLISION_PUSHBACK: f32 = 1.0e-3;
@@ -43,6 +49,7 @@ impl PositionSystem {
         &mut self,
         dt: Duration,
         cbc: &ClassBlockComponent,
+        clbcc: &CollisionBlockClassComponent,
         gpc: &mut GlobalPositionActorComponent,
         vc: &VelocityActorComponent,
     ) {
@@ -155,27 +162,32 @@ impl PositionSystem {
                                 if let Some(block_class) =
                                     cbc.get_chunk(&chunk).map(|b| b.get(block))
                                 {
-                                    // TODO better block analysis
-                                    if block_class.0 == 1 {
-                                        return Some(MoveLimit {
-                                            axis_set,
-                                            collider_distance: (block_a0 as f32 + 0.5
-                                                - start_position[a0])
-                                                .powi(2)
-                                                + (block_a1 as f32 + 0.5 - start_position[a1])
-                                                    .powi(2)
-                                                + (block_a2 as f32 + 0.5 - start_position[a2])
-                                                    .powi(2),
-                                            max_movement: (block_a0 + block_offset) as f32
-                                                + match move_dir {
-                                                    MoveDirection::Positive => {
-                                                        -radius[a0] - COLLISION_PUSHBACK
-                                                    },
-                                                    MoveDirection::Negative => {
-                                                        radius[a0] + COLLISION_PUSHBACK
-                                                    },
-                                                },
-                                        });
+                                    if let Some(collision) = clbcc.get(*block_class) {
+                                        match collision {
+                                            Collision::SolidCube => {
+                                                return Some(MoveLimit {
+                                                    axis_set,
+                                                    collider_distance: (block_a0 as f32 + 0.5
+                                                        - start_position[a0])
+                                                        .powi(2)
+                                                        + (block_a1 as f32 + 0.5
+                                                            - start_position[a1])
+                                                            .powi(2)
+                                                        + (block_a2 as f32 + 0.5
+                                                            - start_position[a2])
+                                                            .powi(2),
+                                                    max_movement: (block_a0 + block_offset) as f32
+                                                        + match move_dir {
+                                                            MoveDirection::Positive => {
+                                                                -radius[a0] - COLLISION_PUSHBACK
+                                                            },
+                                                            MoveDirection::Negative => {
+                                                                radius[a0] + COLLISION_PUSHBACK
+                                                            },
+                                                        },
+                                                });
+                                            },
+                                        }
                                     }
                                 } else {
                                     // TODO chunk not loaded

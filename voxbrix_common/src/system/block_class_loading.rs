@@ -104,12 +104,15 @@ impl BlockClassLoadingSystem {
         Ok(())
     }
 
-    pub fn into_label_map(self) -> BTreeMap<String, BlockClass> {
-        self.block_class_list
+    pub fn into_label_map(self) -> BlockClassMap {
+        let map = self
+            .block_class_list
             .into_iter()
             .enumerate()
-            .map(|(c, l)| (l, BlockClass(c)))
-            .collect()
+            .map(|(c, l)| (l, BlockClass::from_index(c)))
+            .collect();
+
+        BlockClassMap(map)
     }
 }
 
@@ -122,4 +125,12 @@ struct BlockClassList {
 struct BlockClassDescriptior {
     label: String,
     components: BTreeMap<String, Value>,
+}
+
+pub struct BlockClassMap(BTreeMap<String, BlockClass>);
+
+impl BlockClassMap {
+    pub fn get(&self, label: &str) -> BlockClass {
+        *self.0.get(label).unwrap()
+    }
 }

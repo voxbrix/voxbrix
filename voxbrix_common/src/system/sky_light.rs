@@ -1,11 +1,17 @@
 use crate::{
-    component::block::{
-        class::ClassBlockComponent,
-        sky_light::{
-            SkyLight,
-            SkyLightBlockComponent,
+    component::{
+        block::{
+            class::ClassBlockComponent,
+            sky_light::{
+                SkyLight,
+                SkyLightBlockComponent,
+            },
+            BlocksVec,
         },
-        BlocksVec,
+        block_class::opacity::{
+            Opacity,
+            OpacityBlockClassComponent,
+        },
     },
     entity::{
         block::{
@@ -42,6 +48,7 @@ impl SkyLightSystem {
         chunk: Chunk,
         old_chunk_light: Option<BlocksVec<SkyLight>>,
         cbc: &ClassBlockComponent,
+        obcc: &OpacityBlockClassComponent,
         slbc: &SkyLightBlockComponent,
     ) -> (BlocksVec<SkyLight>, ArrayVec<Chunk, 6>) {
         let mut queue = VecDeque::new();
@@ -85,6 +92,7 @@ impl SkyLightSystem {
                 side,
                 old_chunk_light: old_chunk_light.as_ref(),
                 chunk_class,
+                obcc,
                 chunk_light: &mut chunk_light,
                 neighbor_chunks,
                 recalc_inner_blocks: &mut recalc_inner_blocks,
@@ -125,6 +133,7 @@ impl SkyLightSystem {
                             block_coords,
                             block_light: *block_light,
                             chunk_class,
+                            obcc,
                             chunk_light: &mut chunk_light,
                             queue: &mut queue,
                         }
@@ -142,6 +151,7 @@ impl SkyLightSystem {
                 block_coords,
                 block_light: *block_light,
                 chunk_class,
+                obcc,
                 chunk_light: &mut chunk_light,
                 queue: &mut queue,
             }
@@ -155,6 +165,7 @@ impl SkyLightSystem {
                     old_chunk_light: old_chunk_light.as_ref(),
                     chunk_light: &chunk_light,
                     neighbor_chunks,
+                    obcc,
                 }
                 .needs_recalculation()
             })
@@ -169,6 +180,7 @@ struct LightDispersion<'a> {
     block_coords: [usize; 3],
     block_light: SkyLight,
     chunk_class: &'a BlocksVec<BlockClass>,
+    obcc: &'a OpacityBlockClassComponent,
     chunk_light: &'a mut BlocksVec<SkyLight>,
     queue: &'a mut VecDeque<(Block, [usize; 3])>,
 }
@@ -182,6 +194,7 @@ impl LightDispersion<'_> {
             block_coords,
             block_light,
             chunk_class,
+            obcc,
             chunk_light,
             queue,
         } = self;
@@ -193,22 +206,24 @@ impl LightDispersion<'_> {
                 let neighbor_class = chunk_class.get(*neighbor_block);
                 let neighbor_light = chunk_light.get_mut(*neighbor_block);
 
-                // TODO block transparency analysis
-                if neighbor_class.0 == 1 {
-                    // Do nothing
-                } else if side == 4 && block_light == SkyLight::MAX {
-                    // Side index 4 is z_m (block below)
-                    // we want max-level light to spread below indefinitely
-                    *neighbor_light = SkyLight::MAX;
-                    queue.push_back((*neighbor_block, *neighbor_coords));
-                } else {
-                    let new_light = block_light.fade();
+                match obcc.get(*neighbor_class) {
+                    Some(Opacity::Full) => {},
+                    None => {
+                        if side == 4 && block_light == SkyLight::MAX {
+                            // Side index 4 is z_m (block below)
+                            // we want max-level light to spread below indefinitely
+                            *neighbor_light = SkyLight::MAX;
+                            queue.push_back((*neighbor_block, *neighbor_coords));
+                        } else {
+                            let new_light = block_light.fade();
 
-                    if new_light > SkyLight::MIN && new_light > *neighbor_light {
-                        *neighbor_light = new_light;
+                            if new_light > SkyLight::MIN && new_light > *neighbor_light {
+                                *neighbor_light = new_light;
 
-                        queue.push_back((*neighbor_block, *neighbor_coords));
-                    }
+                                queue.push_back((*neighbor_block, *neighbor_coords));
+                            }
+                        }
+                    },
                 }
             }
         }
@@ -222,6 +237,7 @@ struct AddSide<'a> {
     side: usize,
     old_chunk_light: Option<&'a BlocksVec<SkyLight>>,
     chunk_class: &'a BlocksVec<BlockClass>,
+    obcc: &'a OpacityBlockClassComponent,
     chunk_light: &'a mut BlocksVec<SkyLight>,
     neighbor_chunks: [Option<(Chunk, &'a BlocksVec<BlockClass>, &'a BlocksVec<SkyLight>)>; 6],
     recalc_inner_blocks: &'a mut bool,
@@ -233,6 +249,7 @@ impl AddSide<'_> {
             side,
             old_chunk_light,
             chunk_class,
+            obcc,
             chunk_light,
             neighbor_chunks,
             recalc_inner_blocks,
@@ -264,7 +281,7 @@ impl AddSide<'_> {
                 let old_block_light = old_chunk_light.as_ref().map(|c| *c.get(block));
 
                 // TODO block transparency analysis
-                if block_class.0 == 1 {
+                if let Some(Opacity::Full) = obcc.get(*block_class) {
                     *block_light = SkyLight::MIN;
 
                     if old_block_light != Some(*block_light) {
@@ -317,6 +334,7 @@ struct CheckSide<'a> {
     old_chunk_light: Option<&'a BlocksVec<SkyLight>>,
     chunk_light: &'a BlocksVec<SkyLight>,
     neighbor_chunks: [Option<(Chunk, &'a BlocksVec<BlockClass>, &'a BlocksVec<SkyLight>)>; 6],
+    obcc: &'a OpacityBlockClassComponent,
 }
 
 impl CheckSide<'_> {
@@ -326,6 +344,7 @@ impl CheckSide<'_> {
             old_chunk_light,
             chunk_light,
             neighbor_chunks,
+            obcc,
         } = self;
 
         let (axis0, axis1, fixed_axis, fixed_axis_value, neighbor_fixed_axis_value) = match side {
@@ -370,11 +389,16 @@ impl CheckSide<'_> {
                         continue;
                     };
 
+                let neighbor_transparent = match obcc.get(*neighbor_block_class) {
+                    Some(Opacity::Full) => false,
+                    None => true,
+                };
+
                 // Light levels differ, we should recalculate
                 if old_block_light != Some(new_block_light)
                     // ... unless the neighbor block is opaque and will not pass the light anyway
                     // TODO neighbor block transparency check
-                    && neighbor_block_class.0 != 1
+                    && neighbor_transparent
                     // ... and unless the neighbor is on NOT ground side and light is already MAX,
                     // if the neighbor block is on the opposite side from the sky,
                     // it can only receive direct (MAX) light from us

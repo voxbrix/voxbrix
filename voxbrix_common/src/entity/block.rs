@@ -200,6 +200,7 @@ impl Block {
         }
     }
 
+    // TODO: check if the chunk is on the edge of the map
     pub fn from_chunk_offset(chunk: Chunk, offset: [i32; 3]) -> (Chunk, Block) {
         const BLOCKS_IN_CHUNK_EDGE_I32: i32 = BLOCKS_IN_CHUNK_EDGE as i32;
 

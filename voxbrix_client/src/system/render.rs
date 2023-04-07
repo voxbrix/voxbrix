@@ -17,11 +17,17 @@ use crate::{
             },
             BlocksVec,
         },
-        block_class::model::{
-            Cube,
-            CullMask,
-            CullMaskSides,
-            ModelBlockClassComponent,
+        block_class::{
+            culling::{
+                Culling,
+                CullingBlockClassComponent,
+            },
+            model::{
+                Cube,
+                CullMask,
+                CullMaskSides,
+                ModelBlockClassComponent,
+            },
         },
     },
     entity::{
@@ -70,7 +76,7 @@ fn neighbors_to_cull_mask(
     neighbors: &[Neighbor; 6],
     this_chunk: &BlocksVec<BlockClass>,
     neighbor_chunks: &[Option<&BlocksVec<BlockClass>>; 6],
-    model_bcc: &ModelBlockClassComponent,
+    culling_bcc: &CullingBlockClassComponent,
 ) -> CullMask {
     let mut cull_mask = CullMask::all();
     for (i, (neighbor, neighbor_chunk)) in neighbors.iter().zip(neighbor_chunks.iter()).enumerate()
@@ -80,17 +86,23 @@ fn neighbors_to_cull_mask(
         match neighbor {
             Neighbor::ThisChunk(n) => {
                 let class = this_chunk.get(*n);
-                let model = model_bcc.get(*class);
-                if model.is_some() {
-                    cull_mask.unset(side);
+                let culling = culling_bcc.get(*class);
+                match culling {
+                    Some(Culling::Full) => {
+                        cull_mask.unset(side);
+                    },
+                    None => {},
                 }
             },
             Neighbor::OtherChunk(n) => {
                 if let Some(chunk) = neighbor_chunk {
                     let class = chunk.get(*n);
-                    let model = model_bcc.get(*class);
-                    if model.is_some() {
-                        cull_mask.unset(side);
+                    let culling = culling_bcc.get(*class);
+                    match culling {
+                        Some(Culling::Full) => {
+                            cull_mask.unset(side);
+                        },
+                        None => {},
                     }
                 } else {
                     cull_mask.unset(side);
@@ -568,6 +580,7 @@ impl<'a> RenderSystem<'a> {
         chunk: &Chunk,
         cbc: &ClassBlockComponent,
         mbcc: &ModelBlockClassComponent,
+        cbcc: &CullingBlockClassComponent,
         slbc: &SkyLightBlockComponent,
     ) -> (Vec<Vertex>, Vec<u32>) {
         let mut vertex_buffer = Vec::with_capacity(VERTEX_BUFFER_CAPACITY);
@@ -606,7 +619,7 @@ impl<'a> RenderSystem<'a> {
                     &neighbors,
                     this_chunk_class,
                     &neighbor_chunk_class,
-                    mbcc,
+                    cbcc,
                 );
 
                 let sky_light_levels = neighbors
@@ -642,6 +655,7 @@ impl<'a> RenderSystem<'a> {
         chunk: &Chunk,
         cbc: &ClassBlockComponent,
         mbcc: &ModelBlockClassComponent,
+        cbcc: &CullingBlockClassComponent,
         slbc: &SkyLightBlockComponent,
     ) {
         if cbc.get_chunk(chunk).is_none() {
@@ -664,7 +678,7 @@ impl<'a> RenderSystem<'a> {
 
             Some((
                 chunk,
-                Self::build_chunk_buffer_shard(&chunk, cbc, mbcc, slbc),
+                Self::build_chunk_buffer_shard(&chunk, cbc, mbcc, cbcc, slbc),
             ))
         });
 
