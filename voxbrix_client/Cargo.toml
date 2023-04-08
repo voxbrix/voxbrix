@@ -27,8 +27,9 @@ async-fs = "1.6"
 either = "1.8"
 winit = "0.27"
 wgpu = "0.14"
-iced_winit = "0.6"
-iced_wgpu = "0.7"
+egui = "0.20"
+egui-winit = { version = "0.20", default-features = false, features = ["clipboard", "wayland"] }
+egui-wgpu = "0.20"
 bytemuck = { version = "1", features = ["derive"] }
 image = { version = "0.24", default-features = false, features = ["png"] }
 bitmask = "0.5"

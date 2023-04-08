@@ -47,7 +47,6 @@ use crate::{
     },
     window::{
         InputEvent,
-        WindowEvent,
         WindowHandle,
     },
     RenderHandle,
@@ -105,6 +104,7 @@ use winit::event::{
     DeviceEvent,
     ElementState,
     MouseButton,
+    WindowEvent,
 };
 
 pub enum Event {
@@ -419,11 +419,7 @@ impl GameScene<'_> {
                                     }
                                     direct_control_system.process_keyboard(&input);
                                 },
-                                WindowEvent::MouseInput {
-                                    device_id: _,
-                                    state,
-                                    button,
-                                } => {
+                                WindowEvent::MouseInput { state, button, .. } => {
                                     if state == ElementState::Pressed {
                                         match button {
                                             MouseButton::Left => {
