@@ -314,23 +314,16 @@ pub fn create_window(
         })
         .map_err(|_| Error::msg("surface channel is closed"))?;
 
-    macro_rules! send {
-        ($e:expr, $c:ident) => {
-            match event_tx.send($e) {
-                Err(_) => {
-                    *$c = ControlFlow::Exit;
-                    info!("event channel closed, exiting window loop");
-                    return;
-                },
-                _ => {},
-            }
-        };
-    }
-
     event_loop.run(move |event, _, flow| {
         *flow = ControlFlow::Wait;
         match InputEvent::from_winit(event) {
-            Ok(event) => send!(event, flow),
+            Ok(event) => {
+                if let Err(_) = event_tx.send(event) {
+                    *flow = ControlFlow::Exit;
+                    info!("event channel closed, exiting window loop");
+                    return;
+                }
+            },
             Err(event) => {
                 match event {
                     Event::UserEvent(event) => {
