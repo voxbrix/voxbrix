@@ -79,6 +79,12 @@ enum Event {
     Submit,
 }
 
+fn set_ui_scale(scale: f32, sd: &mut ScreenDescriptor, ctx: &Context, state: &mut State) {
+    sd.pixels_per_point = scale;
+    ctx.set_pixels_per_point(scale);
+    state.set_pixels_per_point(scale);
+}
+
 pub struct MenuScene<'a> {
     pub rt: &'a LocalExecutor<'a>,
     pub window_handle: &'static WindowHandle,
@@ -113,11 +119,6 @@ impl MenuScene<'_> {
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
         };
 
-        let mut screen_descriptor = ScreenDescriptor {
-            size_in_pixels: [physical_size.width, physical_size.height],
-            pixels_per_point: 1.0,
-        };
-
         self.render_handle
             .surface
             .configure(&self.render_handle.device, &config);
@@ -130,11 +131,18 @@ impl MenuScene<'_> {
 
         let mut resized = false;
 
+        let mut screen_descriptor = ScreenDescriptor {
+            size_in_pixels: [physical_size.width, physical_size.height],
+            pixels_per_point: 1.0,
+        };
+
         let mut renderer = Renderer::new(&self.render_handle.device, format, None, 1);
 
         let ctx = Context::default();
 
         let mut state = State::new_with_wayland_display(None);
+
+        set_ui_scale(2.0, &mut screen_descriptor, &ctx, &mut state);
 
         let (event_tx, event_rx) = local_channel::mpsc::channel();
 
@@ -192,10 +200,8 @@ impl MenuScene<'_> {
                     if resized {
                         let physical_size = self.window_handle.window.inner_size();
 
-                        screen_descriptor = ScreenDescriptor {
-                            size_in_pixels: [physical_size.width, physical_size.height],
-                            pixels_per_point: 1.0,
-                        };
+                        screen_descriptor.size_in_pixels =
+                            [physical_size.width, physical_size.height];
 
                         let config = wgpu::SurfaceConfiguration {
                             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
