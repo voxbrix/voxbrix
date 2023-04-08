@@ -113,7 +113,7 @@ impl MenuScene<'_> {
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
         };
 
-        let screen_descriptor = ScreenDescriptor {
+        let mut screen_descriptor = ScreenDescriptor {
             size_in_pixels: [physical_size.width, physical_size.height],
             pixels_per_point: 1.0,
         };
@@ -127,6 +127,8 @@ impl MenuScene<'_> {
             .window
             .set_cursor_grab(winit::window::CursorGrabMode::None);
         self.window_handle.window.set_cursor_visible(true);
+
+        let mut resized = false;
 
         let mut renderer = Renderer::new(&self.render_handle.device, format, None, 1);
 
@@ -185,7 +187,33 @@ impl MenuScene<'_> {
                             ui.checkbox(&mut is_registration, "Registration");
                         });
                     });
-                    let clipped_primitives = ctx.tessellate(full_output.shapes); // create triangles to paint
+                    let clipped_primitives = ctx.tessellate(full_output.shapes);
+
+                    if resized {
+                        let physical_size = self.window_handle.window.inner_size();
+
+                        screen_descriptor = ScreenDescriptor {
+                            size_in_pixels: [physical_size.width, physical_size.height],
+                            pixels_per_point: 1.0,
+                        };
+
+                        let config = wgpu::SurfaceConfiguration {
+                            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                            format,
+                            width: physical_size.width,
+                            height: physical_size.height,
+                            // Fifo makes SurfaceTexture::present() block
+                            // which is bad for current rendering implementation
+                            present_mode,
+                            alpha_mode: wgpu::CompositeAlphaMode::Auto,
+                        };
+
+                        self.render_handle
+                            .surface
+                            .configure(&self.render_handle.device, &config);
+
+                        resized = false;
+                    }
 
                     let output = self.render_handle.surface.get_current_texture()?;
 
@@ -248,7 +276,7 @@ impl MenuScene<'_> {
                     if let InputEvent::WindowEvent { event } = event {
                         match event {
                             WindowEvent::Resized(_size) => {
-                                // TODO
+                                resized = true;
                             },
                             WindowEvent::CloseRequested | WindowEvent::Destroyed => {
                                 return Ok(SceneSwitch::Exit);
