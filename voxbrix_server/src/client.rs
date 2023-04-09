@@ -27,7 +27,6 @@ use futures_lite::{
 };
 use k256::ecdsa::{
     signature::{
-        Signature as _,
         Signer,
         Verifier,
     },
@@ -155,14 +154,19 @@ pub async fn run(
         .and_then(|(_channel, data)| InitRequest::unpack(data).error(Error::UnexpectedMessage))?;
 
     // TODO: read from config
-    let private_key = SigningKey::from_bytes(&[3; 32]).unwrap();
-    let public_key = private_key.verifying_key().to_bytes().into();
+    let private_key = SigningKey::from_bytes((&[3; 32]).into()).unwrap();
+    let public_key = private_key
+        .verifying_key()
+        .to_encoded_point(true)
+        .as_bytes()
+        .try_into()
+        .unwrap();
 
     let key_signature: Signature = private_key.sign(&self_key);
 
     InitResponse {
         public_key,
-        key_signature: key_signature.as_bytes().try_into().unwrap(),
+        key_signature: key_signature.to_bytes().into(),
     }
     .pack(&mut buffer);
 
@@ -222,7 +226,7 @@ pub async fn run(
                         LoginFailure::IncorrectCredentials
                     })?;
 
-                let signature = Signature::from_bytes(&key_signature).map_err(|_| {
+                let signature = Signature::from_bytes((&key_signature).into()).map_err(|_| {
                     warn!("client login: incorrect key signature format");
                     LoginFailure::IncorrectCredentials
                 })?;

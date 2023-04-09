@@ -180,6 +180,7 @@ fn slice_buffers<'a>(
 pub struct RenderSystem<'a> {
     render_handle: &'a RenderHandle,
     config: wgpu::SurfaceConfiguration,
+    view_formats: Vec<wgpu::TextureFormat>,
     pub size: PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
     chunk_buffer_shards: BTreeMap<Chunk, (Vec<Vertex>, Vec<u32>)>,
@@ -206,6 +207,7 @@ impl<'a> RenderSystem<'a> {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         textures: &[Vec<u8>],
+        view_formats: &[wgpu::TextureFormat],
     ) -> (wgpu::BindGroupLayout, wgpu::BindGroup) {
         let block_texture_bytes = textures
             .iter()
@@ -236,6 +238,7 @@ impl<'a> RenderSystem<'a> {
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             label: Some("block_texture"),
+            view_formats,
         };
 
         let block_texture_views = block_texture_bytes
@@ -321,6 +324,7 @@ impl<'a> RenderSystem<'a> {
     pub fn build_depth_texture_view(
         device: &wgpu::Device,
         config: &wgpu::SurfaceConfiguration,
+        view_formats: &[wgpu::TextureFormat],
     ) -> wgpu::TextureView {
         let size = wgpu::Extent3d {
             // 2.
@@ -338,6 +342,7 @@ impl<'a> RenderSystem<'a> {
             format: wgpu::TextureFormat::Depth32Float,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT // 3.
                 | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats,
         };
         let texture = device.create_texture(&desc);
 
@@ -353,23 +358,32 @@ impl<'a> RenderSystem<'a> {
         orientation_ac: &OrientationActorComponent,
         block_textures: Vec<Vec<u8>>,
     ) -> RenderSystem<'a> {
-        let present_mode = render_handle
+        let capabilities = render_handle
             .surface
-            .get_supported_present_modes(&render_handle.adapter)
+            .get_capabilities(&render_handle.adapter);
+
+        let format = capabilities
+            .formats
+            .into_iter()
+            .find(|format| format == &wgpu::TextureFormat::Rgba8UnormSrgb)
+            .expect("texture format found");
+
+        let present_mode = capabilities
+            .present_modes
             .into_iter()
             .find(|pm| *pm == wgpu::PresentMode::Mailbox)
             .unwrap_or(wgpu::PresentMode::Immediate);
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: render_handle
-                .surface
-                .get_supported_formats(&render_handle.adapter)[0],
+            format,
             width: surface_size.width,
             height: surface_size.height,
             // Fifo makes SurfaceTexture::present() block
+            // which is bad for current rendering implementation
             present_mode,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
+            view_formats: vec![format],
         };
 
         render_handle
@@ -377,8 +391,13 @@ impl<'a> RenderSystem<'a> {
             .configure(&render_handle.device, &config);
 
         let (block_texture_bind_group_layout, block_texture_bind_group) =
-            Self::load_block_textures(&render_handle.device, &render_handle.queue, &block_textures)
-                .await;
+            Self::load_block_textures(
+                &render_handle.device,
+                &render_handle.queue,
+                &block_textures,
+                &[format],
+            )
+            .await;
 
         let camera = Camera::new(player_actor);
         let projection = Projection::new(
@@ -508,7 +527,11 @@ impl<'a> RenderSystem<'a> {
                 usage: wgpu::BufferUsages::INDEX,
             });
 
-        let depth_texture_view = Self::build_depth_texture_view(&render_handle.device, &config);
+        let depth_texture_view = Self::build_depth_texture_view(
+            &render_handle.device,
+            &config,
+            &[wgpu::TextureFormat::Depth32Float],
+        );
 
         // Target block hightlighting
         let target_highlight_vertex_buffer =
@@ -549,6 +572,7 @@ impl<'a> RenderSystem<'a> {
             target_highlight_indices: Vec::with_capacity(6),
             target_highlight_vertex_buffer,
             target_highlight_index_buffer,
+            view_formats: vec![format],
         }
     }
 
@@ -560,8 +584,11 @@ impl<'a> RenderSystem<'a> {
             self.render_handle
                 .surface
                 .configure(&self.render_handle.device, &self.config);
-            self.depth_texture_view =
-                Self::build_depth_texture_view(&self.render_handle.device, &self.config);
+            self.depth_texture_view = Self::build_depth_texture_view(
+                &self.render_handle.device,
+                &self.config,
+                &self.view_formats,
+            );
             self.projection.resize(new_size.width, new_size.height);
         }
     }
@@ -788,8 +815,11 @@ impl<'a> RenderSystem<'a> {
                     NonZeroU64::new(index_byte_size).unwrap(),
                 );
 
-                // Change to .as_mut() if https://github.com/gfx-rs/wgpu/pull/3336
-                slice_buffers(&mut chunk_info, &mut vertex_writer, &mut index_writer);
+                slice_buffers(
+                    &mut chunk_info,
+                    vertex_writer.as_mut().unwrap(),
+                    index_writer.as_mut().unwrap(),
+                );
 
                 chunk_info.par_iter_mut().for_each(|chunk| {
                     let (vertex_vec, index_vec) = chunk.chunk_shard;

@@ -43,8 +43,6 @@ impl RedbValue for DataSized<Player, KEY_LENGTH> {
     where
         Self: 'a;
 
-    const ALIGNMENT: usize = 1usize;
-
     fn fixed_width() -> Option<usize> {
         None
     }

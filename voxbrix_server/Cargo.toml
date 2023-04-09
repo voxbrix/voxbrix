@@ -23,4 +23,4 @@ env_logger = { workspace = true }
 voxbrix_protocol = { path = "../voxbrix_protocol", features = ["single", "server"] }
 voxbrix_common = { path = "../voxbrix_common" }
 local_channel = { path = "../local_channel" }
-redb = "0.13"
+redb = "0.14"

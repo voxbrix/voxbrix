@@ -21,8 +21,6 @@ impl RedbValue for DataSized<Chunk, KEY_LENGTH> {
     where
         Self: 'b;
 
-    const ALIGNMENT: usize = 1usize;
-
     fn fixed_width() -> Option<usize> {
         Some(KEY_LENGTH)
     }

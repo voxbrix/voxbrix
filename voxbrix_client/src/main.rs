@@ -54,8 +54,12 @@ fn main() {
                     // the current rendering approrientation_ach
                     // Vulkan supports Mailbox present mode reliably and is cross-platform
                     // https://github.com/gfx-rs/wgpu/issues/2128
-                    let instance = wgpu::Instance::new(wgpu::Backends::VULKAN);
-                    let surface = unsafe { instance.create_surface(&window_handle.window) };
+                    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+                        backends: wgpu::Backends::VULKAN,
+                        dx12_shader_compiler: wgpu::Dx12Compiler::default(),
+                    });
+
+                    let surface = unsafe { instance.create_surface(&window_handle.window) }.unwrap();
 
                     let adapter = instance
                         .request_adapter(&wgpu::RequestAdapterOptions {

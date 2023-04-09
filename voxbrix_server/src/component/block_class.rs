@@ -22,8 +22,6 @@ impl RedbValue for Data<'_, BlocksVec<BlockClass>> {
     where
         Self: 'a;
 
-    const ALIGNMENT: usize = 1usize;
-
     fn fixed_width() -> Option<usize> {
         None
     }

@@ -1,5 +1,5 @@
-let BLOCKS_IN_CHUNK_EDGE_F32: f32 = 32.0;
-let MAX_LIGHT_LEVEL_F32: f32 = 16.0;
+const BLOCKS_IN_CHUNK_EDGE_F32: f32 = 32.0;
+const MAX_LIGHT_LEVEL_F32: f32 = 16.0;
 
 struct CameraUniform {
     chunk: vec3<i32>,

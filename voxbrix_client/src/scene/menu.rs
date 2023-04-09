@@ -30,7 +30,6 @@ use futures_lite::{
 };
 use k256::ecdsa::{
     signature::{
-        Signature as _,
         Signer as _,
         Verifier as _,
     },
@@ -95,15 +94,15 @@ impl MenuScene<'_> {
     pub async fn run(self) -> Result<SceneSwitch> {
         let physical_size = self.window_handle.window.inner_size();
 
-        let format = self
+        let capabilities = self
             .render_handle
             .surface
-            .get_supported_formats(&self.render_handle.adapter)[0];
+            .get_capabilities(&self.render_handle.adapter);
 
-        let present_mode = self
-            .render_handle
-            .surface
-            .get_supported_present_modes(&self.render_handle.adapter)
+        let format = capabilities.formats[0];
+
+        let present_mode = capabilities
+            .present_modes
             .into_iter()
             .find(|pm| *pm == wgpu::PresentMode::Mailbox)
             .unwrap_or(wgpu::PresentMode::Immediate);
@@ -117,6 +116,7 @@ impl MenuScene<'_> {
             // which is bad for current rendering implementation
             present_mode,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
+            view_formats: vec![format],
         };
 
         self.render_handle
@@ -187,11 +187,11 @@ impl MenuScene<'_> {
                                 ui.label("Password confirmation:");
                                 ui.text_edit_singleline(&mut form.password_confirmation);
                             }
-                            ui.label("");
+                            ui.add_space(16.0);
                             if ui.button("Submit").clicked() {
                                 event_tx.send(Event::Submit).unwrap();
                             }
-                            ui.label("");
+                            ui.add_space(16.0);
                             ui.checkbox(&mut is_registration, "Registration");
                         });
                     });
@@ -212,6 +212,7 @@ impl MenuScene<'_> {
                             // which is bad for current rendering implementation
                             present_mode,
                             alpha_mode: wgpu::CompositeAlphaMode::Auto,
+                            view_formats: vec![format],
                         };
 
                         self.render_handle
@@ -404,7 +405,7 @@ impl Form {
         let server_key = VerifyingKey::from_sec1_bytes(&server_key)
             .map_err(|_| "Server provided incorrect public key")?;
 
-        let key_signature = Signature::from_bytes(&key_signature)
+        let key_signature = Signature::from_bytes((&key_signature).into())
             .map_err(|_| "Server provided incorrect signature")?;
 
         server_key
@@ -426,21 +427,27 @@ impl Form {
             )
             .unwrap();
 
-        let signing_key = SigningKey::from_bytes(&signing_key).expect("signing key derive");
+        let signing_key =
+            SigningKey::from_bytes((&signing_key).into()).expect("signing key derive");
 
         match self.action {
             ActionType::Login => {
                 let signature: Signature = signing_key.sign(&self_key);
                 LoginRequest {
                     username: self.username.clone(),
-                    key_signature: signature.as_bytes().try_into().unwrap(),
+                    key_signature: signature.to_bytes().into(),
                 }
                 .pack(&mut tx_buffer)
             },
             ActionType::Registration => {
                 RegisterRequest {
                     username: self.username.clone(),
-                    public_key: signing_key.verifying_key().to_bytes().try_into().unwrap(),
+                    public_key: signing_key
+                        .verifying_key()
+                        .to_encoded_point(true)
+                        .as_bytes()
+                        .try_into()
+                        .unwrap(),
                 }
                 .pack(&mut tx_buffer)
             },
