@@ -43,7 +43,7 @@ use crate::{
         chunk_presence::ChunkPresenceSystem,
         controller::DirectControl,
         position::PositionSystem,
-        render::RenderSystem,
+        render::RenderSystemDescriptor,
     },
     window::{
         InputEvent,
@@ -313,14 +313,20 @@ impl GameScene<'_> {
             })?;
         self.window_handle.window.set_cursor_visible(false);
 
-        let mut render_system = RenderSystem::new(
-            self.render_handle,
-            self.window_handle.window.inner_size(),
+        let (block_texture_bind_group_layout, block_texture_bind_group) =
+            block_texture_loading_system
+                .prepare_buffer(&self.render_handle.device, &self.render_handle.queue);
+
+        let mut render_system = RenderSystemDescriptor {
+            render_handle: self.render_handle,
+            surface_size: self.window_handle.window.inner_size(),
             player_actor,
-            &position_ac,
-            &orientation_ac,
-            block_texture_loading_system.textures,
-        )
+            position_ac: &position_ac,
+            orientation_ac: &orientation_ac,
+            block_texture_bind_group_layout,
+            block_texture_bind_group,
+        }
+        .build()
         .await;
 
         let mut stream = Timer::interval(Duration::from_millis(20))

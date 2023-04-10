@@ -1,4 +1,3 @@
-// use image::GenericImageView;
 use crate::{
     camera::{
         Camera,
@@ -45,15 +44,11 @@ use crate::{
 };
 use anyhow::Result;
 use arrayvec::ArrayVec;
-use image::ImageFormat;
 use rayon::prelude::*;
 use std::{
     collections::BTreeMap,
     iter,
-    num::{
-        NonZeroU32,
-        NonZeroU64,
-    },
+    num::NonZeroU64,
 };
 use voxbrix_common::math::{
     Mat4,
@@ -65,7 +60,6 @@ use wgpu::util::{
 };
 use winit::dpi::PhysicalSize;
 
-const BLOCK_TEXTURE_FORMAT: ImageFormat = ImageFormat::Png;
 const INDEX_FORMAT: wgpu::IndexFormat = wgpu::IndexFormat::Uint32;
 const INDEX_SIZE: usize = std::mem::size_of::<u32>();
 const VERTEX_SIZE: usize = Vertex::size() as usize;
@@ -112,6 +106,33 @@ fn neighbors_to_cull_mask(
     }
 
     cull_mask
+}
+
+fn build_depth_texture_view(
+    device: &wgpu::Device,
+    config: &wgpu::SurfaceConfiguration,
+) -> wgpu::TextureView {
+    let size = wgpu::Extent3d {
+        // 2.
+        width: config.width,
+        height: config.height,
+        depth_or_array_layers: 1,
+    };
+
+    let desc = wgpu::TextureDescriptor {
+        label: Some("depth_texture"),
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Depth32Float,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT // 3.
+            | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[wgpu::TextureFormat::Depth32Float],
+    };
+    let texture = device.create_texture(&desc);
+
+    texture.create_view(&wgpu::TextureViewDescriptor::default())
 }
 
 #[repr(C)]
@@ -177,185 +198,28 @@ fn slice_buffers<'a>(
     }
 }
 
-pub struct RenderSystem<'a> {
-    render_handle: &'a RenderHandle,
-    config: wgpu::SurfaceConfiguration,
-    pub size: PhysicalSize<u32>,
-    render_pipeline: wgpu::RenderPipeline,
-    chunk_buffer_shards: BTreeMap<Chunk, (Vec<Vertex>, Vec<u32>)>,
-    update_chunk_buffer: bool,
-    prepared_vertex_buffer: wgpu::Buffer,
-    prepared_index_buffer: wgpu::Buffer,
-    num_indices: u32,
-    block_texture_bind_group: wgpu::BindGroup,
-    depth_texture_view: wgpu::TextureView,
-    camera: Camera,
-    camera_uniform: CameraUniform,
-    projection: Projection,
-    camera_buffer: wgpu::Buffer,
-    camera_bind_group: wgpu::BindGroup,
-    render_target_highlight: bool,
-    target_highlight_vertices: Vec<Vertex>,
-    target_highlight_indices: Vec<u32>,
-    target_highlight_vertex_buffer: wgpu::Buffer,
-    target_highlight_index_buffer: wgpu::Buffer,
+pub struct RenderSystemDescriptor<'a> {
+    pub render_handle: &'static RenderHandle,
+    pub surface_size: PhysicalSize<u32>,
+    pub player_actor: Actor,
+    pub position_ac: &'a PositionActorComponent,
+    pub orientation_ac: &'a OrientationActorComponent,
+    pub block_texture_bind_group_layout: wgpu::BindGroupLayout,
+    pub block_texture_bind_group: wgpu::BindGroup,
 }
 
-impl<'a> RenderSystem<'a> {
-    pub async fn load_block_textures(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        textures: &[Vec<u8>],
-        view_formats: &[wgpu::TextureFormat],
-    ) -> (wgpu::BindGroupLayout, wgpu::BindGroup) {
-        let block_texture_bytes = textures
-            .iter()
-            .map(|buf| {
-                let bytes_rgba =
-                    image::load_from_memory_with_format(buf.as_ref(), BLOCK_TEXTURE_FORMAT)?
-                        .to_rgba8();
+impl<'a> RenderSystemDescriptor<'a> {
+    pub async fn build(self) -> RenderSystem {
+        let Self {
+            render_handle,
+            surface_size,
+            player_actor,
+            position_ac,
+            orientation_ac,
+            block_texture_bind_group_layout,
+            block_texture_bind_group,
+        } = self;
 
-                Ok(bytes_rgba)
-            })
-            .collect::<Result<Vec<_>, anyhow::Error>>()
-            .unwrap();
-
-        // TODO
-        let texture_size = block_texture_bytes[0].dimensions();
-
-        let extent = wgpu::Extent3d {
-            width: texture_size.0,
-            height: texture_size.1,
-            depth_or_array_layers: 1,
-        };
-
-        let texture_descriptior = wgpu::TextureDescriptor {
-            size: extent,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            label: Some("block_texture"),
-            view_formats,
-        };
-
-        let block_texture_views = block_texture_bytes
-            .into_iter()
-            .map(|texture_bytes| {
-                let block_texture = device.create_texture(&texture_descriptior);
-                queue.write_texture(
-                    wgpu::ImageCopyTexture {
-                        texture: &block_texture,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    &texture_bytes,
-                    wgpu::ImageDataLayout {
-                        offset: 0,
-                        bytes_per_row: NonZeroU32::new(4 * texture_size.0),
-                        rows_per_image: NonZeroU32::new(texture_size.1),
-                    },
-                    extent,
-                );
-                block_texture.create_view(&wgpu::TextureViewDescriptor::default())
-            })
-            .collect::<Vec<_>>();
-
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
-
-        let block_texture_views = block_texture_views.iter().collect::<Vec<_>>();
-
-        let texture_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("bind group layout"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: NonZeroU32::new(textures.len() as u32),
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: NonZeroU32::new(textures.len() as u32),
-                    },
-                ],
-            });
-
-        let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureViewArray(
-                        block_texture_views.as_slice(),
-                    ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::SamplerArray(
-                        &textures.iter().map(|_| &sampler).collect::<Vec<_>>(),
-                    ),
-                },
-            ],
-            layout: &texture_bind_group_layout,
-            label: Some("bind group"),
-        });
-
-        (texture_bind_group_layout, texture_bind_group)
-    }
-
-    pub fn build_depth_texture_view(
-        device: &wgpu::Device,
-        config: &wgpu::SurfaceConfiguration,
-    ) -> wgpu::TextureView {
-        let size = wgpu::Extent3d {
-            // 2.
-            width: config.width,
-            height: config.height,
-            depth_or_array_layers: 1,
-        };
-
-        let desc = wgpu::TextureDescriptor {
-            label: Some("depth_texture"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Depth32Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT // 3.
-                | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[wgpu::TextureFormat::Depth32Float],
-        };
-        let texture = device.create_texture(&desc);
-
-        texture.create_view(&wgpu::TextureViewDescriptor::default())
-    }
-
-    // Creating some of the wgpu types requires async code
-    pub async fn new(
-        render_handle: &'a RenderHandle,
-        surface_size: PhysicalSize<u32>,
-        player_actor: Actor,
-        position_ac: &PositionActorComponent,
-        orientation_ac: &OrientationActorComponent,
-        block_textures: Vec<Vec<u8>>,
-    ) -> RenderSystem<'a> {
         let capabilities = render_handle
             .surface
             .get_capabilities(&render_handle.adapter);
@@ -387,15 +251,6 @@ impl<'a> RenderSystem<'a> {
         render_handle
             .surface
             .configure(&render_handle.device, &config);
-
-        let (block_texture_bind_group_layout, block_texture_bind_group) =
-            Self::load_block_textures(
-                &render_handle.device,
-                &render_handle.queue,
-                &block_textures,
-                &[format],
-            )
-            .await;
 
         let camera = Camera::new(player_actor);
         let projection = Projection::new(
@@ -525,7 +380,7 @@ impl<'a> RenderSystem<'a> {
                 usage: wgpu::BufferUsages::INDEX,
             });
 
-        let depth_texture_view = Self::build_depth_texture_view(&render_handle.device, &config);
+        let depth_texture_view = build_depth_texture_view(&render_handle.device, &config);
 
         // Target block hightlighting
         let target_highlight_vertex_buffer =
@@ -544,7 +399,7 @@ impl<'a> RenderSystem<'a> {
                 mapped_at_creation: false,
             });
 
-        Self {
+        RenderSystem {
             render_handle,
             config,
             size: surface_size,
@@ -568,7 +423,33 @@ impl<'a> RenderSystem<'a> {
             target_highlight_index_buffer,
         }
     }
+}
 
+pub struct RenderSystem {
+    render_handle: &'static RenderHandle,
+    config: wgpu::SurfaceConfiguration,
+    pub size: PhysicalSize<u32>,
+    render_pipeline: wgpu::RenderPipeline,
+    chunk_buffer_shards: BTreeMap<Chunk, (Vec<Vertex>, Vec<u32>)>,
+    update_chunk_buffer: bool,
+    prepared_vertex_buffer: wgpu::Buffer,
+    prepared_index_buffer: wgpu::Buffer,
+    num_indices: u32,
+    block_texture_bind_group: wgpu::BindGroup,
+    depth_texture_view: wgpu::TextureView,
+    camera: Camera,
+    camera_uniform: CameraUniform,
+    projection: Projection,
+    camera_buffer: wgpu::Buffer,
+    camera_bind_group: wgpu::BindGroup,
+    render_target_highlight: bool,
+    target_highlight_vertices: Vec<Vertex>,
+    target_highlight_indices: Vec<u32>,
+    target_highlight_vertex_buffer: wgpu::Buffer,
+    target_highlight_index_buffer: wgpu::Buffer,
+}
+
+impl RenderSystem {
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
@@ -578,7 +459,7 @@ impl<'a> RenderSystem<'a> {
                 .surface
                 .configure(&self.render_handle.device, &self.config);
             self.depth_texture_view =
-                Self::build_depth_texture_view(&self.render_handle.device, &self.config);
+                build_depth_texture_view(&self.render_handle.device, &self.config);
             self.projection.resize(new_size.width, new_size.height);
         }
     }
