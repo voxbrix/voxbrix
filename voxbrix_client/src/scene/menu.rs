@@ -39,6 +39,7 @@ use k256::ecdsa::{
 };
 use std::{
     iter,
+    rc::Rc,
     time::Duration,
 };
 use voxbrix_common::{
@@ -85,7 +86,7 @@ fn set_ui_scale(scale: f32, sd: &mut ScreenDescriptor, ctx: &Context, state: &mu
 }
 
 pub struct MenuScene<'a> {
-    pub rt: &'a LocalExecutor<'a>,
+    pub rt: Rc<LocalExecutor<'a>>,
     pub window_handle: &'static WindowHandle,
     pub render_handle: &'static RenderHandle,
 }

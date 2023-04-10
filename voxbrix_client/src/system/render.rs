@@ -180,7 +180,6 @@ fn slice_buffers<'a>(
 pub struct RenderSystem<'a> {
     render_handle: &'a RenderHandle,
     config: wgpu::SurfaceConfiguration,
-    view_formats: Vec<wgpu::TextureFormat>,
     pub size: PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
     chunk_buffer_shards: BTreeMap<Chunk, (Vec<Vertex>, Vec<u32>)>,
@@ -324,7 +323,6 @@ impl<'a> RenderSystem<'a> {
     pub fn build_depth_texture_view(
         device: &wgpu::Device,
         config: &wgpu::SurfaceConfiguration,
-        view_formats: &[wgpu::TextureFormat],
     ) -> wgpu::TextureView {
         let size = wgpu::Extent3d {
             // 2.
@@ -342,7 +340,7 @@ impl<'a> RenderSystem<'a> {
             format: wgpu::TextureFormat::Depth32Float,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT // 3.
                 | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats,
+            view_formats: &[wgpu::TextureFormat::Depth32Float],
         };
         let texture = device.create_texture(&desc);
 
@@ -499,8 +497,8 @@ impl<'a> RenderSystem<'a> {
                     depth_stencil: Some(wgpu::DepthStencilState {
                         format: wgpu::TextureFormat::Depth32Float,
                         depth_write_enabled: true,
-                        depth_compare: wgpu::CompareFunction::Less, // 1.
-                        stencil: wgpu::StencilState::default(),     // 2.
+                        depth_compare: wgpu::CompareFunction::Less,
+                        stencil: wgpu::StencilState::default(),
                         bias: wgpu::DepthBiasState::default(),
                     }),
                     multisample: wgpu::MultisampleState {
@@ -527,11 +525,7 @@ impl<'a> RenderSystem<'a> {
                 usage: wgpu::BufferUsages::INDEX,
             });
 
-        let depth_texture_view = Self::build_depth_texture_view(
-            &render_handle.device,
-            &config,
-            &[wgpu::TextureFormat::Depth32Float],
-        );
+        let depth_texture_view = Self::build_depth_texture_view(&render_handle.device, &config);
 
         // Target block hightlighting
         let target_highlight_vertex_buffer =
@@ -572,7 +566,6 @@ impl<'a> RenderSystem<'a> {
             target_highlight_indices: Vec::with_capacity(6),
             target_highlight_vertex_buffer,
             target_highlight_index_buffer,
-            view_formats: vec![format],
         }
     }
 
@@ -584,11 +577,8 @@ impl<'a> RenderSystem<'a> {
             self.render_handle
                 .surface
                 .configure(&self.render_handle.device, &self.config);
-            self.depth_texture_view = Self::build_depth_texture_view(
-                &self.render_handle.device,
-                &self.config,
-                &self.view_formats,
-            );
+            self.depth_texture_view =
+                Self::build_depth_texture_view(&self.render_handle.device, &self.config);
             self.projection.resize(new_size.width, new_size.height);
         }
     }

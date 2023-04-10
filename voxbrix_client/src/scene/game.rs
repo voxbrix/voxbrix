@@ -62,6 +62,7 @@ use futures_lite::{
 use log::error;
 use std::{
     io::ErrorKind as StdIoErrorKind,
+    rc::Rc,
     time::{
         Duration,
         Instant,
@@ -122,7 +123,7 @@ pub struct GameSceneParameters {
 }
 
 pub struct GameScene<'a> {
-    pub rt: &'a LocalExecutor<'a>,
+    pub rt: Rc<LocalExecutor<'a>>,
     pub window_handle: &'static WindowHandle,
     pub render_handle: &'static RenderHandle,
     pub parameters: GameSceneParameters,

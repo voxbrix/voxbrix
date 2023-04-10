@@ -1,10 +1,10 @@
 use async_executor::LocalExecutor;
 use futures_lite::future;
 use log::error;
-use scene::MainScene;
+use scene::SceneManager;
 use std::{
     panic,
-    process,
+    rc::Rc,
     thread,
     time::Duration,
 };
@@ -33,18 +33,36 @@ pub struct RenderHandle {
 fn main() {
     env_logger::init();
 
-    let default_panic = panic::take_hook();
-    panic::set_hook(Box::new(move |panic_info| {
-        default_panic(panic_info);
-        process::exit(1);
-    }));
-
     let (window_tx, window_rx) = flume::bounded::<WindowHandle>(1);
     let (event_proxy_tx, event_proxy_rx) = flume::bounded::<EventLoopProxy<WindowCommand>>(1);
 
-    thread::spawn(move || {
-        let rt = &Box::leak(Box::new(LocalExecutor::new()));
-        future::block_on(rt.run(async move {
+    let main_thread = thread::current().id();
+
+    let runtime_handle = thread::spawn(move || {
+        let rt = Rc::new(LocalExecutor::new());
+        let (panic_tx, panic_rx) = flume::bounded(1);
+
+        // With catch_unwind later it allows to properly
+        // drop() everything in async runtime.
+        // This is required, for example, to send DISCONNECT even on panic.
+        // TODO the same for signals
+        let default_panic = panic::take_hook();
+        panic::set_hook(Box::new(move |panic_info| {
+            default_panic(panic_info);
+            let _ = panic_tx.send(());
+            if thread::current().id() == main_thread {
+                panic::resume_unwind(Box::new(()));
+            }
+        }));
+        rt.spawn(async move {
+            if let Ok(_) = panic_rx.recv_async().await {
+                panic::resume_unwind(Box::new(()));
+            }
+        })
+        .detach();
+
+        let _ = panic::catch_unwind(|| {
+            future::block_on(rt.clone().run(async move {
             match window_rx.recv_async().await {
                 Err(_) => {
                     error!("unable to receive window handle");
@@ -97,27 +115,18 @@ fn main() {
                         device,
                         queue,
                     }));
-                    let main_loop = MainScene {
+                    let scene_manager = SceneManager {
                         rt,
                         window_handle,
                         render_handle,
                     };
-                    if let Err(err) = main_loop.run().await {
+                    if let Err(err) = scene_manager.run().await {
                         error!("main_loop ended with error: {:?}", err);
                     }
                 },
             }
-        }));
-
-        // Cleanup to prevent tasks from being aborted instead of dropped correctly
-        // when the main thread exits
-        // WARNING: no task should be .detach() to run endlessly
-        // prefer to avoid .detach() altogether
-        // just have a handle around to be dropped
-        // at the end of the scope (that effectively drops the task)
-        while !rt.is_empty() {
-            rt.try_tick();
-        }
+        }))
+        });
 
         match event_proxy_rx.recv() {
             Ok(tx) => {
@@ -129,7 +138,9 @@ fn main() {
         }
     });
 
-    if let Err(err) = window::create_window(window_tx, event_proxy_tx) {
+    if let Ok(Err(err)) = panic::catch_unwind(|| window::create_window(window_tx, event_proxy_tx)) {
         error!("unable to create window: {:?}", err);
+    } else {
+        let _ = runtime_handle.join();
     }
 }
