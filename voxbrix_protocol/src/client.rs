@@ -12,6 +12,8 @@ use crate::{
     MAX_DATA_SIZE,
     MAX_PACKET_SIZE,
     NEW_CONNECTION_ID,
+    RELIABLE_QUEUE_LENGTH,
+    RELIABLE_RESEND_AFTER,
     SECRET_BUFFER,
     SERVER_ID,
     UNRELIABLE_BUFFERS,
@@ -51,8 +53,12 @@ use rand_core::OsRng;
 #[cfg(feature = "single")]
 use std::rc::Rc;
 #[cfg(feature = "multi")]
-use std::sync::Arc;
+use std::sync::Arc as Rc;
 use std::{
+    alloc::{
+        self,
+        Layout,
+    },
     collections::{
         BTreeMap,
         BTreeSet,
@@ -71,14 +77,29 @@ use std::{
         UdpSocket,
     },
     slice,
-    time::Duration,
+    time::Instant,
 };
+
+fn allocate_buffer() -> Box<[u8; MAX_PACKET_SIZE]> {
+    // SAFETY: fast and safe way to get Box of [0u8; MAX_PACKET_SIZE]
+    // without copying stack to heap (as would be with Box::new())
+    // https://doc.rust-lang.org/std/boxed/index.html#memory-layout
+    unsafe {
+        let layout = Layout::new::<[u8; MAX_PACKET_SIZE]>();
+        let ptr = alloc::alloc_zeroed(layout);
+        if ptr.is_null() {
+            alloc::handle_alloc_error(layout);
+        }
+        Box::from_raw(ptr.cast())
+    }
+}
 
 #[derive(Debug)]
 pub enum Error {
     Io(StdIoError),
     ReceiverWasDropped,
     Disconnect,
+    Timeout,
 }
 
 impl fmt::Display for Error {
@@ -187,25 +208,20 @@ impl Client {
                 transport,
             };
 
-            #[cfg(feature = "single")]
-            {
-                Rc::new(shared)
-            }
-
-            #[cfg(feature = "multi")]
-            {
-                Arc::new(shared)
-            }
+            Rc::new(shared)
         };
 
         let receiver = Receiver {
             shared: shared.clone(),
             sequence: 0,
+            reliable_queue: vec![None; RELIABLE_QUEUE_LENGTH as usize].into(),
             reliable_split_buffer: Vec::new(),
             reliable_split_channel: None,
-            buffer: [0; MAX_PACKET_SIZE],
+            recv_buffer: allocate_buffer(),
+            send_buffer: allocate_buffer(),
             ack_sender,
-            unreliable_split_buffers: VecDeque::with_capacity(UNRELIABLE_BUFFERS),
+            unreliable_split_shards: VecDeque::with_capacity(UNRELIABLE_BUFFERS),
+            unreliable_split_buffer: Vec::new(),
         };
 
         let sender = Sender {
@@ -215,8 +231,8 @@ impl Client {
             },
             reliable: ReliableSender {
                 shared,
-                sequence: 0,
-                buffer: [0; MAX_PACKET_SIZE],
+                queue_front_sequence: 0,
+                queue: VecDeque::new(),
                 ack_receiver,
             },
         };
@@ -253,48 +269,119 @@ impl Drop for Shared {
     }
 }
 
-pub struct Receiver {
-    #[cfg(feature = "single")]
-    shared: Rc<Shared>,
+#[derive(Clone)]
+struct QueueEntry {
+    // None means it's in the self.recv_buffer
+    buffer: Option<Box<[u8; MAX_PACKET_SIZE]>>,
+    start: usize,
+    stop: usize,
+    channel: Channel,
+    is_split: bool,
+}
 
-    #[cfg(feature = "multi")]
-    shared: Arc<Shared>,
-
+async fn send_ack(
+    buffer: &mut [u8; MAX_PACKET_SIZE],
+    shared: &Shared,
     sequence: Sequence,
+) -> Result<(), Error> {
+    let (tag_start, len) = crate::write_in_buffer(buffer, shared.id, Type::ACKNOWLEDGE, |cursor| {
+        cursor.write_varint(sequence).unwrap();
+    });
+
+    crate::encode_in_buffer(buffer, &shared.cipher, tag_start, len);
+
+    shared.transport.send(&buffer[.. len]).await?;
+    Ok(())
+}
+
+pub struct Receiver {
+    shared: Rc<Shared>,
+    sequence: Sequence,
+    reliable_queue: VecDeque<Option<QueueEntry>>,
     reliable_split_buffer: Vec<u8>,
     reliable_split_channel: Option<Channel>,
-    buffer: [u8; MAX_PACKET_SIZE],
+    recv_buffer: Box<[u8; MAX_PACKET_SIZE]>,
+    send_buffer: Box<[u8; MAX_PACKET_SIZE]>,
     ack_sender: ChannelTx<Sequence>,
-    unreliable_split_buffers: VecDeque<UnreliableBuffer>,
+    unreliable_split_shards: VecDeque<UnreliableBuffer>,
+    unreliable_split_buffer: Vec<u8>,
 }
 
 impl Receiver {
-    async fn send_ack(&mut self, sequence: Sequence) -> Result<(), Error> {
-        let (tag_start, len) = crate::write_in_buffer(
-            &mut self.buffer,
-            self.shared.id,
-            Type::ACKNOWLEDGE,
-            |cursor| {
-                cursor.write_varint(sequence).unwrap();
-            },
-        );
-
-        crate::encode_in_buffer(&mut self.buffer, &self.shared.cipher, tag_start, len);
-
-        self.shared.transport.send(&self.buffer[.. len]).await?;
-        Ok(())
-    }
-
-    pub async fn recv<'a>(
-        &mut self,
-        buf: &'a mut Vec<u8>,
-    ) -> Result<(Channel, &'a mut [u8]), Error> {
+    pub async fn recv(&mut self) -> Result<(Channel, &[u8]), Error> {
         loop {
-            buf.resize(MAX_PACKET_SIZE, 0);
+            // Firstly, we check the reliable message queue
+            // in case we have messages ready, handle these first
+            if self
+                .reliable_queue
+                .front()
+                .and_then(|f| f.as_ref())
+                .is_some()
+            {
+                let QueueEntry {
+                    buffer: queue_buffer_box,
+                    start,
+                    stop,
+                    channel,
+                    is_split,
+                } = self.reliable_queue.pop_front().flatten().unwrap();
 
-            let len = self.shared.transport.recv(buf).await?;
+                self.reliable_queue.push_back(None);
+                self.sequence = self.sequence.wrapping_add(1);
 
-            let mut read_cursor = Cursor::new(&buf[.. len]);
+                // None means it's in the recv_buffer, we just received that packet in the previous
+                // iteration of the loop
+                let queue_buffer =
+                    &queue_buffer_box.as_ref().unwrap_or(&self.recv_buffer)[start .. stop];
+
+                if is_split {
+                    // Split started, if not started - cleanup & start,
+                    // if we already started - check the channel
+                    if self.reliable_split_channel.is_none() {
+                        self.reliable_split_channel = Some(channel);
+                        self.reliable_split_buffer.clear();
+                    } else if let Some(reliable_split_channel) = self.reliable_split_channel {
+                        if reliable_split_channel != channel {
+                            warn!("skipping mishappened packet with channel {}", channel);
+                            continue;
+                        }
+                    }
+
+                    self.reliable_split_buffer.extend_from_slice(queue_buffer);
+
+                    continue;
+                } else {
+                    let buf = if let Some(reliable_split_channel) = self.reliable_split_channel {
+                        // Split just completed, extending and returning
+                        if reliable_split_channel == channel {
+                            self.reliable_split_buffer.extend_from_slice(queue_buffer);
+
+                            self.reliable_split_channel = None;
+
+                            self.reliable_split_buffer.as_slice()
+                        } else {
+                            continue;
+                        }
+                    } else {
+                        // Non-split packet arrived
+                        if let Some(queue_buffer) = queue_buffer_box {
+                            self.recv_buffer = queue_buffer;
+                        }
+
+                        &self.recv_buffer[start .. stop]
+                    };
+
+                    return Ok((channel, buf));
+                }
+            }
+
+            let len = self
+                .shared
+                .transport
+                .recv(self.recv_buffer.as_mut())
+                .await?;
+
+            let mut read_cursor = Cursor::new(&self.recv_buffer[.. len]);
 
             let sender: usize = seek_read!(read_cursor.read_varint(), "sender");
 
@@ -310,13 +397,16 @@ impl Receiver {
 
             let tag_start = read_cursor.position() as usize;
 
-            let decrypted_start =
-                match crate::decode_in_buffer(&mut buf[.. len], tag_start, &self.shared.cipher) {
-                    Ok(s) => s,
-                    Err(()) => continue,
-                };
+            let decrypted_start = match crate::decode_in_buffer(
+                &mut self.recv_buffer[.. len],
+                tag_start,
+                &self.shared.cipher,
+            ) {
+                Ok(s) => s,
+                Err(()) => continue,
+            };
 
-            let mut read_cursor = Cursor::new(&buf[.. len]);
+            let mut read_cursor = Cursor::new(&self.recv_buffer[.. len]);
             read_cursor.set_position(decrypted_start as u64);
 
             match packet_type {
@@ -330,19 +420,19 @@ impl Receiver {
                 Type::UNRELIABLE => {
                     let channel: usize = seek_read!(read_cursor.read_varint(), "channel");
                     let start = read_cursor.position() as usize;
-                    return Ok((channel, &mut buf[start .. len]));
+                    return Ok((channel, &self.recv_buffer[start .. len]));
                 },
                 Type::UNRELIABLE_SPLIT_START => {
                     let channel: usize = seek_read!(read_cursor.read_varint(), "channel");
                     let split_id: u16 = seek_read!(read_cursor.read_varint(), "split_id");
                     let expected_length: usize = seek_read!(read_cursor.read_varint(), "length");
 
-                    let mut split_buffer = if self.unreliable_split_buffers.len()
+                    let mut split_buffer = if self.unreliable_split_shards.len()
                         == UNRELIABLE_BUFFERS
-                        || self.unreliable_split_buffers.back().is_some()
-                            && self.unreliable_split_buffers.back().unwrap().complete
+                        || self.unreliable_split_shards.back().is_some()
+                            && self.unreliable_split_shards.back().unwrap().complete
                     {
-                        let mut b = self.unreliable_split_buffers.pop_back().unwrap();
+                        let mut b = self.unreliable_split_shards.pop_back().unwrap();
                         b.split_id = split_id;
                         b.channel = channel;
                         b.expected_length = expected_length;
@@ -366,18 +456,19 @@ impl Receiver {
 
                     match split_buffer.buffer.get_mut(&0) {
                         Some((current_length, shard)) => {
-                            shard[.. data_length].copy_from_slice(&buf[start .. len]);
+                            shard[.. data_length].copy_from_slice(&self.recv_buffer[start .. len]);
                             *current_length = data_length;
                         },
                         None => {
                             let mut new_shard = [0u8; MAX_DATA_SIZE];
-                            new_shard[.. data_length].copy_from_slice(&buf[start .. len]);
+                            new_shard[.. data_length]
+                                .copy_from_slice(&self.recv_buffer[start .. len]);
                             split_buffer.buffer.insert(0, (data_length, new_shard));
                         },
                     }
 
                     split_buffer.existing_pieces.insert(0);
-                    self.unreliable_split_buffers.push_front(split_buffer);
+                    self.unreliable_split_shards.push_front(split_buffer);
                 },
                 Type::UNRELIABLE_SPLIT => {
                     let channel: usize = seek_read!(read_cursor.read_varint(), "channel");
@@ -387,7 +478,7 @@ impl Receiver {
                     let data_length = len - start;
 
                     let split_buffer = match self
-                        .unreliable_split_buffers
+                        .unreliable_split_shards
                         .iter_mut()
                         .find(|b| b.split_id == split_id && b.channel == channel && !b.complete)
                     {
@@ -397,12 +488,13 @@ impl Receiver {
 
                     match split_buffer.buffer.get_mut(&count) {
                         Some((current_length, shard)) => {
-                            shard[.. data_length].copy_from_slice(&buf[start .. len]);
+                            shard[.. data_length].copy_from_slice(&self.recv_buffer[start .. len]);
                             *current_length = data_length;
                         },
                         None => {
                             let mut new_shard = [0u8; MAX_DATA_SIZE];
-                            new_shard[.. data_length].copy_from_slice(&buf[start .. len]);
+                            new_shard[.. data_length]
+                                .copy_from_slice(&self.recv_buffer[start .. len]);
                             split_buffer.buffer.insert(count, (data_length, new_shard));
                         },
                     }
@@ -415,12 +507,13 @@ impl Receiver {
                         .count()
                         == split_buffer.expected_length
                     {
-                        buf.clear();
+                        self.unreliable_split_buffer.clear();
 
                         for (_, (len, data)) in
                             split_buffer.buffer.range(0 .. split_buffer.expected_length)
                         {
-                            buf.extend_from_slice(&data[.. *len]);
+                            self.unreliable_split_buffer
+                                .extend_from_slice(&data[.. *len]);
                         }
 
                         // TODO: also check CRC and if it's incorrect restore buf length to
@@ -428,58 +521,38 @@ impl Receiver {
 
                         split_buffer.complete = true;
 
-                        return Ok((channel, buf.as_mut()));
+                        return Ok((channel, self.unreliable_split_buffer.as_slice()));
                     }
                 },
-                Type::RELIABLE => {
-                    let channel: usize = seek_read!(read_cursor.read_varint(), "channel");
-                    let sequence: u16 = seek_read!(read_cursor.read_varint(), "sequence");
+                Type::RELIABLE | Type::RELIABLE_SPLIT => {
+                    let channel: Channel = seek_read!(read_cursor.read_varint(), "channel");
+                    let sequence: Sequence = seek_read!(read_cursor.read_varint(), "sequence");
 
                     // TODO: do not answer if the sequence is not previous, but random?
-                    seek_write!(self.send_ack(sequence).await, "ack message");
+                    seek_write!(
+                        send_ack(&mut self.send_buffer, self.shared.as_ref(), sequence).await,
+                        "ack message"
+                    );
 
-                    if sequence == self.sequence {
-                        self.sequence = self.sequence.wrapping_add(1);
-                        let start = read_cursor.position() as usize;
+                    let start = read_cursor.position() as usize;
+                    // TODO verify correctness
+                    let index = sequence.wrapping_sub(self.sequence);
+                    if index < RELIABLE_QUEUE_LENGTH {
+                        let queue_place = self.reliable_queue.get_mut(index as usize).unwrap();
 
-                        if self.reliable_split_channel.is_none() {
-                            return Ok((channel, &mut buf[start .. len]));
-                        } else {
-                            self.reliable_split_buffer
-                                .extend_from_slice(&buf[start .. len]);
-
-                            mem::swap(&mut self.reliable_split_buffer, buf);
-
-                            self.reliable_split_buffer.clear();
-                            self.reliable_split_channel = None;
-
-                            return Ok((channel, buf));
-                        }
-                    }
-                },
-                Type::RELIABLE_SPLIT => {
-                    let channel: usize = seek_read!(read_cursor.read_varint(), "channel");
-
-                    if self.reliable_split_channel.is_none() {
-                        self.reliable_split_channel = Some(channel);
-                    } else if let Some(reliable_split_channel) = self.reliable_split_channel {
-                        if reliable_split_channel != channel {
-                            warn!("skipping mishappened packet with channel {}", channel);
-                            continue;
-                        }
-                    }
-
-                    let sequence: u16 = seek_read!(read_cursor.read_varint(), "sequence");
-
-                    // TODO: do not answer if the sequence is not previous, but random?
-                    seek_write!(self.send_ack(sequence).await, "ack message");
-
-                    if sequence == self.sequence {
-                        self.sequence = self.sequence.wrapping_add(1);
-                        let start = read_cursor.position() as usize;
-
-                        self.reliable_split_buffer
-                            .extend_from_slice(&buf[start .. len]);
+                        *queue_place = Some(QueueEntry {
+                            buffer: if index == 0 {
+                                // Ready to give that message right away in the next loop
+                                // iteration, we don't want to allocate buffer to drop it right after
+                                None
+                            } else {
+                                Some(mem::replace(&mut self.recv_buffer, allocate_buffer()))
+                            },
+                            start,
+                            stop: len,
+                            channel,
+                            is_split: packet_type == Type::RELIABLE_SPLIT,
+                        });
                     }
                 },
                 _ => {},
@@ -515,12 +588,7 @@ impl Sender {
 }
 
 pub struct UnreliableSender {
-    #[cfg(feature = "single")]
     shared: Rc<Shared>,
-
-    #[cfg(feature = "multi")]
-    shared: Arc<Shared>,
-
     unreliable_split_id: u16,
 }
 
@@ -584,66 +652,161 @@ impl UnreliableSender {
     }
 }
 
+enum PacketState {
+    Done,
+    Pending {
+        sent_at: Instant,
+        buffer: Box<[u8; MAX_PACKET_SIZE]>,
+        length: usize,
+    },
+}
+
 pub struct ReliableSender {
-    #[cfg(feature = "single")]
     shared: Rc<Shared>,
-
-    #[cfg(feature = "multi")]
-    shared: Arc<Shared>,
-
-    sequence: Sequence,
-    buffer: [u8; MAX_PACKET_SIZE],
+    queue_front_sequence: Sequence,
+    queue: VecDeque<PacketState>,
     ack_receiver: ChannelRx<Sequence>,
 }
 
 impl ReliableSender {
+    fn pack_data(
+        &mut self,
+        channel: usize,
+        data: &[u8],
+        packet_type: u8,
+    ) -> (Box<[u8; MAX_PACKET_SIZE]>, usize) {
+        let mut buffer = allocate_buffer();
+
+        let (tag_start, len) =
+            crate::write_in_buffer(buffer.as_mut(), self.shared.id, packet_type, |cursor| {
+                cursor.write_varint(channel).unwrap();
+                cursor
+                    .write_varint(
+                        self.queue_front_sequence
+                            .wrapping_add(self.queue.len() as u16),
+                    )
+                    .unwrap();
+                cursor.write_all(data).unwrap();
+            });
+
+        crate::encode_in_buffer(buffer.as_mut(), &self.shared.cipher, tag_start, len);
+
+        (buffer, len)
+    }
+
     async fn send_reliable_one(
         &mut self,
         channel: usize,
         data: &[u8],
         packet_type: u8,
     ) -> Result<(), Error> {
-        let (tag_start, len) =
-            crate::write_in_buffer(&mut self.buffer, self.shared.id, packet_type, |cursor| {
-                cursor.write_varint(channel).unwrap();
-                cursor.write_varint(self.sequence).unwrap();
-                cursor.write_all(data).unwrap();
-            });
-
-        crate::encode_in_buffer(&mut self.buffer, &self.shared.cipher, tag_start, len);
-
+        let mut should_wait = false;
         loop {
-            self.shared.transport.send(&self.buffer[.. len]).await?;
+            loop {
+                // Handling previous ACKs first
+                let ack = if should_wait {
+                    should_wait = false;
 
-            let result = async {
-                #[cfg(feature = "single")]
-                while let Some(ack) = self.ack_receiver.recv().await {
-                    if ack == self.sequence {
-                        return Ok(());
+                    // TODO timeout retry limit?
+                    let result = async {
+                        #[cfg(feature = "single")]
+                        {
+                            self.ack_receiver
+                                .recv()
+                                .await
+                                .ok_or(Error::ReceiverWasDropped)
+                        }
+                        #[cfg(feature = "multi")]
+                        {
+                            self.ack_receiver
+                                .recv_async()
+                                .await
+                                .map_err(|_| Error::ReceiverWasDropped)
+                        }
+                    }
+                    .or(async {
+                        Timer::after(RELIABLE_RESEND_AFTER).await;
+                        Err(Error::Timeout)
+                    })
+                    .await;
+
+                    match result {
+                        Ok(r) => Some(r),
+                        Err(Error::Timeout) => continue,
+                        Err(Error::ReceiverWasDropped) => return Err(Error::ReceiverWasDropped),
+                        _ => unreachable!(),
+                    }
+                } else {
+                    #[cfg(feature = "single")]
+                    {
+                        self.ack_receiver.try_recv()
+                    }
+                    #[cfg(feature = "multi")]
+                    {
+                        self.ack_receiver.try_recv().ok()
+                    }
+                };
+
+                let ack = match ack {
+                    Some(a) => a,
+                    None => break,
+                };
+
+                let index = ack.wrapping_sub(self.queue_front_sequence);
+
+                if index < RELIABLE_QUEUE_LENGTH {
+                    if let Some(queue_entry) = self.queue.get_mut(index as usize) {
+                        *queue_entry = PacketState::Done;
                     }
                 }
-                #[cfg(feature = "multi")]
-                while let Ok(ack) = self.ack_receiver.recv_async().await {
-                    if ack == self.sequence {
-                        return Ok(());
-                    }
-                }
-
-                Err(Some(Error::ReceiverWasDropped))
             }
-            .or(async {
-                Timer::after(Duration::from_secs(1)).await;
-                Err(None)
-            })
-            .await;
 
-            match result {
-                Ok(()) => {
-                    self.sequence = self.sequence.wrapping_add(1);
-                    return Ok(());
-                },
-                Err(Some(err)) => return Err(err),
-                _ => {},
+            // Getting rid of confirmed packets
+            while matches!(self.queue.front(), Some(PacketState::Done)) {
+                self.queue.pop_front();
+                self.queue_front_sequence = self.queue_front_sequence.wrapping_add(1);
+            }
+
+            let mut queue = mem::take(&mut self.queue);
+
+            // Lazily resending congested packages
+            for (sent_at, buffer, length) in queue.iter_mut().filter_map(|entry| {
+                match entry {
+                    PacketState::Pending {
+                        sent_at,
+                        buffer,
+                        length,
+                    } => Some((sent_at, buffer, length)),
+                    PacketState::Done => None,
+                }
+            }) {
+                if sent_at.elapsed() > RELIABLE_RESEND_AFTER {
+                    self.shared.transport.send(&buffer[.. *length]).await?;
+                    *sent_at = Instant::now();
+                }
+            }
+
+            self.queue = queue;
+
+            if matches!(self.queue.front(), Some(PacketState::Pending { .. }))
+                && self.queue.len() >= RELIABLE_QUEUE_LENGTH as usize
+            {
+                // Waiting list is full
+                should_wait = true;
+                continue;
+            } else {
+                // Finally send our latest packet and add that to waiting list
+                let (buffer, length) = self.pack_data(channel, data, packet_type);
+                let result = self.shared.transport.send(&buffer[.. length]).await;
+                self.queue.push_back(PacketState::Pending {
+                    sent_at: Instant::now(),
+                    buffer,
+                    length,
+                });
+
+                result?;
+
+                return Ok(());
             }
         }
     }

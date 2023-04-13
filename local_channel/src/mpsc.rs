@@ -72,6 +72,10 @@ impl<T> Receiver<T> {
     pub fn recv(&mut self) -> Receive<'_, T> {
         Receive { receiver: self }
     }
+
+    pub fn try_recv(&mut self) -> Option<T> {
+        self.shared.borrow_mut().queue.pop_front()
+    }
 }
 
 impl<T> Stream for Receiver<T> {

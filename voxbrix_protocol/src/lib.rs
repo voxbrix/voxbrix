@@ -17,6 +17,7 @@ use std::{
         Read,
     },
     mem,
+    time::Duration,
 };
 
 #[cfg(any(feature = "client", test))]
@@ -40,6 +41,8 @@ const MAX_DATA_SIZE: usize = MAX_PACKET_SIZE - MAX_HEADER_SIZE;
 const SERVER_ID: usize = 0;
 const NEW_CONNECTION_ID: usize = 1;
 const UNRELIABLE_BUFFERS: usize = 8;
+const RELIABLE_QUEUE_LENGTH: u16 = 256;
+const RELIABLE_RESEND_AFTER: Duration = Duration::from_millis(500);
 
 trait AsSlice<T> {
     fn slice(&self) -> &[T];
@@ -310,14 +313,56 @@ mod tests {
     use std::{
         cell::RefCell,
         iter,
+        net::{
+            SocketAddr,
+            UdpSocket,
+        },
         sync::atomic::{
             AtomicU16,
             Ordering,
         },
+        thread,
         time::Duration,
     };
 
     static TEST_NUM_DISPENCER: AtomicU16 = AtomicU16::new(0);
+
+    fn create_proxy<F>(
+        test_num: u16,
+        peer_a: SocketAddr,
+        peer_b: SocketAddr,
+        filter: F,
+    ) -> SocketAddr
+    where
+        F: Fn(usize, SocketAddr) -> bool + Send + 'static,
+    {
+        let port = 30000 + test_num * 10 + 2;
+
+        let socket_addr: SocketAddr = ([127, 0, 0, 1], port).into();
+
+        let socket = UdpSocket::bind(&socket_addr).unwrap();
+
+        thread::spawn(move || {
+            let mut buf = [0u8; super::MAX_PACKET_SIZE];
+            let mut packet_num_a = 0;
+            let mut packet_num_b = 0;
+            while let Ok((len, addr)) = socket.recv_from(&mut buf) {
+                let (send_addr, packet_num) = match addr {
+                    addr if addr == peer_a => (peer_b, &mut packet_num_a),
+                    addr if addr == peer_b => (peer_a, &mut packet_num_b),
+                    _ => continue,
+                };
+
+                if filter(*packet_num, addr) {
+                    socket.send_to(&buf[.. len], send_addr).unwrap();
+                }
+
+                *packet_num += 1;
+            }
+        });
+
+        socket_addr
+    }
 
     #[test]
     fn unreliable_test_0() {
@@ -367,9 +412,7 @@ mod tests {
                 .await
                 .expect("client connection");
 
-            let mut buf = vec![0u8; 508];
-
-            let (channel, result) = rx.recv(&mut buf).await.expect("client message receive");
+            let (channel, result) = rx.recv().await.expect("client message receive");
 
             assert_eq!(result.as_ref(), b"1HelloWorld1");
             assert_eq!(channel, 0);
@@ -431,9 +474,7 @@ mod tests {
                 .await
                 .expect("client connection");
 
-            let mut buf = vec![0u8; 508];
-
-            let (channel, result) = rx.recv(&mut buf).await.expect("client message receive");
+            let (channel, result) = rx.recv().await.expect("client message receive");
 
             assert_eq!(result.as_ref(), data.as_slice());
             assert_eq!(channel, 0);
@@ -679,11 +720,8 @@ mod tests {
                 .await
                 .expect("client connection");
 
-            let mut recv_buf = Vec::new();
-
             for i in 20 .. 30 {
-                recv_buf.clear();
-                let (channel, result) = rx.recv(&mut recv_buf).await.expect("client received data");
+                let (channel, result) = rx.recv().await.expect("client received data");
 
                 assert_eq!(
                     result.as_ref(),
@@ -698,8 +736,7 @@ mod tests {
             }
 
             for i in 50 .. 60 {
-                recv_buf.clear();
-                let (channel, result) = rx.recv(&mut recv_buf).await.expect("client received data");
+                let (channel, result) = rx.recv().await.expect("client received data");
 
                 assert_eq!(
                     result.as_ref(),
@@ -789,9 +826,7 @@ mod tests {
                 .await
                 .expect("client connection");
 
-            let mut buf = vec![0u8; 508];
-
-            let (channel, result) = rx.recv(&mut buf).await.expect("client message receive");
+            let (channel, result) = rx.recv().await.expect("client message receive");
 
             assert_eq!(result, b"HelloWorld");
             assert_eq!(channel, 0);
@@ -838,9 +873,7 @@ mod tests {
                 .await
                 .expect("client connection");
 
-            let mut buf = vec![0u8; 508];
-
-            let (channel, result) = rx.recv(&mut buf).await.expect("client message receive");
+            let (channel, result) = rx.recv().await.expect("client message receive");
 
             assert_eq!(result, b"HelloWorld");
             assert_eq!(channel, 0);
@@ -889,10 +922,8 @@ mod tests {
                 .await
                 .expect("client connection");
 
-            let mut buf = vec![0u8; 508];
-
             for i in 0 .. 1000 {
-                let (channel, result) = rx.recv(&mut buf).await.expect("client message receive");
+                let (channel, result) = rx.recv().await.expect("client message receive");
                 assert_eq!(result, format!("HelloWorld{}", i).as_bytes());
                 assert_eq!(channel, 0);
             }
@@ -954,15 +985,13 @@ mod tests {
                 .await
                 .expect("client connection");
 
-            let mut buf = vec![0u8; 508];
-
             for i in 0 .. 1000 {
-                let (channel, result) = rx.recv(&mut buf).await.expect("client message receive");
+                let (channel, result) = rx.recv().await.expect("client message receive");
                 assert_eq!(result, format!("HelloWorld{}", i).as_bytes());
                 assert_eq!(channel, 0);
             }
 
-            rt.spawn(async move { while let Ok(_) = rx.recv(&mut buf).await {} })
+            rt.spawn(async move { while let Ok(_) = rx.recv().await {} })
                 .detach();
 
             for i in 0 .. 1000 {
@@ -1033,13 +1062,11 @@ mod tests {
                 .await
                 .expect("client connection");
 
-            let mut buf = vec![0u8; 1508];
-
-            let (channel, result) = rx.recv(&mut buf).await.expect("client message receive");
+            let (channel, result) = rx.recv().await.expect("client message receive");
             assert_eq!(result.as_ref(), data.as_slice());
             assert_eq!(channel, 0);
 
-            rt.spawn(async move { while let Ok(_) = rx.recv(&mut buf).await {} })
+            rt.spawn(async move { while let Ok(_) = rx.recv().await {} })
                 .detach();
 
             tx.send_reliable(0, data.as_ref())
@@ -1123,10 +1150,8 @@ mod tests {
                 .await
                 .expect("client connection");
 
-            let mut buf = vec![0u8; 1508];
-
             for i in 0 .. 10 {
-                let (channel, result) = rx.recv(&mut buf).await.expect("client message receive");
+                let (channel, result) = rx.recv().await.expect("client message receive");
 
                 let data = Box::leak(Box::new({
                     let data_slice = &[i + 1, i + 2, i + 3, i + 4, i + 5];
@@ -1141,7 +1166,7 @@ mod tests {
                 assert_eq!(channel, 0);
             }
 
-            rt.spawn(async move { while let Ok(_) = rx.recv(&mut buf).await {} })
+            rt.spawn(async move { while let Ok(_) = rx.recv().await {} })
                 .detach();
 
             for i in 0 .. 10 {
@@ -1163,8 +1188,113 @@ mod tests {
     }
 
     #[test]
+    fn reliable_test_reliability() {
+        let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
+
+        let amount = 1000;
+
+        let client_port = 30000 + test_num * 10 + 1;
+        let server_port = 30000 + test_num * 10;
+
+        let client_addr = ([127, 0, 0, 1], client_port);
+        let server_addr = ([127, 0, 0, 1], server_port);
+
+        let proxy_addr = create_proxy(
+            test_num,
+            client_addr.into(),
+            server_addr.into(),
+            |i, _addr| i % 3 != 2,
+        );
+
+        let rt = Box::leak(Box::new(LocalExecutor::new()));
+        let task = Box::leak(Box::new(RefCell::new(None)));
+        future::block_on(rt.run(async {
+            rt.spawn(async {
+                let mut server = ServerParameters::default()
+                    .bind(server_addr)
+                    .expect("server socket bind");
+
+                loop {
+                    let server::Connection {
+                        sender: tx,
+                        receiver: rx,
+                        ..
+                    } = server.accept().await.expect("connection accepted");
+
+                    *task.borrow_mut() = Some(rt.spawn(async {
+                        let mut tx = tx;
+                        let mut rx = rx;
+                        for i in 0 .. amount {
+                            tx.send_reliable(0, format!("HelloWorld{}", i).as_bytes())
+                                .await
+                                .expect("server sent packet");
+                        }
+
+                        rt.spawn(async {
+                            let mut tx = tx;
+                            loop {
+                                Timer::after(Duration::from_millis(500)).await;
+                                tx.send_reliable(0, "serv_ping".as_bytes())
+                                    .await
+                                    .expect("server sent packet");
+                            }
+                        })
+                        .detach();
+
+                        for i in 0 .. amount {
+                            let (channel, result) =
+                                rx.recv().await.expect("client message receive");
+                            assert_eq!(result.as_ref(), format!("HelloWorld{}", i).as_bytes());
+                            assert_eq!(channel, 0);
+                        }
+                    }));
+                }
+            })
+            .detach();
+
+            Timer::after(Duration::from_millis(5)).await;
+
+            let client = Client::bind(client_addr).expect("client bound");
+
+            let client::Connection {
+                sender: mut tx,
+                receiver: mut rx,
+                ..
+            } = client.connect(proxy_addr).await.expect("client connection");
+
+            for i in 0 .. amount {
+                let (channel, result) = rx.recv().await.expect("client message receive");
+                assert_eq!(result, format!("HelloWorld{}", i).as_bytes());
+                assert_eq!(channel, 0);
+            }
+
+            rt.spawn(async move { while let Ok(_) = rx.recv().await {} })
+                .detach();
+
+            for i in 0 .. amount {
+                tx.send_reliable(0, format!("HelloWorld{}", i).as_bytes())
+                    .await
+                    .expect("server sent packet");
+            }
+
+            rt.spawn(async {
+                let mut tx = tx;
+                loop {
+                    Timer::after(Duration::from_millis(500)).await;
+                    tx.send_reliable(0, "cl_ping".as_bytes())
+                        .await
+                        .expect("server sent packet");
+                }
+            })
+            .detach();
+
+            task.borrow_mut().take().unwrap().await;
+        }));
+    }
+
+    #[test]
     #[cfg(not(debug_assertions))]
-    fn reliable_test_6() {
+    fn reliable_test_load() {
         let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
 
         let client_port = 30000 + test_num * 10 + 1;
@@ -1223,16 +1353,14 @@ mod tests {
                 .await
                 .expect("client connection");
 
-            let mut buf = vec![0u8; 508];
-
             for i in 0 .. 10000 {
-                let (channel, result) = rx.recv(&mut buf).await.expect("client message receive");
+                let (channel, result) = rx.recv().await.expect("client message receive");
                 assert_eq!(result, format!("HelloWorld{}", i).as_bytes());
                 assert_eq!(channel, 0);
             }
 
             rt.spawn(async move {
-                while let Ok(_) = rx.recv(&mut buf).await {}
+                while let Ok(_) = rx.recv().await {}
                 panic!("recv loop ended");
             })
             .detach();
