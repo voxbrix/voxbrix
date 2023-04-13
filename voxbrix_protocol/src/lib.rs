@@ -1314,13 +1314,13 @@ mod tests {
                 } = server.accept().await.expect("connection accepted");
 
                 let task = async move {
-                    for i in 0 .. 10000 {
+                    for i in 0 .. 200000 {
                         tx.send_reliable(0, format!("HelloWorld{}", i).as_bytes())
                             .await
                             .expect("server sent packet");
                     }
 
-                    for i in 0 .. 10000 {
+                    for i in 0 .. 200000 {
                         let (channel, result) = rx.recv().await.expect("client message receive");
                         assert_eq!(result.as_ref(), format!("HelloWorld{}", i).as_bytes());
                         assert_eq!(channel, 0);
@@ -1353,7 +1353,7 @@ mod tests {
                 .await
                 .expect("client connection");
 
-            for i in 0 .. 10000 {
+            for i in 0 .. 200000 {
                 let (channel, result) = rx.recv().await.expect("client message receive");
                 assert_eq!(result, format!("HelloWorld{}", i).as_bytes());
                 assert_eq!(channel, 0);
@@ -1365,7 +1365,7 @@ mod tests {
             })
             .detach();
 
-            for i in 0 .. 10000 {
+            for i in 0 .. 200000 {
                 tx.send_reliable(0, format!("HelloWorld{}", i).as_bytes())
                     .await
                     .expect("server sent packet");
