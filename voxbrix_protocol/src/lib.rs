@@ -1,3 +1,22 @@
+//! A relatively simple protocol implementation.
+//! The protocol is a thin layer above UDP.
+//! It is connection-oriented with the client-server peer relationship.
+//!
+//! The design goals are:
+//!
+//! 1. Reliable and unreliable packet transmission.
+//! 2. AEAD using ChaCha20-Poly1305 algorithm with ECDH handshake.
+//! 3. Simplicity.
+//!
+//! The crate can be tuned by the following feature flags:
+//!
+//! 1. `single` optimizes the crate toward usage in a single-threaded runtime. Mutually exclusive
+//!    with `multi` feature.
+//! 2. `multi` allows the crate to be used with multi-threaded runtimes. Mutually exclusive
+//!    with `single` feature.
+//! 3. `client` enables [`client`] functionality.
+//! 4. `server` enables [`server`] functionality.
+
 use chacha20poly1305::{
     aead::{
         rand_core::OsRng,
@@ -36,7 +55,9 @@ const MAX_HEADER_SIZE: usize = mem::size_of::<Id>() // sender
     + 2
     + mem::size_of::<usize>();
 
-const MAX_DATA_SIZE: usize = MAX_PACKET_SIZE - MAX_HEADER_SIZE;
+/// Maximum amount of data bytes that fits into one packet.
+/// Unreliable messages sent are recommended to be smaller that this.
+pub const MAX_DATA_SIZE: usize = MAX_PACKET_SIZE - MAX_HEADER_SIZE;
 
 const SERVER_ID: usize = 0;
 const NEW_CONNECTION_ID: usize = 1;
@@ -118,12 +139,13 @@ macro_rules! seek_write {
     };
 }
 
-pub type Id = usize;
-pub type Sequence = u16;
+type Id = usize;
+type Sequence = u16;
+/// Channel id type
 pub type Channel = usize;
-pub type Key = [u8; 33];
+type Key = [u8; 33];
 const KEY_BUFFER: Key = [0; 33];
-pub type Secret = [u8; 32];
+type Secret = [u8; 32];
 const SECRET_BUFFER: Secret = [0; 32];
 const TAG_SIZE: usize = 16;
 const TAG_BUFFER: [u8; TAG_SIZE] = [0; TAG_SIZE];
@@ -197,7 +219,7 @@ impl Type {
     const UNDEFINED: u8 = u8::MAX;
 }
 
-// returns tag start and total data length
+/// Returns tag start byte and total data length.
 fn write_in_buffer<F>(
     buffer: &mut [u8; MAX_PACKET_SIZE],
     sender: Id,
@@ -240,7 +262,7 @@ fn encode_in_buffer(
     buffer[tag_start .. tag_finish].copy_from_slice(&tag);
 }
 
-// returns total data length
+/// Returns total data length.
 fn tag_sign_in_buffer(
     buffer: &mut [u8; MAX_PACKET_SIZE],
     cipher: &ChaCha20Poly1305,
@@ -260,7 +282,7 @@ fn tag_sign_in_buffer(
     length
 }
 
-// returns start of a relevant data (that is right after the nonce)
+/// Returns starting byte of the relevant data (that is right after the nonce).
 fn decode_in_buffer(
     buffer: &mut [u8],
     tag_start: usize,

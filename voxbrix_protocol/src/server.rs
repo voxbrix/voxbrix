@@ -1,3 +1,60 @@
+//! Server side of the protocol implementation.
+//!
+//! # Examples
+//!
+//! ```no_run
+//! use async_io::Timer;
+//! use futures_lite::future::{
+//!     self,
+//!     FutureExt,
+//! };
+//! use std::time::Duration;
+//! use voxbrix_protocol::server::{
+//!     Connection,
+//!     ServerParameters,
+//! };
+//!
+//! future::block_on(async {
+//!     let mut server = ServerParameters::default()
+//!         .bind(([127, 0, 0, 1], 12345))
+//!         .expect("socket bound");
+//!
+//!     let Connection {
+//!         mut receiver,
+//!         mut sender,
+//!         ..
+//!     } = server.accept().await.expect("accepted a connection");
+//!
+//!     let recv_future = async {
+//!         while let Ok((channel, data)) = receiver.recv().await {
+//!             println!("channel: {}, data: {:?}", channel, data.as_ref());
+//!         }
+//!     };
+//!
+//!     let send_future = async {
+//!         sender.send_reliable(0, b"Hello Server!").await;
+//!         loop {
+//!             // Senders send no data passively by themselves and resending lost messages
+//!             // in reliable data transfer happens lazily, right before sending a new one.
+//!             // Therefore, it is highly recommended to send some kind of "ping" or "keepalive"
+//!             // messages periodically, so the lost packets could be retransmitted even if you
+//!             // do not send any meaningful data.
+//!             Timer::after(Duration::from_secs(1)).await;
+//!             sender.send_reliable(0, b"keepalive").await;
+//!         }
+//!     };
+//!
+//!     let server_future = async {
+//!         // For above connections to work, the future from accept() method must always be
+//!         // polled in loop, even if you do not actually use the incoming connections.
+//!         while let Ok(_conn) = server.accept().await {
+//!             // Serve the new connection
+//!         }
+//!     };
+//!
+//!     server_future.or(recv_future.or(send_future)).await;
+//! });
+//! ```
 use crate::{
     seek_read,
     AsSlice,
@@ -139,17 +196,21 @@ impl AsRef<[u8]> for ReadBuffer {
 
 #[derive(Debug)]
 pub enum Error {
+    /// IO error wrapper.
     Io(StdIoError),
+    /// Returned on attempt to send reliable message with the `Server` dropped.
     ServerWasDropped,
+    /// Returned by the receiver in case the client dropped the connection handles.
     Disconnect,
+    /// Happens if a sender attempts to send a packet on a non-existant connection.
     InvalidConnection,
-    ServerIsFull,
+    /// Currently internal variant, should not be returned.
     Timeout,
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 
@@ -161,6 +222,7 @@ impl From<StdIoError> for Error {
     }
 }
 
+/// Represents a data slice received. Implements `AsMut<[u8]>` and `AsRef<[u8]>`.
 pub struct Packet {
     data: Data,
 }
@@ -258,20 +320,28 @@ impl Drop for Shared {
     }
 }
 
+/// Message-sending part of the connection. Contains both reliable-sending and unreliable-sending
+/// halves, therefore can send both types. Can be `split()` to have those halves separate.
 pub struct StreamSender {
     unreliable: StreamUnreliableSender,
     reliable: StreamReliableSender,
 }
 
 impl StreamSender {
-    pub async fn send_unreliable(&mut self, channel: usize, data: &[u8]) -> Result<(), Error> {
+    /// Send a data slice unreliably.
+    pub async fn send_unreliable(&mut self, channel: Channel, data: &[u8]) -> Result<(), Error> {
         self.unreliable.send_unreliable(channel, data).await
     }
 
-    pub async fn send_reliable(&mut self, channel: usize, data: &[u8]) -> Result<(), Error> {
+    /// Send a data slice reliably.
+    ///
+    /// **Lazily sends previous undelivered reliable messages before trying to send a new one.
+    /// It is highly recommended to send keepalive packets periodically to have lost messages retransmitted**
+    pub async fn send_reliable(&mut self, channel: Channel, data: &[u8]) -> Result<(), Error> {
         self.reliable.send_reliable(channel, data).await
     }
 
+    /// Split the `StreamSender` into `StreamUnreliableSender` and `StreamReliableSender` halves.
     pub fn split(self) -> (StreamUnreliableSender, StreamReliableSender) {
         let Self {
             unreliable,
@@ -282,6 +352,7 @@ impl StreamSender {
     }
 }
 
+/// Unreliable-sending part of the connection.
 pub struct StreamUnreliableSender {
     shared: Rc<Shared>,
     unreliable_split_id: u16,
@@ -290,7 +361,7 @@ pub struct StreamUnreliableSender {
 impl StreamUnreliableSender {
     async fn send_unreliable_one(
         &self,
-        channel: usize,
+        channel: Channel,
         data: &[u8],
         packet_type: u8,
         len_or_count: Option<usize>,
@@ -328,7 +399,8 @@ impl StreamUnreliableSender {
         Ok(())
     }
 
-    pub async fn send_unreliable(&mut self, channel: usize, data: &[u8]) -> Result<(), Error> {
+    /// Send a data slice unreliably.
+    pub async fn send_unreliable(&mut self, channel: Channel, data: &[u8]) -> Result<(), Error> {
         if data.len() > MAX_DATA_SIZE {
             self.unreliable_split_id = self.unreliable_split_id.wrapping_add(1);
             let length = data.len() / MAX_DATA_SIZE + 1;
@@ -342,15 +414,15 @@ impl StreamUnreliableSender {
 
             let mut start = MAX_DATA_SIZE;
             for count in 1 .. length {
-                let end = start + (data.len() - start).min(MAX_DATA_SIZE);
+                let stop = start + (data.len() - start).min(MAX_DATA_SIZE);
                 self.send_unreliable_one(
                     channel,
-                    &data[start .. end],
+                    &data[start .. stop],
                     Type::UNRELIABLE_SPLIT,
                     Some(count),
                 )
                 .await?;
-                start += MAX_DATA_SIZE;
+                start = stop;
             }
 
             Ok(())
@@ -369,6 +441,7 @@ enum PacketState {
     },
 }
 
+/// Reliable-sending part of the connection.
 pub struct StreamReliableSender {
     shared: Rc<Shared>,
     queue_front_sequence: Sequence,
@@ -397,7 +470,7 @@ impl StreamReliableSender {
         Ok(())
     }
 
-    fn pack_data(&mut self, channel: usize, data: &[u8], packet_type: u8) -> ReadBuffer {
+    fn pack_data(&mut self, channel: Channel, data: &[u8], packet_type: u8) -> ReadBuffer {
         let mut buffer = WriteBuffer::new();
 
         let (tag_start, stop) =
@@ -419,7 +492,7 @@ impl StreamReliableSender {
 
     async fn send_reliable_one(
         &mut self,
-        channel: usize,
+        channel: Channel,
         data: &[u8],
         packet_type: u8,
     ) -> Result<(), Error> {
@@ -544,18 +617,19 @@ impl StreamReliableSender {
         }
     }
 
-    pub async fn send_reliable(&mut self, channel: usize, data: &[u8]) -> Result<(), Error> {
+    /// Send a data slice reliably.
+    ///
+    /// **Lazily sends previous undelivered reliable messages before trying to send a new one.
+    /// It is highly recommended to send keepalive packets periodically to have lost messages retransmitted**
+    pub async fn send_reliable(&mut self, channel: Channel, data: &[u8]) -> Result<(), Error> {
         let mut start = 0;
 
         while data.len() - start > MAX_DATA_SIZE {
-            self.send_reliable_one(
-                channel,
-                &data[start .. start + MAX_DATA_SIZE],
-                Type::RELIABLE_SPLIT,
-            )
-            .await?;
+            let stop = start + MAX_DATA_SIZE;
+            self.send_reliable_one(channel, &data[start .. stop], Type::RELIABLE_SPLIT)
+                .await?;
 
-            start += MAX_DATA_SIZE;
+            start = stop;
         }
 
         self.send_reliable_one(channel, &data[start ..], Type::RELIABLE)
@@ -572,6 +646,7 @@ struct QueueEntry {
     is_split: bool,
 }
 
+/// Message-receiving part of the connection.
 pub struct StreamReceiver {
     shared: Rc<Shared>,
     sequence: Sequence,
@@ -583,6 +658,8 @@ pub struct StreamReceiver {
 }
 
 impl StreamReceiver {
+    /// Receive a message. Returns a channel id and a `Packet`-represented byte slice in tuple on
+    /// success.
     pub async fn recv(&mut self) -> Result<(Channel, Packet), Error> {
         loop {
             // Firstly, we check the reliable message queue
@@ -683,12 +760,12 @@ impl StreamReceiver {
                     return Err(Error::Disconnect);
                 },
                 Type::UNRELIABLE => {
-                    let channel: usize = seek_read!(read_cursor.read_varint(), "channel");
+                    let channel: Channel = seek_read!(read_cursor.read_varint(), "channel");
                     in_buffer.start += read_cursor.position() as usize;
                     return Ok((channel, in_buffer.into()));
                 },
                 Type::UNRELIABLE_SPLIT_START => {
-                    let channel: usize = seek_read!(read_cursor.read_varint(), "channel");
+                    let channel: Channel = seek_read!(read_cursor.read_varint(), "channel");
                     let split_id: u16 = seek_read!(read_cursor.read_varint(), "split_id");
                     let expected_length: usize = seek_read!(read_cursor.read_varint(), "length");
 
@@ -734,7 +811,7 @@ impl StreamReceiver {
                     self.unreliable_split_buffers.push_front(split_buffer);
                 },
                 Type::UNRELIABLE_SPLIT => {
-                    let channel: usize = seek_read!(read_cursor.read_varint(), "channel");
+                    let channel: Channel = seek_read!(read_cursor.read_varint(), "channel");
                     let split_id: u16 = seek_read!(read_cursor.read_varint(), "split_id");
                     let count: usize = seek_read!(read_cursor.read_varint(), "count");
 
@@ -881,15 +958,25 @@ enum ServerPacket {
     Out(Out),
 }
 
+/// Returned on successful `Server::accept()`.
+/// Represents a fresh connection with a new client.
 pub struct Connection {
+    /// One-time own public key.
+    /// In combination with some secret, can be used to verify server's own the identity for the client.
     pub self_key: Key,
+    /// One-time client public key.
+    /// In combination with some secret, can be used to verify the identity of the connected client.
     pub peer_key: Key,
+    /// Sender part that has both reliable and unreliable functionality included.
     pub sender: StreamSender,
+    /// Receiver part.
     pub receiver: StreamReceiver,
 }
 
+/// Server parameters.
 #[derive(Debug)]
 pub struct ServerParameters {
+    /// Maximum number of simultaneous connections that server can have.
     pub max_connections: usize,
 }
 
@@ -902,6 +989,7 @@ impl Default for ServerParameters {
 }
 
 impl ServerParameters {
+    /// Bind the socket and produce a server with the given parameters.
     pub fn bind<A>(self, bind_address: A) -> Result<Server, StdIoError>
     where
         A: Into<SocketAddr>,
@@ -927,7 +1015,12 @@ pub struct Server {
 }
 
 impl Server {
-    pub async fn accept(&mut self) -> Result<Connection, StdIoError> {
+    /// Accept a new connection.
+    ///
+    /// **Internally, this method handles most of the message routing from and to connection
+    /// streams. This means that the futures returned by the method must be polled in a loop
+    /// constantly for the existing connections to work.**
+    pub async fn accept(&mut self) -> Result<Connection, Error> {
         loop {
             let next: Result<_, StdIoError> = async {
                 // Server struct exists (because &mut self), the following will never panic,
@@ -1048,7 +1141,7 @@ impl Server {
                                     },
                                 },
                                 receiver: StreamReceiver {
-                                    shared: shared.clone(),
+                                    shared,
                                     sequence: 0,
                                     reliable_queue: vec![None; RELIABLE_QUEUE_LENGTH as usize]
                                         .into(),

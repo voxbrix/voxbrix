@@ -1,3 +1,23 @@
+//! A multi-producer, single-consumer [`!Send`] and [`!Sync`] async channel.
+//!
+//! There are [`Sender`] and [`Receiver`] sides. [`Sender`] is cloneable.
+//!
+//! When all [`Sender`]s or the [`Receiver`] are dropped, the channel becomes closed. When a
+//! channel is closed, no more messages can be sent, but remaining messages can still be received.
+//!
+//! # Examples
+//!
+//! ```
+//! futures_lite::future::block_on(async {
+//!     let (tx, mut rx) = local_channel::mpsc::channel();
+//!
+//!     assert!(tx.send("1").is_ok());
+//!     assert!(tx.send("2").is_ok());
+//!     assert_eq!(rx.recv().await, Some("1"));
+//!     assert_eq!(rx.recv().await, Some("2"));
+//! });
+//! ```
+
 use crate::SendError;
 use futures_core::Stream;
 use std::{
@@ -20,12 +40,16 @@ struct Shared<T> {
     has_receiver: bool,
 }
 
+/// Sends values to the associated `Receiver`.
 #[derive(Debug)]
 pub struct Sender<T> {
     shared: Rc<RefCell<Shared<T>>>,
 }
 
 impl<T> Sender<T> {
+    /// Sends a value into the queue to be received by the `Receiver`.
+    /// Returns either `Ok`, if the value sent successfully, or
+    /// `Err` with the sent value, if the channel is closed.
     pub fn send(&self, value: T) -> Result<(), SendError<T>> {
         let mut shared = self.shared.borrow_mut();
         if shared.has_receiver {
@@ -39,6 +63,7 @@ impl<T> Sender<T> {
         }
     }
 
+    /// Checks whether the associated `Receiver` is still alive.
     pub fn has_receiver(&self) -> bool {
         self.shared.borrow().has_receiver
     }
@@ -63,18 +88,30 @@ impl<T> Clone for Sender<T> {
     }
 }
 
+/// Receives values sent by the associated `Sender`s.
 #[derive(Debug)]
 pub struct Receiver<T> {
     shared: Rc<RefCell<Shared<T>>>,
 }
 
 impl<T> Receiver<T> {
+    /// Fetches a value from the queue or returns a `Future` that allows to wait for the
+    /// next value. The output is either `Some` with the value or `None` if there are no pending
+    /// values in the queue and all associated `Sender`s are already dropped.
     pub fn recv(&mut self) -> Receive<'_, T> {
         Receive { receiver: self }
     }
 
+    /// Tries to get an already sent value from the queue.
+    /// Returns either `Some` with the value or `None` if there are no pending
+    /// values in the queue.
     pub fn try_recv(&mut self) -> Option<T> {
         self.shared.borrow_mut().queue.pop_front()
+    }
+
+    /// Checks whether there are any of the associated `Sender`s.
+    pub fn has_sender(&self) -> bool {
+        Rc::strong_count(&self.shared) > 1
     }
 }
 
