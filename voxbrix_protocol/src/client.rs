@@ -353,7 +353,7 @@ impl Drop for Shared {
 
 #[derive(Clone)]
 struct QueueEntry {
-    // None means it's in the self.recv_buffer
+    // None means it's in the Receiver::recv_buffer
     buffer: Option<BoxBuffer>,
     start: usize,
     stop: usize,
@@ -600,12 +600,6 @@ impl Receiver {
                     let channel: Channel = seek_read!(read_cursor.read_varint(), "channel");
                     let sequence: Sequence = seek_read!(read_cursor.read_varint(), "sequence");
 
-                    // TODO: do not answer if the sequence is not previous, but random?
-                    seek_write!(
-                        send_ack(&mut self.send_buffer, self.shared.as_ref(), sequence).await,
-                        "ack message"
-                    );
-
                     let start = read_cursor.position() as usize;
                     // TODO verify correctness
                     let index = sequence.wrapping_sub(self.sequence);
@@ -626,6 +620,12 @@ impl Receiver {
                             is_split: packet_type == Type::RELIABLE_SPLIT,
                         });
                     }
+
+                    // TODO: do not answer if the sequence is not previous, but random?
+                    seek_write!(
+                        send_ack(&mut self.send_buffer, self.shared.as_ref(), sequence).await,
+                        "ack message"
+                    );
                 },
                 _ => {},
             }
@@ -649,7 +649,7 @@ impl Sender {
     /// Send a data slice reliably.
     ///
     /// **Lazily sends previous undelivered reliable messages before trying to send a new one.
-    /// It is highly recommended to send keepalive packets periodically to have lost messages retransmitted**
+    /// It is highly recommended to send keepalive packets periodically to have lost messages retransmitted.**
     pub async fn send_reliable(&mut self, channel: Channel, data: &[u8]) -> Result<(), Error> {
         self.reliable.send_reliable(channel, data).await
     }
@@ -776,12 +776,12 @@ impl ReliableSender {
         data: &[u8],
         packet_type: u8,
     ) -> Result<(), Error> {
-        let mut should_wait = false;
+        let mut must_wait = false;
         loop {
             loop {
                 // Handling previous ACKs first
-                let ack = if should_wait {
-                    should_wait = false;
+                let ack = if must_wait {
+                    must_wait = false;
 
                     // TODO timeout retry limit?
                     let result = async {
@@ -845,7 +845,7 @@ impl ReliableSender {
 
             let mut queue = mem::take(&mut self.queue);
 
-            // Lazily resending congested packages
+            // Lazily resending lost packages
             for (sent_at, buffer, length) in queue.iter_mut().filter_map(|entry| {
                 match entry {
                     PacketState::Pending {
@@ -868,7 +868,7 @@ impl ReliableSender {
                 && self.queue.len() >= RELIABLE_QUEUE_LENGTH as usize
             {
                 // Waiting list is full
-                should_wait = true;
+                must_wait = true;
                 continue;
             } else {
                 // Finally send our latest packet and add that to waiting list
@@ -890,7 +890,7 @@ impl ReliableSender {
     /// Send a data slice reliably.
     ///
     /// **Lazily sends previous undelivered reliable messages before trying to send a new one.
-    /// It is highly recommended to send keepalive packets periodically to have lost messages retransmitted**
+    /// It is highly recommended to send keepalive packets periodically to have lost messages retransmitted.**
     pub async fn send_reliable(&mut self, channel: Channel, data: &[u8]) -> Result<(), Error> {
         let mut start = 0;
 

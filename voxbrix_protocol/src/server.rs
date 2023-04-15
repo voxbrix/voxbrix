@@ -336,7 +336,7 @@ impl StreamSender {
     /// Send a data slice reliably.
     ///
     /// **Lazily sends previous undelivered reliable messages before trying to send a new one.
-    /// It is highly recommended to send keepalive packets periodically to have lost messages retransmitted**
+    /// It is highly recommended to send keepalive packets periodically to have lost messages retransmitted.**
     pub async fn send_reliable(&mut self, channel: Channel, data: &[u8]) -> Result<(), Error> {
         self.reliable.send_reliable(channel, data).await
     }
@@ -496,12 +496,12 @@ impl StreamReliableSender {
         data: &[u8],
         packet_type: u8,
     ) -> Result<(), Error> {
-        let mut should_wait = false;
+        let mut must_wait = false;
         loop {
             loop {
                 // Handling previous ACKs first
-                let result = if should_wait {
-                    should_wait = false;
+                let result = if must_wait {
+                    must_wait = false;
 
                     // TODO timeout retry limit?
                     let result = async {
@@ -582,7 +582,7 @@ impl StreamReliableSender {
 
             let mut queue = mem::take(&mut self.queue);
 
-            // Lazily resending congested packages
+            // Lazily resending lost packages
             for (sent_at, buffer) in queue.iter_mut().filter_map(|entry| {
                 match entry {
                     PacketState::Pending { sent_at, buffer } => Some((sent_at, buffer)),
@@ -601,7 +601,7 @@ impl StreamReliableSender {
                 && self.queue.len() >= RELIABLE_QUEUE_LENGTH as usize
             {
                 // Waiting list is full
-                should_wait = true;
+                must_wait = true;
                 continue;
             } else {
                 // Finally send our latest packet and add that to waiting list
@@ -620,7 +620,7 @@ impl StreamReliableSender {
     /// Send a data slice reliably.
     ///
     /// **Lazily sends previous undelivered reliable messages before trying to send a new one.
-    /// It is highly recommended to send keepalive packets periodically to have lost messages retransmitted**
+    /// It is highly recommended to send keepalive packets periodically to have lost messages retransmitted.**
     pub async fn send_reliable(&mut self, channel: Channel, data: &[u8]) -> Result<(), Error> {
         let mut start = 0;
 
@@ -976,7 +976,7 @@ pub struct Connection {
 /// Server parameters.
 #[derive(Debug)]
 pub struct ServerParameters {
-    /// Maximum number of simultaneous connections that server can have.
+    /// Maximum number of simultaneous connections that the server can have.
     pub max_connections: usize,
 }
 
@@ -989,7 +989,7 @@ impl Default for ServerParameters {
 }
 
 impl ServerParameters {
-    /// Bind the socket and produce a server with the given parameters.
+    /// Bind the socket and produce a `Server` with the given parameters.
     pub fn bind<A>(self, bind_address: A) -> Result<Server, StdIoError>
     where
         A: Into<SocketAddr>,

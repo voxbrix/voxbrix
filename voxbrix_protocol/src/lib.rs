@@ -214,8 +214,6 @@ impl Type {
         // sequence: Sequence,
         // data: &[u8],
 
-    //const PING: u8 = ?;
-
     const UNDEFINED: u8 = u8::MAX;
 }
 
@@ -247,9 +245,9 @@ fn encode_in_buffer(
     length: usize,
 ) {
     let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
-    let tag_finish = tag_start + TAG_SIZE;
-    let encryption_start = tag_finish + NONCE_SIZE;
-    buffer[tag_finish .. encryption_start].copy_from_slice(&nonce);
+    let tag_stop = tag_start + TAG_SIZE;
+    let encryption_start = tag_stop + NONCE_SIZE;
+    buffer[tag_stop .. encryption_start].copy_from_slice(&nonce);
 
     let buffer = &mut buffer[.. length];
 
@@ -259,7 +257,7 @@ fn encode_in_buffer(
         .encrypt_in_place_detached(&nonce, &buffer_pre_enc[.. tag_start], buffer_enc)
         .unwrap();
 
-    buffer[tag_start .. tag_finish].copy_from_slice(&tag);
+    buffer[tag_start .. tag_stop].copy_from_slice(&tag);
 }
 
 /// Returns total data length.
@@ -269,15 +267,15 @@ fn tag_sign_in_buffer(
     tag_start: usize,
 ) -> usize {
     let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
-    let tag_finish = tag_start + TAG_SIZE;
-    let length = tag_finish + NONCE_SIZE;
-    buffer[tag_finish .. length].copy_from_slice(&nonce);
+    let tag_stop = tag_start + TAG_SIZE;
+    let length = tag_stop + NONCE_SIZE;
+    buffer[tag_stop .. length].copy_from_slice(&nonce);
 
     let tag = cipher
         .encrypt_in_place_detached(&nonce, &buffer[.. tag_start], &mut [])
         .unwrap();
 
-    buffer[tag_start .. tag_finish].copy_from_slice(&tag);
+    buffer[tag_start .. tag_stop].copy_from_slice(&tag);
 
     length
 }
