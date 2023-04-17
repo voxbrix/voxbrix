@@ -32,7 +32,10 @@ use crate::{
         },
     },
     entity::{
-        block::BLOCKS_IN_CHUNK,
+        block::{
+            BLOCKS_IN_CHUNK,
+            BLOCKS_IN_CHUNK_LAYER,
+        },
         player::Player,
     },
     storage::{
@@ -180,11 +183,21 @@ pub async fn run(
                                 .and_then(|bytes| bytes.value().unstore().ok())
                         }
                         .unwrap_or_else(|| {
-                            let grass = block_classes.get("grass");
                             let air = block_classes.get("air");
+                            let grass = block_classes.get("grass");
+                            let stone = block_classes.get("stone");
 
-                            let block_classes = if chunk.position[2] < -1 {
-                                BlocksVec::new(vec![grass; BLOCKS_IN_CHUNK])
+                            let block_classes = if chunk.position[2] == -1 {
+                                let mut chunk_blocks = vec![stone; BLOCKS_IN_CHUNK];
+                                for block_class in (&mut chunk_blocks
+                                    [BLOCKS_IN_CHUNK - BLOCKS_IN_CHUNK_LAYER .. BLOCKS_IN_CHUNK])
+                                    .iter_mut()
+                                {
+                                    *block_class = grass;
+                                }
+                                BlocksVec::new(chunk_blocks)
+                            } else if chunk.position[2] < -1 {
+                                BlocksVec::new(vec![stone; BLOCKS_IN_CHUNK])
                             } else {
                                 BlocksVec::new(vec![air; BLOCKS_IN_CHUNK])
                             };

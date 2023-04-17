@@ -4,5 +4,6 @@
         "highlight",
         "grass",
         "dirt",
+        "stone",
     ],
 )

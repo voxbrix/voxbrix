@@ -188,9 +188,8 @@ impl GameScene<'_> {
 
         // Should be dropped when the loop ends
         let _recv_task = self.rt.spawn(async move {
-            let mut buf = Vec::new();
             loop {
-                let data = match rx.recv(&mut buf).await {
+                let data = match rx.recv().await {
                     Ok((_channel, data)) => data,
                     Err(err) => {
                         let _ = event_tx_network.send(Event::NetworkInput(Err(err)));

@@ -351,7 +351,6 @@ impl Eq for Form {}
 impl Form {
     pub async fn connect(&self) -> Result<(Sender, Receiver, InitData), &'static str> {
         let mut tx_buffer = Vec::new();
-        let mut rx_buffer = Vec::new();
         let socket: std::net::SocketAddr = ([0, 0, 0, 0], 0).into();
         let server: std::net::SocketAddr = self
             .server_address
@@ -383,7 +382,7 @@ impl Form {
                 },
                 async {
                     let (_channel, bytes) = rx
-                        .recv(&mut rx_buffer)
+                        .recv()
                         .await
                         .map_err(|_| "Unable to get initialization response")?;
                     InitResponse::unpack(bytes)
@@ -463,10 +462,10 @@ impl Form {
                 },
                 async {
                     let (_channel, bytes) = rx
-                        .recv(&mut rx_buffer)
+                        .recv()
                         .await
                         .map_err(|_| "Unable to get initial data response")?;
-                    Ok::<&mut [u8], &str>(bytes)
+                    Ok::<&[u8], &str>(bytes)
                 },
             )
             .await)
