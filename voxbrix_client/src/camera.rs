@@ -1,13 +1,13 @@
-use crate::{
+use voxbrix_common::{
     component::actor::{
         orientation::OrientationActorComponent,
         position::PositionActorComponent,
     },
     entity::actor::Actor,
-};
-use voxbrix_common::math::{
-    Mat4,
-    Vec3,
+    math::{
+        Mat4,
+        Vec3,
+    },
 };
 
 const UP_VECTOR: Vec3<f32> = Vec3::new(0.0, 0.0, 1.0);

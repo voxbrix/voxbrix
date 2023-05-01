@@ -1,41 +1,15 @@
 use crate::{
-    component::{
-        actor::{
-            orientation::{
-                Orientation,
-                OrientationActorComponent,
-            },
-            position::{
-                Position,
-                PositionActorComponent,
-            },
-            velocity::{
-                Velocity,
-                VelocityActorComponent,
-            },
+    component::block_class::{
+        culling::{
+            Culling,
+            CullingBlockClassComponent,
         },
-        block::class::ClassBlockComponent,
-        block_class::{
-            culling::{
-                Culling,
-                CullingBlockClassComponent,
-            },
-            model::{
-                Cube,
-                Model,
-                ModelBlockClassComponent,
-                ModelDescriptor,
-            },
+        model::{
+            Cube,
+            Model,
+            ModelBlockClassComponent,
+            ModelDescriptor,
         },
-        chunk::status::{
-            ChunkStatus,
-            StatusChunkComponent,
-        },
-    },
-    entity::{
-        actor::Actor,
-        block::Block,
-        chunk::Chunk,
     },
     scene::SceneSwitch,
     system::{
@@ -70,7 +44,24 @@ use std::{
 };
 use voxbrix_common::{
     component::{
-        block::sky_light::SkyLightBlockComponent,
+        actor::{
+            orientation::{
+                Orientation,
+                OrientationActorComponent,
+            },
+            position::{
+                Position,
+                PositionActorComponent,
+            },
+            velocity::{
+                Velocity,
+                VelocityActorComponent,
+            },
+        },
+        block::{
+            class::ClassBlockComponent,
+            sky_light::SkyLightBlockComponent,
+        },
         block_class::{
             collision::{
                 Collision,
@@ -81,6 +72,15 @@ use voxbrix_common::{
                 OpacityBlockClassComponent,
             },
         },
+        chunk::status::{
+            ChunkStatus,
+            StatusChunkComponent,
+        },
+    },
+    entity::{
+        actor::Actor,
+        block::Block,
+        chunk::Chunk,
     },
     math::Vec3,
     messages::{

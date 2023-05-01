@@ -1,4 +1,4 @@
-use crate::component::actor::ActorComponent;
+use voxbrix_common::component::actor::ActorComponent;
 
 pub struct ActorExistence;
 

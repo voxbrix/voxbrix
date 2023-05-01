@@ -1,8 +1,5 @@
 use crate::{
-    entity::{
-        actor::Actor,
-        player::Player,
-    },
+    entity::player::Player,
     server::ServerEvent,
     storage::{
         player::PlayerProfile,
@@ -38,6 +35,7 @@ use log::warn;
 use redb::ReadableTable;
 use std::rc::Rc;
 use voxbrix_common::{
+    entity::actor::Actor,
     messages::{
         client::{
             InitData,

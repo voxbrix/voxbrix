@@ -1,4 +1,11 @@
-use crate::{
+use std::{
+    f32::consts::{
+        FRAC_PI_2,
+        PI,
+    },
+    time::Duration,
+};
+use voxbrix_common::{
     component::actor::{
         orientation::{
             Orientation,
@@ -7,15 +14,8 @@ use crate::{
         velocity::VelocityActorComponent,
     },
     entity::actor::Actor,
+    math::Vec3,
 };
-use std::{
-    f32::consts::{
-        FRAC_PI_2,
-        PI,
-    },
-    time::Duration,
-};
-use voxbrix_common::math::Vec3;
 use winit::event::{
     ElementState,
     KeyboardInput,

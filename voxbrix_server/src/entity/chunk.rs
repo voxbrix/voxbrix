@@ -9,7 +9,7 @@ use redb::{
     TypeName,
 };
 use std::cmp::Ordering;
-pub use voxbrix_common::entity::chunk::*;
+use voxbrix_common::entity::chunk::Chunk;
 
 pub const KEY_LENGTH: usize = 16;
 

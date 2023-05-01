@@ -1,4 +1,6 @@
-use crate::{
+use crate::scene::game::Event;
+use local_channel::mpsc::Sender;
+use voxbrix_common::{
     component::{
         actor::position::{
             Position,
@@ -8,9 +10,7 @@ use crate::{
         chunk::status::StatusChunkComponent,
     },
     entity::actor::Actor,
-    scene::game::Event,
 };
-use local_channel::mpsc::Sender;
 
 pub struct ChunkPresenceSystem;
 

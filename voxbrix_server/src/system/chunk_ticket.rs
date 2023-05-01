@@ -1,21 +1,21 @@
-use crate::{
-    component::{
-        actor::chunk_ticket::{
-            ActorChunkTicket,
-            ChunkTicketActorComponent,
-        },
-        block::class::ClassBlockComponent,
-        chunk::{
-            cache::CacheChunkComponent,
-            status::{
-                ChunkStatus,
-                StatusChunkComponent,
-            },
+use crate::component::{
+    actor::chunk_ticket::{
+        ActorChunkTicket,
+        ChunkTicketActorComponent,
+    },
+    chunk::{
+        cache::CacheChunkComponent,
+        status::{
+            ChunkStatus,
+            StatusChunkComponent,
         },
     },
-    entity::chunk::Chunk,
 };
 use std::collections::BTreeSet;
+use voxbrix_common::{
+    component::block::class::ClassBlockComponent,
+    entity::chunk::Chunk,
+};
 
 pub struct ChunkTicketSystem {
     data: BTreeSet<Chunk>,

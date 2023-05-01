@@ -1,4 +1,4 @@
-use crate::{
+use voxbrix_common::{
     component::actor::ActorComponent,
     entity::chunk::Chunk,
 };

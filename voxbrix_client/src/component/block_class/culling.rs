@@ -1,5 +1,5 @@
-use crate::component::block_class::BlockClassComponent;
 use serde::Deserialize;
+use voxbrix_common::component::block_class::BlockClassComponent;
 
 pub type CullingBlockClassComponent = BlockClassComponent<Culling>;
 

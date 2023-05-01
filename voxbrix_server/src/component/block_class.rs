@@ -1,16 +1,15 @@
-use crate::{
-    component::block::BlocksVec,
-    entity::block_class::BlockClass,
-    storage::{
-        Data,
-        StoreDefault,
-    },
+use crate::storage::{
+    Data,
+    StoreDefault,
 };
 use redb::{
     RedbValue,
     TypeName,
 };
-pub use voxbrix_common::component::block_class::*;
+use voxbrix_common::{
+    component::block::BlocksVec,
+    entity::block_class::BlockClass,
+};
 
 impl StoreDefault for BlocksVec<BlockClass> {}
 

@@ -1,11 +1,6 @@
 use crate::{
-    component::block::BlocksVec,
     entity::{
-        block_class::BlockClass,
-        chunk::{
-            self,
-            Chunk,
-        },
+        chunk,
         player::{
             self,
             Player,
@@ -37,6 +32,13 @@ use server::{
 use std::{
     env,
     time::Duration,
+};
+use voxbrix_common::{
+    component::block::BlocksVec,
+    entity::{
+        block_class::BlockClass,
+        chunk::Chunk,
+    },
 };
 use voxbrix_protocol::{
     server::ServerParameters,

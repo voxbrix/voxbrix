@@ -1,4 +1,10 @@
-use crate::{
+use arrayvec::ArrayVec;
+use either::Either;
+use std::{
+    cmp::Ordering,
+    time::Duration,
+};
+use voxbrix_common::{
     component::{
         actor::{
             orientation::Orientation,
@@ -9,6 +15,10 @@ use crate::{
             velocity::VelocityActorComponent,
         },
         block::class::ClassBlockComponent,
+        block_class::collision::{
+            Collision,
+            CollisionBlockClassComponent,
+        },
     },
     entity::{
         block::{
@@ -16,18 +26,6 @@ use crate::{
             BLOCKS_IN_CHUNK_EDGE,
         },
         chunk::Chunk,
-    },
-};
-use arrayvec::ArrayVec;
-use either::Either;
-use std::{
-    cmp::Ordering,
-    time::Duration,
-};
-use voxbrix_common::{
-    component::block_class::collision::{
-        Collision,
-        CollisionBlockClassComponent,
     },
     math::{
         Round,

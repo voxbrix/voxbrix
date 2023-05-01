@@ -1,13 +1,11 @@
-use crate::{
-    component::block_class::BlockClassComponent,
-    entity::{
-        chunk::Chunk,
-        vertex::Vertex,
-    },
-};
+use crate::entity::vertex::Vertex;
 use bitmask::bitmask;
 use serde::Deserialize;
-use voxbrix_common::math::Vec3;
+use voxbrix_common::{
+    component::block_class::BlockClassComponent,
+    entity::chunk::Chunk,
+    math::Vec3,
+};
 
 pub type ModelBlockClassComponent = BlockClassComponent<Model>;
 

@@ -1,4 +1,4 @@
-use crate::component::chunk::ChunkComponent;
+use voxbrix_common::component::chunk::ChunkComponent;
 
 #[derive(PartialEq, Eq, Debug)]
 pub enum ChunkStatus {
