@@ -350,11 +350,14 @@ impl GameScene<'_> {
         .build()
         .await;
 
-        let mut stream = Timer::interval(Duration::from_millis(20))
-            .map(|_| Event::Process)
+        let mut stream = Timer::interval(Duration::from_millis(50))
+            .map(|_| Event::SendPosition)
             .or_ff(self.window_handle.event_rx.stream().map(Event::Input))
-            .or_ff(Timer::interval(Duration::from_millis(50)).map(|_| Event::SendPosition))
-            .or_ff(event_rx);
+            .or_ff(
+                Timer::interval(Duration::from_millis(15))
+                    .map(|_| Event::Process)
+                    .rr_ff(event_rx),
+            );
 
         while let Some(event) = stream.next().await {
             match event {
