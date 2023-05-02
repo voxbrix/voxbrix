@@ -14,7 +14,6 @@ use window::{
 };
 use winit::event_loop::EventLoopProxy;
 
-mod camera;
 mod component;
 mod entity;
 mod scene;

@@ -13,11 +13,15 @@ use crate::{
     },
     scene::SceneSwitch,
     system::{
+        block_render::BlockRenderSystemDescriptor,
         block_texture_loading::BlockTextureLoadingSystem,
         chunk_presence::ChunkPresenceSystem,
         controller::DirectControl,
         position::PositionSystem,
-        render::RenderSystemDescriptor,
+        render::{
+            camera::CameraParameters,
+            RenderSystemDescriptor,
+        },
     },
     window::{
         InputEvent,
@@ -316,12 +320,30 @@ impl GameScene<'_> {
             block_texture_loading_system
                 .prepare_buffer(&self.render_handle.device, &self.render_handle.queue);
 
+        let surface_size = self.window_handle.window.inner_size();
+
         let mut render_system = RenderSystemDescriptor {
             render_handle: self.render_handle,
-            surface_size: self.window_handle.window.inner_size(),
+            surface_size,
             player_actor,
+            // TODO hide?
+            camera_parameters: CameraParameters {
+                aspect: (surface_size.width as f32) / (surface_size.height as f32),
+                fovy: std::f32::consts::PI / 2.0,
+                near: 0.1,
+                far: 100.0,
+            },
             position_ac: &position_ac,
             orientation_ac: &orientation_ac,
+        }
+        .build()
+        .await;
+
+        let render_parameters = render_system.get_render_parameters();
+
+        let mut block_render_system = BlockRenderSystemDescriptor {
+            render_handle: self.render_handle,
+            render_parameters,
             block_texture_bind_group_layout,
             block_texture_bind_group,
         }
@@ -341,7 +363,6 @@ impl GameScene<'_> {
                     last_render_time = Instant::now();
 
                     // TODO consider what should really be unblocked?
-                    // let time_test = Instant::now();
                     position_system.process(
                         elapsed,
                         &class_bc,
@@ -358,7 +379,6 @@ impl GameScene<'_> {
                         &event_tx,
                     );
                     direct_control_system.process(elapsed, &mut velocity_ac, &mut orientation_ac);
-                    render_system.update(&position_ac, &orientation_ac);
 
                     let position = position_ac.get(&player_actor).unwrap();
                     let orientation = orientation_ac.get(&player_actor).unwrap();
@@ -375,13 +395,20 @@ impl GameScene<'_> {
                                 .unwrap_or(false)
                         });
 
-                    render_system.build_target_highlight(target);
+                    block_render_system.build_target_highlight(target);
 
-                    unblock!((render_system) {
-                        render_system.render()
-                            .expect("render");
+                    render_system.update(&position_ac, &orientation_ac);
+
+                    unblock!((render_system, block_render_system) {
+                        render_system.start_render()
+                            .expect("start render process");
+
+                        let renderer = render_system.get_renderer();
+                        block_render_system.render(renderer)
+                            .expect("block render");
+
+                        render_system.finish_render();
                     });
-                    // log::error!("Elapsed: {:?}", time_test.elapsed());
                 },
                 Event::SendPosition => {
                     let player_position = position_ac.get(&player_actor).unwrap();
@@ -570,8 +597,8 @@ impl GameScene<'_> {
                 Event::DrawChunk(chunk) => {
                     // TODO: use separate *set* as a queue and take up to num_cpus each time the event
                     // comes
-                    unblock!((render_system, class_bc, model_bcc, culling_bcc, sky_light_bc) {
-                        render_system.build_chunk(&chunk, &class_bc, &model_bcc, &culling_bcc, &sky_light_bc);
+                    unblock!((block_render_system, class_bc, model_bcc, culling_bcc, sky_light_bc) {
+                        block_render_system.build_chunk(&chunk, &class_bc, &model_bcc, &culling_bcc, &sky_light_bc);
                     });
                 },
             }

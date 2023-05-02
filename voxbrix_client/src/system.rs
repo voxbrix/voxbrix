@@ -1,3 +1,4 @@
+pub mod block_render;
 pub mod block_texture_loading;
 pub mod chunk_presence;
 pub mod controller;

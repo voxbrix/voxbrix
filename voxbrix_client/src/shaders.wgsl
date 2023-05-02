@@ -8,7 +8,7 @@ struct CameraUniform {
     view_projection: mat4x4<f32>,
 };
 
-@group(1) @binding(0)
+@group(0) @binding(0)
 var<uniform> camera: CameraUniform;
 
 struct VertexInput {
@@ -49,9 +49,9 @@ fn vs_main(
 }
 
 
-@group(0) @binding(0)
+@group(1) @binding(0)
 var block_textures: binding_array<texture_2d<f32>>;
-@group(0) @binding(1)
+@group(1) @binding(1)
 var block_samplers: binding_array<sampler>;
 
 @fragment
