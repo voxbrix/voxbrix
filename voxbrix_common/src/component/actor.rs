@@ -2,48 +2,103 @@ use crate::{
     entity::actor::Actor,
     sparse_vec::SparseVec,
 };
+use std::collections::BTreeMap;
 
-pub mod class;
 pub mod orientation;
 pub mod position;
 pub mod velocity;
 
-pub struct ActorComponent<T> {
-    actors: SparseVec<T>,
+// FIXME after
+// https://github.com/rust-lang/rust/issues/91611
+// pub trait ActorComponent<T> {
+//
+// fn new() -> Self;
+//
+// fn insert(&mut self, i: Actor, new: T) -> Option<T>;
+//
+// fn get(&self, i: &Actor) -> Option<&T>;
+//
+// fn get_mut(&mut self, i: &Actor) -> Option<&mut T>;
+//
+// fn iter(&self) -> impl Iterator<Item = (Actor, &T)>;
+//
+// fn iter_mut(&mut self) -> impl Iterator<Item = (Actor, &mut T)>;
+//
+// fn remove(&mut self, i: &Actor) -> Option<T>;
+// }
+
+pub struct ActorComponentVec<T> {
+    storage: SparseVec<T>,
 }
 
-impl<T> ActorComponent<T> {
+impl<T> ActorComponentVec<T> {
+    pub fn create_actor(&mut self, new: T) -> Actor {
+        Actor(self.storage.push(new))
+    }
+
     pub fn new() -> Self {
         Self {
-            actors: SparseVec::new(),
+            storage: SparseVec::new(),
         }
     }
 
     pub fn insert(&mut self, i: Actor, new: T) -> Option<T> {
-        self.actors.insert(i.0, new)
+        self.storage.insert(i.0, new)
     }
 
     pub fn get(&self, i: &Actor) -> Option<&T> {
-        self.actors.get(i.0)
+        self.storage.get(i.0)
     }
 
     pub fn get_mut(&mut self, i: &Actor) -> Option<&mut T> {
-        self.actors.get_mut(i.0)
+        self.storage.get_mut(i.0)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (Actor, &T)> {
-        self.actors.iter().map(|(k, v)| (Actor(k), v))
+        self.storage.iter().map(|(k, v)| (Actor(k), v))
     }
 
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (Actor, &mut T)> {
-        self.actors.iter_mut().map(|(k, v)| (Actor(k), v))
+        self.storage.iter_mut().map(|(k, v)| (Actor(k), v))
     }
 
     pub fn remove(&mut self, i: &Actor) -> Option<T> {
-        self.actors.remove(i.0)
+        self.storage.remove(i.0)
+    }
+}
+
+pub struct ActorComponentMap<T> {
+    storage: BTreeMap<Actor, T>,
+}
+
+impl<T> ActorComponentMap<T> {
+    pub fn new() -> Self {
+        Self {
+            storage: BTreeMap::new(),
+        }
     }
 
-    pub fn push(&mut self, new: T) -> Actor {
-        Actor(self.actors.push(new))
+    pub fn insert(&mut self, i: Actor, new: T) -> Option<T> {
+        self.storage.insert(i, new)
+    }
+
+    pub fn get(&self, i: &Actor) -> Option<&T> {
+        self.storage.get(i)
+    }
+
+    pub fn get_mut(&mut self, i: &Actor) -> Option<&mut T> {
+        self.storage.get_mut(i)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (Actor, &T)> {
+        self.storage.iter().map(|(&a, t)| (a, t))
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (Actor, &mut T)> {
+        self.storage.iter_mut().map(|(&a, t)| (a, t))
+    }
+
+    pub fn remove(&mut self, i: &Actor) -> Option<T> {
+        self.storage.remove(i)
     }
 }

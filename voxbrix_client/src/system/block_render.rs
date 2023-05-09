@@ -11,8 +11,8 @@ use crate::{
             ModelBlockClassComponent,
         },
     },
-    entity::vertex::Vertex,
     system::render::{
+        vertex::Vertex,
         RenderParameters,
         Renderer,
     },
@@ -21,10 +21,7 @@ use crate::{
 use anyhow::Result;
 use arrayvec::ArrayVec;
 use rayon::prelude::*;
-use std::{
-    collections::BTreeMap,
-    num::NonZeroU64,
-};
+use std::collections::BTreeMap;
 use voxbrix_common::{
     component::block::{
         class::ClassBlockComponent,
@@ -454,7 +451,7 @@ impl BlockRenderSystem {
                         label: Some("Vertex Buffer"),
                         size: vertex_byte_size,
                         usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                        mapped_at_creation: false,
+                        mapped_at_creation: true,
                     });
 
             self.prepared_index_buffer =
@@ -464,26 +461,18 @@ impl BlockRenderSystem {
                         label: Some("Index Buffer"),
                         size: index_byte_size,
                         usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-                        mapped_at_creation: false,
+                        mapped_at_creation: true,
                     });
 
             if vertex_size != 0 && index_size != 0 {
-                let mut vertex_writer = self.render_handle.queue.write_buffer_with(
-                    &self.prepared_vertex_buffer,
-                    0,
-                    NonZeroU64::new(vertex_byte_size).unwrap(),
-                );
-
-                let mut index_writer = self.render_handle.queue.write_buffer_with(
-                    &self.prepared_index_buffer,
-                    0,
-                    NonZeroU64::new(index_byte_size).unwrap(),
-                );
+                let mut vertex_writer =
+                    self.prepared_vertex_buffer.slice(..).get_mapped_range_mut();
+                let mut index_writer = self.prepared_index_buffer.slice(..).get_mapped_range_mut();
 
                 slice_buffers(
                     &mut chunk_info,
-                    vertex_writer.as_mut().unwrap(),
-                    index_writer.as_mut().unwrap(),
+                    vertex_writer.as_mut(),
+                    index_writer.as_mut(),
                 );
 
                 chunk_info.par_iter_mut().for_each(|chunk| {
@@ -506,6 +495,9 @@ impl BlockRenderSystem {
                         .copy_from_slice(bytemuck::cast_slice(vertex_vec));
                 });
             }
+
+            self.prepared_vertex_buffer.unmap();
+            self.prepared_index_buffer.unmap();
 
             self.num_indices = index_size as u32;
             self.update_chunk_buffer = false;

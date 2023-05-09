@@ -1,19 +1,25 @@
-use crate::RenderHandle;
-use anyhow::Result;
-use camera::{
-    Camera,
-    CameraParameters,
-};
-use voxbrix_common::{
+use crate::{
     component::actor::{
         orientation::OrientationActorComponent,
         position::PositionActorComponent,
     },
-    entity::actor::Actor,
+    RenderHandle,
 };
+use anyhow::Result;
+use arrayvec::ArrayVec;
+use camera::{
+    Camera,
+    CameraParameters,
+};
+use std::{
+    iter,
+    mem,
+};
+use voxbrix_common::entity::actor::Actor;
 use winit::dpi::PhysicalSize;
 
 pub mod camera;
+pub mod vertex;
 
 fn build_depth_texture_view(
     device: &wgpu::Device,
@@ -116,13 +122,14 @@ impl<'a> RenderSystemDescriptor<'a> {
     }
 }
 
+#[derive(Debug)]
 pub struct Renderer<'a> {
     camera_bind_group: &'a wgpu::BindGroup,
     render_pass: wgpu::RenderPass<'a>,
 }
 
 impl<'a> Renderer<'a> {
-    pub fn with_pipeline(self, pipeline: &'a mut wgpu::RenderPipeline) -> wgpu::RenderPass<'a> {
+    pub fn with_pipeline(self, pipeline: &'a wgpu::RenderPipeline) -> wgpu::RenderPass<'a> {
         let Self {
             camera_bind_group,
             mut render_pass,
@@ -200,18 +207,20 @@ impl RenderSystem {
 
     /// Returned renderer requires that the camera uniform buffer
     /// has binding group index 0 in the corresponding shaders
-    pub fn get_renderer<'a>(&'a mut self) -> Renderer<'a> {
-        let encoder =
+    pub fn get_renderers<'a, const N: usize>(&'a mut self) -> [Renderer<'a>; N] {
+        let slice_start = self.encoders.len();
+        let mut is_first_pass = self.encoders.is_empty();
+
+        let encoders_extend = iter::repeat_with(|| {
             self.render_handle
                 .device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("Render Encoder"),
-                });
+                })
+        })
+        .take(N);
 
-        let encoder = {
-            self.encoders.push(encoder);
-            self.encoders.last_mut().unwrap()
-        };
+        self.encoders.extend(encoders_extend);
 
         let view = &self
             .process
@@ -219,35 +228,52 @@ impl RenderSystem {
             .expect("render process must be started")
             .view;
 
-        let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Render Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.5,
-                        g: 0.6,
-                        b: 0.7,
-                        a: 0.0,
-                    }),
-                    store: true,
-                },
-            })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &self.depth_texture_view,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: true,
-                }),
-                stencil_ops: None,
-            }),
-        });
+        self.encoders[slice_start ..]
+            .iter_mut()
+            .map(|encoder| {
+                let is_first_pass = mem::replace(&mut is_first_pass, false);
 
-        Renderer {
-            camera_bind_group: self.camera.get_bind_group(),
-            render_pass,
-        }
+                let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Render Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: if is_first_pass {
+                                wgpu::LoadOp::Clear(wgpu::Color {
+                                    r: 0.5,
+                                    g: 0.6,
+                                    b: 0.7,
+                                    a: 0.0,
+                                })
+                            } else {
+                                wgpu::LoadOp::Load
+                            },
+                            store: true,
+                        },
+                    })],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &self.depth_texture_view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: if is_first_pass {
+                                wgpu::LoadOp::Clear(1.0)
+                            } else {
+                                wgpu::LoadOp::Load
+                            },
+                            store: true,
+                        }),
+                        stencil_ops: None,
+                    }),
+                });
+
+                Renderer {
+                    camera_bind_group: self.camera.get_bind_group(),
+                    render_pass,
+                }
+            })
+            .collect::<ArrayVec<_, N>>()
+            .into_inner()
+            .unwrap()
     }
 
     pub fn finish_render(&mut self) {

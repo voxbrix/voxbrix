@@ -1,5 +1,4 @@
 use crate::{
-    component::actor::ActorComponent,
     entity::chunk::Chunk,
     math::Vec3,
 };
@@ -8,9 +7,6 @@ use serde::{
     Serialize,
 };
 use std::ops::Add;
-
-pub type PositionActorComponent = ActorComponent<Position>;
-pub type LocalPositionActorComponent = ActorComponent<LocalPosition>;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Position {

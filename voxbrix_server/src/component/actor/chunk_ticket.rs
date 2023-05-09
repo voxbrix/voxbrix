@@ -1,5 +1,5 @@
 use voxbrix_common::{
-    component::actor::ActorComponent,
+    component::actor::ActorComponentVec,
     entity::chunk::Chunk,
 };
 
@@ -8,4 +8,4 @@ pub struct ActorChunkTicket {
     pub radius: i32,
 }
 
-pub type ChunkTicketActorComponent = ActorComponent<ActorChunkTicket>;
+pub type ChunkTicketActorComponent = ActorComponentVec<ActorChunkTicket>;

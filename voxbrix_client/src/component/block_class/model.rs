@@ -1,4 +1,4 @@
-use crate::entity::vertex::Vertex;
+use crate::system::render::vertex::Vertex;
 use bitmask::bitmask;
 use serde::Deserialize;
 use voxbrix_common::{

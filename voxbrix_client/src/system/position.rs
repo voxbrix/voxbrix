@@ -1,3 +1,7 @@
+use crate::component::actor::{
+    position::PositionActorComponent,
+    velocity::VelocityActorComponent,
+};
 use arrayvec::ArrayVec;
 use either::Either;
 use std::{
@@ -8,11 +12,7 @@ use voxbrix_common::{
     component::{
         actor::{
             orientation::Orientation,
-            position::{
-                Position,
-                PositionActorComponent,
-            },
-            velocity::VelocityActorComponent,
+            position::Position,
         },
         block::class::ClassBlockComponent,
         block_class::collision::{
@@ -293,7 +293,7 @@ impl PositionSystem {
                     };
 
                 let block_side_axis_0 =
-                    (position.offset[axis_0] + axis_offset as f32).round_down() + wall_offset;
+                    position.offset[axis_0].round_down() + axis_offset + wall_offset;
 
                 let time = (block_side_axis_0 as f32 - position.offset[axis_0]) / forward[axis_0];
 

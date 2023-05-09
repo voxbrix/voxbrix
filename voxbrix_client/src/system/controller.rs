@@ -1,3 +1,7 @@
+use crate::component::actor::{
+    orientation::OrientationActorComponent,
+    velocity::VelocityActorComponent,
+};
 use std::{
     f32::consts::{
         FRAC_PI_2,
@@ -6,13 +10,7 @@ use std::{
     time::Duration,
 };
 use voxbrix_common::{
-    component::actor::{
-        orientation::{
-            Orientation,
-            OrientationActorComponent,
-        },
-        velocity::VelocityActorComponent,
-    },
+    component::actor::orientation::Orientation,
     entity::actor::Actor,
     math::Vec3,
 };

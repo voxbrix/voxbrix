@@ -1,5 +1,8 @@
 use crate::{
-    component::actor::position::Position,
+    component::actor::{
+        position::Position,
+        velocity::Velocity,
+    },
     entity::{
         block::Block,
         block_class::BlockClass,
@@ -18,8 +21,9 @@ use serde_big_array::BigArray;
 
 #[derive(Serialize, Deserialize)]
 pub enum ServerAccept {
-    PlayerPosition {
+    PlayerMovement {
         position: Position,
+        velocity: Velocity,
     },
     AlterBlock {
         chunk: Chunk,

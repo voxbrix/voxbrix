@@ -1,9 +1,10 @@
 use crate::{
-    component::actor::{
-        position::LocalPosition,
-        ActorComponent,
-    },
+    component::actor::position::LocalPosition,
     math::Vec3,
+};
+use serde::{
+    Deserialize,
+    Serialize,
 };
 use std::{
     ops::{
@@ -13,9 +14,7 @@ use std::{
     time::Duration,
 };
 
-pub type VelocityActorComponent = ActorComponent<Velocity>;
-
-#[derive(Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Velocity {
     pub vector: Vec3<f32>,
 }

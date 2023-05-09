@@ -3,5 +3,5 @@ use serde::{
     Serialize,
 };
 
-#[derive(Serialize, Deserialize, Copy, Clone, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
 pub struct Actor(pub usize);

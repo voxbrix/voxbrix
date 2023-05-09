@@ -1,20 +1,30 @@
 use crate::{
-    component::block_class::{
-        culling::{
-            Culling,
-            CullingBlockClassComponent,
+    component::{
+        actor::{
+            class::ClassActorComponent,
+            orientation::OrientationActorComponent,
+            position::PositionActorComponent,
+            velocity::VelocityActorComponent,
         },
-        model::{
-            Cube,
-            Model,
-            ModelBlockClassComponent,
-            ModelDescriptor,
+        actor_model::body_part::BodyPartActorModelComponent,
+        block_class::{
+            culling::{
+                Culling,
+                CullingBlockClassComponent,
+            },
+            model::{
+                Cube,
+                Model,
+                ModelBlockClassComponent,
+                ModelDescriptor,
+            },
         },
     },
     scene::SceneSwitch,
     system::{
+        actor_model_loading::ActorModelLoadingSystem,
+        actor_render::ActorRenderSystemDescriptor,
         block_render::BlockRenderSystemDescriptor,
-        block_texture_loading::BlockTextureLoadingSystem,
         chunk_presence::ChunkPresenceSystem,
         controller::DirectControl,
         position::PositionSystem,
@@ -22,6 +32,7 @@ use crate::{
             camera::CameraParameters,
             RenderSystemDescriptor,
         },
+        texture_loading::TextureLoadingSystem,
     },
     window::{
         InputEvent,
@@ -49,18 +60,9 @@ use std::{
 use voxbrix_common::{
     component::{
         actor::{
-            orientation::{
-                Orientation,
-                OrientationActorComponent,
-            },
-            position::{
-                Position,
-                PositionActorComponent,
-            },
-            velocity::{
-                Velocity,
-                VelocityActorComponent,
-            },
+            orientation::Orientation,
+            position::Position,
+            velocity::Velocity,
         },
         block::{
             class::ClassBlockComponent,
@@ -88,7 +90,10 @@ use voxbrix_common::{
     },
     math::Vec3,
     messages::{
-        client::ClientAccept,
+        client::{
+            ActorStatus,
+            ClientAccept,
+        },
         server::ServerAccept,
     },
     pack::PackZip,
@@ -138,6 +143,8 @@ impl GameScene<'_> {
         let (reliable_tx, mut reliable_rx) = local_channel::mpsc::channel::<ServerAccept>();
         let (unreliable_tx, mut unreliable_rx) = local_channel::mpsc::channel::<ServerAccept>();
         let (event_tx, event_rx) = local_channel::mpsc::channel::<Event>();
+
+        let mut status_timestamp = Duration::ZERO;
 
         let GameSceneParameters {
             connection,
@@ -216,7 +223,7 @@ impl GameScene<'_> {
         });
 
         let block_class_loading_system = BlockClassLoadingSystem::load_data().await?;
-        let block_texture_loading_system = BlockTextureLoadingSystem::load_data().await?;
+        let block_texture_loading_system = TextureLoadingSystem::load_data("blocks").await?;
 
         let mut status_cc = StatusChunkComponent::new();
 
@@ -240,7 +247,7 @@ impl GameScene<'_> {
 
                         for (i, texture) in textures.iter_mut().enumerate() {
                             let texture_name = textures_desc[i].as_str();
-                            *texture = *block_texture_loading_system
+                            *texture = block_texture_loading_system
                                 .label_map
                                 .get(texture_name)
                                 .ok_or_else(|| {
@@ -283,10 +290,23 @@ impl GameScene<'_> {
         let mut direct_control_system = DirectControl::new(player_actor, 10.0, 0.4);
         let chunk_presence_system = ChunkPresenceSystem::new();
         let sky_light_system = SkyLightSystem::new();
+        let actor_texture_loading_system = TextureLoadingSystem::load_data("actors").await?;
 
+        let mut class_ac = ClassActorComponent::new();
         let mut position_ac = PositionActorComponent::new();
         let mut velocity_ac = VelocityActorComponent::new();
         let mut orientation_ac = OrientationActorComponent::new();
+
+        let mut body_part_amc = BodyPartActorModelComponent::new();
+        let ActorModelLoadingSystem {
+            model_label_map,
+            body_part_label_map,
+        } = ActorModelLoadingSystem::load_data(
+            &actor_texture_loading_system.label_map,
+            &mut body_part_amc,
+        )
+        .await
+        .expect("actor model loading");
 
         position_ac.insert(
             player_actor,
@@ -320,6 +340,10 @@ impl GameScene<'_> {
             block_texture_loading_system
                 .prepare_buffer(&self.render_handle.device, &self.render_handle.queue);
 
+        let (actor_texture_bind_group_layout, actor_texture_bind_group) =
+            actor_texture_loading_system
+                .prepare_buffer(&self.render_handle.device, &self.render_handle.queue);
+
         let surface_size = self.window_handle.window.inner_size();
 
         let mut render_system = RenderSystemDescriptor {
@@ -346,6 +370,15 @@ impl GameScene<'_> {
             render_parameters,
             block_texture_bind_group_layout,
             block_texture_bind_group,
+        }
+        .build()
+        .await;
+
+        let mut actor_render_system = ActorRenderSystemDescriptor {
+            render_handle: self.render_handle,
+            render_parameters,
+            actor_texture_bind_group_layout,
+            actor_texture_bind_group,
         }
         .build()
         .await;
@@ -401,23 +434,34 @@ impl GameScene<'_> {
                     block_render_system.build_target_highlight(target);
 
                     render_system.update(&position_ac, &orientation_ac);
+                    actor_render_system.update(
+                        player_actor,
+                        &class_ac,
+                        &position_ac,
+                        &body_part_amc,
+                    );
 
-                    unblock!((render_system, block_render_system) {
+                    unblock!((render_system, block_render_system, actor_render_system) {
                         render_system.start_render()
                             .expect("start render process");
 
-                        let renderer = render_system.get_renderer();
-                        block_render_system.render(renderer)
+                        let mut renderers = render_system.get_renderers::<2>().into_iter();
+
+                        block_render_system.render(renderers.next().unwrap())
                             .expect("block render");
+
+                        actor_render_system.render(renderers.next().unwrap())
+                            .expect("actor render");
+
+                        drop(renderers);
 
                         render_system.finish_render();
                     });
                 },
                 Event::SendPosition => {
-                    let player_position = position_ac.get(&player_actor).unwrap();
-                    let _ = unreliable_tx.send(ServerAccept::PlayerPosition {
-                        position: player_position.clone(),
-                    });
+                    let position = position_ac.get(&player_actor).unwrap().clone();
+                    let velocity = velocity_ac.get(&player_actor).unwrap().clone();
+                    let _ = unreliable_tx.send(ServerAccept::PlayerMovement { position, velocity });
                 },
                 Event::Input(event) => {
                     match event {
@@ -485,7 +529,9 @@ impl GameScene<'_> {
                                                         ServerAccept::AlterBlock {
                                                             chunk,
                                                             block,
-                                                            block_class: block_class_map.get("air"),
+                                                            block_class: block_class_map
+                                                                .get("air")
+                                                                .unwrap(),
                                                         },
                                                     );
                                                 }
@@ -530,7 +576,8 @@ impl GameScene<'_> {
                                                             chunk,
                                                             block,
                                                             block_class: block_class_map
-                                                                .get("grass"),
+                                                                .get("grass")
+                                                                .unwrap(),
                                                         },
                                                     );
                                                 }
@@ -593,6 +640,25 @@ impl GameScene<'_> {
                                 for chunk in chunks_to_redraw {
                                     let _ = event_tx.send(Event::DrawChunk(chunk));
                                 }
+                            }
+                        },
+                        ClientAccept::ActorStatus { timestamp, status } => {
+                            if timestamp > status_timestamp {
+                                for ActorStatus {
+                                    actor,
+                                    class,
+                                    position,
+                                    velocity,
+                                } in status
+                                {
+                                    class_ac.insert(actor, class);
+                                    if actor != player_actor {
+                                        position_ac.insert(actor, position);
+                                        velocity_ac.insert(actor, velocity);
+                                    }
+                                }
+
+                                status_timestamp = timestamp;
                             }
                         },
                     }

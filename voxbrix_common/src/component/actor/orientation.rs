@@ -1,12 +1,7 @@
-use crate::{
-    component::actor::ActorComponent,
-    math::{
-        Quat,
-        Vec3,
-    },
+use crate::math::{
+    Quat,
+    Vec3,
 };
-
-pub type OrientationActorComponent = ActorComponent<Orientation>;
 
 #[derive(Clone, Debug)]
 pub struct Orientation {

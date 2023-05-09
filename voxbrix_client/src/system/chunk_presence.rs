@@ -1,11 +1,11 @@
-use crate::scene::game::Event;
+use crate::{
+    component::actor::position::PositionActorComponent,
+    scene::game::Event,
+};
 use local_channel::mpsc::Sender;
 use voxbrix_common::{
     component::{
-        actor::position::{
-            Position,
-            PositionActorComponent,
-        },
+        actor::position::Position,
         block::class::ClassBlockComponent,
         chunk::status::StatusChunkComponent,
     },

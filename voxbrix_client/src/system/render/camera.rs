@@ -1,8 +1,8 @@
+use crate::component::actor::{
+    orientation::OrientationActorComponent,
+    position::PositionActorComponent,
+};
 use voxbrix_common::{
-    component::actor::{
-        orientation::OrientationActorComponent,
-        position::PositionActorComponent,
-    },
     entity::actor::Actor,
     math::{
         Mat4,

@@ -1,42 +1,51 @@
-use anyhow::Error;
+use anyhow::{
+    Context,
+    Error,
+};
 use image::ImageFormat;
 use serde::Deserialize;
 use std::{
-    collections::BTreeMap,
     fs,
     num::NonZeroU32,
     path::Path,
 };
+use voxbrix_common::{
+    read_ron_file,
+    LabelMap,
+};
 
-const PATH: &str = "assets/client/textures/blocks";
-const LIST_FILE_NAME: &str = "list.ron";
+const PATH_PREFIX: &str = "assets/client/textures";
 const BLOCK_TEXTURE_FORMAT: ImageFormat = ImageFormat::Png;
 const BLOCK_TEXTURE_FORMAT_NAME: &str = "png";
 const GPU_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 
-pub struct BlockTextureLoadingSystem {
-    pub size: usize,
-    pub textures: Vec<Vec<u8>>,
-    pub label_map: BTreeMap<String, u32>,
+#[derive(Deserialize, Debug)]
+struct TextureList {
+    size: usize,
+    list: Vec<String>,
 }
 
-impl BlockTextureLoadingSystem {
-    pub async fn load_data() -> Result<Self, Error> {
-        blocking::unblock(|| {
-            let texture_list = {
-                let path = Path::new(PATH).join(LIST_FILE_NAME);
-                let string = fs::read_to_string(path)?;
-                ron::from_str::<BlockTextureList>(&string)?
-            };
+pub struct TextureLoadingSystem {
+    pub size: usize,
+    pub textures: Vec<Vec<u8>>,
+    pub label_map: LabelMap<u32>,
+}
+
+impl TextureLoadingSystem {
+    pub async fn load_data(category_name: &str) -> Result<Self, Error> {
+        let list_path = Path::new(PATH_PREFIX).join(format!("{}.ron", category_name));
+        let textures_path_pfx = Path::new(PATH_PREFIX).join(category_name);
+
+        blocking::unblock(move || {
+            let texture_list: TextureList = read_ron_file(list_path)?;
 
             let textures = texture_list
                 .list
                 .iter()
-                .map(|block_texture_label| {
-                    let file_name =
-                        format!("{}.{}", block_texture_label, BLOCK_TEXTURE_FORMAT_NAME);
-                    let path = Path::new(PATH).join(file_name);
-                    fs::read(path)
+                .map(|texture_label| {
+                    let file_path = textures_path_pfx
+                        .join(format!("{}.{}", texture_label, BLOCK_TEXTURE_FORMAT_NAME));
+                    fs::read(&file_path).with_context(|| format!("reading {:?}", &file_path))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
 
@@ -63,7 +72,7 @@ impl BlockTextureLoadingSystem {
     ) -> (wgpu::BindGroupLayout, wgpu::BindGroup) {
         let textures = &self.textures;
 
-        let block_texture_bytes = textures
+        let texture_bytes = textures
             .iter()
             .map(|buf| {
                 let bytes_rgba =
@@ -76,7 +85,7 @@ impl BlockTextureLoadingSystem {
             .unwrap();
 
         // TODO
-        let texture_size = block_texture_bytes[0].dimensions();
+        let texture_size = texture_bytes[0].dimensions();
 
         let extent = wgpu::Extent3d {
             width: texture_size.0,
@@ -91,17 +100,17 @@ impl BlockTextureLoadingSystem {
             dimension: wgpu::TextureDimension::D2,
             format: GPU_TEXTURE_FORMAT,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            label: Some("block_texture"),
+            label: Some("texture"),
             view_formats: &[GPU_TEXTURE_FORMAT],
         };
 
-        let block_texture_views = block_texture_bytes
+        let texture_views = texture_bytes
             .into_iter()
             .map(|texture_bytes| {
-                let block_texture = device.create_texture(&texture_descriptior);
+                let texture = device.create_texture(&texture_descriptior);
                 queue.write_texture(
                     wgpu::ImageCopyTexture {
-                        texture: &block_texture,
+                        texture: &texture,
                         mip_level: 0,
                         origin: wgpu::Origin3d::ZERO,
                         aspect: wgpu::TextureAspect::All,
@@ -114,7 +123,7 @@ impl BlockTextureLoadingSystem {
                     },
                     extent,
                 );
-                block_texture.create_view(&wgpu::TextureViewDescriptor::default())
+                texture.create_view(&wgpu::TextureViewDescriptor::default())
             })
             .collect::<Vec<_>>();
 
@@ -128,11 +137,11 @@ impl BlockTextureLoadingSystem {
             ..Default::default()
         });
 
-        let block_texture_views = block_texture_views.iter().collect::<Vec<_>>();
+        let texture_views = texture_views.iter().collect::<Vec<_>>();
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("block_texture_bind_group_layout"),
+                label: Some("texture_bind_group_layout"),
                 entries: &[
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
@@ -157,9 +166,7 @@ impl BlockTextureLoadingSystem {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureViewArray(
-                        block_texture_views.as_slice(),
-                    ),
+                    resource: wgpu::BindingResource::TextureViewArray(texture_views.as_slice()),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
@@ -169,15 +176,9 @@ impl BlockTextureLoadingSystem {
                 },
             ],
             layout: &texture_bind_group_layout,
-            label: Some("block_texture_bind_group"),
+            label: Some("texture_bind_group"),
         });
 
         (texture_bind_group_layout, texture_bind_group)
     }
-}
-
-#[derive(Deserialize, Debug)]
-struct BlockTextureList {
-    size: usize,
-    list: Vec<String>,
 }

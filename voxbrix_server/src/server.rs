@@ -9,10 +9,9 @@ use crate::{
                 ActorChunkTicket,
                 ChunkTicketActorComponent,
             },
-            existence::{
-                ActorExistence,
-                ExistenceActorComponent,
-            },
+            class::ClassActorComponent,
+            position::PositionActorComponent,
+            velocity::VelocityActorComponent,
         },
         chunk::{
             cache::CacheChunkComponent,
@@ -49,21 +48,27 @@ use local_channel::mpsc::{
 };
 use log::debug;
 use redb::ReadableTable;
-use std::rc::Rc;
+use std::{
+    rc::Rc,
+    time::Instant,
+};
 use voxbrix_common::{
-    component::{
-        actor::position::PositionActorComponent,
+    component::block::{
+        class::ClassBlockComponent,
+        BlocksVec,
+    },
+    entity::{
+        actor_class::ActorClass,
         block::{
-            class::ClassBlockComponent,
-            BlocksVec,
+            BLOCKS_IN_CHUNK,
+            BLOCKS_IN_CHUNK_LAYER,
         },
     },
-    entity::block::{
-        BLOCKS_IN_CHUNK,
-        BLOCKS_IN_CHUNK_LAYER,
-    },
     messages::{
-        client::ClientAccept,
+        client::{
+            ActorStatus,
+            ClientAccept,
+        },
         server::ServerAccept,
     },
     pack::PackZip,
@@ -139,17 +144,23 @@ pub async fn run(
     let block_class_loading_system = BlockClassLoadingSystem::load_data()
         .await
         .expect("loading block classes");
-    let block_classes = block_class_loading_system.into_label_map();
+    let block_class_label_map = block_class_loading_system.into_label_map();
+
+    let time_start = Instant::now();
 
     let mut client_pc = ClientPlayerComponent::new();
     let mut actor_pc = ActorPlayerComponent::new();
-    let mut existence_ac = ExistenceActorComponent::new();
+    let mut class_ac = ClassActorComponent::new();
     let mut chunk_ticket_ac = ChunkTicketActorComponent::new();
     let mut status_cc = StatusChunkComponent::new();
     let mut cache_cc = CacheChunkComponent::new();
     let mut position_ac = PositionActorComponent::new();
+    let mut velocity_ac = VelocityActorComponent::new();
     let mut chunk_ticket_system = ChunkTicketSystem::new();
     let mut class_bc = ClassBlockComponent::new();
+
+    // TODO classify actors to know what to send without a buffer
+    let mut status_updates = std::collections::BTreeSet::new();
 
     let mut stream = Timer::interval(PROCESS_INTERVAL)
         .map(|_| ServerEvent::Process)
@@ -161,9 +172,55 @@ pub async fn run(
     while let Some(event) = stream.next().await {
         match event {
             ServerEvent::Process => {
+                let timestamp = time_start.elapsed();
+
                 chunk_ticket_system.clear();
                 chunk_ticket_system.actor_tickets(&chunk_ticket_ac);
-                let block_classes = block_classes.clone();
+
+                for (player, client, position) in actor_pc.iter().filter_map(|(player, actor)| {
+                    Some((player, client_pc.get(player)?, position_ac.get(actor)?))
+                }) {
+                    let chunk_radius = position.chunk.radius(PLAYER_CHUNK_TICKET_RADIUS);
+
+                    let status = class_ac
+                        .iter()
+                        .filter_map(|(actor, &class)| {
+                            let position = position_ac.get(&actor)?.clone();
+
+                            if !chunk_radius.is_within(&position.chunk) {
+                                return None;
+                            }
+
+                            let velocity = velocity_ac.get(&actor)?.clone();
+
+                            Some(ActorStatus {
+                                actor,
+                                class,
+                                position,
+                                velocity,
+                            })
+                        })
+                        .collect();
+
+                    let data = ClientAccept::ActorStatus { timestamp, status }.pack_to_vec();
+
+                    if client
+                        .tx
+                        .send(ClientEvent::SendDataUnreliable {
+                            channel: BASE_CHANNEL,
+                            data: SendData::Owned(data),
+                        })
+                        .is_err()
+                    {
+                        let _ = local
+                            .event_tx
+                            .send(ServerEvent::RemovePlayer { player: *player });
+                    }
+                }
+
+                let air = block_class_label_map.get("air").unwrap();
+                let grass = block_class_label_map.get("grass").unwrap();
+                let stone = block_class_label_map.get("stone").unwrap();
                 chunk_ticket_system.apply(
                     &mut status_cc,
                     &mut class_bc,
@@ -182,10 +239,6 @@ pub async fn run(
                                 .and_then(|bytes| bytes.value().unstore().ok())
                         }
                         .unwrap_or_else(|| {
-                            let air = block_classes.get("air");
-                            let grass = block_classes.get("grass");
-                            let stone = block_classes.get("stone");
-
                             let block_classes = if chunk.position[2] == -1 {
                                 let mut chunk_blocks = vec![stone; BLOCKS_IN_CHUNK];
                                 for block_class in (&mut chunk_blocks
@@ -233,7 +286,7 @@ pub async fn run(
                 client_tx: tx,
             } => {
                 let tx_init = tx.clone();
-                let actor = existence_ac.push(ActorExistence);
+                let actor = class_ac.create_actor(ActorClass(0));
                 client_pc.insert(player, Client { tx });
                 actor_pc.insert(player, actor);
 
@@ -260,7 +313,7 @@ pub async fn run(
                     };
 
                     match event {
-                        ServerAccept::PlayerPosition { position } => {
+                        ServerAccept::PlayerMovement { position, velocity } => {
                             let actor = match actor_pc.get(&player) {
                                 Some(a) => a,
                                 None => continue,
@@ -269,6 +322,9 @@ pub async fn run(
                             let chunk = position.chunk;
 
                             let curr_pos = position_ac.insert(*actor, position);
+                            velocity_ac.insert(*actor, velocity);
+
+                            status_updates.insert(*actor);
 
                             if curr_pos.is_none()
                                 || curr_pos.is_some() && curr_pos.unwrap().chunk != chunk
@@ -395,7 +451,7 @@ pub async fn run(
             ServerEvent::RemovePlayer { player } => {
                 client_pc.remove(&player);
                 if let Some(actor) = actor_pc.remove(&player) {
-                    existence_ac.remove(&actor);
+                    class_ac.remove(&actor);
                     position_ac.remove(&actor);
                     chunk_ticket_ac.remove(&actor);
                 }

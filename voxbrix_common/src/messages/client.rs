@@ -1,6 +1,11 @@
 use crate::{
+    component::actor::{
+        position::Position,
+        velocity::Velocity,
+    },
     entity::{
         actor::Actor,
+        actor_class::ActorClass,
         block::Block,
         block_class::BlockClass,
         chunk::Chunk,
@@ -16,6 +21,7 @@ use serde::{
     Serialize,
 };
 use serde_big_array::BigArray;
+use std::time::Duration;
 
 #[derive(Serialize, Deserialize)]
 pub struct InitResponse {
@@ -65,12 +71,24 @@ pub enum RegisterResult {
 impl PackDefault for RegisterResult {}
 
 #[derive(Serialize, Deserialize)]
+pub struct ActorStatus {
+    pub actor: Actor,
+    pub class: ActorClass,
+    pub position: Position,
+    pub velocity: Velocity,
+}
+
+#[derive(Serialize, Deserialize)]
 pub enum ClientAccept {
     ChunkData(ChunkData),
     AlterBlock {
         chunk: Chunk,
         block: Block,
         block_class: BlockClass,
+    },
+    ActorStatus {
+        timestamp: Duration,
+        status: Vec<ActorStatus>,
     },
 }
 

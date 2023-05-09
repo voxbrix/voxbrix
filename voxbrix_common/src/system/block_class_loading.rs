@@ -1,6 +1,8 @@
 use crate::{
     component::block_class::BlockClassComponent,
     entity::block_class::BlockClass,
+    read_ron_file,
+    LabelMap,
 };
 use anyhow::Error;
 use ron::Value;
@@ -10,12 +12,22 @@ use serde::{
 };
 use std::{
     collections::BTreeMap,
-    fs,
     path::Path,
 };
 
 const PATH: &str = "assets/common/block_classes";
-const LIST_FILE_NAME: &str = "list.ron";
+const LIST_PATH: &str = "assets/common/block_classes.ron";
+
+#[derive(Deserialize, Debug)]
+struct BlockClassList {
+    list: Vec<String>,
+}
+
+#[derive(Deserialize, Debug)]
+struct BlockClassDescriptior {
+    label: String,
+    components: BTreeMap<String, Value>,
+}
 
 pub struct BlockClassLoadingSystem {
     block_class_list: Vec<String>,
@@ -25,20 +37,15 @@ pub struct BlockClassLoadingSystem {
 impl BlockClassLoadingSystem {
     pub async fn load_data() -> Result<Self, Error> {
         blocking::unblock(|| {
-            let block_class_list = {
-                let path = Path::new(PATH).join(LIST_FILE_NAME);
-                let string = fs::read_to_string(path)?;
-                ron::from_str::<BlockClassList>(&string)?.list
-            };
+            let block_class_list = read_ron_file::<BlockClassList>(LIST_PATH)?.list;
 
             let mut components = BTreeMap::new();
 
             for (block_class_id, block_class_label) in block_class_list.iter().enumerate() {
                 let file_name = format!("{}.ron", block_class_label);
-                let path = Path::new(PATH).join(file_name);
-                let string = fs::read_to_string(path)?;
 
-                let descriptor: BlockClassDescriptior = ron::from_str(&string)?;
+                let descriptor: BlockClassDescriptior =
+                    read_ron_file(Path::new(PATH).join(file_name))?;
 
                 if descriptor.label != *block_class_label {
                     return Err(Error::msg(format!(
@@ -104,34 +111,11 @@ impl BlockClassLoadingSystem {
         Ok(())
     }
 
-    pub fn into_label_map(self) -> BlockClassMap {
-        let map = self
-            .block_class_list
+    pub fn into_label_map(self) -> LabelMap<BlockClass> {
+        self.block_class_list
             .into_iter()
             .enumerate()
             .map(|(c, l)| (l, BlockClass::from_index(c)))
-            .collect();
-
-        BlockClassMap(map)
-    }
-}
-
-#[derive(Deserialize, Debug)]
-struct BlockClassList {
-    list: Vec<String>,
-}
-
-#[derive(Deserialize, Debug)]
-struct BlockClassDescriptior {
-    label: String,
-    components: BTreeMap<String, Value>,
-}
-
-#[derive(Clone)]
-pub struct BlockClassMap(BTreeMap<String, BlockClass>);
-
-impl BlockClassMap {
-    pub fn get(&self, label: &str) -> BlockClass {
-        *self.0.get(label).unwrap()
+            .collect()
     }
 }
