@@ -34,7 +34,7 @@ use voxbrix_common::{
 };
 
 const COLLISION_PUSHBACK: f32 = 1.0e-3;
-const MAX_BLOCK_TARGET_DISTANCE: i32 = BLOCKS_IN_CHUNK_EDGE as i32;
+const MAX_BLOCK_TARGET_DISTANCE: i32 = 8;
 
 pub struct PositionSystem;
 
@@ -292,11 +292,17 @@ impl PositionSystem {
                         _ => continue,
                     };
 
+                // Distance to the colliding side
                 let block_side_axis_0 =
                     position.offset[axis_0].round_down() + axis_offset + wall_offset;
 
                 let time = (block_side_axis_0 as f32 - position.offset[axis_0]) / forward[axis_0];
 
+                if time * forward.length() > MAX_BLOCK_TARGET_DISTANCE as f32 {
+                    break;
+                }
+
+                // Distance to the colliding block
                 let block_axis_0 = block_side_axis_0 + block_coord_offset;
 
                 let is_record = if let Some((old_time, _)) = time_block {

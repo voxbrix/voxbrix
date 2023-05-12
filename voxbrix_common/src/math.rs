@@ -124,6 +124,10 @@ impl Vec3<f32> {
     pub fn to_homogeneous(self) -> [f32; 4] {
         [self[0], self[1], self[2], 0.0]
     }
+
+    pub fn length(self) -> f32 {
+        (self[0].powi(2) + self[1].powi(2) + self[2].powi(2)).sqrt()
+    }
 }
 
 impl<T> From<[T; 3]> for Vec3<T> {
