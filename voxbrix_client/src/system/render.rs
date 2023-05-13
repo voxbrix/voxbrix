@@ -3,6 +3,7 @@ use crate::{
         orientation::OrientationActorComponent,
         position::PositionActorComponent,
     },
+    window::WindowHandle,
     RenderHandle,
 };
 use anyhow::Result;
@@ -50,6 +51,7 @@ fn build_depth_texture_view(
 
 pub struct RenderSystemDescriptor<'a> {
     pub render_handle: &'static RenderHandle,
+    pub window_handle: &'static WindowHandle,
     pub surface_size: PhysicalSize<u32>,
     pub player_actor: Actor,
     pub camera_parameters: CameraParameters,
@@ -61,6 +63,7 @@ impl<'a> RenderSystemDescriptor<'a> {
     pub async fn build(self) -> RenderSystem {
         let Self {
             render_handle,
+            window_handle,
             surface_size,
             player_actor,
             camera_parameters,
@@ -68,7 +71,7 @@ impl<'a> RenderSystemDescriptor<'a> {
             orientation_ac,
         } = self;
 
-        let capabilities = render_handle
+        let capabilities = window_handle
             .surface
             .get_capabilities(&render_handle.adapter);
 
@@ -96,7 +99,7 @@ impl<'a> RenderSystemDescriptor<'a> {
             view_formats: vec![format],
         };
 
-        render_handle
+        window_handle
             .surface
             .configure(&render_handle.device, &config);
 
@@ -112,6 +115,7 @@ impl<'a> RenderSystemDescriptor<'a> {
 
         RenderSystem {
             render_handle,
+            window_handle,
             config,
             size: surface_size,
             depth_texture_view,
@@ -155,6 +159,7 @@ struct RenderProcess {
 
 pub struct RenderSystem {
     render_handle: &'static RenderHandle,
+    window_handle: &'static WindowHandle,
     config: wgpu::SurfaceConfiguration,
     pub size: PhysicalSize<u32>,
     depth_texture_view: wgpu::TextureView,
@@ -169,7 +174,7 @@ impl RenderSystem {
             self.size = new_size;
             self.config.width = new_size.width;
             self.config.height = new_size.height;
-            self.render_handle
+            self.window_handle
                 .surface
                 .configure(&self.render_handle.device, &self.config);
             self.depth_texture_view =
@@ -195,7 +200,7 @@ impl RenderSystem {
     }
 
     pub fn start_render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        let output = self.render_handle.surface.get_current_texture()?;
+        let output = self.window_handle.surface.get_current_texture()?;
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());

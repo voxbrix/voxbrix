@@ -348,6 +348,7 @@ impl GameScene<'_> {
 
         let mut render_system = RenderSystemDescriptor {
             render_handle: self.render_handle,
+            window_handle: self.window_handle,
             surface_size,
             player_actor,
             // TODO hide?

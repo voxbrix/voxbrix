@@ -96,7 +96,7 @@ impl MenuScene<'_> {
         let physical_size = self.window_handle.window.inner_size();
 
         let capabilities = self
-            .render_handle
+            .window_handle
             .surface
             .get_capabilities(&self.render_handle.adapter);
 
@@ -120,7 +120,7 @@ impl MenuScene<'_> {
             view_formats: vec![format],
         };
 
-        self.render_handle
+        self.window_handle
             .surface
             .configure(&self.render_handle.device, &config);
 
@@ -216,14 +216,14 @@ impl MenuScene<'_> {
                             view_formats: vec![format],
                         };
 
-                        self.render_handle
+                        self.window_handle
                             .surface
                             .configure(&self.render_handle.device, &config);
 
                         resized = false;
                     }
 
-                    let output = self.render_handle.surface.get_current_texture()?;
+                    let output = self.window_handle.surface.get_current_texture()?;
 
                     let view = output
                         .texture
