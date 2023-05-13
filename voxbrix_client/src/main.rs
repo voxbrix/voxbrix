@@ -64,14 +64,11 @@ fn main() {
                         error!("unable to receive window handle");
                     },
                     Ok(window_handle) => {
-                        let adapter = window_handle.instance
-                            .request_adapter(&wgpu::RequestAdapterOptions {
-                                power_preference: wgpu::PowerPreference::LowPower,
-                                compatible_surface: Some(&window_handle.surface),
-                                force_fallback_adapter: false,
-                            })
-                            .await
-                            .unwrap();
+                        let adapter = window_handle
+                            .instance
+                            .enumerate_adapters(wgpu::Backends::VULKAN)
+                            .find(|adapter| adapter.is_surface_supported(&window_handle.surface))
+                            .expect("no supported GPU adapters present");
 
                         let (device, queue) = adapter
                             .request_device(
