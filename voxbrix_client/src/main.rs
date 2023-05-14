@@ -1,12 +1,20 @@
 use async_executor::LocalExecutor;
+use backtrace::Backtrace;
 use futures_lite::future;
 use log::error;
 use scene::SceneManager;
 use std::{
-    panic,
+    fmt,
+    panic::{
+        self,
+        PanicInfo,
+    },
     process,
     rc::Rc,
-    thread,
+    thread::{
+        self,
+        Thread,
+    },
     time::Duration,
 };
 use window::WindowHandle;
@@ -23,6 +31,43 @@ pub struct RenderHandle {
     pub adapter: wgpu::Adapter,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
+}
+
+struct PanicLogEntry<'a> {
+    panic_info: &'a PanicInfo<'a>,
+    thread: &'a Thread,
+    backtrace: Backtrace,
+}
+
+impl<'a> fmt::Debug for PanicLogEntry<'a> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        let msg = match self.panic_info.payload().downcast_ref::<&'static str>() {
+            Some(s) => *s,
+            None => {
+                match self.panic_info.payload().downcast_ref::<String>() {
+                    Some(s) => &**s,
+                    None => "Box<Any>",
+                }
+            },
+        };
+
+        write!(
+            fmt,
+            "thread '{}' panicked at '{}': ",
+            self.thread.name().unwrap_or("<unnamed>"),
+            msg
+        )?;
+
+        if let Some(location) = self.panic_info.location() {
+            write!(fmt, "{}:{}", location.file(), location.line())?;
+        }
+
+        if !self.backtrace.frames().is_empty() {
+            write!(fmt, "\n{:?}", self.backtrace)?;
+        }
+
+        Ok(())
+    }
 }
 
 fn main() {
@@ -47,12 +92,20 @@ fn main() {
             })
             .detach();
 
-            let default_panic = panic::take_hook();
             let async_thread = thread::current().id();
             panic::set_hook(Box::new(move |panic_info| {
-                default_panic(panic_info);
 
-                let this_thread = thread::current().id();
+                let this_thread = thread::current();
+
+                let log_entry = PanicLogEntry {
+                    panic_info: &panic_info,
+                    thread: &this_thread,
+                    backtrace: Backtrace::new(),
+                };
+
+                error!(target: "panic", "{:?}", log_entry);
+
+                let this_thread = this_thread.id();
 
                 if this_thread == async_thread {
                     panic::resume_unwind(Box::new(()));

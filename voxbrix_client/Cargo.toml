@@ -20,6 +20,7 @@ ron = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
+backtrace = { workspace = true }
 voxbrix_protocol = { path = "../voxbrix_protocol", features = ["single", "client"] }
 voxbrix_common = { path = "../voxbrix_common" }
 local_channel = { path = "../local_channel" }
