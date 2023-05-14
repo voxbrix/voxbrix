@@ -30,6 +30,7 @@ fn main() {
 
     let (window_tx, window_rx) = flume::bounded::<WindowHandle>(1);
     let (panic_tx, panic_rx) = flume::bounded(1);
+    let main_thread = thread::current().id();
 
     thread::spawn(move || {
         let is_panic = panic::catch_unwind(|| {
@@ -50,10 +51,16 @@ fn main() {
             let async_thread = thread::current().id();
             panic::set_hook(Box::new(move |panic_info| {
                 default_panic(panic_info);
-                if thread::current().id() != async_thread {
-                    let _ = panic_tx.send(());
+
+                let this_thread = thread::current().id();
+
+                if this_thread == async_thread {
+                    panic::resume_unwind(Box::new(()));
+                } else if this_thread == main_thread {
+                    let _ = panic_tx.try_send(());
                     thread::sleep(Duration::MAX);
                 } else {
+                    let _ = panic_tx.try_send(());
                     panic::resume_unwind(Box::new(()));
                 }
             }));
