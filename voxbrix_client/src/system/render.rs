@@ -3,6 +3,7 @@ use crate::{
         orientation::OrientationActorComponent,
         position::PositionActorComponent,
     },
+    system::texture_loading::GPU_TEXTURE_FORMAT,
     window::WindowHandle,
     RenderHandle,
 };
@@ -12,6 +13,8 @@ use camera::{
     Camera,
     CameraParameters,
 };
+use flume::Receiver;
+use output_thread::OutputThread;
 use std::{
     iter,
     mem,
@@ -20,18 +23,11 @@ use voxbrix_common::entity::actor::Actor;
 use winit::dpi::PhysicalSize;
 
 pub mod camera;
+pub mod output_thread;
 pub mod vertex;
 
-fn build_depth_texture_view(
-    device: &wgpu::Device,
-    config: &wgpu::SurfaceConfiguration,
-) -> wgpu::TextureView {
-    let size = wgpu::Extent3d {
-        // 2.
-        width: config.width,
-        height: config.height,
-        depth_or_array_layers: 1,
-    };
+fn build_depth_texture_view(device: &wgpu::Device, mut size: wgpu::Extent3d) -> wgpu::TextureView {
+    size.depth_or_array_layers = 1;
 
     let desc = wgpu::TextureDescriptor {
         label: Some("depth_texture"),
@@ -40,8 +36,7 @@ fn build_depth_texture_view(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Depth32Float,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT // 3.
-            | wgpu::TextureUsages::TEXTURE_BINDING,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         view_formats: &[wgpu::TextureFormat::Depth32Float],
     };
     let texture = device.create_texture(&desc);
@@ -52,7 +47,6 @@ fn build_depth_texture_view(
 pub struct RenderSystemDescriptor<'a> {
     pub render_handle: &'static RenderHandle,
     pub window_handle: &'static WindowHandle,
-    pub surface_size: PhysicalSize<u32>,
     pub player_actor: Actor,
     pub camera_parameters: CameraParameters,
     pub position_ac: &'a PositionActorComponent,
@@ -64,7 +58,6 @@ impl<'a> RenderSystemDescriptor<'a> {
         let Self {
             render_handle,
             window_handle,
-            surface_size,
             player_actor,
             camera_parameters,
             position_ac,
@@ -78,14 +71,17 @@ impl<'a> RenderSystemDescriptor<'a> {
         let format = capabilities
             .formats
             .into_iter()
-            .find(|format| format == &wgpu::TextureFormat::Rgba8UnormSrgb)
+            .find(|format| format == &GPU_TEXTURE_FORMAT)
             .expect("texture format found");
 
-        let present_mode = capabilities
-            .present_modes
-            .into_iter()
-            .find(|pm| *pm == wgpu::PresentMode::Mailbox)
-            .unwrap_or(wgpu::PresentMode::Immediate);
+        // let present_mode = capabilities
+        // .present_modes
+        // .into_iter()
+        // .find(|pm| *pm == wgpu::PresentMode::Mailbox)
+        // .unwrap_or(wgpu::PresentMode::Immediate);
+        let present_mode = wgpu::PresentMode::Fifo;
+
+        let surface_size = window_handle.window.inner_size();
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -111,15 +107,23 @@ impl<'a> RenderSystemDescriptor<'a> {
             orientation_ac,
         );
 
-        let depth_texture_view = build_depth_texture_view(&render_handle.device, &config);
+        let output_thread = OutputThread::new(render_handle, window_handle, config);
+
+        let depth_texture_size = wgpu::Extent3d {
+            width: surface_size.width,
+            height: surface_size.height,
+            depth_or_array_layers: 1,
+        };
+
+        let depth_texture_view =
+            build_depth_texture_view(&render_handle.device, depth_texture_size);
 
         RenderSystem {
             render_handle,
-            window_handle,
-            config,
-            size: surface_size,
-            depth_texture_view,
             camera,
+            depth_texture_view,
+            depth_texture_size,
+            output_thread,
             process: None,
             encoders: Vec::new(),
         }
@@ -159,11 +163,10 @@ struct RenderProcess {
 
 pub struct RenderSystem {
     render_handle: &'static RenderHandle,
-    window_handle: &'static WindowHandle,
-    config: wgpu::SurfaceConfiguration,
-    pub size: PhysicalSize<u32>,
-    depth_texture_view: wgpu::TextureView,
     camera: Camera,
+    depth_texture_view: wgpu::TextureView,
+    depth_texture_size: wgpu::Extent3d,
+    output_thread: OutputThread,
     process: Option<RenderProcess>,
     encoders: Vec<wgpu::CommandEncoder>,
 }
@@ -171,14 +174,10 @@ pub struct RenderSystem {
 impl RenderSystem {
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
-            self.size = new_size;
-            self.config.width = new_size.width;
-            self.config.height = new_size.height;
-            self.window_handle
-                .surface
-                .configure(&self.render_handle.device, &self.config);
-            self.depth_texture_view =
-                build_depth_texture_view(&self.render_handle.device, &self.config);
+            self.output_thread.configure_surface(|config| {
+                config.width = new_size.width;
+                config.height = new_size.height;
+            });
             self.camera.resize(new_size.width, new_size.height);
         }
     }
@@ -186,8 +185,12 @@ impl RenderSystem {
     pub fn get_render_parameters(&self) -> RenderParameters {
         RenderParameters {
             camera_bind_group_layout: self.camera.get_bind_group_layout(),
-            texture_format: self.config.format,
+            texture_format: GPU_TEXTURE_FORMAT,
         }
+    }
+
+    pub fn get_readiness_stream(&self) -> Receiver<()> {
+        self.output_thread.get_readiness_stream()
     }
 
     pub fn update(
@@ -199,11 +202,19 @@ impl RenderSystem {
             .update(&self.render_handle.queue, position_ac, orientation_ac);
     }
 
-    pub fn start_render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        let output = self.window_handle.surface.get_current_texture()?;
+    pub fn start_render(&mut self) -> Result<(), ()> {
+        let output = self.output_thread.take_output().ok_or(())?;
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let view_size = output.texture.size();
+
+        if view_size != self.depth_texture_size {
+            self.depth_texture_size = view_size;
+            self.depth_texture_view =
+                build_depth_texture_view(&self.render_handle.device, view_size);
+        }
 
         self.process = Some(RenderProcess { output, view });
 
@@ -227,11 +238,10 @@ impl RenderSystem {
 
         self.encoders.extend(encoders_extend);
 
-        let view = &self
+        let process = &self
             .process
             .as_ref()
-            .expect("render process must be started")
-            .view;
+            .expect("render process must be started");
 
         self.encoders[slice_start ..]
             .iter_mut()
@@ -241,7 +251,7 @@ impl RenderSystem {
                 let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Render Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view,
+                        view: &process.view,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: if is_first_pass {
@@ -286,10 +296,12 @@ impl RenderSystem {
             .queue
             .submit(self.encoders.drain(..).map(|enc| enc.finish()));
 
-        self.process
+        let output = self
+            .process
             .take()
             .expect("render process must be started")
-            .output
-            .present();
+            .output;
+
+        self.output_thread.present_output(output);
     }
 }

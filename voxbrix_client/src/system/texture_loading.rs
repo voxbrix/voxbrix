@@ -17,7 +17,7 @@ use voxbrix_common::{
 const PATH_PREFIX: &str = "assets/client/textures";
 const BLOCK_TEXTURE_FORMAT: ImageFormat = ImageFormat::Png;
 const BLOCK_TEXTURE_FORMAT_NAME: &str = "png";
-const GPU_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+pub const GPU_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 
 #[derive(Deserialize, Debug)]
 struct TextureList {

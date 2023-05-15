@@ -349,7 +349,6 @@ impl GameScene<'_> {
         let mut render_system = RenderSystemDescriptor {
             render_handle: self.render_handle,
             window_handle: self.window_handle,
-            surface_size,
             player_actor,
             // TODO hide?
             camera_parameters: CameraParameters {
@@ -384,11 +383,15 @@ impl GameScene<'_> {
         .build()
         .await;
 
+        let render_ready = render_system.get_readiness_stream();
+
         let mut stream = Timer::interval(Duration::from_millis(50))
             .map(|_| Event::SendPosition)
             .or_ff(self.window_handle.event_rx.stream().map(Event::Input))
             .or_ff(
-                Timer::interval(Duration::from_millis(15))
+                render_ready
+                    .stream()
+                    // Timer::interval(Duration::from_millis(15))
                     .map(|_| Event::Process)
                     .rr_ff(event_rx),
             );
