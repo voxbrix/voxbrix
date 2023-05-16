@@ -353,8 +353,8 @@ impl GameScene<'_> {
             // TODO hide?
             camera_parameters: CameraParameters {
                 aspect: (surface_size.width as f32) / (surface_size.height as f32),
-                fovy: std::f32::consts::PI / 2.0,
-                near: 0.1,
+                fovy: 70f32.to_radians(),
+                near: 0.01,
                 far: 100.0,
             },
             position_ac: &position_ac,
