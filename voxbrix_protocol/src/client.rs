@@ -3,15 +3,15 @@
 //! # Examples
 //!
 //! ```no_run
-//! use async_io::Timer;
 //! use futures_lite::future;
 //! use std::time::Duration;
+//! use tokio::time;
 //! use voxbrix_protocol::client::{
 //!     Client,
 //!     Connection,
 //! };
 //!
-//! future::block_on(async {
+//! async fn example() {
 //!     let client = Client::bind(([127, 0, 0, 1], 12345)).expect("socket bound");
 //!
 //!     let Connection {
@@ -39,13 +39,13 @@
 //!             // Therefore, it is highly recommended to send some kind of "ping" or "keepalive"
 //!             // messages periodically, so the lost packets could be retransmitted even if you
 //!             // do not send any meaningful data.
-//!             Timer::after(Duration::from_secs(1)).await;
+//!             time::sleep(Duration::from_secs(1)).await;
 //!             sender.send_reliable(0, b"keepalive").await;
 //!         }
 //!     };
 //!
 //!     future::or(recv_future, send_future).await;
-//! });
+//! }
 //! ```
 
 use crate::{
@@ -68,10 +68,6 @@ use crate::{
     SERVER_ID,
     UNRELIABLE_BUFFERS,
 };
-use async_io::{
-    Async,
-    Timer,
-};
 use chacha20poly1305::{
     aead::KeyInit,
     ChaCha20Poly1305,
@@ -82,7 +78,6 @@ use flume::{
     Receiver as ChannelRx,
     Sender as ChannelTx,
 };
-use futures_lite::future::FutureExt;
 use integer_encoding::{
     VarIntReader,
     VarIntWriter,
@@ -122,12 +117,13 @@ use std::{
         Write,
     },
     mem,
-    net::{
-        SocketAddr,
-        UdpSocket,
-    },
+    net::SocketAddr,
     slice,
     time::Instant,
+};
+use tokio::{
+    net::UdpSocket,
+    time,
 };
 
 type Buffer = [u8; MAX_PACKET_SIZE];
@@ -190,7 +186,7 @@ impl From<StdIoError> for Error {
 
 /// Connection builder.
 pub struct Client {
-    transport: Async<UdpSocket>,
+    transport: UdpSocket,
 }
 
 /// Returned by the `Client::connect()` method on successful connection to the server.
@@ -209,11 +205,11 @@ pub struct Connection {
 
 impl Client {
     /// Bind the local socket.
-    pub fn bind<A>(bind_address: A) -> Result<Self, Error>
+    pub async fn bind<A>(bind_address: A) -> Result<Self, Error>
     where
         A: Into<SocketAddr>,
     {
-        let transport = Async::<UdpSocket>::bind(bind_address.into())?;
+        let transport = UdpSocket::bind(bind_address.into()).await?;
         Ok(Self { transport })
     }
 
@@ -224,7 +220,7 @@ impl Client {
     {
         let Client { transport } = self;
 
-        transport.get_ref().connect(server_address.into())?;
+        transport.connect(server_address.into()).await?;
 
         let (ack_sender, ack_receiver) = new_channel();
 
@@ -331,7 +327,7 @@ impl Client {
 struct Shared {
     id: Id,
     cipher: ChaCha20Poly1305,
-    transport: Async<UdpSocket>,
+    transport: UdpSocket,
 }
 
 impl Drop for Shared {
@@ -347,7 +343,7 @@ impl Drop for Shared {
 
         let len = crate::tag_sign_in_buffer(&mut buffer, &self.cipher, tag_start as usize);
 
-        let _ = self.transport.get_ref().send(&buffer[0 .. len]);
+        let _ = self.transport.try_send(&buffer[0 .. len]);
     }
 }
 
@@ -784,34 +780,23 @@ impl ReliableSender {
                     must_wait = false;
 
                     // TODO timeout retry limit?
-                    let result = async {
+                    let result = match time::timeout(RELIABLE_RESEND_AFTER, {
                         #[cfg(feature = "single")]
                         {
-                            self.ack_receiver
-                                .recv()
-                                .await
-                                .ok_or(Error::ReceiverWasDropped)
+                            self.ack_receiver.recv()
                         }
                         #[cfg(feature = "multi")]
                         {
-                            self.ack_receiver
-                                .recv_async()
-                                .await
-                                .map_err(|_| Error::ReceiverWasDropped)
+                            self.ack_receiver.recv_async()
                         }
-                    }
-                    .or(async {
-                        Timer::after(RELIABLE_RESEND_AFTER).await;
-                        Err(Error::Timeout)
                     })
-                    .await;
+                    .await
+                    {
+                        Ok(r) => r,
+                        Err(_) => continue,
+                    };
 
-                    match result {
-                        Ok(r) => Some(r),
-                        Err(Error::Timeout) => continue,
-                        Err(Error::ReceiverWasDropped) => return Err(Error::ReceiverWasDropped),
-                        _ => unreachable!(),
-                    }
+                    Some(result.ok_or(Error::ReceiverWasDropped)?)
                 } else {
                     #[cfg(feature = "single")]
                     {

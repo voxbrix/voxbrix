@@ -3,20 +3,21 @@
 //! # Examples
 //!
 //! ```no_run
-//! use async_io::Timer;
 //! use futures_lite::future::{
 //!     self,
 //!     FutureExt,
 //! };
 //! use std::time::Duration;
+//! use tokio::time;
 //! use voxbrix_protocol::server::{
 //!     Connection,
 //!     ServerParameters,
 //! };
 //!
-//! future::block_on(async {
+//! async fn example() {
 //!     let mut server = ServerParameters::default()
 //!         .bind(([127, 0, 0, 1], 12345))
+//!         .await
 //!         .expect("socket bound");
 //!
 //!     let Connection {
@@ -39,7 +40,7 @@
 //!             // Therefore, it is highly recommended to send some kind of "ping" or "keepalive"
 //!             // messages periodically, so the lost packets could be retransmitted even if you
 //!             // do not send any meaningful data.
-//!             Timer::after(Duration::from_secs(1)).await;
+//!             time::sleep(Duration::from_secs(1)).await;
 //!             sender.send_reliable(0, b"keepalive").await;
 //!         }
 //!     };
@@ -53,7 +54,7 @@
 //!     };
 //!
 //!     server_future.or(recv_future.or(send_future)).await;
-//! });
+//! }
 //! ```
 use crate::{
     seek_read,
@@ -73,10 +74,6 @@ use crate::{
     SECRET_BUFFER,
     SERVER_ID,
     UNRELIABLE_BUFFERS,
-};
-use async_io::{
-    Async,
-    Timer,
 };
 #[cfg(feature = "multi")]
 use async_oneshot::{
@@ -135,12 +132,13 @@ use std::{
         Write,
     },
     mem,
-    net::{
-        SocketAddr,
-        UdpSocket,
-    },
+    net::SocketAddr,
     slice,
     time::Instant,
+};
+use tokio::{
+    net::UdpSocket,
+    time,
 };
 
 pub const DEFAULT_MAX_CONNECTIONS: usize = 64;
@@ -504,34 +502,23 @@ impl StreamReliableSender {
                     must_wait = false;
 
                     // TODO timeout retry limit?
-                    let result = async {
+                    let result = match time::timeout(RELIABLE_RESEND_AFTER, {
                         #[cfg(feature = "single")]
                         {
-                            self.ack_receiver
-                                .recv()
-                                .await
-                                .ok_or(Error::ServerWasDropped)
+                            self.ack_receiver.recv()
                         }
                         #[cfg(feature = "multi")]
                         {
-                            self.ack_receiver
-                                .recv_async()
-                                .await
-                                .map_err(|_| Error::ServerWasDropped)
+                            self.ack_receiver.recv_async()
                         }
-                    }
-                    .or(async {
-                        Timer::after(RELIABLE_RESEND_AFTER).await;
-                        Err(Error::Timeout)
                     })
-                    .await;
+                    .await
+                    {
+                        Ok(r) => r,
+                        Err(_) => continue,
+                    };
 
-                    match result {
-                        Ok(r) => Some(r),
-                        Err(Error::Timeout) => continue,
-                        Err(Error::ServerWasDropped) => return Err(Error::ServerWasDropped),
-                        _ => unreachable!(),
-                    }
+                    Some(result.ok_or(Error::ServerWasDropped)?)
                 } else {
                     #[cfg(feature = "single")]
                     {
@@ -990,11 +977,11 @@ impl Default for ServerParameters {
 
 impl ServerParameters {
     /// Bind the socket and produce a `Server` with the given parameters.
-    pub fn bind<A>(self, bind_address: A) -> Result<Server, StdIoError>
+    pub async fn bind<A>(self, bind_address: A) -> Result<Server, StdIoError>
     where
         A: Into<SocketAddr>,
     {
-        let transport = Async::<UdpSocket>::bind(bind_address.into())?;
+        let transport = UdpSocket::bind(bind_address.into()).await?;
         let (out_queue_sender, out_queue) = new_channel();
         Ok(Server {
             clients: Clients::new(self.max_connections),
@@ -1011,7 +998,7 @@ pub struct Server {
     out_queue: ChannelRx<Out>,
     out_queue_sender: ChannelTx<Out>,
     receive_buffer: WriteBuffer,
-    transport: Async<UdpSocket>,
+    transport: UdpSocket,
 }
 
 impl Server {
