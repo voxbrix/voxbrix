@@ -7,11 +7,9 @@ license = "MIT OR Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-async-executor = { workspace = true }
+tokio = { workspace = true, features = ["rt", "time"] }
 rayon = { workspace = true }
-blocking = { workspace = true }
 futures-lite = { workspace = true }
-async-io = { workspace = true }
 flume = { workspace = true }
 serde = { workspace = true } 
 k256 = { workspace = true } 

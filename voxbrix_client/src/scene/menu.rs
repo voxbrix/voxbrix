@@ -12,8 +12,6 @@ use crate::{
 };
 use anyhow::Result;
 use argon2::Argon2;
-use async_executor::LocalExecutor;
-use async_io::Timer;
 use egui::{
     CentralPanel,
     Context,
@@ -25,7 +23,7 @@ use egui_wgpu::renderer::{
 use egui_winit::State;
 use futures_lite::{
     future,
-    FutureExt as _,
+    stream,
     StreamExt as _,
 };
 use k256::ecdsa::{
@@ -39,10 +37,14 @@ use k256::ecdsa::{
 };
 use std::{
     iter,
-    rc::Rc,
     time::Duration,
 };
+use tokio::time::{
+    self,
+    MissedTickBehavior,
+};
 use voxbrix_common::{
+    async_ext::StreamExt as _,
     messages::{
         client::{
             InitData,
@@ -57,7 +59,6 @@ use voxbrix_common::{
         },
     },
     pack::Pack,
-    stream::StreamExt as _,
 };
 use voxbrix_protocol::client::{
     Client,
@@ -85,13 +86,12 @@ fn set_ui_scale(scale: f32, sd: &mut ScreenDescriptor, ctx: &Context, state: &mu
     state.set_pixels_per_point(scale);
 }
 
-pub struct MenuScene<'a> {
-    pub rt: Rc<LocalExecutor<'a>>,
+pub struct MenuScene {
     pub window_handle: &'static WindowHandle,
     pub render_handle: &'static RenderHandle,
 }
 
-impl MenuScene<'_> {
+impl MenuScene {
     pub async fn run(self) -> Result<SceneSwitch> {
         let physical_size = self.window_handle.window.inner_size();
 
@@ -147,10 +147,16 @@ impl MenuScene<'_> {
 
         let (event_tx, event_rx) = local_channel::mpsc::channel();
 
-        let mut stream = Timer::interval(Duration::from_millis(20))
-            .map(|_| Event::Process)
-            .or_ff(self.window_handle.event_rx.stream().map(Event::Input))
-            .or_ff(event_rx);
+        let mut send_status_interval = time::interval(Duration::from_millis(15));
+        send_status_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
+        let mut stream = stream::poll_fn(|cx| {
+            send_status_interval
+                .poll_tick(cx)
+                .map(|_| Some(Event::Process))
+        })
+        .or_ff(self.window_handle.event_rx.stream().map(Event::Input))
+        .or_ff(event_rx);
 
         let mut error_message = String::new();
 
@@ -363,39 +369,39 @@ impl Form {
             sender: mut tx,
             receiver: mut rx,
         } = Client::bind(socket)
+            .await
             .map_err(|_| "Unable to bind socket")?
             .connect(server)
             .await
             .map_err(|_| "Connection error")?;
 
-        let (_req_result, response) = async {
-            Ok(future::zip(
-                async {
-                    match self.action {
-                        ActionType::Login => InitRequest::Login.pack(&mut tx_buffer),
-                        ActionType::Registration => InitRequest::Register.pack(&mut tx_buffer),
-                    };
+        let (_req_result, response) = time::timeout(CONNECTION_TIMEOUT, async {
+            Ok::<_, &str>(
+                future::zip(
+                    async {
+                        match self.action {
+                            ActionType::Login => InitRequest::Login.pack(&mut tx_buffer),
+                            ActionType::Registration => InitRequest::Register.pack(&mut tx_buffer),
+                        };
 
-                    tx.send_reliable(0, &tx_buffer)
-                        .await
-                        .map_err(|_| "Unable to send initialization request")
-                },
-                async {
-                    let (_channel, bytes) = rx
-                        .recv()
-                        .await
-                        .map_err(|_| "Unable to get initialization response")?;
-                    InitResponse::unpack(bytes)
-                        .map_err(|_| "Unable to unpack initialization response")
-                },
+                        tx.send_reliable(0, &tx_buffer)
+                            .await
+                            .map_err(|_| "Unable to send initialization request")
+                    },
+                    async {
+                        let (_channel, bytes) = rx
+                            .recv()
+                            .await
+                            .map_err(|_| "Unable to get initialization response")?;
+                        InitResponse::unpack(bytes)
+                            .map_err(|_| "Unable to unpack initialization response")
+                    },
+                )
+                .await,
             )
-            .await)
-        }
-        .or(async {
-            Timer::interval(CONNECTION_TIMEOUT).await;
-            Err("Connection timeout")
         })
-        .await?;
+        .await
+        .map_err(|_| "Connection timeout")??;
 
         let InitResponse {
             public_key: server_key,
@@ -453,28 +459,27 @@ impl Form {
             },
         }
 
-        let (_req_result, response_bytes) = async {
-            Ok(future::zip(
-                async {
-                    tx.send_reliable(0, &tx_buffer)
-                        .await
-                        .map_err(|_| "Unable to send initial data request")
-                },
-                async {
-                    let (_channel, bytes) = rx
-                        .recv()
-                        .await
-                        .map_err(|_| "Unable to get initial data response")?;
-                    Ok::<&[u8], &str>(bytes)
-                },
+        let (_req_result, response_bytes) = time::timeout(CONNECTION_TIMEOUT, async {
+            Ok::<_, &str>(
+                future::zip(
+                    async {
+                        tx.send_reliable(0, &tx_buffer)
+                            .await
+                            .map_err(|_| "Unable to send initial data request")
+                    },
+                    async {
+                        let (_channel, bytes) = rx
+                            .recv()
+                            .await
+                            .map_err(|_| "Unable to get initial data response")?;
+                        Ok::<&[u8], &str>(bytes)
+                    },
+                )
+                .await,
             )
-            .await)
-        }
-        .or(async {
-            Timer::interval(CONNECTION_TIMEOUT).await;
-            Err("Connection timeout")
         })
-        .await?;
+        .await
+        .map_err(|_| "Connection timeout")??;
 
         let response_bytes = response_bytes?;
 

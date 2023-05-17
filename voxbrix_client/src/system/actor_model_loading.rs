@@ -20,6 +20,7 @@ use std::{
     },
     path::Path,
 };
+use tokio::task;
 use voxbrix_common::{
     read_ron_file,
     LabelMap,
@@ -65,7 +66,7 @@ impl ActorModelLoadingSystem {
         texture_label_map: &LabelMap<u32>,
         body_part_amc: &mut BodyPartActorModelComponent,
     ) -> Result<Self, Error> {
-        let (model_label_map, model_desc_map, body_part_label_map) = blocking::unblock(|| {
+        let (model_label_map, model_desc_map, body_part_label_map) = task::spawn_blocking(|| {
             let body_part_label_map = read_ron_file::<List>(BODY_PART_LIST_PATH)?
                 .list
                 .into_iter()
@@ -92,7 +93,8 @@ impl ActorModelLoadingSystem {
 
             Ok::<_, Error>((model_label_map.into(), model_desc_map, body_part_label_map))
         })
-        .await?;
+        .await
+        .unwrap()?;
 
         for (actor_model, model_desc) in model_desc_map {
             let texture = texture_label_map

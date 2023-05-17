@@ -1,10 +1,10 @@
+pub mod async_ext;
 pub mod component;
 pub mod entity;
 pub mod math;
 pub mod messages;
 pub mod pack;
 pub mod sparse_vec;
-pub mod stream;
 pub mod system;
 
 use anyhow::Context;
@@ -31,10 +31,10 @@ macro_rules! unblock {
         {
             let res;
 
-            (($($a),+), res) = blocking::unblock(move || {
+            (($($a),+), res) = tokio::task::spawn_blocking(move || {
                 let res = $e;
                 (($($a),+), res)
-            }).await;
+            }).await.unwrap();
 
             res
         }

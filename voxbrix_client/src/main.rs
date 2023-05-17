@@ -1,6 +1,4 @@
-use async_executor::LocalExecutor;
 use backtrace::Backtrace;
-use futures_lite::future;
 use log::error;
 use scene::SceneManager;
 use std::{
@@ -10,12 +8,18 @@ use std::{
         PanicInfo,
     },
     process,
-    rc::Rc,
     thread::{
         self,
         Thread,
     },
     time::Duration,
+};
+use tokio::{
+    runtime::Builder as RuntimeBuilder,
+    task::{
+        self,
+        LocalSet,
+    },
 };
 use window::WindowHandle;
 
@@ -79,46 +83,49 @@ fn main() {
 
     thread::spawn(move || {
         let is_panic = panic::catch_unwind(|| {
-            let rt = Rc::new(LocalExecutor::new());
+            let rt = RuntimeBuilder::new_current_thread()
+                .enable_io()
+                .enable_time()
+                .build()
+                .expect("unable to build runtime");
 
-            // Route all panics into the async runtime.
-            // It allows to properly drop() everything in runtime loops.
-            // This is required, for example, to send DISCONNECT even on panic.
-            // TODO the same for signals
-            rt.spawn(async move {
-                if let Ok(_) = panic_rx.recv_async().await {
-                    panic::resume_unwind(Box::new(()));
-                }
-            })
-            .detach();
+            rt.block_on(LocalSet::new().run_until(async move {
+                // Route all panics into the async runtime.
+                // It allows to properly drop() everything in runtime loops.
+                // This is required, for example, to send DISCONNECT even on panic.
+                // TODO the same for signals
+                task::spawn_local(async move {
+                    if let Ok(_) = panic_rx.recv_async().await {
+                        panic::resume_unwind(Box::new(()));
+                    }
+                });
 
-            let async_thread = thread::current().id();
-            panic::set_hook(Box::new(move |panic_info| {
+                let async_thread = thread::current().id();
+                panic::set_hook(Box::new(move |panic_info| {
 
-                let this_thread = thread::current();
+                    let this_thread = thread::current();
 
-                let log_entry = PanicLogEntry {
-                    panic_info: &panic_info,
-                    thread: &this_thread,
-                    backtrace: Backtrace::new(),
-                };
+                    let log_entry = PanicLogEntry {
+                        panic_info: &panic_info,
+                        thread: &this_thread,
+                        backtrace: Backtrace::new(),
+                    };
 
-                error!(target: "panic", "{:?}", log_entry);
+                    error!(target: "panic", "{:?}", log_entry);
 
-                let this_thread = this_thread.id();
+                    let this_thread = this_thread.id();
 
-                if this_thread == async_thread {
-                    panic::resume_unwind(Box::new(()));
-                } else if this_thread == main_thread {
-                    let _ = panic_tx.try_send(());
-                    thread::sleep(Duration::MAX);
-                } else {
-                    let _ = panic_tx.try_send(());
-                    panic::resume_unwind(Box::new(()));
-                }
-            }));
+                    if this_thread == async_thread {
+                        panic::resume_unwind(Box::new(()));
+                    } else if this_thread == main_thread {
+                        let _ = panic_tx.try_send(());
+                        thread::sleep(Duration::MAX);
+                    } else {
+                        let _ = panic_tx.try_send(());
+                        panic::resume_unwind(Box::new(()));
+                    }
+                }));
 
-            future::block_on(rt.clone().run(async move {
                 match window_rx.recv_async().await {
                     Err(_) => {
                         error!("unable to receive window handle");
@@ -151,7 +158,6 @@ fn main() {
                             queue,
                         }));
                         let scene_manager = SceneManager {
-                            rt,
                             window_handle,
                             render_handle,
                         };
@@ -160,7 +166,7 @@ fn main() {
                         }
                     },
                 }
-            }))
+            }));
         }).is_err();
 
         if is_panic {

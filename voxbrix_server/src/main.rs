@@ -13,9 +13,7 @@ use crate::{
     },
 };
 use anyhow::Result;
-use async_executor::LocalExecutor;
 use flume::Sender as SharedSender;
-use futures_lite::future;
 use local_channel::mpsc::Sender;
 use log::{
     error,
@@ -32,6 +30,13 @@ use server::{
 use std::{
     env,
     time::Duration,
+};
+use tokio::{
+    runtime::Builder as RuntimeBuilder,
+    task::{
+        self,
+        LocalSet,
+    },
 };
 use voxbrix_common::{
     component::block::BlocksVec,
@@ -68,7 +73,6 @@ mod storage;
 mod system;
 
 pub struct Local {
-    pub rt: LocalExecutor<'static>,
     pub event_tx: Sender<ServerEvent>,
 }
 
@@ -96,52 +100,51 @@ fn main() -> Result<()> {
 
     let (event_tx, event_rx) = local_channel::mpsc::channel();
 
-    let local = Box::leak(Box::new(Local {
-        rt: LocalExecutor::new(),
-        event_tx,
-    }));
+    let local = Box::leak(Box::new(Local { event_tx }));
 
     let port = env::var("VOXBRIX_PORT")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(12000);
 
-    let server = ServerParameters::default().bind(([0, 0, 0, 0], port))?;
+    let rt = RuntimeBuilder::new_current_thread()
+        .enable_io()
+        .enable_time()
+        .build()
+        .expect("unable to build runtime");
 
-    future::block_on(local.rt.run(async {
-        local
-            .rt
-            .spawn(async {
-                let mut server = server;
-                loop {
-                    match server.accept().await {
-                        Ok(connection) => {
-                            local
-                                .rt
-                                .spawn(async {
-                                    match client::run(local, shared, connection).await {
-                                        Ok(_) => {
-                                            warn!("client loop exited");
-                                        },
-                                        Err(err) => {
-                                            warn!("client loop exited: {:?}", err);
-                                        },
-                                    }
-                                    // TODO send disconnect
-                                })
-                                .detach();
-                        },
-                        Err(err) => {
-                            error!("main: server.accept() error: {:?}", err);
-                            let _ = local.event_tx.send(ServerEvent::ServerConnectionClosed);
-                        },
-                    }
+    rt.block_on(LocalSet::new().run_until(async {
+        let server = ServerParameters::default()
+            .bind(([0, 0, 0, 0], port))
+            .await?;
+
+        task::spawn_local(async {
+            let mut server = server;
+            loop {
+                match server.accept().await {
+                    Ok(connection) => {
+                        task::spawn_local(async {
+                            match client::run(local, shared, connection).await {
+                                Ok(_) => {
+                                    warn!("client loop exited");
+                                },
+                                Err(err) => {
+                                    warn!("client loop exited: {:?}", err);
+                                },
+                            }
+                            // TODO send disconnect
+                        });
+                    },
+                    Err(err) => {
+                        error!("main: server.accept() error: {:?}", err);
+                        let _ = local.event_tx.send(ServerEvent::ServerConnectionClosed);
+                    },
                 }
-            })
-            .detach();
+            }
+        });
 
         server::run(local, shared, event_rx, event_shared_rx).await;
-    }));
 
-    Ok(())
+        Ok(())
+    }))
 }

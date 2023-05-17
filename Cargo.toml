@@ -12,11 +12,9 @@ resolver = "2"
 edition = "2021"
 
 [workspace.dependencies]
-async-executor = "1.5"
+tokio = "1"
 rayon = "1.7"
-blocking = "1.3"
 futures-lite = "1.13"
-async-io = "1.13"
 flume = { version = "0.10", default-features = false, features = ["async"] }
 serde = { version = "1.0", default-features = false, features = ["std", "derive"] } 
 serde-big-array = "0.5"

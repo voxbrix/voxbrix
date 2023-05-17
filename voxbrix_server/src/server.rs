@@ -39,9 +39,11 @@ use crate::{
     PLAYER_CHUNK_TICKET_RADIUS,
     PROCESS_INTERVAL,
 };
-use async_io::Timer;
 use flume::Receiver as SharedReceiver;
-use futures_lite::stream::StreamExt;
+use futures_lite::stream::{
+    self,
+    StreamExt,
+};
 use local_channel::mpsc::{
     Receiver,
     Sender,
@@ -51,6 +53,10 @@ use redb::ReadableTable;
 use std::{
     rc::Rc,
     time::Instant,
+};
+use tokio::time::{
+    self,
+    MissedTickBehavior,
 };
 use voxbrix_common::{
     component::block::{
@@ -162,10 +168,16 @@ pub async fn run(
     // TODO classify actors to know what to send without a buffer
     let mut status_updates = std::collections::BTreeSet::new();
 
-    let mut stream = Timer::interval(PROCESS_INTERVAL)
-        .map(|_| ServerEvent::Process)
-        .or(event_rx)
-        .or(event_shared_rx.stream().map(ServerEvent::SharedEvent));
+    let mut send_status_interval = time::interval(PROCESS_INTERVAL);
+    send_status_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
+    let mut stream = stream::poll_fn(|cx| {
+        send_status_interval
+            .poll_tick(cx)
+            .map(|_| Some(ServerEvent::Process))
+    })
+    .or(event_rx)
+    .or(event_shared_rx.stream().map(ServerEvent::SharedEvent));
 
     let storage = StorageThread::new();
 

@@ -3,13 +3,11 @@ use crate::{
     RenderHandle,
 };
 use anyhow::Result;
-use async_executor::LocalExecutor;
 use game::{
     GameScene,
     GameSceneParameters,
 };
 use menu::MenuScene;
-use std::rc::Rc;
 
 pub mod game;
 pub mod menu;
@@ -20,13 +18,12 @@ pub enum SceneSwitch {
     Exit,
 }
 
-pub struct SceneManager<'a> {
-    pub rt: Rc<LocalExecutor<'a>>,
+pub struct SceneManager {
     pub window_handle: &'static WindowHandle,
     pub render_handle: &'static RenderHandle,
 }
 
-impl SceneManager<'_> {
+impl SceneManager {
     pub async fn run(self) -> Result<()> {
         let mut next_loop = Some(SceneSwitch::Menu);
 
@@ -35,7 +32,6 @@ impl SceneManager<'_> {
                 SceneSwitch::Menu => {
                     next_loop = Some(
                         MenuScene {
-                            rt: self.rt.clone(),
                             window_handle: self.window_handle,
                             render_handle: self.render_handle,
                         }
@@ -46,7 +42,6 @@ impl SceneManager<'_> {
                 SceneSwitch::Game { parameters } => {
                     next_loop = Some(
                         GameScene {
-                            rt: self.rt.clone(),
                             window_handle: self.window_handle,
                             render_handle: self.render_handle,
                             parameters,

@@ -12,6 +12,7 @@ use crate::component::{
     },
 };
 use std::collections::BTreeSet;
+use tokio::task;
 use voxbrix_common::{
     component::block::class::ClassBlockComponent,
     entity::chunk::Chunk,
@@ -71,11 +72,10 @@ impl ChunkTicketSystem {
         cache_cc.retain(|chunk, _| self.data.contains(chunk));
         class_bc.retain(|chunk| self.data.contains(chunk));
 
-        blocking::unblock(move || {
+        task::spawn_blocking(move || {
             for chunk in new_chunks {
                 f(&chunk);
             }
-        })
-        .detach();
+        });
     }
 }

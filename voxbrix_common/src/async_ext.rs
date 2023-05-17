@@ -1,12 +1,34 @@
 use futures_core::Stream;
 use pin_project_lite::pin_project;
 use std::{
+    future::Future,
     pin::Pin,
     task::{
         Context,
         Poll,
     },
 };
+use tokio::task::{
+    self,
+    JoinHandle,
+};
+
+#[must_use = "must be assigned to variable to work"]
+pub struct ScopeTask<T>(JoinHandle<T>);
+
+impl<T> Drop for ScopeTask<T> {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+pub fn spawn_scoped<F>(future: F) -> ScopeTask<F::Output>
+where
+    F: Future + 'static,
+    F::Output: 'static,
+{
+    ScopeTask(task::spawn_local(future))
+}
 
 pub trait StreamExt {
     /// Fail-fast version of .or()

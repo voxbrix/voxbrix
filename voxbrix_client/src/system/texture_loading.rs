@@ -9,6 +9,7 @@ use std::{
     num::NonZeroU32,
     path::Path,
 };
+use tokio::task;
 use voxbrix_common::{
     read_ron_file,
     LabelMap,
@@ -36,7 +37,7 @@ impl TextureLoadingSystem {
         let list_path = Path::new(PATH_PREFIX).join(format!("{}.ron", category_name));
         let textures_path_pfx = Path::new(PATH_PREFIX).join(category_name);
 
-        blocking::unblock(move || {
+        task::spawn_blocking(move || {
             let texture_list: TextureList = read_ron_file(list_path)?;
 
             let textures = texture_list
@@ -63,6 +64,7 @@ impl TextureLoadingSystem {
             })
         })
         .await
+        .unwrap()
     }
 
     pub fn prepare_buffer(

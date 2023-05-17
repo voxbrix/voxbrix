@@ -14,6 +14,7 @@ use std::{
     collections::BTreeMap,
     path::Path,
 };
+use tokio::task;
 
 const PATH: &str = "assets/common/block_classes";
 const LIST_PATH: &str = "assets/common/block_classes.ron";
@@ -36,7 +37,7 @@ pub struct BlockClassLoadingSystem {
 
 impl BlockClassLoadingSystem {
     pub async fn load_data() -> Result<Self, Error> {
-        blocking::unblock(|| {
+        task::spawn_blocking(|| {
             let block_class_list = read_ron_file::<BlockClassList>(LIST_PATH)?.list;
 
             let mut components = BTreeMap::new();
@@ -77,6 +78,7 @@ impl BlockClassLoadingSystem {
             })
         })
         .await
+        .unwrap()
     }
 
     pub fn load_component<D, C, F>(

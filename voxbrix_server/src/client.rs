@@ -14,13 +14,9 @@ use crate::{
     PLAYER_TABLE,
     USERNAME_TABLE,
 };
-use async_io::Timer;
-use futures_lite::{
-    future::FutureExt,
-    stream::{
-        self,
-        StreamExt,
-    },
+use futures_lite::stream::{
+    self,
+    StreamExt,
 };
 use k256::ecdsa::{
     signature::{
@@ -34,7 +30,15 @@ use k256::ecdsa::{
 use log::warn;
 use redb::ReadableTable;
 use std::rc::Rc;
+use tokio::{
+    task,
+    time,
+};
 use voxbrix_common::{
+    async_ext::{
+        self,
+        StreamExt as _,
+    },
     entity::actor::Actor,
     messages::{
         client::{
@@ -52,7 +56,6 @@ use voxbrix_common::{
         },
     },
     pack::Pack,
-    stream::StreamExt as _,
 };
 use voxbrix_protocol::{
     server::{
@@ -143,13 +146,12 @@ pub async fn run(
     // Lookup for the player in the database,
     // if there's none - register,
     // if the password is not correct - send error
-    let request = async { rx.recv().await.error(Error::ReceiverClosed) }
-        .or(async {
-            Timer::after(CLIENT_CONNECTION_TIMEOUT).await;
-            Err(Error::Timeout)
-        })
-        .await
-        .and_then(|(_channel, data)| InitRequest::unpack(data).error(Error::UnexpectedMessage))?;
+    let request = time::timeout(CLIENT_CONNECTION_TIMEOUT, async {
+        rx.recv().await.error(Error::ReceiverClosed)
+    })
+    .await
+    .map_err(|_| Error::Timeout)?
+    .and_then(|(_channel, data)| InitRequest::unpack(data).error(Error::UnexpectedMessage))?;
 
     // TODO: read from config
     let private_key = SigningKey::from_bytes((&[3; 32]).into()).unwrap();
@@ -168,34 +170,30 @@ pub async fn run(
     }
     .pack(&mut buffer);
 
-    async {
+    time::timeout(CLIENT_CONNECTION_TIMEOUT, async {
         reliable_tx
             .send_reliable(BASE_CHANNEL, &buffer)
             .await
             .error(Error::Io)
-    }
-    .or(async {
-        Timer::after(CLIENT_CONNECTION_TIMEOUT).await;
-        Err(Error::Timeout)
     })
-    .await?;
+    .await
+    .map_err(|_| Error::Timeout)??;
 
     let player = match request {
         InitRequest::Login => {
             let LoginRequest {
                 username,
                 key_signature,
-            } = async { rx.recv().await.error(Error::ReceiverClosed) }
-                .or(async {
-                    Timer::after(CLIENT_CONNECTION_TIMEOUT).await;
-                    Err(Error::Timeout)
-                })
-                .await
-                .and_then(|(_channel, data)| {
-                    LoginRequest::unpack(data).error(Error::UnexpectedMessage)
-                })?;
+            } = time::timeout(CLIENT_CONNECTION_TIMEOUT, async {
+                rx.recv().await.error(Error::ReceiverClosed)
+            })
+            .await
+            .map_err(|_| Error::Timeout)?
+            .and_then(|(_channel, data)| {
+                LoginRequest::unpack(data).error(Error::UnexpectedMessage)
+            })?;
 
-            let player_res = blocking::unblock(move || {
+            let player_res = task::spawn_blocking(move || {
                 let db_read = shared.database.begin_read().expect("database write");
 
                 let username_table = db_read
@@ -235,21 +233,18 @@ pub async fn run(
 
                 Ok(player_id)
             })
-            .await;
+            .await
+            .unwrap();
 
             match player_res {
                 Ok(p) => p,
                 Err(failure) => {
                     LoginResult::Failure(failure).pack(&mut buffer);
-                    let _ = async {
+                    let _ = time::timeout(CLIENT_CONNECTION_TIMEOUT, async {
                         reliable_tx
                             .send_reliable(BASE_CHANNEL, &buffer)
                             .await
                             .error(Error::Io)
-                    }
-                    .or(async {
-                        Timer::after(CLIENT_CONNECTION_TIMEOUT).await;
-                        Err(Error::Timeout)
                     })
                     .await;
 
@@ -261,17 +256,16 @@ pub async fn run(
             let RegisterRequest {
                 username,
                 public_key,
-            } = async { rx.recv().await.error(Error::ReceiverClosed) }
-                .or(async {
-                    Timer::after(CLIENT_CONNECTION_TIMEOUT).await;
-                    Err(Error::Timeout)
-                })
-                .await
-                .and_then(|(_channel, data)| {
-                    RegisterRequest::unpack(data).error(Error::UnexpectedMessage)
-                })?;
+            } = time::timeout(CLIENT_CONNECTION_TIMEOUT, async {
+                rx.recv().await.error(Error::ReceiverClosed)
+            })
+            .await
+            .map_err(|_| Error::Timeout)?
+            .and_then(|(_channel, data)| {
+                RegisterRequest::unpack(data).error(Error::UnexpectedMessage)
+            })?;
 
-            let player_res = blocking::unblock(move || {
+            let player_res = task::spawn_blocking(move || {
                 let db_write = shared.database.begin_write().expect("database write");
                 let player = {
                     let mut username_table = db_write
@@ -323,23 +317,21 @@ pub async fn run(
 
                 Ok(player)
             })
-            .await;
+            .await
+            .unwrap();
 
             match player_res {
                 Ok(p) => p,
                 Err(failure) => {
                     RegisterResult::Failure(failure).pack(&mut buffer);
-                    let _ = async {
+                    let _ = time::timeout(CLIENT_CONNECTION_TIMEOUT, async {
                         reliable_tx
                             .send_reliable(BASE_CHANNEL, &buffer)
                             .await
                             .error(Error::Io)
-                    }
-                    .or(async {
-                        Timer::after(CLIENT_CONNECTION_TIMEOUT).await;
-                        Err(Error::Timeout)
                     })
-                    .await;
+                    .await
+                    .map_err(|_| Error::Timeout)?;
 
                     return Err(Error::FailedRegistration);
                 },
@@ -362,50 +354,44 @@ pub async fn run(
     let (unreliable_loop_tx, mut unreliable_loop_rx) =
         local_channel::mpsc::channel::<(Channel, SendData)>();
     let self_tx_local = self_tx.clone();
-    local
-        .rt
-        .spawn(async move {
-            while let Some((channel, data)) = unreliable_loop_rx.recv().await {
-                if let Err(err) = unreliable_tx
-                    .send_unreliable(channel, data.as_slice())
-                    .await
-                {
-                    warn!("client_loop: send_unreliable error {:?}", err);
-                    let _ = self_tx_local.send(SelfEvent::Exit);
-                    return;
-                }
+    let _usend_task = async_ext::spawn_scoped(async move {
+        while let Some((channel, data)) = unreliable_loop_rx.recv().await {
+            if let Err(err) = unreliable_tx
+                .send_unreliable(channel, data.as_slice())
+                .await
+            {
+                warn!("client_loop: send_unreliable error {:?}", err);
+                let _ = self_tx_local.send(SelfEvent::Exit);
+                return;
             }
-        })
-        .detach();
+        }
+    });
 
     let (reliable_loop_tx, mut reliable_loop_rx) =
         local_channel::mpsc::channel::<(Channel, SendData)>();
-    local
-        .rt
-        .spawn(async move {
-            while let Some((channel, data)) = reliable_loop_rx.recv().await {
-                match (async { Ok(reliable_tx.send_reliable(channel, data.as_slice()).await) })
-                    .or(async {
-                        Timer::after(CLIENT_CONNECTION_TIMEOUT).await;
-                        Err(())
-                    })
-                    .await
-                {
-                    Err(_) => {
-                        warn!("client_loop: send_reliable timeout {:?}", player);
-                        let _ = self_tx.send(SelfEvent::Exit);
-                        return;
-                    },
-                    Ok(Err(err)) => {
-                        warn!("client_loop: send_reliable error {:?}", err);
-                        let _ = self_tx.send(SelfEvent::Exit);
-                        return;
-                    },
-                    Ok(Ok(())) => {},
-                }
+    let _rsend_task = async_ext::spawn_scoped(async move {
+        while let Some((channel, data)) = reliable_loop_rx.recv().await {
+            match time::timeout(
+                CLIENT_CONNECTION_TIMEOUT,
+                reliable_tx.send_reliable(channel, data.as_slice()),
+            )
+            .await
+            .map_err(|_| ())
+            {
+                Err(_) => {
+                    warn!("client_loop: send_reliable timeout {:?}", player);
+                    let _ = self_tx.send(SelfEvent::Exit);
+                    return;
+                },
+                Ok(Err(err)) => {
+                    warn!("client_loop: send_reliable error {:?}", err);
+                    let _ = self_tx.send(SelfEvent::Exit);
+                    return;
+                },
+                Ok(Ok(())) => {},
             }
-        })
-        .detach();
+        }
+    });
 
     let init_data_response = match request {
         InitRequest::Login => {
@@ -438,20 +424,22 @@ pub async fn run(
         server_rx
             .map(LoopEvent::ServerLoop)
             .or_ff(stream::unfold(rx, |mut rx| {
-                (async move {
-                    match rx.recv().await {
-                        Ok((channel, data)) => Some((LoopEvent::PeerMessage { channel, data }, rx)),
-                        Err(err) => {
-                            warn!("client_loop: connection interrupted: {:?}", err);
-                            None
-                        },
-                    }
-                })
-                .or(async {
-                    Timer::after(CLIENT_CONNECTION_TIMEOUT).await;
-                    warn!("client_loop: connection timeout");
-                    None
-                })
+                async move {
+                    time::timeout(CLIENT_CONNECTION_TIMEOUT, async move {
+                        match rx.recv().await {
+                            Ok((channel, data)) => {
+                                Some((LoopEvent::PeerMessage { channel, data }, rx))
+                            },
+                            Err(err) => {
+                                warn!("client_loop: connection interrupted: {:?}", err);
+                                None
+                            },
+                        }
+                    })
+                    .await
+                    .ok()
+                    .flatten()
+                }
             }))
             .or_ff(self_rx.map(LoopEvent::SelfEvent)),
     );

@@ -42,22 +42,27 @@ use crate::{
     CONNECTION_TIMEOUT,
 };
 use anyhow::Result;
-use async_executor::LocalExecutor;
-use async_io::Timer;
-use futures_lite::{
-    future::FutureExt,
-    stream::StreamExt,
+use futures_lite::stream::{
+    self,
+    StreamExt,
 };
 use log::error;
 use std::{
     io::ErrorKind as StdIoErrorKind,
-    rc::Rc,
     time::{
         Duration,
         Instant,
     },
 };
+use tokio::time::{
+    self,
+    MissedTickBehavior,
+};
 use voxbrix_common::{
+    async_ext::{
+        self,
+        StreamExt as _,
+    },
     component::{
         actor::{
             orientation::Orientation,
@@ -97,7 +102,6 @@ use voxbrix_common::{
         server::ServerAccept,
     },
     pack::PackZip,
-    stream::StreamExt as _,
     system::{
         block_class_loading::BlockClassLoadingSystem,
         sky_light::SkyLightSystem,
@@ -131,14 +135,13 @@ pub struct GameSceneParameters {
     pub player_ticket_radius: i32,
 }
 
-pub struct GameScene<'a> {
-    pub rt: Rc<LocalExecutor<'a>>,
+pub struct GameScene {
     pub window_handle: &'static WindowHandle,
     pub render_handle: &'static RenderHandle,
     pub parameters: GameSceneParameters,
 }
 
-impl GameScene<'_> {
+impl GameScene {
     pub async fn run(self) -> Result<SceneSwitch> {
         let (reliable_tx, mut reliable_rx) = local_channel::mpsc::channel::<ServerAccept>();
         let (unreliable_tx, mut unreliable_rx) = local_channel::mpsc::channel::<ServerAccept>();
@@ -156,49 +159,49 @@ impl GameScene<'_> {
 
         let (mut unreliable, mut reliable) = tx.split();
 
-        self.rt
-            .spawn(async move {
-                let mut send_buf = Vec::new();
+        let _send_unrel_task = async_ext::spawn_scoped(async move {
+            let mut send_buf = Vec::new();
 
-                while let Some(msg) = unreliable_rx.recv().await {
-                    msg.pack(&mut send_buf);
+            while let Some(msg) = unreliable_rx.recv().await {
+                msg.pack(&mut send_buf);
 
-                    unreliable
-                        .send_unreliable(0, &send_buf)
-                        .await
-                        .expect("message sent");
-                }
-            })
-            .detach();
+                unreliable
+                    .send_unreliable(0, &send_buf)
+                    .await
+                    .expect("message sent");
+            }
+        });
 
         let event_tx_network = event_tx.clone();
 
-        self.rt
-            .spawn(async move {
-                let mut send_buf = Vec::new();
+        let _send_rel_task = async_ext::spawn_scoped(async move {
+            let mut send_buf = Vec::new();
 
-                while let Some(msg) = reliable_rx.recv().await {
-                    msg.pack(&mut send_buf);
+            while let Some(msg) = reliable_rx.recv().await {
+                msg.pack(&mut send_buf);
 
-                    if let Err(err) = reliable
-                        .send_reliable(0, &send_buf)
-                        .or(async {
-                            Timer::after(CONNECTION_TIMEOUT).await;
-                            Err(ClientError::Io(StdIoErrorKind::TimedOut.into()))
-                        })
+                // https://github.com/rust-lang/rust/issues/70142
+                let result =
+                    match time::timeout(CONNECTION_TIMEOUT, reliable.send_reliable(0, &send_buf))
                         .await
+                        .map_err(|_| ClientError::Io(StdIoErrorKind::TimedOut.into()))
                     {
-                        let _ = event_tx_network.send(Event::NetworkInput(Err(err)));
-                        break;
-                    }
+                        Ok(Ok(ok)) => Ok(ok),
+                        Ok(Err(err)) => Err(err),
+                        Err(err) => Err(err),
+                    };
+
+                if let Err(err) = result {
+                    let _ = event_tx_network.send(Event::NetworkInput(Err(err)));
+                    break;
                 }
-            })
-            .detach();
+            }
+        });
 
         let event_tx_network = event_tx.clone();
 
         // Should be dropped when the loop ends
-        let _recv_task = self.rt.spawn(async move {
+        let _recv_task = async_ext::spawn_scoped(async move {
             loop {
                 let data = match rx.recv().await {
                     Ok((_channel, data)) => data,
@@ -384,17 +387,22 @@ impl GameScene<'_> {
         .await;
 
         let render_ready = render_system.get_readiness_stream();
+        let mut send_status_interval = time::interval(Duration::from_millis(50));
+        send_status_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
-        let mut stream = Timer::interval(Duration::from_millis(50))
-            .map(|_| Event::SendPosition)
-            .or_ff(self.window_handle.event_rx.stream().map(Event::Input))
-            .or_ff(
-                render_ready
-                    .stream()
-                    // Timer::interval(Duration::from_millis(15))
-                    .map(|_| Event::Process)
-                    .rr_ff(event_rx),
-            );
+        let mut stream = stream::poll_fn(|cx| {
+            send_status_interval
+                .poll_tick(cx)
+                .map(|_| Some(Event::SendPosition))
+        })
+        .or_ff(self.window_handle.event_rx.stream().map(Event::Input))
+        .or_ff(
+            render_ready
+                .stream()
+                // Timer::interval(Duration::from_millis(15))
+                .map(|_| Event::Process)
+                .rr_ff(event_rx),
+        );
 
         while let Some(event) = stream.next().await {
             match event {
