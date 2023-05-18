@@ -14,7 +14,7 @@ edition = "2021"
 [workspace.dependencies]
 tokio = "1"
 rayon = "1.7"
-futures-lite = "1.13"
+futures-lite = { version = "1.13", default-features = false }
 flume = { version = "0.10", default-features = false, features = ["async"] }
 serde = { version = "1.0", default-features = false, features = ["std", "derive"] } 
 serde-big-array = "0.5"
