@@ -122,7 +122,7 @@ use winit::event::{
 };
 
 pub enum Event {
-    Process,
+    Process(wgpu::SurfaceTexture),
     SendPosition,
     Input(InputEvent),
     NetworkInput(Result<ClientAccept, ClientError>),
@@ -386,7 +386,7 @@ impl GameScene {
         .build()
         .await;
 
-        let render_ready = render_system.get_readiness_stream();
+        let surface_stream = render_system.get_surface_stream();
         let mut send_status_interval = time::interval(Duration::from_millis(50));
         send_status_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
@@ -397,18 +397,19 @@ impl GameScene {
         })
         .or_ff(self.window_handle.event_rx.stream().map(Event::Input))
         .or_ff(
-            render_ready
+            surface_stream
                 .stream()
                 // Timer::interval(Duration::from_millis(15))
-                .map(|_| Event::Process)
+                .map(|surface| Event::Process(surface))
                 .rr_ff(event_rx),
         );
 
         while let Some(event) = stream.next().await {
             match event {
-                Event::Process => {
-                    let elapsed = last_render_time.elapsed();
-                    last_render_time = Instant::now();
+                Event::Process(surface) => {
+                    let now = Instant::now();
+                    let elapsed = now.saturating_duration_since(last_render_time);
+                    last_render_time = now;
 
                     // TODO consider what should really be unblocked?
                     position_system.process(
@@ -454,8 +455,7 @@ impl GameScene {
                     );
 
                     unblock!((render_system, block_render_system, actor_render_system) {
-                        render_system.start_render()
-                            .expect("start render process");
+                        render_system.start_render(surface);
 
                         let mut renderers = render_system.get_renderers::<2>().into_iter();
 

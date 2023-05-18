@@ -7,7 +7,6 @@ use crate::{
     window::WindowHandle,
     RenderHandle,
 };
-use anyhow::Result;
 use arrayvec::ArrayVec;
 use camera::{
     Camera,
@@ -107,7 +106,12 @@ impl<'a> RenderSystemDescriptor<'a> {
             orientation_ac,
         );
 
-        let output_thread = OutputThread::new(render_handle, window_handle, config);
+        let output_thread = OutputThread::new(
+            render_handle,
+            window_handle,
+            config,
+            Some(std::time::Duration::from_millis(50)),
+        );
 
         let depth_texture_size = wgpu::Extent3d {
             width: surface_size.width,
@@ -189,8 +193,8 @@ impl RenderSystem {
         }
     }
 
-    pub fn get_readiness_stream(&self) -> Receiver<()> {
-        self.output_thread.get_readiness_stream()
+    pub fn get_surface_stream(&self) -> Receiver<wgpu::SurfaceTexture> {
+        self.output_thread.get_surface_stream()
     }
 
     pub fn update(
@@ -202,8 +206,7 @@ impl RenderSystem {
             .update(&self.render_handle.queue, position_ac, orientation_ac);
     }
 
-    pub fn start_render(&mut self) -> Result<(), ()> {
-        let output = self.output_thread.take_output().ok_or(())?;
+    pub fn start_render(&mut self, output: wgpu::SurfaceTexture) {
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -217,8 +220,6 @@ impl RenderSystem {
         }
 
         self.process = Some(RenderProcess { output, view });
-
-        Ok(())
     }
 
     /// Returned renderer requires that the camera uniform buffer

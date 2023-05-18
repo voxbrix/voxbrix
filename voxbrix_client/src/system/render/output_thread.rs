@@ -2,6 +2,7 @@ use crate::{
     window::WindowHandle,
     RenderHandle,
 };
+use bitmask::bitmask;
 use flume::{
     Receiver,
     Sender,
@@ -10,57 +11,92 @@ use parking_lot::Mutex;
 use std::{
     sync::Arc,
     thread,
+    time::{
+        Duration,
+        Instant,
+    },
 };
 
-struct SurfaceConfig {
-    config: wgpu::SurfaceConfiguration,
-    needs_reconfig: bool,
+bitmask! {
+    pub mask Actions: u8 where flags Action {
+        UpdateSurfaceConfig = 0b00000001,
+        UpdateTimePerFrame = 0b00000010,
+    }
+}
+
+struct Submission {
+    present: wgpu::SurfaceTexture,
+    actions: Actions,
 }
 
 struct Shared {
-    new_output: Mutex<Option<wgpu::SurfaceTexture>>,
-    surface_config: Mutex<SurfaceConfig>,
+    surface_config: wgpu::SurfaceConfiguration,
+    time_per_frame: Option<Duration>,
 }
 
 pub struct OutputThread {
-    shared: Arc<Shared>,
-    output_tx: Sender<Option<wgpu::SurfaceTexture>>,
-    done_rx: Receiver<()>,
+    shared: Arc<Mutex<Shared>>,
+    actions: Actions,
+    submit_tx: Sender<Submission>,
+    request_rx: Receiver<wgpu::SurfaceTexture>,
 }
 
 impl OutputThread {
     pub fn new(
         render_handle: &'static RenderHandle,
         window_handle: &'static WindowHandle,
-        config: wgpu::SurfaceConfiguration,
+        surface_config: wgpu::SurfaceConfiguration,
+        mut time_per_frame: Option<Duration>,
     ) -> Self {
-        let (output_tx, output_rx) = flume::bounded::<Option<wgpu::SurfaceTexture>>(1);
-        let (done_tx, done_rx) = flume::bounded::<()>(1);
-        let shared = Arc::new(Shared {
-            new_output: Mutex::new(None),
-            surface_config: Mutex::new(SurfaceConfig {
-                config,
-                needs_reconfig: false,
-            }),
-        });
+        let (submit_tx, submit_rx) = flume::bounded::<Submission>(1);
+        let (request_tx, request_rx) = flume::bounded::<wgpu::SurfaceTexture>(1);
+        let shared = Arc::new(Mutex::new(Shared {
+            surface_config,
+            time_per_frame,
+        }));
 
         let shared_ref = shared.clone();
 
         thread::spawn(move || {
-            while let Ok(output) = output_rx.recv() {
-                if let Some(output) = output {
-                    output.present();
-                }
+            let mut last_render = Instant::now();
 
-                {
-                    let mut surface_config = shared_ref.surface_config.lock();
+            window_handle
+                .surface
+                .configure(&render_handle.device, &shared_ref.lock().surface_config);
 
-                    if surface_config.needs_reconfig {
+            let new_output = window_handle
+                .surface
+                .get_current_texture()
+                .expect("unable to acquire next output texture");
+
+            let _ = request_tx.try_send(new_output);
+
+            while let Ok(Submission { present, actions }) = submit_rx.recv() {
+                present.present();
+
+                if !actions.is_none() {
+                    let shared = shared_ref.lock();
+
+                    if actions.contains(Action::UpdateSurfaceConfig) {
                         window_handle
                             .surface
-                            .configure(&render_handle.device, &surface_config.config);
+                            .configure(&render_handle.device, &shared.surface_config);
+                    }
 
-                        surface_config.needs_reconfig = false;
+                    if actions.contains(Action::UpdateTimePerFrame) {
+                        time_per_frame = shared.time_per_frame;
+                    }
+                }
+
+                if let Some(time_per_frame) = time_per_frame {
+                    let now = Instant::now();
+                    let elapsed = now.saturating_duration_since(last_render);
+
+                    if let Some(to_wait) = time_per_frame.checked_sub(elapsed) {
+                        last_render = last_render + time_per_frame;
+                        thread::sleep(to_wait);
+                    } else {
+                        last_render = now;
                     }
                 }
 
@@ -68,43 +104,46 @@ impl OutputThread {
                     .surface
                     .get_current_texture()
                     .expect("unable to acquire next output texture");
-                let mut new_output_ref = shared_ref.new_output.lock();
-                *new_output_ref = Some(new_output);
-                let _ = done_tx.try_send(());
+
+                let _ = request_tx.try_send(new_output);
             }
         });
 
-        output_tx.try_send(None).expect("unable to request output");
-
         Self {
             shared,
-            output_tx,
-            done_rx,
+            actions: Actions::none(),
+            submit_tx,
+            request_rx,
         }
     }
 
-    pub fn take_output(&self) -> Option<wgpu::SurfaceTexture> {
-        self.shared.new_output.lock().take()
-    }
-
-    pub fn present_output(&self, output: wgpu::SurfaceTexture) {
-        self.output_tx
-            .try_send(Some(output))
+    pub fn present_output(&mut self, output: wgpu::SurfaceTexture) {
+        self.submit_tx
+            .try_send(Submission {
+                present: output,
+                actions: self.actions,
+            })
             .expect("unable to present output");
+
+        self.actions = Actions::none();
     }
 
-    pub fn get_readiness_stream(&self) -> Receiver<()> {
-        self.done_rx.clone()
+    pub fn get_surface_stream(&self) -> Receiver<wgpu::SurfaceTexture> {
+        self.request_rx.clone()
     }
 
-    pub fn configure_surface<F>(&self, mut config: F)
+    pub fn configure_surface<F>(&mut self, mut config: F)
     where
         F: FnMut(&mut wgpu::SurfaceConfiguration),
     {
-        let mut surface_config = self.shared.surface_config.lock();
+        config(&mut self.shared.lock().surface_config);
 
-        config(&mut surface_config.config);
+        self.actions.set(Action::UpdateSurfaceConfig);
+    }
 
-        surface_config.needs_reconfig = true;
+    pub fn set_time_per_frame(&mut self, t: Option<Duration>) {
+        self.shared.lock().time_per_frame = t;
+
+        self.actions.set(Action::UpdateTimePerFrame);
     }
 }
