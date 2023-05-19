@@ -339,6 +339,12 @@ impl StreamSender {
         self.reliable.send_reliable(channel, data).await
     }
 
+    /// Wait for all transmitted data to be delivered.
+    /// Resends lost messages periodically internally.
+    pub async fn wait_complete(&mut self) -> Result<(), Error> {
+        self.reliable.wait_complete().await
+    }
+
     /// Split the `StreamSender` into `StreamUnreliableSender` and `StreamReliableSender` halves.
     pub fn split(self) -> (StreamUnreliableSender, StreamReliableSender) {
         let Self {
@@ -488,6 +494,98 @@ impl StreamReliableSender {
         buffer.finish(0, stop)
     }
 
+    async fn handle_acks_resend(&mut self, mut must_wait: bool) -> Result<(), Error> {
+        loop {
+            // Handling previous ACKs first
+            let result = if must_wait {
+                must_wait = false;
+
+                // TODO timeout retry limit?
+                let result = match time::timeout(RELIABLE_RESEND_AFTER, {
+                    #[cfg(feature = "single")]
+                    {
+                        self.ack_receiver.recv()
+                    }
+                    #[cfg(feature = "multi")]
+                    {
+                        self.ack_receiver.recv_async()
+                    }
+                })
+                .await
+                {
+                    Ok(r) => r,
+                    Err(_) => continue,
+                };
+
+                Some(result.ok_or(Error::ServerWasDropped)?)
+            } else {
+                #[cfg(feature = "single")]
+                {
+                    self.ack_receiver.try_recv()
+                }
+                #[cfg(feature = "multi")]
+                {
+                    self.ack_receiver.try_recv().ok()
+                }
+            };
+
+            let InBuffer {
+                packet_type: _,
+                mut buffer,
+                tag_start,
+                stop,
+            } = match result {
+                Some(p) => p,
+                None => break,
+            };
+
+            let decrypted_start = match crate::decode_in_buffer(
+                &mut buffer.as_mut()[.. stop],
+                tag_start,
+                &self.shared.cipher,
+            ) {
+                Ok(s) => s,
+                Err(()) => continue,
+            };
+
+            let mut read_cursor = Cursor::new(&buffer.as_ref()[decrypted_start .. stop]);
+            let ack: Sequence = seek_read!(read_cursor.read_varint(), "sequence");
+
+            let index = ack.wrapping_sub(self.queue_front_sequence);
+
+            if index < RELIABLE_QUEUE_LENGTH {
+                if let Some(queue_entry) = self.queue.get_mut(index as usize) {
+                    *queue_entry = PacketState::Done;
+                }
+            }
+        }
+
+        // Getting rid of confirmed packets
+        while matches!(self.queue.front(), Some(PacketState::Done)) {
+            self.queue.pop_front();
+            self.queue_front_sequence = self.queue_front_sequence.wrapping_add(1);
+        }
+
+        let mut queue = mem::take(&mut self.queue);
+
+        // Lazily resending lost packages
+        for (sent_at, buffer) in queue.iter_mut().filter_map(|entry| {
+            match entry {
+                PacketState::Pending { sent_at, buffer } => Some((sent_at, buffer)),
+                PacketState::Done => None,
+            }
+        }) {
+            if sent_at.elapsed() > RELIABLE_RESEND_AFTER {
+                self.send_buffer(buffer.clone()).await?;
+                *sent_at = Instant::now();
+            }
+        }
+
+        self.queue = queue;
+
+        Ok(())
+    }
+
     async fn send_reliable_one(
         &mut self,
         channel: Channel,
@@ -496,93 +594,8 @@ impl StreamReliableSender {
     ) -> Result<(), Error> {
         let mut must_wait = false;
         loop {
-            loop {
-                // Handling previous ACKs first
-                let result = if must_wait {
-                    must_wait = false;
-
-                    // TODO timeout retry limit?
-                    let result = match time::timeout(RELIABLE_RESEND_AFTER, {
-                        #[cfg(feature = "single")]
-                        {
-                            self.ack_receiver.recv()
-                        }
-                        #[cfg(feature = "multi")]
-                        {
-                            self.ack_receiver.recv_async()
-                        }
-                    })
-                    .await
-                    {
-                        Ok(r) => r,
-                        Err(_) => continue,
-                    };
-
-                    Some(result.ok_or(Error::ServerWasDropped)?)
-                } else {
-                    #[cfg(feature = "single")]
-                    {
-                        self.ack_receiver.try_recv()
-                    }
-                    #[cfg(feature = "multi")]
-                    {
-                        self.ack_receiver.try_recv().ok()
-                    }
-                };
-
-                let InBuffer {
-                    packet_type: _,
-                    mut buffer,
-                    tag_start,
-                    stop,
-                } = match result {
-                    Some(p) => p,
-                    None => break,
-                };
-
-                let decrypted_start = match crate::decode_in_buffer(
-                    &mut buffer.as_mut()[.. stop],
-                    tag_start,
-                    &self.shared.cipher,
-                ) {
-                    Ok(s) => s,
-                    Err(()) => continue,
-                };
-
-                let mut read_cursor = Cursor::new(&buffer.as_ref()[decrypted_start .. stop]);
-                let ack: Sequence = seek_read!(read_cursor.read_varint(), "sequence");
-
-                let index = ack.wrapping_sub(self.queue_front_sequence);
-
-                if index < RELIABLE_QUEUE_LENGTH {
-                    if let Some(queue_entry) = self.queue.get_mut(index as usize) {
-                        *queue_entry = PacketState::Done;
-                    }
-                }
-            }
-
-            // Getting rid of confirmed packets
-            while matches!(self.queue.front(), Some(PacketState::Done)) {
-                self.queue.pop_front();
-                self.queue_front_sequence = self.queue_front_sequence.wrapping_add(1);
-            }
-
-            let mut queue = mem::take(&mut self.queue);
-
-            // Lazily resending lost packages
-            for (sent_at, buffer) in queue.iter_mut().filter_map(|entry| {
-                match entry {
-                    PacketState::Pending { sent_at, buffer } => Some((sent_at, buffer)),
-                    PacketState::Done => None,
-                }
-            }) {
-                if sent_at.elapsed() > RELIABLE_RESEND_AFTER {
-                    self.send_buffer(buffer.clone()).await?;
-                    *sent_at = Instant::now();
-                }
-            }
-
-            self.queue = queue;
+            self.handle_acks_resend(mem::replace(&mut must_wait, false))
+                .await?;
 
             if matches!(self.queue.front(), Some(PacketState::Pending { .. }))
                 && self.queue.len() >= RELIABLE_QUEUE_LENGTH as usize
@@ -621,6 +634,16 @@ impl StreamReliableSender {
 
         self.send_reliable_one(channel, &data[start ..], Type::RELIABLE)
             .await?;
+
+        Ok(())
+    }
+
+    /// Wait for all transmitted data to be delivered.
+    /// Resends lost messages periodically internally.
+    pub async fn wait_complete(&mut self) -> Result<(), Error> {
+        while !self.queue.is_empty() {
+            self.handle_acks_resend(true).await?;
+        }
 
         Ok(())
     }

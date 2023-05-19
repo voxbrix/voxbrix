@@ -39,9 +39,15 @@ use std::{
     iter,
     time::Duration,
 };
-use tokio::time::{
-    self,
-    MissedTickBehavior,
+use tokio::{
+    task::{
+        self,
+        JoinHandle,
+    },
+    time::{
+        self,
+        MissedTickBehavior,
+    },
 };
 use voxbrix_common::{
     async_ext::StreamExt as _,
@@ -77,7 +83,6 @@ enum ActionType {
 enum Event {
     Process,
     Input(InputEvent),
-    Submit,
 }
 
 fn set_ui_scale(scale: f32, sd: &mut ScreenDescriptor, ctx: &Context, state: &mut State) {
@@ -145,8 +150,6 @@ impl MenuScene {
 
         set_ui_scale(2.0, &mut screen_descriptor, &ctx, &mut state);
 
-        let (event_tx, event_rx) = local_channel::mpsc::channel();
-
         let mut send_status_interval = time::interval(Duration::from_millis(15));
         send_status_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
@@ -155,8 +158,7 @@ impl MenuScene {
                 .poll_tick(cx)
                 .map(|_| Some(Event::Process))
         })
-        .or_ff(self.window_handle.event_rx.stream().map(Event::Input))
-        .or_ff(event_rx);
+        .or_ff(self.window_handle.event_rx.stream().map(Event::Input));
 
         let mut error_message = String::new();
 
@@ -172,6 +174,8 @@ impl MenuScene {
 
         let mut form = prev_form.clone();
 
+        let mut connect_task: Option<JoinHandle<Result<SceneSwitch, String>>> = None;
+
         while let Some(event) = stream.next().await {
             if prev_form != form {
                 error_message.clear();
@@ -179,6 +183,19 @@ impl MenuScene {
             }
             match event {
                 Event::Process => {
+                    if let Some(ct) = connect_task.as_ref() {
+                        if ct.is_finished() {
+                            match connect_task.take().unwrap().await.unwrap() {
+                                Ok(scene_switch) => {
+                                    return Ok(scene_switch);
+                                },
+                                Err(err) => {
+                                    error_message = err;
+                                },
+                            }
+                        }
+                    }
+
                     let input = state.take_egui_input(&self.window_handle.window);
                     let full_output = ctx.run(input, |ctx| {
                         CentralPanel::default().show(&ctx, |ui| {
@@ -195,8 +212,33 @@ impl MenuScene {
                                 ui.text_edit_singleline(&mut form.password_confirmation);
                             }
                             ui.add_space(16.0);
-                            if ui.button("Submit").clicked() {
-                                event_tx.send(Event::Submit).unwrap();
+                            if ui.button("Submit").clicked() && connect_task.is_none() {
+                                form.action = match is_registration {
+                                    false => ActionType::Login,
+                                    true => ActionType::Registration,
+                                };
+
+                                let form = form.clone();
+
+                                connect_task = Some(task::spawn_local(async move {
+                                    form.connect()
+                                        .await
+                                        .map(|(tx, rx, init_data)| {
+                                            let InitData {
+                                                actor,
+                                                player_ticket_radius,
+                                            } = init_data;
+
+                                            SceneSwitch::Game {
+                                                parameters: GameSceneParameters {
+                                                    connection: (tx, rx),
+                                                    player_actor: actor,
+                                                    player_ticket_radius,
+                                                },
+                                            }
+                                        })
+                                        .map_err(|msg| msg.to_owned())
+                                }));
                             }
                             ui.add_space(16.0);
                             ui.checkbox(&mut is_registration, "Registration");
@@ -301,37 +343,44 @@ impl MenuScene {
                         }
                     }
                 },
-                Event::Submit => {
-                    form.action = match is_registration {
-                        false => ActionType::Login,
-                        true => ActionType::Registration,
-                    };
-
-                    match form.connect().await {
-                        Ok((tx, rx, init_data)) => {
-                            let InitData {
-                                actor,
-                                player_ticket_radius,
-                            } = init_data;
-
-                            return Ok(SceneSwitch::Game {
-                                parameters: GameSceneParameters {
-                                    connection: (tx, rx),
-                                    player_actor: actor,
-                                    player_ticket_radius,
-                                },
-                            });
-                        },
-                        Err(message) => {
-                            error_message = message.to_owned();
-                        },
-                    }
-                },
             }
         }
 
         Ok(SceneSwitch::Exit)
     }
+}
+
+pub async fn send_recv<R>(buf: &[u8], tx: &mut Sender, rx: &mut Receiver) -> Result<R, &'static str>
+where
+    R: Pack,
+{
+    let (send_res, recv_res) = time::timeout(CONNECTION_TIMEOUT, async {
+        future::zip(
+            async {
+                tx.send_reliable(0, &buf)
+                    .await
+                    .map_err(|_| "Unable to send initialization request")?;
+
+                tx.wait_complete()
+                    .await
+                    .map_err(|_| "Unable to send initialization request")
+            },
+            async {
+                let (_channel, bytes) = rx
+                    .recv()
+                    .await
+                    .map_err(|_| "Unable to get initialization response")?;
+                R::unpack(bytes).map_err(|_| "Unable to unpack initialization response")
+            },
+        )
+        .await
+    })
+    .await
+    .map_err(|_| "Connection timeout")?;
+
+    send_res?;
+
+    recv_res
 }
 
 #[derive(Clone, Debug)]
@@ -366,47 +415,31 @@ impl Form {
         let Connection {
             self_key,
             peer_key,
-            sender: mut tx,
-            receiver: mut rx,
-        } = Client::bind(socket)
-            .await
-            .map_err(|_| "Unable to bind socket")?
-            .connect(server)
-            .await
-            .map_err(|_| "Connection error")?;
-
-        let (_req_result, response) = time::timeout(CONNECTION_TIMEOUT, async {
-            Ok::<_, &str>(
-                future::zip(
-                    async {
-                        match self.action {
-                            ActionType::Login => InitRequest::Login.pack(&mut tx_buffer),
-                            ActionType::Registration => InitRequest::Register.pack(&mut tx_buffer),
-                        };
-
-                        tx.send_reliable(0, &tx_buffer)
-                            .await
-                            .map_err(|_| "Unable to send initialization request")
-                    },
-                    async {
-                        let (_channel, bytes) = rx
-                            .recv()
-                            .await
-                            .map_err(|_| "Unable to get initialization response")?;
-                        InitResponse::unpack(bytes)
-                            .map_err(|_| "Unable to unpack initialization response")
-                    },
-                )
-                .await,
-            )
+            mut sender,
+            mut receiver,
+        } = time::timeout(CONNECTION_TIMEOUT, async {
+            Client::bind(socket)
+                .await
+                .map_err(|_| "Unable to bind socket")?
+                .connect(server)
+                .await
+                .map_err(|_| "Connection error")
         })
         .await
         .map_err(|_| "Connection timeout")??;
 
+        let tx = &mut sender;
+        let rx = &mut receiver;
+
+        match self.action {
+            ActionType::Login => InitRequest::Login.pack(&mut tx_buffer),
+            ActionType::Registration => InitRequest::Register.pack(&mut tx_buffer),
+        };
+
         let InitResponse {
             public_key: server_key,
             key_signature,
-        } = response?;
+        } = send_recv::<InitResponse>(&tx_buffer, tx, rx).await?;
 
         let server_key = VerifyingKey::from_sec1_bytes(&server_key)
             .map_err(|_| "Server provided incorrect public key")?;
@@ -436,14 +469,24 @@ impl Form {
         let signing_key =
             SigningKey::from_bytes((&signing_key).into()).expect("signing key derive");
 
-        match self.action {
+        let init_data = match self.action {
             ActionType::Login => {
                 let signature: Signature = signing_key.sign(&self_key);
                 LoginRequest {
                     username: self.username.clone(),
                     key_signature: signature.to_bytes().into(),
                 }
-                .pack(&mut tx_buffer)
+                .pack(&mut tx_buffer);
+
+                let response = send_recv::<LoginResult>(&tx_buffer, tx, rx).await?;
+
+                match response {
+                    LoginResult::Success(data) => data,
+                    LoginResult::Failure(_) => {
+                        // TODO: display actual error
+                        return Err("Incorrect login credentials");
+                    },
+                }
             },
             ActionType::Registration => {
                 RegisterRequest {
@@ -455,52 +498,11 @@ impl Form {
                         .try_into()
                         .unwrap(),
                 }
-                .pack(&mut tx_buffer)
-            },
-        }
+                .pack(&mut tx_buffer);
 
-        let (_req_result, response_bytes) = time::timeout(CONNECTION_TIMEOUT, async {
-            Ok::<_, &str>(
-                future::zip(
-                    async {
-                        tx.send_reliable(0, &tx_buffer)
-                            .await
-                            .map_err(|_| "Unable to send initial data request")
-                    },
-                    async {
-                        let (_channel, bytes) = rx
-                            .recv()
-                            .await
-                            .map_err(|_| "Unable to get initial data response")?;
-                        Ok::<&[u8], &str>(bytes)
-                    },
-                )
-                .await,
-            )
-        })
-        .await
-        .map_err(|_| "Connection timeout")??;
+                let response = send_recv::<RegisterResult>(&tx_buffer, tx, rx).await?;
 
-        let response_bytes = response_bytes?;
-
-        let init_data = match self.action {
-            ActionType::Login => {
-                let res = LoginResult::unpack(&response_bytes)
-                    .map_err(|_| "Incorrect response format")?;
-
-                match res {
-                    LoginResult::Success(data) => data,
-                    LoginResult::Failure(_) => {
-                        // TODO: display actual error
-                        return Err("Incorrect login credentials");
-                    },
-                }
-            },
-            ActionType::Registration => {
-                let res = RegisterResult::unpack(response_bytes)
-                    .map_err(|_| "Incorrect response format")?;
-
-                match res {
+                match response {
                     RegisterResult::Success(data) => data,
                     RegisterResult::Failure(_) => {
                         // TODO: display actual error
@@ -510,6 +512,6 @@ impl Form {
             },
         };
 
-        Ok((tx, rx, init_data))
+        Ok((sender, receiver, init_data))
     }
 }
