@@ -2,7 +2,7 @@ use crate::{
     window::WindowHandle,
     RenderHandle,
 };
-use bitmask::bitmask;
+use bitflags::bitflags;
 use flume::{
     Receiver,
     Sender,
@@ -17,10 +17,11 @@ use std::{
     },
 };
 
-bitmask! {
-    pub mask Actions: u8 where flags Action {
-        UpdateSurfaceConfig = 0b00000001,
-        UpdateTimePerFrame = 0b00000010,
+bitflags! {
+    #[derive(Clone, Copy)]
+    pub struct Actions: u8 {
+        const UPDATE_SURFACE_CONFIG = 0b00000001;
+        const UPDATE_TIME_PER_FRAME = 0b00000010;
     }
 }
 
@@ -74,16 +75,16 @@ impl OutputThread {
             while let Ok(Submission { present, actions }) = submit_rx.recv() {
                 present.present();
 
-                if !actions.is_none() {
+                if !actions.is_empty() {
                     let shared = shared_ref.lock();
 
-                    if actions.contains(Action::UpdateSurfaceConfig) {
+                    if actions.contains(Actions::UPDATE_SURFACE_CONFIG) {
                         window_handle
                             .surface
                             .configure(&render_handle.device, &shared.surface_config);
                     }
 
-                    if actions.contains(Action::UpdateTimePerFrame) {
+                    if actions.contains(Actions::UPDATE_TIME_PER_FRAME) {
                         time_per_frame = shared.time_per_frame;
                     }
                 }
@@ -111,7 +112,7 @@ impl OutputThread {
 
         Self {
             shared,
-            actions: Actions::none(),
+            actions: Actions::empty(),
             submit_tx,
             request_rx,
         }
@@ -125,7 +126,7 @@ impl OutputThread {
             })
             .expect("unable to present output");
 
-        self.actions = Actions::none();
+        self.actions = Actions::empty();
     }
 
     pub fn get_surface_stream(&self) -> Receiver<wgpu::SurfaceTexture> {
@@ -138,12 +139,12 @@ impl OutputThread {
     {
         config(&mut self.shared.lock().surface_config);
 
-        self.actions.set(Action::UpdateSurfaceConfig);
+        self.actions.insert(Actions::UPDATE_SURFACE_CONFIG);
     }
 
     pub fn set_time_per_frame(&mut self, t: Option<Duration>) {
         self.shared.lock().time_per_frame = t;
 
-        self.actions.set(Action::UpdateTimePerFrame);
+        self.actions.insert(Actions::UPDATE_TIME_PER_FRAME);
     }
 }

@@ -1,5 +1,5 @@
 use crate::system::render::vertex::Vertex;
-use bitmask::bitmask;
+use bitflags::bitflags;
 use serde::Deserialize;
 use voxbrix_common::{
     component::block_class::BlockClassComponent,
@@ -20,7 +20,7 @@ impl Model {
         indices: &mut Vec<u32>,
         chunk: &Chunk,
         block: [usize; 3],
-        cull_mask: CullMask,
+        cull_mask: CullFlags,
         sky_light_level: [u8; 6],
     ) {
         match self {
@@ -35,27 +35,28 @@ pub struct Cube {
     pub textures: [u32; 6],
 }
 
-bitmask! {
-    pub mask CullMask: u8 where flags CullMaskSides {
-        X0 = 0b00000001,
-        X1 = 0b00000010,
-        Y0 = 0b00000100,
-        Y1 = 0b00001000,
-        Z0 = 0b00010000,
-        Z1 = 0b00100000,
+bitflags! {
+    #[derive(Clone, Copy)]
+    pub struct CullFlags: u8 {
+        const X0 = 0b00000001;
+        const X1 = 0b00000010;
+        const Y0 = 0b00000100;
+        const Y1 = 0b00001000;
+        const Z0 = 0b00010000;
+        const Z1 = 0b00100000;
     }
 }
 
-impl CullMaskSides {
-    pub fn from_index(i: usize) -> Option<Self> {
+impl CullFlags {
+    pub fn from_index(i: usize) -> Self {
         match i {
-            0 => Some(Self::X0),
-            1 => Some(Self::X1),
-            2 => Some(Self::Y0),
-            3 => Some(Self::Y1),
-            4 => Some(Self::Z0),
-            5 => Some(Self::Z1),
-            _ => None,
+            0 => Self::X0,
+            1 => Self::X1,
+            2 => Self::Y0,
+            3 => Self::Y1,
+            4 => Self::Z0,
+            5 => Self::Z1,
+            _ => panic!("incorrect side index"),
         }
     }
 }
@@ -222,14 +223,14 @@ impl Cube {
         vertices: &mut Vec<Vertex>,
         indices: &mut Vec<u32>,
         block: [usize; 3],
-        cull_mask: CullMask,
+        cull_mask: CullFlags,
         sky_light_level: [u8; 6],
     ) {
         let x = block[0];
         let y = block[1];
         let z = block[2];
 
-        if cull_mask.contains(CullMaskSides::X0) {
+        if cull_mask.contains(CullFlags::X0) {
             // Back
             Self::add_side(
                 chunk.position,
@@ -241,7 +242,7 @@ impl Cube {
             );
         }
 
-        if cull_mask.contains(CullMaskSides::X1) {
+        if cull_mask.contains(CullFlags::X1) {
             // Forward
             Self::add_side(
                 chunk.position,
@@ -258,7 +259,7 @@ impl Cube {
             );
         }
 
-        if cull_mask.contains(CullMaskSides::Y0) {
+        if cull_mask.contains(CullFlags::Y0) {
             // Left
             Self::add_side(
                 chunk.position,
@@ -270,7 +271,7 @@ impl Cube {
             );
         }
 
-        if cull_mask.contains(CullMaskSides::Y1) {
+        if cull_mask.contains(CullFlags::Y1) {
             // Right
             Self::add_side(
                 chunk.position,
@@ -287,7 +288,7 @@ impl Cube {
             );
         }
 
-        if cull_mask.contains(CullMaskSides::Z0) {
+        if cull_mask.contains(CullFlags::Z0) {
             // Down
             Self::add_side(
                 chunk.position,
@@ -299,7 +300,7 @@ impl Cube {
             );
         }
 
-        if cull_mask.contains(CullMaskSides::Z1) {
+        if cull_mask.contains(CullFlags::Z1) {
             // Up
             Self::add_side(
                 chunk.position,

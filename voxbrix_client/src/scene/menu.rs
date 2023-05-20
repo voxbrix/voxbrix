@@ -35,6 +35,7 @@ use k256::ecdsa::{
     SigningKey,
     VerifyingKey,
 };
+use log::warn;
 use std::{
     iter,
     time::Duration,
@@ -366,11 +367,18 @@ where
                     .map_err(|_| "Unable to send initialization request")
             },
             async {
-                let (_channel, bytes) = rx
-                    .recv()
-                    .await
-                    .map_err(|_| "Unable to get initialization response")?;
-                R::unpack(bytes).map_err(|_| "Unable to unpack initialization response")
+                loop {
+                    let (_channel, bytes) = rx
+                        .recv()
+                        .await
+                        .map_err(|_| "Unable to get initialization response")?;
+
+                    if let Ok(res) = R::unpack(bytes) {
+                        return Ok(res);
+                    } else {
+                        warn!("unknown message, skipping");
+                    }
+                }
             },
         )
         .await

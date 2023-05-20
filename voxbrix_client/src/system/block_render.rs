@@ -6,8 +6,7 @@ use crate::{
         },
         model::{
             Cube,
-            CullMask,
-            CullMaskSides,
+            CullFlags,
             ModelBlockClassComponent,
         },
     },
@@ -53,16 +52,16 @@ const VERTEX_SIZE: usize = Vertex::size() as usize;
 const VERTEX_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK * 6 /*sides*/ * 4 /*vertices*/;
 const INDEX_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK * 6 /*sides*/ * 2 /*polygons*/ * 3 /*vertices*/;
 
-fn neighbors_to_cull_mask(
+fn neighbors_to_cull_flags(
     neighbors: &[Neighbor; 6],
     this_chunk: &BlocksVec<BlockClass>,
     neighbor_chunks: &[Option<&BlocksVec<BlockClass>>; 6],
     culling_bcc: &CullingBlockClassComponent,
-) -> CullMask {
-    let mut cull_mask = CullMask::all();
+) -> CullFlags {
+    let mut cull_flags = CullFlags::all();
     for (i, (neighbor, neighbor_chunk)) in neighbors.iter().zip(neighbor_chunks.iter()).enumerate()
     {
-        let side = CullMaskSides::from_index(i).expect("correct cull mask side index");
+        let side = CullFlags::from_index(i);
 
         match neighbor {
             Neighbor::ThisChunk(n) => {
@@ -70,7 +69,7 @@ fn neighbors_to_cull_mask(
                 let culling = culling_bcc.get(*class);
                 match culling {
                     Some(Culling::Full) => {
-                        cull_mask.unset(side);
+                        cull_flags.remove(side);
                     },
                     None => {},
                 }
@@ -81,18 +80,18 @@ fn neighbors_to_cull_mask(
                     let culling = culling_bcc.get(*class);
                     match culling {
                         Some(Culling::Full) => {
-                            cull_mask.unset(side);
+                            cull_flags.remove(side);
                         },
                         None => {},
                     }
                 } else {
-                    cull_mask.unset(side);
+                    cull_flags.remove(side);
                 }
             },
         }
     }
 
-    cull_mask
+    cull_flags
 }
 
 struct ChunkInfo<'a> {
@@ -312,7 +311,7 @@ impl BlockRenderSystem {
             if let Some(model) = model_bcc.get(*block_class) {
                 let neighbors = block.neighbors_in_coords(block_coords);
 
-                let cull_mask = neighbors_to_cull_mask(
+                let cull_flags = neighbors_to_cull_flags(
                     &neighbors,
                     this_chunk_class,
                     &neighbor_chunk_class,
@@ -338,7 +337,7 @@ impl BlockRenderSystem {
                     &mut index_buffer,
                     chunk,
                     block_coords,
-                    cull_mask,
+                    cull_flags,
                     sky_light_levels,
                 );
             }
@@ -477,15 +476,15 @@ impl BlockRenderSystem {
 
                 chunk_info.par_iter_mut().for_each(|chunk| {
                     let (vertex_vec, index_vec) = chunk.chunk_shard;
+                    let chunk_vertex_offset = chunk.vertex_offset as u32;
+                    let chunk_index_buffer = chunk.index_buffer.as_mut().unwrap();
 
                     let mut index_cursor = 0;
                     for index in index_vec.iter() {
-                        chunk.index_buffer.as_mut().unwrap()
-                            [index_cursor .. index_cursor + INDEX_SIZE]
-                            .copy_from_slice(bytemuck::bytes_of(
-                                &(index + chunk.vertex_offset as u32),
-                            ));
-                        index_cursor += INDEX_SIZE;
+                        let next_index_cursor = index_cursor + INDEX_SIZE;
+                        chunk_index_buffer[index_cursor .. next_index_cursor]
+                            .copy_from_slice(bytemuck::bytes_of(&(index + chunk_vertex_offset)));
+                        index_cursor = next_index_cursor;
                     }
 
                     chunk
