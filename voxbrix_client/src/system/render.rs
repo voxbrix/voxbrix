@@ -22,6 +22,7 @@ use voxbrix_common::entity::actor::Actor;
 use winit::dpi::PhysicalSize;
 
 pub mod camera;
+pub mod gpu_vec;
 pub mod output_thread;
 pub mod vertex;
 

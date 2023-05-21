@@ -32,7 +32,7 @@ struct Submission {
 
 struct Shared {
     surface_config: wgpu::SurfaceConfiguration,
-    time_per_frame: Option<Duration>,
+    frame_time: Option<Duration>,
 }
 
 pub struct OutputThread {
@@ -47,13 +47,13 @@ impl OutputThread {
         render_handle: &'static RenderHandle,
         window_handle: &'static WindowHandle,
         surface_config: wgpu::SurfaceConfiguration,
-        mut time_per_frame: Option<Duration>,
+        mut frame_time: Option<Duration>,
     ) -> Self {
         let (submit_tx, submit_rx) = flume::bounded::<Submission>(1);
         let (request_tx, request_rx) = flume::bounded::<wgpu::SurfaceTexture>(1);
         let shared = Arc::new(Mutex::new(Shared {
             surface_config,
-            time_per_frame,
+            frame_time,
         }));
 
         let shared_ref = shared.clone();
@@ -85,16 +85,16 @@ impl OutputThread {
                     }
 
                     if actions.contains(Actions::UPDATE_TIME_PER_FRAME) {
-                        time_per_frame = shared.time_per_frame;
+                        frame_time = shared.frame_time;
                     }
                 }
 
-                if let Some(time_per_frame) = time_per_frame {
+                if let Some(frame_time) = frame_time {
                     let now = Instant::now();
                     let elapsed = now.saturating_duration_since(last_render);
 
-                    if let Some(to_wait) = time_per_frame.checked_sub(elapsed) {
-                        last_render = last_render + time_per_frame;
+                    if let Some(to_wait) = frame_time.checked_sub(elapsed) {
+                        last_render = last_render + frame_time;
                         thread::sleep(to_wait);
                     } else {
                         last_render = now;
@@ -142,8 +142,8 @@ impl OutputThread {
         self.actions.insert(Actions::UPDATE_SURFACE_CONFIG);
     }
 
-    pub fn set_time_per_frame(&mut self, t: Option<Duration>) {
-        self.shared.lock().time_per_frame = t;
+    pub fn set_frame_time(&mut self, t: Option<Duration>) {
+        self.shared.lock().frame_time = t;
 
         self.actions.insert(Actions::UPDATE_TIME_PER_FRAME);
     }

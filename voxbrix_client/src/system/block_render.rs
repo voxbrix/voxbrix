@@ -11,6 +11,7 @@ use crate::{
         },
     },
     system::render::{
+        gpu_vec::GpuVec,
         vertex::Vertex,
         RenderParameters,
         Renderer,
@@ -40,10 +41,6 @@ use voxbrix_common::{
         chunk::Chunk,
     },
     math::Vec3,
-};
-use wgpu::util::{
-    BufferInitDescriptor,
-    DeviceExt,
 };
 
 const INDEX_FORMAT: wgpu::IndexFormat = wgpu::IndexFormat::Uint32;
@@ -204,21 +201,8 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
                     multiview: None,
                 });
 
-        let vertex_buffer = render_handle
-            .device
-            .create_buffer_init(&BufferInitDescriptor {
-                label: Some("Vertex Buffer"),
-                contents: bytemuck::cast_slice::<Vertex, u8>(&[]),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
-
-        let index_buffer = render_handle
-            .device
-            .create_buffer_init(&BufferInitDescriptor {
-                label: Some("Index Buffer"),
-                contents: bytemuck::cast_slice::<Vertex, u8>(&[]),
-                usage: wgpu::BufferUsages::INDEX,
-            });
+        let vertex_buffer = GpuVec::new(&render_handle.device, wgpu::BufferUsages::VERTEX);
+        let index_buffer = GpuVec::new(&render_handle.device, wgpu::BufferUsages::INDEX);
 
         // Target block hightlighting
         let target_highlight_vertex_buffer =
@@ -260,8 +244,8 @@ pub struct BlockRenderSystem {
     render_pipeline: wgpu::RenderPipeline,
     chunk_buffer_shards: BTreeMap<Chunk, (Vec<Vertex>, Vec<u32>)>,
     update_chunk_buffer: bool,
-    prepared_vertex_buffer: wgpu::Buffer,
-    prepared_index_buffer: wgpu::Buffer,
+    prepared_vertex_buffer: GpuVec,
+    prepared_index_buffer: GpuVec,
     num_indices: u32,
     block_texture_bind_group: wgpu::BindGroup,
     render_target_highlight: bool,
@@ -443,30 +427,17 @@ impl BlockRenderSystem {
             let vertex_byte_size = (vertex_size * VERTEX_SIZE) as u64;
             let index_byte_size = (index_size * INDEX_SIZE) as u64;
 
-            self.prepared_vertex_buffer =
-                self.render_handle
-                    .device
-                    .create_buffer(&wgpu::BufferDescriptor {
-                        label: Some("Vertex Buffer"),
-                        size: vertex_byte_size,
-                        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                        mapped_at_creation: true,
-                    });
-
-            self.prepared_index_buffer =
-                self.render_handle
-                    .device
-                    .create_buffer(&wgpu::BufferDescriptor {
-                        label: Some("Index Buffer"),
-                        size: index_byte_size,
-                        usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-                        mapped_at_creation: true,
-                    });
-
             if vertex_size != 0 && index_size != 0 {
-                let mut vertex_writer =
-                    self.prepared_vertex_buffer.slice(..).get_mapped_range_mut();
-                let mut index_writer = self.prepared_index_buffer.slice(..).get_mapped_range_mut();
+                let mut vertex_writer = self.prepared_vertex_buffer.get_writer(
+                    &self.render_handle.device,
+                    &self.render_handle.queue,
+                    vertex_byte_size,
+                );
+                let mut index_writer = self.prepared_index_buffer.get_writer(
+                    &self.render_handle.device,
+                    &self.render_handle.queue,
+                    index_byte_size,
+                );
 
                 slice_buffers(
                     &mut chunk_info,
@@ -495,8 +466,8 @@ impl BlockRenderSystem {
                 });
             }
 
-            self.prepared_vertex_buffer.unmap();
-            self.prepared_index_buffer.unmap();
+            self.prepared_vertex_buffer.finish();
+            self.prepared_index_buffer.finish();
 
             self.num_indices = index_size as u32;
             self.update_chunk_buffer = false;
@@ -505,9 +476,12 @@ impl BlockRenderSystem {
         let mut render_pass = renderer.with_pipeline(&mut self.render_pipeline);
 
         render_pass.set_bind_group(1, &self.block_texture_bind_group, &[]);
-        render_pass.set_vertex_buffer(0, self.prepared_vertex_buffer.slice(..));
-        render_pass.set_index_buffer(self.prepared_index_buffer.slice(..), INDEX_FORMAT);
-        render_pass.draw_indexed(0 .. self.num_indices, 0, 0 .. 1);
+
+        if !self.prepared_vertex_buffer.is_empty() && !self.prepared_index_buffer.is_empty() {
+            render_pass.set_vertex_buffer(0, self.prepared_vertex_buffer.get_slice());
+            render_pass.set_index_buffer(self.prepared_index_buffer.get_slice(), INDEX_FORMAT);
+            render_pass.draw_indexed(0 .. self.num_indices, 0, 0 .. 1);
+        }
 
         if self.render_target_highlight {
             render_pass.set_vertex_buffer(0, self.target_highlight_vertex_buffer.slice(..));
