@@ -15,7 +15,6 @@ impl<'a> AsMut<[u8]> for BufferMutSlice<'a> {
 }
 
 pub struct GpuVec {
-    usage: wgpu::BufferUsages,
     buffer: wgpu::Buffer,
     length: wgpu::BufferAddress,
     mapped: bool,
@@ -28,7 +27,6 @@ impl GpuVec {
         usage.insert(wgpu::BufferUsages::COPY_DST);
 
         Self {
-            usage,
             buffer: device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("gpu_vec_buffer"),
                 size: INIT_CAPACITY,
@@ -55,7 +53,7 @@ impl GpuVec {
             self.buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("gpu_vec_buffer"),
                 size,
-                usage: self.usage,
+                usage: self.buffer.usage(),
                 mapped_at_creation: true,
             });
             self.mapped = true;

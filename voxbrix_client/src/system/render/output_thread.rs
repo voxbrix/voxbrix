@@ -25,8 +25,13 @@ bitflags! {
     }
 }
 
+pub struct OutputBundle {
+    pub encoders: Vec<wgpu::CommandEncoder>,
+    pub output: wgpu::SurfaceTexture,
+}
+
 struct Submission {
-    present: wgpu::SurfaceTexture,
+    present: OutputBundle,
     actions: Actions,
 }
 
@@ -39,7 +44,7 @@ pub struct OutputThread {
     shared: Arc<Mutex<Shared>>,
     actions: Actions,
     submit_tx: Sender<Submission>,
-    request_rx: Receiver<wgpu::SurfaceTexture>,
+    request_rx: Receiver<OutputBundle>,
 }
 
 impl OutputThread {
@@ -50,7 +55,7 @@ impl OutputThread {
         mut frame_time: Option<Duration>,
     ) -> Self {
         let (submit_tx, submit_rx) = flume::bounded::<Submission>(1);
-        let (request_tx, request_rx) = flume::bounded::<wgpu::SurfaceTexture>(1);
+        let (request_tx, request_rx) = flume::bounded::<OutputBundle>(1);
         let shared = Arc::new(Mutex::new(Shared {
             surface_config,
             frame_time,
@@ -65,15 +70,27 @@ impl OutputThread {
                 .surface
                 .configure(&render_handle.device, &shared_ref.lock().surface_config);
 
-            let new_output = window_handle
+            let output = window_handle
                 .surface
                 .get_current_texture()
                 .expect("unable to acquire next output texture");
 
-            let _ = request_tx.try_send(new_output);
+            let _ = request_tx.try_send(OutputBundle {
+                encoders: Vec::new(),
+                output,
+            });
 
             while let Ok(Submission { present, actions }) = submit_rx.recv() {
-                present.present();
+                let OutputBundle {
+                    mut encoders,
+                    output,
+                } = present;
+
+                render_handle
+                    .queue
+                    .submit(encoders.drain(..).map(|enc| enc.finish()));
+
+                output.present();
 
                 if !actions.is_empty() {
                     let shared = shared_ref.lock();
@@ -101,12 +118,12 @@ impl OutputThread {
                     }
                 }
 
-                let new_output = window_handle
+                let output = window_handle
                     .surface
                     .get_current_texture()
                     .expect("unable to acquire next output texture");
 
-                let _ = request_tx.try_send(new_output);
+                let _ = request_tx.try_send(OutputBundle { encoders, output });
             }
         });
 
@@ -118,7 +135,7 @@ impl OutputThread {
         }
     }
 
-    pub fn present_output(&mut self, output: wgpu::SurfaceTexture) {
+    pub fn present_output(&mut self, output: OutputBundle) {
         self.submit_tx
             .try_send(Submission {
                 present: output,
@@ -129,7 +146,7 @@ impl OutputThread {
         self.actions = Actions::empty();
     }
 
-    pub fn get_surface_stream(&self) -> Receiver<wgpu::SurfaceTexture> {
+    pub fn get_surface_stream(&self) -> Receiver<OutputBundle> {
         self.request_rx.clone()
     }
 

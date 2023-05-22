@@ -30,6 +30,7 @@ use crate::{
         position::PositionSystem,
         render::{
             camera::CameraParameters,
+            output_thread::OutputBundle,
             RenderSystemDescriptor,
         },
         texture_loading::TextureLoadingSystem,
@@ -122,7 +123,7 @@ use winit::event::{
 };
 
 pub enum Event {
-    Process(wgpu::SurfaceTexture),
+    Process(OutputBundle),
     SendPosition,
     Input(InputEvent),
     NetworkInput(Result<ClientAccept, ClientError>),
@@ -628,7 +629,10 @@ impl GameScene {
                                 &mut sky_light_bc,
                             );
 
-                            for chunk in chunks_to_redraw {
+                            // The one that has actual block class changes should be drawn
+                            // first
+                            let _ = event_tx.send(Event::DrawChunk(chunk));
+                            for chunk in chunks_to_redraw.into_iter().filter(|c| *c != chunk) {
                                 let _ = event_tx.send(Event::DrawChunk(chunk));
                             }
                         },
@@ -649,7 +653,10 @@ impl GameScene {
                                     &mut sky_light_bc,
                                 );
 
-                                for chunk in chunks_to_redraw {
+                                // The one that has actual block class changes should be drawn
+                                // first
+                                let _ = event_tx.send(Event::DrawChunk(chunk));
+                                for chunk in chunks_to_redraw.into_iter().filter(|c| *c != chunk) {
                                     let _ = event_tx.send(Event::DrawChunk(chunk));
                                 }
                             }

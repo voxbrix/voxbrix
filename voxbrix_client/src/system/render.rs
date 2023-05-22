@@ -13,7 +13,10 @@ use camera::{
     CameraParameters,
 };
 use flume::Receiver;
-use output_thread::OutputThread;
+use output_thread::{
+    OutputBundle,
+    OutputThread,
+};
 use std::{
     iter,
     mem,
@@ -130,7 +133,6 @@ impl<'a> RenderSystemDescriptor<'a> {
             depth_texture_size,
             output_thread,
             process: None,
-            encoders: Vec::new(),
         }
     }
 }
@@ -164,6 +166,7 @@ pub struct RenderParameters<'a> {
 struct RenderProcess {
     output: wgpu::SurfaceTexture,
     view: wgpu::TextureView,
+    encoders: Vec<wgpu::CommandEncoder>,
 }
 
 pub struct RenderSystem {
@@ -173,7 +176,6 @@ pub struct RenderSystem {
     depth_texture_size: wgpu::Extent3d,
     output_thread: OutputThread,
     process: Option<RenderProcess>,
-    encoders: Vec<wgpu::CommandEncoder>,
 }
 
 impl RenderSystem {
@@ -194,7 +196,7 @@ impl RenderSystem {
         }
     }
 
-    pub fn get_surface_stream(&self) -> Receiver<wgpu::SurfaceTexture> {
+    pub fn get_surface_stream(&self) -> Receiver<OutputBundle> {
         self.output_thread.get_surface_stream()
     }
 
@@ -207,12 +209,13 @@ impl RenderSystem {
             .update(&self.render_handle.queue, position_ac, orientation_ac);
     }
 
-    pub fn start_render(&mut self, output: wgpu::SurfaceTexture) {
-        let view = output
+    pub fn start_render(&mut self, bundle: OutputBundle) {
+        let view = bundle
+            .output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let view_size = output.texture.size();
+        let view_size = bundle.output.texture.size();
 
         if view_size != self.depth_texture_size {
             self.depth_texture_size = view_size;
@@ -220,14 +223,23 @@ impl RenderSystem {
                 build_depth_texture_view(&self.render_handle.device, view_size);
         }
 
-        self.process = Some(RenderProcess { output, view });
+        self.process = Some(RenderProcess {
+            output: bundle.output,
+            encoders: bundle.encoders,
+            view,
+        });
     }
 
     /// Returned renderer requires that the camera uniform buffer
     /// has binding group index 0 in the corresponding shaders
     pub fn get_renderers<'a, const N: usize>(&'a mut self) -> [Renderer<'a>; N] {
-        let slice_start = self.encoders.len();
-        let mut is_first_pass = self.encoders.is_empty();
+        let process = self
+            .process
+            .as_mut()
+            .expect("render process must be started");
+
+        let slice_start = process.encoders.len();
+        let mut is_first_pass = process.encoders.is_empty();
 
         let encoders_extend = iter::repeat_with(|| {
             self.render_handle
@@ -238,14 +250,9 @@ impl RenderSystem {
         })
         .take(N);
 
-        self.encoders.extend(encoders_extend);
+        process.encoders.extend(encoders_extend);
 
-        let process = &self
-            .process
-            .as_ref()
-            .expect("render process must be started");
-
-        self.encoders[slice_start ..]
+        process.encoders[slice_start ..]
             .iter_mut()
             .map(|encoder| {
                 let is_first_pass = mem::replace(&mut is_first_pass, false);
@@ -294,16 +301,13 @@ impl RenderSystem {
     }
 
     pub fn finish_render(&mut self) {
-        self.render_handle
-            .queue
-            .submit(self.encoders.drain(..).map(|enc| enc.finish()));
+        let RenderProcess {
+            output,
+            view: _,
+            encoders,
+        } = self.process.take().expect("render process must be started");
 
-        let output = self
-            .process
-            .take()
-            .expect("render process must be started")
-            .output;
-
-        self.output_thread.present_output(output);
+        self.output_thread
+            .present_output(OutputBundle { encoders, output });
     }
 }
