@@ -1,6 +1,6 @@
 use crate::{
     entity::chunk::Chunk,
-    math::Vec3,
+    math::Vec3I32,
 };
 use serde::{
     Deserialize,
@@ -217,7 +217,7 @@ impl Block {
         });
 
         let actual_chunk = Chunk {
-            position: Vec3::new(
+            position: Vec3I32::new(
                 chunks_blocks[0].0 + chunk.position[0],
                 chunks_blocks[1].0 + chunk.position[1],
                 chunks_blocks[2].0 + chunk.position[2],

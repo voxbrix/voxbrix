@@ -1,4 +1,4 @@
-use crate::math::Vec3;
+use crate::math::Vec3I32;
 use serde::{
     Deserialize,
     Serialize,
@@ -7,7 +7,7 @@ use std::cmp::Ordering;
 
 #[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Copy, Clone, Debug)]
 pub struct Chunk {
-    pub position: Vec3<i32>,
+    pub position: Vec3I32,
     pub dimension: u32,
 }
 
@@ -53,9 +53,9 @@ impl Chunk {
         }
     }
 
-    pub fn offset(&self, offset: Vec3<i32>) -> Option<Self> {
+    pub fn offset(&self, offset: Vec3I32) -> Option<Self> {
         Some(Self {
-            position: Vec3::new(
+            position: Vec3I32::new(
                 self.position[0].checked_add(offset[0])?,
                 self.position[1].checked_add(offset[1])?,
                 self.position[2].checked_add(offset[2])?,

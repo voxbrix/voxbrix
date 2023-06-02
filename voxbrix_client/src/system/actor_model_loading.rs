@@ -3,7 +3,12 @@ use crate::{
         ActorBodyPartDescriptor,
         BodyPartActorModelComponent,
     },
+    component::actor_model::animation::{
+        ActorAnimationDescriptor,
+        AnimationActorModelComponent,
+    },
     entity::actor_model::{
+        ActorAnimation,
         ActorBodyPart,
         ActorModel,
     },
@@ -54,24 +59,34 @@ struct ActorModelDescriptor {
     texture_label: String,
     texture_grid_size: [usize; 2],
     body_parts: BTreeMap<String, ActorBodyPartDescriptor>,
+    animations: BTreeMap<String, ActorAnimationDescriptor>,
 }
 
 pub struct ActorModelLoadingSystem {
     pub model_label_map: LabelMap<ActorModel>,
     pub body_part_label_map: LabelMap<ActorBodyPart>,
+    pub animation_label_map: LabelMap<ActorAnimation>,
 }
 
 impl ActorModelLoadingSystem {
     pub async fn load_data(
         texture_label_map: &LabelMap<u32>,
         body_part_amc: &mut BodyPartActorModelComponent,
+        animation_amc: &mut AnimationActorModelComponent,
     ) -> Result<Self, Error> {
-        let (model_label_map, model_desc_map, body_part_label_map) = task::spawn_blocking(|| {
+        let (model_label_map, model_desc_map, body_part_label_map, animation_label_map) = task::spawn_blocking(|| {
             let body_part_label_map = read_ron_file::<List>(BODY_PART_LIST_PATH)?
                 .list
                 .into_iter()
                 .enumerate()
                 .map(|(i, n)| (n, ActorBodyPart(i)))
+                .collect();
+
+            let animation_label_map: LabelMap<ActorAnimation> = read_ron_file::<List>(ANIMATION_LIST_PATH)?
+                .list
+                .into_iter()
+                .enumerate()
+                .map(|(i, n)| (n, ActorAnimation(i)))
                 .collect();
 
             let model_list: List = read_ron_file(MODEL_LIST_PATH)?;
@@ -91,7 +106,7 @@ impl ActorModelLoadingSystem {
                 .into_iter()
                 .unzip();
 
-            Ok::<_, Error>((model_label_map.into(), model_desc_map, body_part_label_map))
+            Ok::<_, Error>((model_label_map.into(), model_desc_map, body_part_label_map, animation_label_map))
         })
         .await
         .unwrap()?;
@@ -129,11 +144,28 @@ impl ActorModelLoadingSystem {
 
                 body_part_amc.insert(actor_model, body_part, body_part_builder);
             }
+
+
+            for (animation_label, animation_desc) in model_desc.animations {
+                let animaton = animation_label_map.get(&animation_label).ok_or_else(|| {
+                    Error::msg(format!(
+                        "in actor model \"{}\" animation \"{}\" is not defined in {:?}",
+                        model_desc.label, &animation_label, ANIMATION_LIST_PATH
+                    ))
+                })?;
+
+                let animation_builder = animation_desc
+                    .describe(&body_part_label_map)
+                    .with_context(|| format!("in actor model \"{}\"", model_desc.label))?;
+
+                animation_amc.insert(actor_model, animaton, animation_builder);
+            }
         }
 
         Ok(Self {
             model_label_map,
             body_part_label_map,
+            animation_label_map,
         })
     }
 }

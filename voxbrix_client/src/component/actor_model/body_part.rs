@@ -9,15 +9,16 @@ use crate::{
 use anyhow::Error;
 use serde::Deserialize;
 use voxbrix_common::component::actor::position::Position;
+use voxbrix_common::math::Vec3F32;
 
-const BASE_BODY_PART: ActorBodyPart = ActorBodyPart(0);
+pub const BASE_BODY_PART: ActorBodyPart = ActorBodyPart(0);
 const VERTEX_TEXTURE_POSITION_OFFSET: f32 = 0.01;
 
 pub type BodyPartActorModelComponent = ActorModelComponent<ActorBodyPart, ActorBodyPartBuilder>;
 
 #[derive(Deserialize, Debug)]
 struct ActorBodyPartVertex {
-    position: [f32; 3],
+    position: Vec3F32,
     texture_position: [f32; 2],
 }
 
@@ -35,7 +36,7 @@ impl ActorBodyPartBuilder {
         vertices.extend(self.vertices.iter().map(|vertex| {
             Vertex {
                 chunk: position.chunk.position.into(),
-                position: (position.offset + vertex.position.into()).into(),
+                position: (position.offset + Vec3F32::from(vertex.position)).into(),
                 texture_index: self.texture,
                 texture_position: vertex.texture_position,
                 light_level: [15, 0, 0, 0],
@@ -123,7 +124,7 @@ impl ActorBodyPartDescriptor {
                 };
 
                 vertices.push(ActorBodyPartVertex {
-                    position: position.map(|pos| pos as f32 * grid_resolution),
+                    position: position.map(|pos| pos as f32 * grid_resolution).into(),
                     texture_position: [get_texture_position(0), get_texture_position(1)],
                 });
             }

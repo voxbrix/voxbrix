@@ -1,10 +1,19 @@
+use std::collections::HashMap;
 use crate::{
+    entity::actor_model::ActorBodyPart,
     component::{
         actor::{
             class::ClassActorComponent,
             position::PositionActorComponent,
+            velocity::VelocityActorComponent,
+            orientation::OrientationActorComponent,
+            animation_state::AnimationStateActorComponent,
         },
-        actor_model::body_part::BodyPartActorModelComponent,
+        actor_model::body_part::{
+            BASE_BODY_PART,
+            BodyPartActorModelComponent,
+        },
+        actor_model::animation::AnimationActorModelComponent,
     },
     system::render::{
         vertex::Vertex,
@@ -15,6 +24,12 @@ use crate::{
 };
 use anyhow::Result;
 use voxbrix_common::entity::actor::Actor;
+use voxbrix_common::math::{
+    Directions,
+    Vec3F32,
+    QuatF32,
+    Mat4F32,
+};
 use wgpu::util::DeviceExt;
 
 const INDEX_FORMAT: wgpu::IndexFormat = wgpu::IndexFormat::Uint32;
@@ -116,6 +131,7 @@ pub struct ActorRenderSystem {
     render_handle: &'static RenderHandle,
     render_pipeline: wgpu::RenderPipeline,
     actor_texture_bind_group: wgpu::BindGroup,
+    body_part_transforms: HashMap<ActorBodyPart, Mat4F32>,
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
 }
@@ -126,16 +142,53 @@ impl ActorRenderSystem {
         player_actor: Actor,
         class_ac: &ClassActorComponent,
         position_ac: &PositionActorComponent,
+        velocity_ac: &VelocityActorComponent,
+        orientation_ac: &OrientationActorComponent,
         body_part_amc: &BodyPartActorModelComponent,
+        animation_amc: &AnimationActorModelComponent,
+        animation_state_ac: &mut AnimationStateActorComponent,
     ) {
         self.vertices.clear();
         self.indices.clear();
 
-        for (_actor, _class, position) in position_ac
+        for (actor, _class, position) in position_ac
             .iter()
             .filter(|(actor, _)| *actor != player_actor)
             .filter_map(|(actor, position)| Some((actor, class_ac.get(&actor)?, position)))
         {
+            self.body_part_transforms.clear();
+
+            // TODO better walking detection
+            if velocity_ac.get(&actor).filter(|vel| vel.vector.length() > f32::EPSILON).is_some() {
+                if let Some(animation) = animation_amc
+                    .get(crate::entity::actor_model::ActorModel(0), crate::entity::actor_model::ActorAnimation(0))
+                {
+                    // TODO have a list of moving body parts per animation?
+                    for (_, body_part, body_part_builder) in
+                        body_part_amc.get_actor_model(crate::entity::actor_model::ActorModel(0))
+                    {
+                        if let Some(animation) = animation.of_body_part(&body_part) {
+
+                        }
+                    }
+                }
+            }
+
+            // TODO swimming / wallclimbing / etc.
+            if let Some(body_orient) = orientation_ac.get(&actor).and_then(|ori| {
+                let mut direction = ori.forward();
+                direction.z = 0.0;
+                let direction = direction.normalize();
+                if direction.is_nan() {
+                    return None;
+                }
+
+                Some(QuatF32::from_rotation_arc(Vec3F32::FORWARD, direction))
+            })
+            {
+                self.body_part_transforms.insert(BASE_BODY_PART, Mat4F32::from_quat(body_orient));
+            }
+
             for (_, _body_part, body_part_builder) in
                 body_part_amc.get_actor_model(crate::entity::actor_model::ActorModel(0))
             {

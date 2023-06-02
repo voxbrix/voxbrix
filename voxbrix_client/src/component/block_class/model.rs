@@ -4,7 +4,7 @@ use serde::Deserialize;
 use voxbrix_common::{
     component::block_class::BlockClassComponent,
     entity::chunk::Chunk,
-    math::Vec3,
+    math::Vec3I32,
 };
 
 pub type ModelBlockClassComponent = BlockClassComponent<Model>;
@@ -63,7 +63,7 @@ impl CullFlags {
 
 impl Cube {
     pub fn add_side_highlighting(
-        chunk: Vec3<i32>,
+        chunk: Vec3I32,
         vertices: &mut Vec<Vertex>,
         indices: &mut Vec<u32>,
         block_coords: [usize; 3],
@@ -165,7 +165,7 @@ impl Cube {
     }
 
     fn add_side(
-        chunk: Vec3<i32>,
+        chunk: Vec3I32,
         vertices: &mut Vec<Vertex>,
         indices: &mut Vec<u32>,
         positions: [[usize; 3]; 4],

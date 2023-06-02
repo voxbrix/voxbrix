@@ -1,30 +1,31 @@
 use crate::math::{
-    Quat,
-    Vec3,
+    QuatF32,
+    Vec3F32,
+    Directions
 };
 
 #[derive(Clone, Debug)]
 pub struct Orientation {
-    rotation: Quat,
+    rotation: QuatF32,
 }
 
 impl Orientation {
-    pub fn forward(&self) -> Vec3<f32> {
-        self.rotation * Vec3::FORWARD
+    pub fn forward(&self) -> Vec3F32 {
+        self.rotation * Vec3F32::FORWARD
     }
 
-    pub fn right(&self) -> Vec3<f32> {
-        self.rotation * Vec3::RIGHT
+    pub fn right(&self) -> Vec3F32 {
+        self.rotation * Vec3F32::RIGHT
     }
 
-    pub fn up(&self) -> Vec3<f32> {
-        self.rotation * Vec3::UP
+    pub fn up(&self) -> Vec3F32 {
+        self.rotation * Vec3F32::UP
     }
 
     pub fn from_yaw_pitch(yaw: f32, pitch: f32) -> Self {
         Self {
-            rotation: Quat::from_axis_angle(Vec3::UP, yaw)
-                * Quat::from_axis_angle(Vec3::LEFT, pitch),
+            rotation: QuatF32::from_axis_angle(Vec3F32::UP, yaw)
+                * QuatF32::from_axis_angle(Vec3F32::LEFT, pitch),
         }
     }
 }

@@ -40,7 +40,7 @@ use voxbrix_common::{
         block_class::BlockClass,
         chunk::Chunk,
     },
-    math::Vec3,
+    math::Vec3I32,
 };
 
 const INDEX_FORMAT: wgpu::IndexFormat = wgpu::IndexFormat::Uint32;
@@ -267,12 +267,12 @@ impl BlockRenderSystem {
         let mut index_buffer = Vec::with_capacity(INDEX_BUFFER_CAPACITY);
 
         let neighbor_chunk_ids = [
-            Vec3::new(-1, 0, 0),
-            Vec3::new(1, 0, 0),
-            Vec3::new(0, -1, 0),
-            Vec3::new(0, 1, 0),
-            Vec3::new(0, 0, -1),
-            Vec3::new(0, 0, 1),
+            Vec3I32::new(-1, 0, 0),
+            Vec3I32::new(1, 0, 0),
+            Vec3I32::new(0, -1, 0),
+            Vec3I32::new(0, 1, 0),
+            Vec3I32::new(0, 0, -1),
+            Vec3I32::new(0, 0, 1),
         ]
         .map(|offset| chunk.offset(offset));
 
@@ -343,13 +343,13 @@ impl BlockRenderSystem {
         }
 
         let par_iter = [
-            Vec3::new(0, 0, 0),
-            Vec3::new(-1, 0, 0),
-            Vec3::new(1, 0, 0),
-            Vec3::new(0, -1, 0),
-            Vec3::new(0, 1, 0),
-            Vec3::new(0, 0, -1),
-            Vec3::new(0, 0, 1),
+            Vec3I32::new(0, 0, 0),
+            Vec3I32::new(-1, 0, 0),
+            Vec3I32::new(1, 0, 0),
+            Vec3I32::new(0, -1, 0),
+            Vec3I32::new(0, 1, 0),
+            Vec3I32::new(0, 0, -1),
+            Vec3I32::new(0, 0, 1),
         ]
         .into_par_iter()
         .filter_map(|offset| {

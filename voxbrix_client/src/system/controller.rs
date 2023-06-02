@@ -12,7 +12,7 @@ use std::{
 use voxbrix_common::{
     component::actor::orientation::Orientation,
     entity::actor::Actor,
-    math::Vec3,
+    math::{Vec3F32, Directions},
 };
 use winit::event::{
     ElementState,
@@ -143,20 +143,22 @@ impl DirectControl {
         let mut forward = actor_orientation.forward();
         forward[2] = 0.0;
 
-        let direction = match forward.normalize() {
-            Some(forward) => {
-                let right = Vec3::UP.cross(forward);
+        let forward = forward.normalize();
 
-                forward * (self.move_forward - self.move_backward)
-                    + right * (self.move_right - self.move_left)
-                    + Vec3::UP * (self.move_up - self.move_down)
-            },
-            None => Vec3::UP * (self.move_up - self.move_down),
+        let direction = if forward.is_nan() {
+            Vec3F32::UP * (self.move_up - self.move_down)
+        } else {
+            let right = Vec3F32::UP.cross(forward);
+
+            forward * (self.move_forward - self.move_backward)
+                + right * (self.move_right - self.move_left)
+                + Vec3F32::UP * (self.move_up - self.move_down)
         };
 
-        actor_velocity.vector = direction
-            .normalize()
+        actor_velocity.vector = Some(direction)
+            .map(|d| d.normalize())
+            .filter(|d| !d.is_nan())
             .map(|d| d * self.speed)
-            .unwrap_or(Vec3::new(0.0, 0.0, 0.0));
+            .unwrap_or(Vec3F32::new(0.0, 0.0, 0.0));
     }
 }

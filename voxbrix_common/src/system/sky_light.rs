@@ -22,7 +22,7 @@ use crate::{
         block_class::BlockClass,
         chunk::Chunk,
     },
-    math::Vec3,
+    math::Vec3I32,
 };
 use arrayvec::ArrayVec;
 use rayon::iter::{
@@ -67,12 +67,12 @@ impl SkyLightSystem {
         let mut chunk_light = BlocksVec::new(vec![SkyLight::MIN; BLOCKS_IN_CHUNK]);
 
         let neighbor_chunk_ids = [
-            Vec3::new(-1, 0, 0),
-            Vec3::new(1, 0, 0),
-            Vec3::new(0, -1, 0),
-            Vec3::new(0, 1, 0),
-            Vec3::new(0, 0, -1),
-            Vec3::new(0, 0, 1),
+            Vec3I32::new(-1, 0, 0),
+            Vec3I32::new(1, 0, 0),
+            Vec3I32::new(0, -1, 0),
+            Vec3I32::new(0, 1, 0),
+            Vec3I32::new(0, 0, -1),
+            Vec3I32::new(0, 0, 1),
         ]
         .map(|offset| chunk.offset(offset));
 

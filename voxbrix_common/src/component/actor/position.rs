@@ -1,6 +1,6 @@
 use crate::{
     entity::chunk::Chunk,
-    math::Vec3,
+    math::Vec3F32,
 };
 use serde::{
     Deserialize,
@@ -11,12 +11,12 @@ use std::ops::Add;
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Position {
     pub chunk: Chunk,
-    pub offset: Vec3<f32>,
+    pub offset: Vec3F32,
 }
 
 #[derive(Clone, Debug)]
 pub struct LocalPosition {
-    pub vector: Vec3<f32>,
+    pub vector: Vec3F32,
 }
 
 impl Add<LocalPosition> for LocalPosition {

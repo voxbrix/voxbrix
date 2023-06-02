@@ -29,7 +29,8 @@ use voxbrix_common::{
     },
     math::{
         Round,
-        Vec3,
+        Vec3F32,
+        Vec3I32,
     },
 };
 
@@ -76,7 +77,7 @@ impl PositionSystem {
             {
                 let radius = [h_radius, h_radius, v_radius];
 
-                let calc_pass = |finish_position: Vec3<f32>, axis_set: [usize; 3]| {
+                let calc_pass = |finish_position: Vec3F32, axis_set: [usize; 3]| {
                     let [a0, a1, a2] = axis_set;
 
                     let travel_a0 = finish_position[a0] - start_position[a0];
@@ -245,11 +246,11 @@ impl PositionSystem {
                     .iter()
                     .any(|dist| dist.abs() > BLOCKS_IN_CHUNK_EDGE as f32)
                 {
-                    let chunk_diff_vec =
-                        finish_position.map(|f| f as i32 / BLOCKS_IN_CHUNK_EDGE as i32);
+                    let chunk_diff_vec: Vec3I32 =
+                        finish_position.to_array().map(|f| f as i32 / BLOCKS_IN_CHUNK_EDGE as i32).into();
 
-                    let actor_diff_vec =
-                        chunk_diff_vec.map(|i| i as f32 * BLOCKS_IN_CHUNK_EDGE as f32);
+                    let actor_diff_vec: Vec3F32 =
+                        chunk_diff_vec.to_array().map(|i| i as f32 * BLOCKS_IN_CHUNK_EDGE as f32).into();
 
                     center_chunk.position = center_chunk.position + chunk_diff_vec;
 

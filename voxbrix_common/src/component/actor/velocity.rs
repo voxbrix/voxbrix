@@ -1,6 +1,6 @@
 use crate::{
     component::actor::position::LocalPosition,
-    math::Vec3,
+    math::Vec3F32,
 };
 use serde::{
     Deserialize,
@@ -16,7 +16,7 @@ use std::{
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Velocity {
-    pub vector: Vec3<f32>,
+    pub vector: Vec3F32,
 }
 
 impl Add<Velocity> for Velocity {

@@ -94,7 +94,7 @@ use voxbrix_common::{
         block::Block,
         chunk::Chunk,
     },
-    math::Vec3,
+    math::Vec3F32,
     messages::{
         client::{
             ActorStatus,
@@ -319,13 +319,13 @@ impl GameScene {
                     position: [0, 0, 0].into(),
                     dimension: 0,
                 },
-                offset: Vec3::new(0.0, 0.0, 4.0),
+                offset: Vec3F32::new(0.0, 0.0, 4.0),
             },
         );
         velocity_ac.insert(
             player_actor,
             Velocity {
-                vector: Vec3::new(0.0, 0.0, 0.0),
+                vector: Vec3F32::new(0.0, 0.0, 0.0),
             },
         );
         orientation_ac.insert(player_actor, Orientation::from_yaw_pitch(0.0, 0.0));

@@ -16,8 +16,6 @@ lz4_flex = { workspace = true }
 arrayvec = { workspace = true }
 ron = { workspace = true }
 anyhow = { workspace = true }
+glam = { version = "0.24", features = ["serde"] }
 futures-core = { version = "0.3", default-features = false }
 pin-project-lite = "0.2"
-
-[dev-dependencies]
-nalgebra-glm = { version = "0.18", default-features = false, features = ["std"] }

@@ -5,16 +5,15 @@ use crate::component::actor::{
 use voxbrix_common::{
     entity::actor::Actor,
     math::{
-        Mat4,
-        Vec3,
+        Mat4F32,
+        Vec3F32,
+        Directions,
     },
 };
 use wgpu::util::{
     BufferInitDescriptor,
     DeviceExt,
 };
-
-const UP_VECTOR: Vec3<f32> = Vec3::new(0.0, 0.0, 1.0);
 
 #[derive(Debug)]
 enum CameraError {
@@ -31,8 +30,8 @@ pub struct CameraParameters {
 }
 
 impl CameraParameters {
-    pub fn calc_perspective(&self) -> Mat4<f32> {
-        Mat4::perspective_lh(self.aspect, self.fovy, self.near, self.far)
+    pub fn calc_perspective(&self) -> Mat4F32 {
+        Mat4F32::perspective_lh(self.fovy, self.aspect, self.near, self.far)
     }
 }
 
@@ -42,7 +41,7 @@ struct CameraUniform {
     chunk: [i32; 3],
     _padding: u32,
     view_position: [f32; 4],
-    view_projection: [[f32; 4]; 4],
+    view_projection: [f32; 16],
 }
 
 fn calc_uniform(
@@ -54,14 +53,14 @@ fn calc_uniform(
     let position = position_ac.get(actor).ok_or(CameraError::InvalidActor)?;
     let orientation = orientation_ac.get(actor).ok_or(CameraError::InvalidActor)?;
 
-    let look_to = Mat4::look_to_lh(position.offset, orientation.forward(), UP_VECTOR)
-        .ok_or(CameraError::InvalidCameraParameters)?;
+    let look_to = Mat4F32::look_to_lh(position.offset, orientation.forward(), Vec3F32::UP);
 
     Ok(CameraUniform {
         chunk: position.chunk.position.into(),
         _padding: 0,
-        view_position: position.offset.to_homogeneous(),
-        view_projection: (parameters.calc_perspective() * look_to).into(),
+        // offset converted to homogeneous
+        view_position: position.offset.extend(1.0).into(),
+        view_projection: (parameters.calc_perspective() * look_to).to_cols_array(),
     })
 }
 

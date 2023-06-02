@@ -1,7 +1,4 @@
-pub trait MinMax {
-    const MIN: Self;
-    const MAX: Self;
-}
+use voxbrix_common::math::MinMax;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
 pub struct ActorModel(pub usize);
@@ -14,7 +11,7 @@ impl MinMax for ActorAnimation {
     const MIN: Self = Self(usize::MIN);
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Hash, Debug)]
 pub struct ActorBodyPart(pub usize);
 
 impl MinMax for ActorBodyPart {
