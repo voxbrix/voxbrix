@@ -246,11 +246,15 @@ impl PositionSystem {
                     .iter()
                     .any(|dist| dist.abs() > BLOCKS_IN_CHUNK_EDGE as f32)
                 {
-                    let chunk_diff_vec: Vec3I32 =
-                        finish_position.to_array().map(|f| f as i32 / BLOCKS_IN_CHUNK_EDGE as i32).into();
+                    let chunk_diff_vec: Vec3I32 = finish_position
+                        .to_array()
+                        .map(|f| f as i32 / BLOCKS_IN_CHUNK_EDGE as i32)
+                        .into();
 
-                    let actor_diff_vec: Vec3F32 =
-                        chunk_diff_vec.to_array().map(|i| i as f32 * BLOCKS_IN_CHUNK_EDGE as f32).into();
+                    let actor_diff_vec: Vec3F32 = chunk_diff_vec
+                        .to_array()
+                        .map(|i| i as f32 * BLOCKS_IN_CHUNK_EDGE as f32)
+                        .into();
 
                     center_chunk.position = center_chunk.position + chunk_diff_vec;
 

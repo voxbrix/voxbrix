@@ -1,11 +1,13 @@
 use crate::{
-    component::actor_model::body_part::{
-        ActorBodyPartDescriptor,
-        BodyPartActorModelComponent,
-    },
-    component::actor_model::animation::{
-        ActorAnimationDescriptor,
-        AnimationActorModelComponent,
+    component::actor_model::{
+        animation::{
+            ActorAnimationDescriptor,
+            AnimationActorModelComponent,
+        },
+        body_part::{
+            ActorBodyPartDescriptor,
+            BodyPartActorModelComponent,
+        },
     },
     entity::actor_model::{
         ActorAnimation,
@@ -74,42 +76,50 @@ impl ActorModelLoadingSystem {
         body_part_amc: &mut BodyPartActorModelComponent,
         animation_amc: &mut AnimationActorModelComponent,
     ) -> Result<Self, Error> {
-        let (model_label_map, model_desc_map, body_part_label_map, animation_label_map) = task::spawn_blocking(|| {
-            let body_part_label_map = read_ron_file::<List>(BODY_PART_LIST_PATH)?
-                .list
-                .into_iter()
-                .enumerate()
-                .map(|(i, n)| (n, ActorBodyPart(i)))
-                .collect();
+        let (model_label_map, model_desc_map, body_part_label_map, animation_label_map) =
+            task::spawn_blocking(|| {
+                let body_part_label_map = read_ron_file::<List>(BODY_PART_LIST_PATH)?
+                    .list
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, n)| (n, ActorBodyPart(i)))
+                    .collect();
 
-            let animation_label_map: LabelMap<ActorAnimation> = read_ron_file::<List>(ANIMATION_LIST_PATH)?
-                .list
-                .into_iter()
-                .enumerate()
-                .map(|(i, n)| (n, ActorAnimation(i)))
-                .collect();
+                let animation_label_map: LabelMap<ActorAnimation> =
+                    read_ron_file::<List>(ANIMATION_LIST_PATH)?
+                        .list
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, n)| (n, ActorAnimation(i)))
+                        .collect();
 
-            let model_list: List = read_ron_file(MODEL_LIST_PATH)?;
+                let model_list: List = read_ron_file(MODEL_LIST_PATH)?;
 
-            let (model_label_map, model_desc_map): (BTreeMap<_, _>, BTreeMap<_, _>) = model_list
-                .list
-                .into_iter()
-                .enumerate()
-                .map(|(actor_model, actor_model_label)| {
-                    let actor_model = ActorModel(actor_model);
-                    let file_name = format!("{}.ron", actor_model_label);
-                    let model_desc: ActorModelDescriptor =
-                        read_ron_file(Path::new(MODELS_PATH).join(file_name))?;
-                    Ok(((actor_model_label, actor_model), (actor_model, model_desc)))
-                })
-                .collect::<Result<Vec<_>, Error>>()?
-                .into_iter()
-                .unzip();
+                let (model_label_map, model_desc_map): (BTreeMap<_, _>, BTreeMap<_, _>) =
+                    model_list
+                        .list
+                        .into_iter()
+                        .enumerate()
+                        .map(|(actor_model, actor_model_label)| {
+                            let actor_model = ActorModel(actor_model);
+                            let file_name = format!("{}.ron", actor_model_label);
+                            let model_desc: ActorModelDescriptor =
+                                read_ron_file(Path::new(MODELS_PATH).join(file_name))?;
+                            Ok(((actor_model_label, actor_model), (actor_model, model_desc)))
+                        })
+                        .collect::<Result<Vec<_>, Error>>()?
+                        .into_iter()
+                        .unzip();
 
-            Ok::<_, Error>((model_label_map.into(), model_desc_map, body_part_label_map, animation_label_map))
-        })
-        .await
-        .unwrap()?;
+                Ok::<_, Error>((
+                    model_label_map.into(),
+                    model_desc_map,
+                    body_part_label_map,
+                    animation_label_map,
+                ))
+            })
+            .await
+            .unwrap()?;
 
         for (actor_model, model_desc) in model_desc_map {
             let texture = texture_label_map
@@ -144,7 +154,6 @@ impl ActorModelLoadingSystem {
 
                 body_part_amc.insert(actor_model, body_part, body_part_builder);
             }
-
 
             for (animation_label, animation_desc) in model_desc.animations {
                 let animaton = animation_label_map.get(&animation_label).ok_or_else(|| {

@@ -1,10 +1,14 @@
 use crate::math::{
+    Directions,
     QuatF32,
     Vec3F32,
-    Directions
+};
+use serde::{
+    Deserialize,
+    Serialize,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Orientation {
     rotation: QuatF32,
 }

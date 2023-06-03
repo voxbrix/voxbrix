@@ -1,12 +1,16 @@
 use crate::{
     component::{
         actor::{
+            animation_state::AnimationStateActorComponent,
             class::ClassActorComponent,
             orientation::OrientationActorComponent,
             position::PositionActorComponent,
             velocity::VelocityActorComponent,
         },
-        actor_model::body_part::BodyPartActorModelComponent,
+        actor_model::{
+            animation::AnimationActorModelComponent,
+            body_part::BodyPartActorModelComponent,
+        },
         block_class::{
             culling::{
                 Culling,
@@ -300,14 +304,18 @@ impl GameScene {
         let mut position_ac = PositionActorComponent::new();
         let mut velocity_ac = VelocityActorComponent::new();
         let mut orientation_ac = OrientationActorComponent::new();
+        let mut animation_state_ac = AnimationStateActorComponent::new();
 
         let mut body_part_amc = BodyPartActorModelComponent::new();
+        let mut animation_amc = AnimationActorModelComponent::new();
         let ActorModelLoadingSystem {
+            animation_label_map,
             model_label_map,
             body_part_label_map,
         } = ActorModelLoadingSystem::load_data(
             &actor_texture_loading_system.label_map,
             &mut body_part_amc,
+            &mut animation_amc,
         )
         .await
         .expect("actor model loading");
@@ -452,7 +460,11 @@ impl GameScene {
                         player_actor,
                         &class_ac,
                         &position_ac,
+                        &velocity_ac,
+                        &orientation_ac,
                         &body_part_amc,
+                        &animation_amc,
+                        &mut animation_state_ac,
                     );
 
                     unblock!((render_system, block_render_system, actor_render_system) {
@@ -474,7 +486,12 @@ impl GameScene {
                 Event::SendPosition => {
                     let position = position_ac.get(&player_actor).unwrap().clone();
                     let velocity = velocity_ac.get(&player_actor).unwrap().clone();
-                    let _ = unreliable_tx.send(ServerAccept::PlayerMovement { position, velocity });
+                    let orientation = orientation_ac.get(&player_actor).unwrap().clone();
+                    let _ = unreliable_tx.send(ServerAccept::PlayerMovement {
+                        position,
+                        velocity,
+                        orientation,
+                    });
                 },
                 Event::Input(event) => {
                     match event {
@@ -668,12 +685,14 @@ impl GameScene {
                                     class,
                                     position,
                                     velocity,
+                                    orientation,
                                 } in status
                                 {
                                     class_ac.insert(actor, class);
                                     if actor != player_actor {
                                         position_ac.insert(actor, position);
                                         velocity_ac.insert(actor, velocity);
+                                        orientation_ac.insert(actor, orientation);
                                     }
                                 }
 

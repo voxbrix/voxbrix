@@ -1,8 +1,6 @@
-use crate::entity::actor_model::{
-    ActorModel,
-    MinMax,
-};
+use crate::entity::actor_model::ActorModel;
 use std::collections::BTreeMap;
+use voxbrix_common::math::MinMax;
 
 pub mod animation;
 pub mod body_part;

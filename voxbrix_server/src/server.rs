@@ -10,6 +10,7 @@ use crate::{
                 ChunkTicketActorComponent,
             },
             class::ClassActorComponent,
+            orientation::OrientationActorComponent,
             position::PositionActorComponent,
             velocity::VelocityActorComponent,
         },
@@ -162,6 +163,7 @@ pub async fn run(
     let mut cache_cc = CacheChunkComponent::new();
     let mut position_ac = PositionActorComponent::new();
     let mut velocity_ac = VelocityActorComponent::new();
+    let mut orientation_ac = OrientationActorComponent::new();
     let mut chunk_ticket_system = ChunkTicketSystem::new();
     let mut class_bc = ClassBlockComponent::new();
 
@@ -198,6 +200,7 @@ pub async fn run(
                         .iter()
                         .filter_map(|(actor, &class)| {
                             let position = position_ac.get(&actor)?.clone();
+                            let orientation = orientation_ac.get(&actor)?.clone();
 
                             if !chunk_radius.is_within(&position.chunk) {
                                 return None;
@@ -210,6 +213,7 @@ pub async fn run(
                                 class,
                                 position,
                                 velocity,
+                                orientation,
                             })
                         })
                         .collect();
@@ -325,7 +329,11 @@ pub async fn run(
                     };
 
                     match event {
-                        ServerAccept::PlayerMovement { position, velocity } => {
+                        ServerAccept::PlayerMovement {
+                            position,
+                            velocity,
+                            orientation,
+                        } => {
                             let actor = match actor_pc.get(&player) {
                                 Some(a) => a,
                                 None => continue,
@@ -335,6 +343,8 @@ pub async fn run(
 
                             let curr_pos = position_ac.insert(*actor, position);
                             velocity_ac.insert(*actor, velocity);
+
+                            orientation_ac.insert(*actor, orientation);
 
                             status_updates.insert(*actor);
 

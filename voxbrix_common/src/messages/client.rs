@@ -1,5 +1,6 @@
 use crate::{
     component::actor::{
+        orientation::Orientation,
         position::Position,
         velocity::Velocity,
     },
@@ -76,6 +77,7 @@ pub struct ActorStatus {
     pub class: ActorClass,
     pub position: Position,
     pub velocity: Velocity,
+    pub orientation: Orientation,
 }
 
 #[derive(Serialize, Deserialize)]

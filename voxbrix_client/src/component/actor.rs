@@ -1,6 +1,8 @@
-use voxbrix_common::entity::actor::Actor;
-use voxbrix_common::math::MinMax;
 use std::collections::BTreeMap;
+use voxbrix_common::{
+    entity::actor::Actor,
+    math::MinMax,
+};
 
 pub mod animation_state;
 pub mod class;
@@ -22,24 +24,25 @@ where
         }
     }
 
-    pub fn insert(&mut self, model: Actor, key: K, new: T) -> Option<T> {
-        self.data.insert((model, key), new)
+    pub fn insert(&mut self, actor: Actor, key: K, new: T) -> Option<T> {
+        self.data.insert((actor, key), new)
     }
 
-    pub fn get(&self, model: Actor, key: K) -> Option<&T> {
-        self.data.get(&(model, key))
+    pub fn get(&self, actor: Actor, key: K) -> Option<&T> {
+        self.data.get(&(actor, key))
     }
 
-    pub fn get_actor_model(
-        &self,
-        model: Actor,
-    ) -> impl DoubleEndedIterator<Item = (Actor, K, &T)> {
+    pub fn get_actor(&self, actor: Actor) -> impl DoubleEndedIterator<Item = (Actor, K, &T)> {
         self.data
-            .range((model, K::MIN) .. (model, K::MAX))
+            .range((actor, K::MIN) .. (actor, K::MAX))
             .map(|(&(m, k), t)| (m, k, t))
     }
 
     pub fn extend(&mut self, iter: impl Iterator<Item = (Actor, K, T)>) {
         self.data.extend(iter.map(|(m, k, t)| ((m, k), t)))
+    }
+
+    pub fn remove(&mut self, actor: Actor, key: K) -> Option<T> {
+        self.data.remove(&(actor, key))
     }
 }

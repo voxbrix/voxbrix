@@ -8,8 +8,13 @@ use crate::{
 };
 use anyhow::Error;
 use serde::Deserialize;
-use voxbrix_common::component::actor::position::Position;
-use voxbrix_common::math::Vec3F32;
+use voxbrix_common::{
+    component::actor::position::Position,
+    math::{
+        Mat4F32,
+        Vec3F32,
+    },
+};
 
 pub const BASE_BODY_PART: ActorBodyPart = ActorBodyPart(0);
 const VERTEX_TEXTURE_POSITION_OFFSET: f32 = 0.01;
@@ -25,18 +30,27 @@ struct ActorBodyPartVertex {
 pub struct ActorBodyPartBuilder {
     parent: ActorBodyPart,
     texture: u32,
+    model_scale: f32,
     vertices: Vec<ActorBodyPartVertex>,
     indices: Vec<u32>,
 }
 
 impl ActorBodyPartBuilder {
-    pub fn build(&self, position: &Position, vertices: &mut Vec<Vertex>, indices: &mut Vec<u32>) {
+    pub fn build(
+        &self,
+        position: &Position,
+        transform: &Mat4F32,
+        vertices: &mut Vec<Vertex>,
+        indices: &mut Vec<u32>,
+    ) {
         let index_offset = vertices.len() as u32;
 
         vertices.extend(self.vertices.iter().map(|vertex| {
             Vertex {
                 chunk: position.chunk.position.into(),
-                position: (position.offset + Vec3F32::from(vertex.position)).into(),
+                position: (position.offset
+                    + transform.transform_point3(vertex.position) * self.model_scale)
+                    .into(),
                 texture_index: self.texture,
                 texture_position: vertex.texture_position,
                 light_level: [15, 0, 0, 0],
@@ -44,6 +58,10 @@ impl ActorBodyPartBuilder {
         }));
 
         indices.extend(self.indices.iter().map(|i| index_offset + *i));
+    }
+
+    pub fn parent(&self) -> ActorBodyPart {
+        self.parent
     }
 }
 
@@ -109,8 +127,6 @@ impl ActorBodyPartDescriptor {
                 texture_position,
             } in side.into_iter()
             {
-                let grid_resolution = 1.0 / (ctx.grid_in_block as f32);
-
                 let get_texture_position = |axis| {
                     let grid_size = ctx.texture_grid_size[axis] as f32;
 
@@ -124,7 +140,7 @@ impl ActorBodyPartDescriptor {
                 };
 
                 vertices.push(ActorBodyPartVertex {
-                    position: position.map(|pos| pos as f32 * grid_resolution).into(),
+                    position: position.map(|pos| pos as f32).into(),
                     texture_position: [get_texture_position(0), get_texture_position(1)],
                 });
             }
@@ -135,6 +151,7 @@ impl ActorBodyPartDescriptor {
         Ok(ActorBodyPartBuilder {
             parent,
             texture: ctx.texture,
+            model_scale: 1.0 / (ctx.grid_in_block as f32),
             vertices,
             indices,
         })

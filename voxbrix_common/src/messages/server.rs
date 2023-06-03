@@ -1,5 +1,6 @@
 use crate::{
     component::actor::{
+        orientation::Orientation,
         position::Position,
         velocity::Velocity,
     },
@@ -24,6 +25,7 @@ pub enum ServerAccept {
     PlayerMovement {
         position: Position,
         velocity: Velocity,
+        orientation: Orientation,
     },
     AlterBlock {
         chunk: Chunk,

@@ -5,9 +5,9 @@ use crate::component::actor::{
 use voxbrix_common::{
     entity::actor::Actor,
     math::{
+        Directions,
         Mat4F32,
         Vec3F32,
-        Directions,
     },
 };
 use wgpu::util::{

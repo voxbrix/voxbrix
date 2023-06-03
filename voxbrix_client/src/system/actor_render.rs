@@ -1,20 +1,21 @@
-use std::collections::HashMap;
 use crate::{
-    entity::actor_model::ActorBodyPart,
     component::{
         actor::{
+            animation_state::{
+                AnimationState,
+                AnimationStateActorComponent,
+            },
             class::ClassActorComponent,
+            orientation::OrientationActorComponent,
             position::PositionActorComponent,
             velocity::VelocityActorComponent,
-            orientation::OrientationActorComponent,
-            animation_state::AnimationStateActorComponent,
         },
-        actor_model::body_part::{
-            BASE_BODY_PART,
-            BodyPartActorModelComponent,
+        actor_model::{
+            animation::AnimationActorModelComponent,
+            body_part::BodyPartActorModelComponent,
         },
-        actor_model::animation::AnimationActorModelComponent,
     },
+    entity::actor_model::ActorBodyPart,
     system::render::{
         vertex::Vertex,
         RenderParameters,
@@ -23,12 +24,18 @@ use crate::{
     RenderHandle,
 };
 use anyhow::Result;
-use voxbrix_common::entity::actor::Actor;
-use voxbrix_common::math::{
-    Directions,
-    Vec3F32,
-    QuatF32,
-    Mat4F32,
+use std::{
+    collections::HashMap,
+    time::Instant,
+};
+use voxbrix_common::{
+    entity::actor::Actor,
+    math::{
+        Directions,
+        Mat4F32,
+        QuatF32,
+        Vec3F32,
+    },
 };
 use wgpu::util::DeviceExt;
 
@@ -121,17 +128,24 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
             render_handle,
             render_pipeline,
             actor_texture_bind_group,
+            // TODO use nohash?
+            body_part_buffer: HashMap::new(),
             indices: Vec::new(),
             vertices: Vec::new(),
         }
     }
 }
 
+struct BodyPartInfo {
+    transform: Mat4F32,
+    parent: ActorBodyPart,
+}
+
 pub struct ActorRenderSystem {
     render_handle: &'static RenderHandle,
     render_pipeline: wgpu::RenderPipeline,
     actor_texture_bind_group: wgpu::BindGroup,
-    body_part_transforms: HashMap<ActorBodyPart, Mat4F32>,
+    body_part_buffer: HashMap<ActorBodyPart, BodyPartInfo>,
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
 }
@@ -156,43 +170,101 @@ impl ActorRenderSystem {
             .filter(|(actor, _)| *actor != player_actor)
             .filter_map(|(actor, position)| Some((actor, class_ac.get(&actor)?, position)))
         {
-            self.body_part_transforms.clear();
+            self.body_part_buffer.clear();
 
-            // TODO better walking detection
-            if velocity_ac.get(&actor).filter(|vel| vel.vector.length() > f32::EPSILON).is_some() {
-                if let Some(animation) = animation_amc
-                    .get(crate::entity::actor_model::ActorModel(0), crate::entity::actor_model::ActorAnimation(0))
-                {
-                    // TODO have a list of moving body parts per animation?
-                    for (_, body_part, body_part_builder) in
-                        body_part_amc.get_actor_model(crate::entity::actor_model::ActorModel(0))
-                    {
-                        if let Some(animation) = animation.of_body_part(&body_part) {
+            let actor_model = crate::entity::actor_model::ActorModel(0);
 
-                        }
-                    }
-                }
-            }
-
+            // Orientation
             // TODO swimming / wallclimbing / etc.
-            if let Some(body_orient) = orientation_ac.get(&actor).and_then(|ori| {
-                let mut direction = ori.forward();
-                direction.z = 0.0;
-                let direction = direction.normalize();
-                if direction.is_nan() {
-                    return None;
-                }
+            let base_transform = if let Some(body_orient) =
+                orientation_ac.get(&actor).and_then(|ori| {
+                    let mut direction = ori.forward();
+                    direction.z = 0.0;
+                    let direction = direction.normalize();
+                    if direction.is_nan() {
+                        return None;
+                    }
 
-                Some(QuatF32::from_rotation_arc(Vec3F32::FORWARD, direction))
-            })
-            {
-                self.body_part_transforms.insert(BASE_BODY_PART, Mat4F32::from_quat(body_orient));
-            }
+                    Some(QuatF32::from_rotation_arc(Vec3F32::FORWARD, direction))
+                }) {
+                Mat4F32::from_quat(body_orient)
+            } else {
+                Mat4F32::IDENTITY
+            };
 
-            for (_, _body_part, body_part_builder) in
+            for (_, body_part, body_part_builder) in
                 body_part_amc.get_actor_model(crate::entity::actor_model::ActorModel(0))
             {
-                body_part_builder.build(position, &mut self.vertices, &mut self.indices);
+                let mut transform = Mat4F32::IDENTITY;
+
+                // Walking animation
+                // TODO better walking detection
+                if velocity_ac
+                    .get(&actor)
+                    .filter(|vel| vel.vector.length() > f32::EPSILON)
+                    .is_some()
+                {
+                    let walking_animation = crate::entity::actor_model::ActorAnimation(0);
+                    let walking_animation_duration_ms = 1000;
+
+                    if let Some(anim_builder) = animation_amc.get(actor_model, walking_animation) {
+                        let state = match animation_state_ac.get(actor, walking_animation) {
+                            Some(s) => s,
+                            None => {
+                                // TODO have common Instant::now()
+                                animation_state_ac.insert(
+                                    actor,
+                                    walking_animation,
+                                    AnimationState {
+                                        start: Instant::now(),
+                                    },
+                                );
+                                animation_state_ac.get(actor, walking_animation).unwrap()
+                            },
+                        };
+
+                        let state = (state.start.elapsed().as_millis()
+                            % walking_animation_duration_ms)
+                            as f32
+                            / walking_animation_duration_ms as f32;
+
+                        if let Some(new_transform) = anim_builder.of_body_part(body_part, state) {
+                            transform = new_transform.to_matrix() * transform;
+                        }
+                    } else {
+                        animation_state_ac.remove(actor, walking_animation);
+                    }
+                }
+
+                self.body_part_buffer.insert(
+                    body_part,
+                    BodyPartInfo {
+                        transform,
+                        parent: body_part_builder.parent(),
+                    },
+                );
+            }
+
+            for (_, body_part, _) in
+                body_part_amc.get_actor_model(crate::entity::actor_model::ActorModel(0))
+            {
+                let &BodyPartInfo {
+                    mut transform,
+                    mut parent,
+                } = self.body_part_buffer.get(&body_part).unwrap();
+
+                while let Some(parent_info) = self.body_part_buffer.get(&parent) {
+                    transform = parent_info.transform * transform;
+                    parent = parent_info.parent;
+                }
+                transform = base_transform * transform;
+
+                body_part_amc.get(actor_model, body_part).unwrap().build(
+                    &position,
+                    &transform,
+                    &mut self.vertices,
+                    &mut self.indices,
+                );
             }
         }
     }

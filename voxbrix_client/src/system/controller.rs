@@ -12,7 +12,10 @@ use std::{
 use voxbrix_common::{
     component::actor::orientation::Orientation,
     entity::actor::Actor,
-    math::{Vec3F32, Directions},
+    math::{
+        Directions,
+        Vec3F32,
+    },
 };
 use winit::event::{
     ElementState,
