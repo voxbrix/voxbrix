@@ -15,6 +15,7 @@ serde-big-array = { workspace = true }
 lz4_flex = { workspace = true }
 arrayvec = { workspace = true }
 ron = { workspace = true }
+nohash-hasher = { workspace = true }
 anyhow = { workspace = true }
 glam = { version = "0.24", features = ["serde"] }
 futures-core = { version = "0.3", default-features = false }

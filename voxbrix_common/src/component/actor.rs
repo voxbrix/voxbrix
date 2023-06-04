@@ -2,7 +2,7 @@ use crate::{
     entity::actor::Actor,
     sparse_vec::SparseVec,
 };
-use std::collections::BTreeMap;
+use nohash_hasher::IntMap;
 
 pub mod orientation;
 pub mod position;
@@ -68,13 +68,13 @@ impl<T> ActorComponentVec<T> {
 }
 
 pub struct ActorComponentMap<T> {
-    storage: BTreeMap<Actor, T>,
+    storage: IntMap<Actor, T>,
 }
 
 impl<T> ActorComponentMap<T> {
     pub fn new() -> Self {
         Self {
-            storage: BTreeMap::new(),
+            storage: IntMap::default(),
         }
     }
 

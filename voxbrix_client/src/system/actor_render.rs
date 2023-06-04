@@ -12,7 +12,10 @@ use crate::{
         },
         actor_model::{
             animation::AnimationActorModelComponent,
-            body_part::BodyPartActorModelComponent,
+            body_part::{
+                BodyPartActorModelComponent,
+                BASE_BODY_PART,
+            },
         },
     },
     entity::actor_model::ActorBodyPart,
@@ -24,10 +27,8 @@ use crate::{
     RenderHandle,
 };
 use anyhow::Result;
-use std::{
-    collections::HashMap,
-    time::Instant,
-};
+use nohash_hasher::IntMap;
+use std::time::Instant;
 use voxbrix_common::{
     entity::actor::Actor,
     math::{
@@ -129,7 +130,7 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
             render_pipeline,
             actor_texture_bind_group,
             // TODO use nohash?
-            body_part_buffer: HashMap::new(),
+            body_part_buffer: IntMap::default(),
             indices: Vec::new(),
             vertices: Vec::new(),
         }
@@ -145,7 +146,7 @@ pub struct ActorRenderSystem {
     render_handle: &'static RenderHandle,
     render_pipeline: wgpu::RenderPipeline,
     actor_texture_bind_group: wgpu::BindGroup,
-    body_part_buffer: HashMap<ActorBodyPart, BodyPartInfo>,
+    body_part_buffer: IntMap<ActorBodyPart, BodyPartInfo>,
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
 }
@@ -192,57 +193,56 @@ impl ActorRenderSystem {
                 Mat4F32::IDENTITY
             };
 
-            for (_, body_part, body_part_builder) in
-                body_part_amc.get_actor_model(crate::entity::actor_model::ActorModel(0))
+            // Walking animation
+            // TODO better walking detection
+            let walking_animation = crate::entity::actor_model::ActorAnimation(0);
+            let walking_animation_duration_ms = 500;
+            if velocity_ac
+                .get(&actor)
+                .filter(|vel| vel.vector.length() > f32::EPSILON)
+                .is_some()
             {
-                let mut transform = Mat4F32::IDENTITY;
+                if let Some(anim_builder) = animation_amc.get(actor_model, walking_animation) {
+                    let state = match animation_state_ac.get(actor, walking_animation) {
+                        Some(s) => s,
+                        None => {
+                            // TODO have common Instant::now()
+                            animation_state_ac.insert(
+                                actor,
+                                walking_animation,
+                                AnimationState {
+                                    start: Instant::now(),
+                                },
+                            );
+                            animation_state_ac.get(actor, walking_animation).unwrap()
+                        },
+                    };
 
-                // Walking animation
-                // TODO better walking detection
-                if velocity_ac
-                    .get(&actor)
-                    .filter(|vel| vel.vector.length() > f32::EPSILON)
-                    .is_some()
-                {
-                    let walking_animation = crate::entity::actor_model::ActorAnimation(0);
-                    let walking_animation_duration_ms = 1000;
+                    let state = (state.start.elapsed().as_millis() % walking_animation_duration_ms)
+                        as f32
+                        / walking_animation_duration_ms as f32;
 
-                    if let Some(anim_builder) = animation_amc.get(actor_model, walking_animation) {
-                        let state = match animation_state_ac.get(actor, walking_animation) {
-                            Some(s) => s,
-                            None => {
-                                // TODO have common Instant::now()
-                                animation_state_ac.insert(
-                                    actor,
-                                    walking_animation,
-                                    AnimationState {
-                                        start: Instant::now(),
+                    for (_, body_part, body_part_builder) in
+                        body_part_amc.get_actor_model(crate::entity::actor_model::ActorModel(0))
+                    {
+                        if let Some(new_transform) = anim_builder.of_body_part(body_part, state) {
+                            if let Some(prev_state) = self.body_part_buffer.get_mut(&body_part) {
+                                prev_state.transform =
+                                    new_transform.to_matrix() * prev_state.transform;
+                            } else {
+                                self.body_part_buffer.insert(
+                                    body_part,
+                                    BodyPartInfo {
+                                        transform: new_transform.to_matrix(),
+                                        parent: body_part_builder.parent(),
                                     },
                                 );
-                                animation_state_ac.get(actor, walking_animation).unwrap()
-                            },
-                        };
-
-                        let state = (state.start.elapsed().as_millis()
-                            % walking_animation_duration_ms)
-                            as f32
-                            / walking_animation_duration_ms as f32;
-
-                        if let Some(new_transform) = anim_builder.of_body_part(body_part, state) {
-                            transform = new_transform.to_matrix() * transform;
+                            }
                         }
-                    } else {
-                        animation_state_ac.remove(actor, walking_animation);
                     }
                 }
-
-                self.body_part_buffer.insert(
-                    body_part,
-                    BodyPartInfo {
-                        transform,
-                        parent: body_part_builder.parent(),
-                    },
-                );
+            } else {
+                animation_state_ac.remove(actor, walking_animation);
             }
 
             for (_, body_part, _) in
@@ -251,7 +251,13 @@ impl ActorRenderSystem {
                 let &BodyPartInfo {
                     mut transform,
                     mut parent,
-                } = self.body_part_buffer.get(&body_part).unwrap();
+                } = self
+                    .body_part_buffer
+                    .get(&body_part)
+                    .unwrap_or(&BodyPartInfo {
+                        transform: Mat4F32::IDENTITY,
+                        parent: BASE_BODY_PART,
+                    });
 
                 while let Some(parent_info) = self.body_part_buffer.get(&parent) {
                     transform = parent_info.transform * transform;
