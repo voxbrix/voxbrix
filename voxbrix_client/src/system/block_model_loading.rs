@@ -1,57 +1,55 @@
-use crate::{
-    component::block_class::BlockClassComponent,
-    entity::block_class::BlockClass,
-    read_ron_file,
-    LabelMap,
-};
+use crate::entity::block_model::BlockModel;
+use crate::component::block_model::BlockModelComponent;
 use anyhow::Error;
-use ron::Value;
-use serde::{
-    de::DeserializeOwned,
-    Deserialize,
-};
+use serde::Deserialize;
 use std::{
     collections::BTreeMap,
     path::Path,
 };
 use tokio::task;
+use voxbrix_common::{
+    read_ron_file,
+    LabelMap,
+};
+use ron::Value;
+use serde::de::DeserializeOwned;
 
-const PATH: &str = "assets/common/block_classes";
-const LIST_PATH: &str = "assets/common/block_classes.ron";
+const MODELS_PATH: &str = "assets/client/models/blocks";
+const MODEL_LIST_PATH: &str = "assets/client/models/blocks.ron";
 
 #[derive(Deserialize, Debug)]
-struct BlockClassList {
+struct List {
     list: Vec<String>,
 }
 
 #[derive(Deserialize, Debug)]
-struct BlockClassDescriptior {
+struct BlockModelDescriptior {
     label: String,
     components: BTreeMap<String, Value>,
 }
 
-pub struct BlockClassLoadingSystem {
-    block_class_list: Vec<String>,
+pub struct BlockModelLoadingSystem {
+    block_model_list: Vec<String>,
     components: BTreeMap<String, Vec<Option<Value>>>,
 }
 
-impl BlockClassLoadingSystem {
+impl BlockModelLoadingSystem {
     pub async fn load_data() -> Result<Self, Error> {
         task::spawn_blocking(|| {
-            let block_class_list = read_ron_file::<BlockClassList>(LIST_PATH)?.list;
+            let block_model_list = read_ron_file::<List>(MODEL_LIST_PATH)?.list;
 
             let mut components = BTreeMap::new();
 
-            for (block_class_id, block_class_label) in block_class_list.iter().enumerate() {
-                let file_name = format!("{}.ron", block_class_label);
+            for (block_model_id, block_model_label) in block_model_list.iter().enumerate() {
+                let file_name = format!("{}.ron", block_model_label);
 
-                let descriptor: BlockClassDescriptior =
-                    read_ron_file(Path::new(PATH).join(file_name))?;
+                let descriptor: BlockModelDescriptior =
+                    read_ron_file(Path::new(MODELS_PATH).join(file_name))?;
 
-                if descriptor.label != *block_class_label {
+                if descriptor.label != *block_model_label {
                     return Err(Error::msg(format!(
                         "Label defined in file differs from file name: {} in {}.ron",
-                        descriptor.label, block_class_label
+                        descriptor.label, block_model_label
                     )));
                 }
 
@@ -61,19 +59,19 @@ impl BlockClassLoadingSystem {
                         None => {
                             components.insert(
                                 component_label.clone(),
-                                vec![None; block_class_list.len()],
+                                vec![None; block_model_list.len()],
                             );
 
                             components.get_mut(&component_label).unwrap()
                         },
                     };
 
-                    component_vec[block_class_id] = Some(component_value);
+                    component_vec[block_model_id] = Some(component_value);
                 }
             }
 
             Ok(Self {
-                block_class_list,
+                block_model_list,
                 components,
             })
         })
@@ -84,7 +82,7 @@ impl BlockClassLoadingSystem {
     pub fn load_component<D, C, F>(
         &self,
         component_label: &str,
-        component: &mut BlockClassComponent<C>,
+        component: &mut BlockModelComponent<C>,
         conversion: F,
     ) -> Result<(), Error>
     where
@@ -113,11 +111,11 @@ impl BlockClassLoadingSystem {
         Ok(())
     }
 
-    pub fn into_label_map(self) -> LabelMap<BlockClass> {
-        self.block_class_list
+    pub fn into_label_map(self) -> LabelMap<BlockModel> {
+        self.block_model_list
             .into_iter()
             .enumerate()
-            .map(|(c, l)| (l, BlockClass(c)))
+            .map(|(c, l)| (l, BlockModel(c)))
             .collect()
     }
 }

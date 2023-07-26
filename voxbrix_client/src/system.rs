@@ -1,5 +1,6 @@
 pub mod actor_model_loading;
 pub mod actor_render;
+pub mod block_model_loading;
 pub mod block_render;
 pub mod chunk_presence;
 pub mod controller;

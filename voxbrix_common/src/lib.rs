@@ -24,6 +24,7 @@ use std::{
     iter::FromIterator,
     path::Path,
 };
+use arrayvec::ArrayVec;
 
 #[macro_export]
 macro_rules! unblock {
@@ -84,4 +85,21 @@ impl<A> FromIterator<(String, A)> for LabelMap<A> {
 pub struct ChunkData {
     pub chunk: Chunk,
     pub block_classes: BlocksVec<BlockClass>,
+}
+
+pub trait ArrayExt<T, const N: usize> {
+    fn map_ref<F, U>(&self, f: F) -> [U; N]
+    where
+        F: FnMut(&T) -> U;
+}
+
+impl<T, const N: usize> ArrayExt<T, N> for [T; N] {
+    fn map_ref<F, U>(&self, f: F) -> [U; N]
+    where
+        F: FnMut(&T) -> U,
+    {
+        unsafe {
+            self.iter().map(f).collect::<ArrayVec<_, N>>().into_inner_unchecked()
+        }
+    }
 }

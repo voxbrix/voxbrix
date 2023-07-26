@@ -1,20 +1,7 @@
 (
     label: "grass",
     components: {
-        "model": (
-            type: "Cube",
-            textures: [
-                "dirt",
-                "dirt",
-                "dirt",
-                "dirt",
-                "dirt",
-                "grass",
-            ],
-        ),
-        "culling": (
-            type: "Full",
-        ),
+        "model": "grass",
         "collision": (
             type: "SolidCube",
         ),

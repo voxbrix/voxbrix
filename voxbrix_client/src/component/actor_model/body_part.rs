@@ -3,7 +3,10 @@ use crate::{
     entity::actor_model::ActorBodyPart,
     system::{
         actor_model_loading::BodyPartContext,
-        render::vertex::Vertex,
+        render::primitives::{
+            Polygon,
+            Vertex,
+        },
     },
 };
 use anyhow::Error;
@@ -15,6 +18,7 @@ use voxbrix_common::{
         Vec3F32,
     },
 };
+use arrayvec::ArrayVec;
 
 pub const BASE_BODY_PART: ActorBodyPart = ActorBodyPart(0);
 const VERTEX_TEXTURE_POSITION_OFFSET: f32 = 0.01;
@@ -31,8 +35,7 @@ pub struct ActorBodyPartBuilder {
     parent: ActorBodyPart,
     texture: u32,
     model_scale: f32,
-    vertices: Vec<ActorBodyPartVertex>,
-    indices: Vec<u32>,
+    polygons: Vec<[ActorBodyPartVertex; 4]>,
 }
 
 impl ActorBodyPartBuilder {
@@ -40,24 +43,23 @@ impl ActorBodyPartBuilder {
         &self,
         position: &Position,
         transform: &Mat4F32,
-        vertices: &mut Vec<Vertex>,
-        indices: &mut Vec<u32>,
+        polygons: &mut Vec<Polygon>,
     ) {
-        let index_offset = vertices.len() as u32;
-
-        vertices.extend(self.vertices.iter().map(|vertex| {
-            Vertex {
+        polygons.extend(self.polygons.iter().map(|vertices| {
+            Polygon {
                 chunk: position.chunk.position.into(),
-                position: (position.offset
-                    + transform.transform_point3(vertex.position) * self.model_scale)
-                    .into(),
                 texture_index: self.texture,
-                texture_position: vertex.texture_position,
-                light_level: [15, 0, 0, 0],
+                vertices: vertices.iter().map(|vertex| {
+                    Vertex {
+                        position: (position.offset
+                            + transform.transform_point3(vertex.position) * self.model_scale)
+                            .into(),
+                        texture_position: vertex.texture_position,
+                        light_level: [15, 0, 0, 0],
+                    }
+                }).collect::<ArrayVec<_, 4>>().into_inner().unwrap(),
             }
         }));
-
-        indices.extend(self.indices.iter().map(|i| index_offset + *i));
     }
 
     pub fn parent(&self) -> ActorBodyPart {
@@ -97,12 +99,7 @@ impl ActorBodyPartDescriptor {
             )));
         }
 
-        let mut vertices = Vec::with_capacity(self.sides.len() * 4);
-        let mut indices = Vec::with_capacity(self.sides.len() * 6);
-
-        for side in self.sides {
-            let index_offset = vertices.len() as u32;
-
+        let polygons = self.sides.into_iter().map(|side| {
             // Here is the fix for the glitchy pixels on the edge of sides
             // (just cause those grinded my gears)
             // Sometimes pixels on the edge of a side appear to be sampled from the outside
@@ -122,11 +119,12 @@ impl ActorBodyPartDescriptor {
 
             let side_texture_center = texture_coords_sum.map(|sum| sum / 4.0);
 
-            for ActorBodyPartDescriptorVertex {
-                position,
-                texture_position,
-            } in side.into_iter()
-            {
+            side.map(|vertex| {
+                let ActorBodyPartDescriptorVertex {
+                    position,
+                    texture_position,
+                } = vertex;
+
                 let get_texture_position = |axis| {
                     let grid_size = ctx.texture_grid_size[axis] as f32;
 
@@ -139,21 +137,18 @@ impl ActorBodyPartDescriptor {
                     texture_position + correction_amplitude.copysign(correction_sign)
                 };
 
-                vertices.push(ActorBodyPartVertex {
+                ActorBodyPartVertex {
                     position: position.map(|pos| pos as f32).into(),
                     texture_position: [get_texture_position(0), get_texture_position(1)],
-                });
-            }
-
-            indices.extend([0, 1, 3, 2, 3, 1].map(|i| index_offset + i));
-        }
+                }
+            })
+        }).collect();
 
         Ok(ActorBodyPartBuilder {
             parent,
             texture: ctx.texture,
             model_scale: 1.0 / (ctx.grid_in_block as f32),
-            vertices,
-            indices,
+            polygons,
         })
     }
 }

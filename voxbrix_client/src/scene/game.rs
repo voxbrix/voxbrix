@@ -11,16 +11,16 @@ use crate::{
             animation::AnimationActorModelComponent,
             body_part::BodyPartActorModelComponent,
         },
-        block_class::{
+        block_class::model::ModelBlockClassComponent,
+        block_model::{
+            builder::{
+                BuilderBlockModelComponent,
+                BlockModelContext,
+                BlockModelBuilderDescriptor,
+            },
             culling::{
                 Culling,
-                CullingBlockClassComponent,
-            },
-            model::{
-                Cube,
-                Model,
-                ModelBlockClassComponent,
-                ModelDescriptor,
+                CullingBlockModelComponent,
             },
         },
     },
@@ -38,6 +38,7 @@ use crate::{
             RenderSystemDescriptor,
         },
         texture_loading::TextureLoadingSystem,
+        block_model_loading::BlockModelLoadingSystem,
     },
     window::{
         InputEvent,
@@ -233,49 +234,47 @@ impl GameScene {
         let block_class_loading_system = BlockClassLoadingSystem::load_data().await?;
         let block_texture_loading_system = TextureLoadingSystem::load_data("blocks").await?;
 
+        let mut builder_bmc = BuilderBlockModelComponent::new();
+        let mut culling_bmc = CullingBlockModelComponent::new();
+
+        let block_model_loading_system = BlockModelLoadingSystem::load_data().await?;
+
+        let block_model_context = BlockModelContext {
+            block_texture_label_map: &block_texture_loading_system.label_map,
+        };
+
+        block_model_loading_system.load_component(
+            "builder",
+            &mut builder_bmc,
+            |desc: BlockModelBuilderDescriptor| {
+               desc.describe(&block_model_context)
+            },
+        )?;
+
+        block_model_loading_system.load_component(
+            "culling",
+            &mut culling_bmc,
+            |value: Culling| Ok(value),
+        )?;
+
         let mut status_cc = StatusChunkComponent::new();
 
         let mut class_bc = ClassBlockComponent::new();
         let mut sky_light_bc = SkyLightBlockComponent::new();
 
         let mut model_bcc = ModelBlockClassComponent::new();
-        let mut culling_bcc = CullingBlockClassComponent::new();
         let mut collision_bcc = CollisionBlockClassComponent::new();
         let mut opacity_bcc = OpacityBlockClassComponent::new();
+        
+        let block_model_label_map = block_model_loading_system.into_label_map();
 
         block_class_loading_system.load_component(
             "model",
             &mut model_bcc,
-            |desc: ModelDescriptor| {
-                match desc {
-                    ModelDescriptor::Cube {
-                        textures: textures_desc,
-                    } => {
-                        let mut textures = [0; 6];
-
-                        for (i, texture) in textures.iter_mut().enumerate() {
-                            let texture_name = textures_desc[i].as_str();
-                            *texture = block_texture_loading_system
-                                .label_map
-                                .get(texture_name)
-                                .ok_or_else(|| {
-                                    anyhow::Error::msg(format!(
-                                        "texture \"{}\" not found",
-                                        texture_name
-                                    ))
-                                })?;
-                        }
-
-                        Ok(Model::Cube(Cube { textures }))
-                    },
-                }
+            |model_label: String| {
+                block_model_label_map.get(&model_label)
+                    .ok_or_else(|| anyhow::Error::msg(format!("block texture with label \"{}\" is undefined", model_label)))
             },
-        )?;
-
-        block_class_loading_system.load_component(
-            "culling",
-            &mut culling_bcc,
-            |desc: Culling| Ok(desc),
         )?;
 
         block_class_loading_system.load_component(
@@ -704,8 +703,8 @@ impl GameScene {
                 Event::DrawChunk(chunk) => {
                     // TODO: use separate *set* as a queue and take up to num_cpus each time the event
                     // comes
-                    unblock!((block_render_system, class_bc, model_bcc, culling_bcc, sky_light_bc) {
-                        block_render_system.build_chunk(&chunk, &class_bc, &model_bcc, &culling_bcc, &sky_light_bc);
+                    unblock!((block_render_system, class_bc, model_bcc, builder_bmc, culling_bmc, sky_light_bc) {
+                        block_render_system.build_chunk(&chunk, &class_bc, &model_bcc, &builder_bmc, &culling_bmc, &sky_light_bc);
                     });
                 },
             }

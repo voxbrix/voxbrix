@@ -1,7 +1,7 @@
 use serde::Deserialize;
-use voxbrix_common::component::block_class::BlockClassComponent;
+use crate::component::block_model::BlockModelComponent;
 
-pub type CullingBlockClassComponent = BlockClassComponent<Culling>;
+pub type CullingBlockModelComponent = BlockModelComponent<Culling>;
 
 // How this block culls neighbors' sides
 #[derive(Deserialize, Debug)]

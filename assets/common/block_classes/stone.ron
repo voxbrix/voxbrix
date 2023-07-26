@@ -1,20 +1,7 @@
 (
     label: "stone",
     components: {
-        "model": (
-            type: "Cube",
-            textures: [
-                "stone",
-                "stone",
-                "stone",
-                "stone",
-                "stone",
-                "stone",
-            ],
-        ),
-        "culling": (
-            type: "Full",
-        ),
+        "model": "stone",
         "collision": (
             type: "SolidCube",
         ),

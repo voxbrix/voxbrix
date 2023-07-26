@@ -20,9 +20,13 @@ use crate::{
     },
     entity::actor_model::ActorBodyPart,
     system::render::{
-        vertex::Vertex,
+        primitives::{
+            Polygon,
+            VertexDescription,
+        },
         RenderParameters,
         Renderer,
+        gpu_vec::GpuVec,
     },
     RenderHandle,
 };
@@ -40,7 +44,7 @@ use voxbrix_common::{
 };
 use wgpu::util::DeviceExt;
 
-const INDEX_FORMAT: wgpu::IndexFormat = wgpu::IndexFormat::Uint32;
+const POLYGON_SIZE: usize = Polygon::size() as usize;
 
 pub struct ActorRenderSystemDescriptor<'a> {
     pub render_handle: &'static RenderHandle,
@@ -90,7 +94,7 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
                     vertex: wgpu::VertexState {
                         module: &shaders,
                         entry_point: "vs_main",
-                        buffers: &[Vertex::desc()],
+                        buffers: &[VertexDescription::desc(), Polygon::desc()],
                     },
                     fragment: Some(wgpu::FragmentState {
                         module: &shaders,
@@ -125,14 +129,42 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
                     multiview: None,
                 });
 
+        let vertex_buffer = 
+            render_handle.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                usage: wgpu::BufferUsages::VERTEX,
+                contents: bytemuck::cast_slice(&[
+                    VertexDescription {
+                        index: 0,
+                    },
+                    VertexDescription {
+                        index: 1,
+                    },
+                    VertexDescription {
+                        index: 3,
+                    },
+                    VertexDescription {
+                        index: 2,
+                    },
+                    VertexDescription {
+                        index: 3,
+                    },
+                    VertexDescription {
+                        index: 1,
+                    },
+                ]),
+            });
+
+        let polygon_buffer = GpuVec::new(&render_handle.device, wgpu::BufferUsages::VERTEX);
+
         ActorRenderSystem {
             render_handle,
             render_pipeline,
             actor_texture_bind_group,
-            // TODO use nohash?
             body_part_buffer: IntMap::default(),
-            indices: Vec::new(),
-            vertices: Vec::new(),
+            polygons: Vec::new(),
+            vertex_buffer,
+            polygon_buffer,
         }
     }
 }
@@ -147,8 +179,9 @@ pub struct ActorRenderSystem {
     render_pipeline: wgpu::RenderPipeline,
     actor_texture_bind_group: wgpu::BindGroup,
     body_part_buffer: IntMap<ActorBodyPart, BodyPartInfo>,
-    vertices: Vec<Vertex>,
-    indices: Vec<u32>,
+    polygons: Vec<Polygon>,
+    vertex_buffer: wgpu::Buffer,
+    polygon_buffer: GpuVec,
 }
 
 impl ActorRenderSystem {
@@ -163,8 +196,7 @@ impl ActorRenderSystem {
         animation_amc: &AnimationActorModelComponent,
         animation_state_ac: &mut AnimationStateActorComponent,
     ) {
-        self.vertices.clear();
-        self.indices.clear();
+        self.polygons.clear();
 
         for (actor, _class, position) in position_ac
             .iter()
@@ -268,45 +300,39 @@ impl ActorRenderSystem {
                 body_part_amc.get(actor_model, body_part).unwrap().build(
                     &position,
                     &transform,
-                    &mut self.vertices,
-                    &mut self.indices,
+                    &mut self.polygons,
                 );
             }
         }
     }
 
-    pub fn render(&self, renderer: Renderer) -> Result<(), wgpu::SurfaceError> {
-        let vertex_size = self.vertices.len();
-        let index_size = self.indices.len();
+    pub fn render(&mut self, renderer: Renderer) -> Result<(), wgpu::SurfaceError> {
+        let polygons_len = self.polygons.len();
 
-        if vertex_size == 0 || index_size == 0 {
+        if polygons_len == 0 {
             return Ok(());
         }
 
-        let prepared_vertex_buffer =
-            self.render_handle
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("actor_vertex_buffer"),
-                    contents: bytemuck::cast_slice(self.vertices.as_slice()),
-                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                });
+        let polygon_buffer_byte_size = (polygons_len * POLYGON_SIZE) as u64;
 
-        let prepared_index_buffer =
-            self.render_handle
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("actor_index_buffer"),
-                    contents: bytemuck::cast_slice(self.indices.as_slice()),
-                    usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-                });
+        let mut writer = self.polygon_buffer.get_writer(
+            &self.render_handle.device,
+            &self.render_handle.queue,
+            polygon_buffer_byte_size,
+        );
+
+        writer.as_mut().copy_from_slice(bytemuck::cast_slice(self.polygons.as_slice()));
+
+        drop(writer);
+
+        self.polygon_buffer.finish();
 
         let mut render_pass = renderer.with_pipeline(&self.render_pipeline);
 
         render_pass.set_bind_group(1, &self.actor_texture_bind_group, &[]);
-        render_pass.set_vertex_buffer(0, prepared_vertex_buffer.slice(..));
-        render_pass.set_index_buffer(prepared_index_buffer.slice(..), INDEX_FORMAT);
-        render_pass.draw_indexed(0 .. index_size as u32, 0, 0 .. 1);
+        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        render_pass.set_vertex_buffer(1, self.polygon_buffer.get_slice());
+        render_pass.draw(0 .. 6, 0 .. polygons_len as u32);
 
         Ok(())
     }

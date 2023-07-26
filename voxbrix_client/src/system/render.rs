@@ -27,7 +27,7 @@ use winit::dpi::PhysicalSize;
 pub mod camera;
 pub mod gpu_vec;
 pub mod output_thread;
-pub mod vertex;
+pub mod primitives;
 
 fn build_depth_texture_view(device: &wgpu::Device, mut size: wgpu::Extent3d) -> wgpu::TextureView {
     size.depth_or_array_layers = 1;
@@ -114,7 +114,7 @@ impl<'a> RenderSystemDescriptor<'a> {
             render_handle,
             window_handle,
             config,
-            Some(std::time::Duration::from_millis(50)),
+            None,
         );
 
         let depth_texture_size = wgpu::Extent3d {
