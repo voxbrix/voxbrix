@@ -7,16 +7,17 @@ use crate::{
             position::PositionActorComponent,
             velocity::VelocityActorComponent,
         },
-        actor_model::{
-            animation::AnimationActorModelComponent,
-            body_part::BodyPartActorModelComponent,
+        actor_model::builder::{
+            ActorModelBuilderContext,
+            ActorModelBuilderDescriptor,
+            BuilderActorModelComponent,
         },
         block_class::model::ModelBlockClassComponent,
         block_model::{
             builder::{
-                BuilderBlockModelComponent,
-                BlockModelContext,
                 BlockModelBuilderDescriptor,
+                BlockModelContext,
+                BuilderBlockModelComponent,
             },
             culling::{
                 Culling,
@@ -24,13 +25,24 @@ use crate::{
             },
         },
     },
+    entity::{
+        actor_model::{
+            ActorAnimation,
+            ActorBodyPart,
+        },
+        block_model::BlockModel,
+    },
     scene::SceneSwitch,
     system::{
-        actor_model_loading::ActorModelLoadingSystem,
         actor_render::ActorRenderSystemDescriptor,
         block_render::BlockRenderSystemDescriptor,
         chunk_presence::ChunkPresenceSystem,
         controller::DirectControl,
+        list_loading::List,
+        model_loading::{
+            ModelLoadingSystem,
+            MODEL_PATH_PREFIX,
+        },
         position::PositionSystem,
         render::{
             camera::CameraParameters,
@@ -38,7 +50,6 @@ use crate::{
             RenderSystemDescriptor,
         },
         texture_loading::TextureLoadingSystem,
-        block_model_loading::BlockModelLoadingSystem,
     },
     window::{
         InputEvent,
@@ -55,6 +66,7 @@ use futures_lite::stream::{
 use log::error;
 use std::{
     io::ErrorKind as StdIoErrorKind,
+    path::Path,
     time::{
         Duration,
         Instant,
@@ -237,7 +249,7 @@ impl GameScene {
         let mut builder_bmc = BuilderBlockModelComponent::new();
         let mut culling_bmc = CullingBlockModelComponent::new();
 
-        let block_model_loading_system = BlockModelLoadingSystem::load_data().await?;
+        let block_model_loading_system = ModelLoadingSystem::load_data("blocks").await?;
 
         let block_model_context = BlockModelContext {
             block_texture_label_map: &block_texture_loading_system.label_map,
@@ -246,9 +258,7 @@ impl GameScene {
         block_model_loading_system.load_component(
             "builder",
             &mut builder_bmc,
-            |desc: BlockModelBuilderDescriptor| {
-               desc.describe(&block_model_context)
-            },
+            |desc: BlockModelBuilderDescriptor| desc.describe(&block_model_context),
         )?;
 
         block_model_loading_system.load_component(
@@ -265,15 +275,19 @@ impl GameScene {
         let mut model_bcc = ModelBlockClassComponent::new();
         let mut collision_bcc = CollisionBlockClassComponent::new();
         let mut opacity_bcc = OpacityBlockClassComponent::new();
-        
-        let block_model_label_map = block_model_loading_system.into_label_map();
+
+        let block_model_label_map = block_model_loading_system.into_label_map(BlockModel);
 
         block_class_loading_system.load_component(
             "model",
             &mut model_bcc,
             |model_label: String| {
-                block_model_label_map.get(&model_label)
-                    .ok_or_else(|| anyhow::Error::msg(format!("block texture with label \"{}\" is undefined", model_label)))
+                block_model_label_map.get(&model_label).ok_or_else(|| {
+                    anyhow::Error::msg(format!(
+                        "block texture with label \"{}\" is undefined",
+                        model_label
+                    ))
+                })
             },
         )?;
 
@@ -305,19 +319,29 @@ impl GameScene {
         let mut orientation_ac = OrientationActorComponent::new();
         let mut animation_state_ac = AnimationStateActorComponent::new();
 
-        let mut body_part_amc = BodyPartActorModelComponent::new();
-        let mut animation_amc = AnimationActorModelComponent::new();
-        let ActorModelLoadingSystem {
-            animation_label_map,
-            model_label_map,
-            body_part_label_map,
-        } = ActorModelLoadingSystem::load_data(
-            &actor_texture_loading_system.label_map,
-            &mut body_part_amc,
-            &mut animation_amc,
-        )
-        .await
-        .expect("actor model loading");
+        let actor_model_loading_system = ModelLoadingSystem::load_data("actors").await?;
+        let mut builder_amc = BuilderActorModelComponent::new();
+
+        let actor_body_part_label_map =
+            List::load(Path::new(MODEL_PATH_PREFIX).join("actor_body_parts.ron"))
+                .await?
+                .into_label_map(ActorBodyPart);
+        let actor_animation_label_map =
+            List::load(Path::new(MODEL_PATH_PREFIX).join("actor_animations.ron"))
+                .await?
+                .into_label_map(ActorAnimation);
+
+        let ctx = ActorModelBuilderContext {
+            actor_texture_label_map: &actor_texture_loading_system.label_map,
+            actor_body_part_label_map: &actor_body_part_label_map,
+            actor_animation_label_map: &actor_animation_label_map,
+        };
+
+        actor_model_loading_system.load_component(
+            "builder",
+            &mut builder_amc,
+            |desc: ActorModelBuilderDescriptor| desc.describe(&ctx),
+        )?;
 
         position_ac.insert(
             player_actor,
@@ -461,8 +485,7 @@ impl GameScene {
                         &position_ac,
                         &velocity_ac,
                         &orientation_ac,
-                        &body_part_amc,
-                        &animation_amc,
+                        &builder_amc,
                         &mut animation_state_ac,
                     );
 

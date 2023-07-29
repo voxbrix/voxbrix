@@ -10,23 +10,20 @@ use crate::{
             position::PositionActorComponent,
             velocity::VelocityActorComponent,
         },
-        actor_model::{
-            animation::AnimationActorModelComponent,
-            body_part::{
-                BodyPartActorModelComponent,
-                BASE_BODY_PART,
-            },
+        actor_model::builder::{
+            BuilderActorModelComponent,
+            BASE_BODY_PART,
         },
     },
     entity::actor_model::ActorBodyPart,
     system::render::{
+        gpu_vec::GpuVec,
         primitives::{
             Polygon,
             VertexDescription,
         },
         RenderParameters,
         Renderer,
-        gpu_vec::GpuVec,
     },
     RenderHandle,
 };
@@ -129,31 +126,21 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
                     multiview: None,
                 });
 
-        let vertex_buffer = 
-            render_handle.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Vertex Buffer"),
-                usage: wgpu::BufferUsages::VERTEX,
-                contents: bytemuck::cast_slice(&[
-                    VertexDescription {
-                        index: 0,
-                    },
-                    VertexDescription {
-                        index: 1,
-                    },
-                    VertexDescription {
-                        index: 3,
-                    },
-                    VertexDescription {
-                        index: 2,
-                    },
-                    VertexDescription {
-                        index: 3,
-                    },
-                    VertexDescription {
-                        index: 1,
-                    },
-                ]),
-            });
+        let vertex_buffer =
+            render_handle
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Vertex Buffer"),
+                    usage: wgpu::BufferUsages::VERTEX,
+                    contents: bytemuck::cast_slice(&[
+                        VertexDescription { index: 0 },
+                        VertexDescription { index: 1 },
+                        VertexDescription { index: 3 },
+                        VertexDescription { index: 2 },
+                        VertexDescription { index: 3 },
+                        VertexDescription { index: 1 },
+                    ]),
+                });
 
         let polygon_buffer = GpuVec::new(&render_handle.device, wgpu::BufferUsages::VERTEX);
 
@@ -192,8 +179,7 @@ impl ActorRenderSystem {
         position_ac: &PositionActorComponent,
         velocity_ac: &VelocityActorComponent,
         orientation_ac: &OrientationActorComponent,
-        body_part_amc: &BodyPartActorModelComponent,
-        animation_amc: &AnimationActorModelComponent,
+        builder_amc: &BuilderActorModelComponent,
         animation_state_ac: &mut AnimationStateActorComponent,
     ) {
         self.polygons.clear();
@@ -205,7 +191,13 @@ impl ActorRenderSystem {
         {
             self.body_part_buffer.clear();
 
+            // TODO replace with actual model
             let actor_model = crate::entity::actor_model::ActorModel(0);
+
+            let model_builder = match builder_amc.get(actor_model) {
+                Some(s) => s,
+                None => continue,
+            };
 
             // Orientation
             // TODO swimming / wallclimbing / etc.
@@ -234,7 +226,7 @@ impl ActorRenderSystem {
                 .filter(|vel| vel.vector.length() > f32::EPSILON)
                 .is_some()
             {
-                if let Some(anim_builder) = animation_amc.get(actor_model, walking_animation) {
+                if model_builder.has_animation(&walking_animation) {
                     let state = match animation_state_ac.get(actor, walking_animation) {
                         Some(s) => s,
                         None => {
@@ -254,22 +246,24 @@ impl ActorRenderSystem {
                         as f32
                         / walking_animation_duration_ms as f32;
 
-                    for (_, body_part, body_part_builder) in
-                        body_part_amc.get_actor_model(crate::entity::actor_model::ActorModel(0))
+                    for (body_part, new_transform) in
+                        model_builder.list_body_parts().filter_map(|bp| {
+                            let transform =
+                                model_builder.animate_body_part(bp, &walking_animation, state)?;
+
+                            Some((bp, transform))
+                        })
                     {
-                        if let Some(new_transform) = anim_builder.of_body_part(body_part, state) {
-                            if let Some(prev_state) = self.body_part_buffer.get_mut(&body_part) {
-                                prev_state.transform =
-                                    new_transform.to_matrix() * prev_state.transform;
-                            } else {
-                                self.body_part_buffer.insert(
-                                    body_part,
-                                    BodyPartInfo {
-                                        transform: new_transform.to_matrix(),
-                                        parent: body_part_builder.parent(),
-                                    },
-                                );
-                            }
+                        if let Some(prev_state) = self.body_part_buffer.get_mut(&body_part) {
+                            prev_state.transform = new_transform.to_matrix() * prev_state.transform;
+                        } else {
+                            self.body_part_buffer.insert(
+                                *body_part,
+                                BodyPartInfo {
+                                    transform: new_transform.to_matrix(),
+                                    parent: model_builder.get_body_part_parent(body_part).unwrap(),
+                                },
+                            );
                         }
                     }
                 }
@@ -277,9 +271,7 @@ impl ActorRenderSystem {
                 animation_state_ac.remove(actor, walking_animation);
             }
 
-            for (_, body_part, _) in
-                body_part_amc.get_actor_model(crate::entity::actor_model::ActorModel(0))
-            {
+            for body_part in model_builder.list_body_parts() {
                 let &BodyPartInfo {
                     mut transform,
                     mut parent,
@@ -297,11 +289,7 @@ impl ActorRenderSystem {
                 }
                 transform = base_transform * transform;
 
-                body_part_amc.get(actor_model, body_part).unwrap().build(
-                    &position,
-                    &transform,
-                    &mut self.polygons,
-                );
+                model_builder.build_body_part(body_part, &position, &transform, &mut self.polygons);
             }
         }
     }
@@ -321,7 +309,9 @@ impl ActorRenderSystem {
             polygon_buffer_byte_size,
         );
 
-        writer.as_mut().copy_from_slice(bytemuck::cast_slice(self.polygons.as_slice()));
+        writer
+            .as_mut()
+            .copy_from_slice(bytemuck::cast_slice(self.polygons.as_slice()));
 
         drop(writer);
 

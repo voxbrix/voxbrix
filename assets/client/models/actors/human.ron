@@ -1,827 +1,843 @@
 (
     label: "human",
-    grid_size: (10, 32, 54),
-    grid_in_block: 32,
-    texture_label: "human",
-    texture_grid_size: (64, 64),
-    body_parts: {
-        "head": (
-            label: "head",
-            parent_label: "base",
-            sides: [
-                // Top
-                (
-                    (
-                        position: (0, 21, 54),
-                        texture_position: (10, 0),
-                    ),
-                    (
-                        position: (0, 11, 54),
-                        texture_position: (20, 0),
-                    ),
-                    (
-                        position: (10, 11, 54),
-                        texture_position: (20, 10),
-                    ),
-                    (
-                        position: (10, 21, 54),
-                        texture_position: (10, 10),
-                    ),
+    components: {
+        "builder": (
+            grid_size: (10, 32, 54),
+            grid_in_block: 32,
+            texture_label: "human",
+            texture_grid_size: (64, 64),
+            body_parts: {
+                "head": (
+                    label: "head",
+                    parent_label: "base",
+                    sides: [
+                        // Top
+                        (
+                            (
+                                position: (0, 21, 54),
+                                texture_position: (10, 0),
+                            ),
+                            (
+                                position: (0, 11, 54),
+                                texture_position: (20, 0),
+                            ),
+                            (
+                                position: (10, 11, 54),
+                                texture_position: (20, 10),
+                            ),
+                            (
+                                position: (10, 21, 54),
+                                texture_position: (10, 10),
+                            ),
+                        ),
+                        // Bottom
+                        (
+                            (
+                                position: (10, 21, 44),
+                                texture_position: (20, 10),
+                            ),
+                            (
+                                position: (10, 11, 44),
+                                texture_position: (30, 10),
+                            ),
+                            (
+                                position: (0, 11, 44),
+                                texture_position: (30, 20),
+                            ),
+                            (
+                                position: (0, 21, 44),
+                                texture_position: (20, 20),
+                            ),
+                        ),
+                        // Front
+                        (
+                            (
+                                position: (10, 21, 54),
+                                texture_position: (10, 10),
+                            ),
+                            (
+                                position: (10, 11, 54),
+                                texture_position: (20, 10),
+                            ),
+                            (
+                                position: (10, 11, 44),
+                                texture_position: (20, 20),
+                            ),
+                            (
+                                position: (10, 21, 44),
+                                texture_position: (10, 20),
+                            ),
+                        ),
+                        // Back
+                        (
+                            (
+                                position: (0, 11, 54),
+                                texture_position: (0, 0),
+                            ),
+                            (
+                                position: (0, 21, 54),
+                                texture_position: (10, 0),
+                            ),
+                            (
+                                position: (0, 21, 44),
+                                texture_position: (10, 10),
+                            ),
+                            (
+                                position: (0, 11, 44),
+                                texture_position: (0, 10),
+                            ),
+                        ),
+                        // Right
+                        (
+                            (
+                                position: (0, 21, 54),
+                                texture_position: (0, 10),
+                            ),
+                            (
+                                position: (10, 21, 54),
+                                texture_position: (10, 10),
+                            ),
+                            (
+                                position: (10, 21, 44),
+                                texture_position: (10, 20),
+                            ),
+                            (
+                                position: (0, 21, 44),
+                                texture_position: (0, 20),
+                            ),
+                        ),
+                        // Left
+                        (
+                            (
+                                position: (10, 11, 54),
+                                texture_position: (20, 0),
+                            ),
+                            (
+                                position: (0, 11, 54),
+                                texture_position: (30, 0),
+                            ),
+                            (
+                                position: (0, 11, 44),
+                                texture_position: (30, 10),
+                            ),
+                            (
+                                position: (10, 11, 44),
+                                texture_position: (20, 10),
+                            ),
+                        ),
+                    ],
                 ),
-                // Bottom
-                (
-                    (
-                        position: (10, 21, 44),
-                        texture_position: (20, 10),
-                    ),
-                    (
-                        position: (10, 11, 44),
-                        texture_position: (30, 10),
-                    ),
-                    (
-                        position: (0, 11, 44),
-                        texture_position: (30, 20),
-                    ),
-                    (
-                        position: (0, 21, 44),
-                        texture_position: (20, 20),
-                    ),
+                "torso": (
+                    label: "torso",
+                    parent_label: "base",
+                    sides: [
+                        // Top
+                        (
+                            (
+                                position: (1, 24, 44),
+                                texture_position: (16, 44),
+                            ),
+                            (
+                                position: (1, 8, 44),
+                                texture_position: (32, 44),
+                            ),
+                            (
+                                position: (9, 8, 44),
+                                texture_position: (32, 52),
+                            ),
+                            (
+                                position: (9, 24, 44),
+                                texture_position: (16, 52),
+                            ),
+                        ),
+                        // Bottom
+                        (
+                            (
+                                position: (9, 24, 24),
+                                texture_position: (16, 52),
+                            ),
+                            (
+                                position: (9, 8, 24),
+                                texture_position: (32, 52),
+                            ),
+                            (
+                                position: (1, 8, 24),
+                                texture_position: (32, 60),
+                            ),
+                            (
+                                position: (1, 24, 24),
+                                texture_position: (16, 60),
+                            ),
+                        ),
+                        // Front
+                        (
+                            (
+                                position: (9, 24, 44),
+                                texture_position: (30, 0),
+                            ),
+                            (
+                                position: (9, 8, 44),
+                                texture_position: (46, 0),
+                            ),
+                            (
+                                position: (9, 8, 24),
+                                texture_position: (46, 20),
+                            ),
+                            (
+                                position: (9, 24, 24),
+                                texture_position: (30, 20),
+                            ),
+                        ),
+                        // Back
+                        (
+                            (
+                                position: (1, 8, 44),
+                                texture_position: (46, 0),
+                            ),
+                            (
+                                position: (1, 24, 44),
+                                texture_position: (62, 0),
+                            ),
+                            (
+                                position: (1, 24, 24),
+                                texture_position: (62, 20),
+                            ),
+                            (
+                                position: (1, 8, 24),
+                                texture_position: (46, 20),
+                            ),
+                        ),
+                        // Right
+                        (
+                            (
+                                position: (1, 24, 44),
+                                texture_position: (0, 44),
+                            ),
+                            (
+                                position: (9, 24, 44),
+                                texture_position: (8, 44),
+                            ),
+                            (
+                                position: (9, 24, 24),
+                                texture_position: (8, 64),
+                            ),
+                            (
+                                position: (1, 24, 24),
+                                texture_position: (0, 64),
+                            ),
+                        ),
+                        // Left
+                        (
+                            (
+                                position: (9, 8, 44),
+                                texture_position: (8, 44),
+                            ),
+                            (
+                                position: (1, 8, 44),
+                                texture_position: (16, 44),
+                            ),
+                            (
+                                position: (1, 8, 24),
+                                texture_position: (16, 64),
+                            ),
+                            (
+                                position: (9, 8, 24),
+                                texture_position: (8, 64),
+                            ),
+                        ),
+                    ],
                 ),
-                // Front
-                (
-                    (
-                        position: (10, 21, 54),
-                        texture_position: (10, 10),
-                    ),
-                    (
-                        position: (10, 11, 54),
-                        texture_position: (20, 10),
-                    ),
-                    (
-                        position: (10, 11, 44),
-                        texture_position: (20, 20),
-                    ),
-                    (
-                        position: (10, 21, 44),
-                        texture_position: (10, 20),
-                    ),
+                "right_hand": (
+                    label: "right_hand",
+                    parent_label: "base",
+                    sides: [
+                        // Top
+                        (
+                            (
+                                position: (1, 32, 44),
+                                texture_position: (32, 44),
+                            ),
+                            (
+                                position: (1, 24, 44),
+                                texture_position: (40, 44),
+                            ),
+                            (
+                                position: (9, 24, 44),
+                                texture_position: (40, 52),
+                            ),
+                            (
+                                position: (9, 32, 44),
+                                texture_position: (32, 52),
+                            ),
+                        ),
+                        // Bottom
+                        (
+                            (
+                                position: (9, 32, 20),
+                                texture_position: (32, 52),
+                            ),
+                            (
+                                position: (9, 24, 20),
+                                texture_position: (40, 52),
+                            ),
+                            (
+                                position: (1, 24, 20),
+                                texture_position: (40, 60),
+                            ),
+                            (
+                                position: (1, 32, 20),
+                                texture_position: (32, 60),
+                            ),
+                        ),
+                        // Front
+                        (
+                            (
+                                position: (9, 32, 44),
+                                texture_position: (8, 20),
+                            ),
+                            (
+                                position: (9, 24, 44),
+                                texture_position: (16, 20),
+                            ),
+                            (
+                                position: (9, 24, 20),
+                                texture_position: (16, 44),
+                            ),
+                            (
+                                position: (9, 32, 20),
+                                texture_position: (8, 44),
+                            ),
+                        ),
+                        // Back
+                        (
+                            (
+                                position: (1, 24, 44),
+                                texture_position: (0, 20),
+                            ),
+                            (
+                                position: (1, 32, 44),
+                                texture_position: (8, 20),
+                            ),
+                            (
+                                position: (1, 32, 20),
+                                texture_position: (8, 44),
+                            ),
+                            (
+                                position: (1, 24, 20),
+                                texture_position: (0, 44),
+                            ),
+                        ),
+                        // Right
+                        (
+                            (
+                                position: (1, 32, 44),
+                                texture_position: (16, 20),
+                            ),
+                            (
+                                position: (9, 32, 44),
+                                texture_position: (24, 20),
+                            ),
+                            (
+                                position: (9, 32, 20),
+                                texture_position: (24, 44),
+                            ),
+                            (
+                                position: (1, 32, 20),
+                                texture_position: (16, 44),
+                            ),
+                        ),
+                        // Left
+                        (
+                            (
+                                position: (9, 24, 44),
+                                texture_position: (24, 20),
+                            ),
+                            (
+                                position: (1, 24, 44),
+                                texture_position: (32, 20),
+                            ),
+                            (
+                                position: (1, 24, 20),
+                                texture_position: (32, 44),
+                            ),
+                            (
+                                position: (9, 24, 20),
+                                texture_position: (24, 44),
+                            ),
+                        ),
+                    ],
                 ),
-                // Back
-                (
-                    (
-                        position: (0, 11, 54),
-                        texture_position: (0, 0),
-                    ),
-                    (
-                        position: (0, 21, 54),
-                        texture_position: (10, 0),
-                    ),
-                    (
-                        position: (0, 21, 44),
-                        texture_position: (10, 10),
-                    ),
-                    (
-                        position: (0, 11, 44),
-                        texture_position: (0, 10),
-                    ),
+                "left_hand": (
+                    label: "left_hand",
+                    parent_label: "base",
+                    sides: [
+                        // Top
+                        (
+                            (
+                                position: (1, 8, 44),
+                                texture_position: (40, 44),
+                            ),
+                            (
+                                position: (1, 0, 44),
+                                texture_position: (32, 44),
+                            ),
+                            (
+                                position: (9, 0, 44),
+                                texture_position: (32, 52),
+                            ),
+                            (
+                                position: (9, 8, 44),
+                                texture_position: (40, 52),
+                            ),
+                        ),
+                        // Bottom
+                        (
+                            (
+                                position: (9, 8, 20),
+                                texture_position: (40, 52),
+                            ),
+                            (
+                                position: (9, 0, 20),
+                                texture_position: (32, 52),
+                            ),
+                            (
+                                position: (1, 0, 20),
+                                texture_position: (32, 60),
+                            ),
+                            (
+                                position: (1, 8, 20),
+                                texture_position: (40, 60),
+                            ),
+                        ),
+                        // Front
+                        (
+                            (
+                                position: (9, 8, 44),
+                                texture_position: (16, 20),
+                            ),
+                            (
+                                position: (9, 0, 44),
+                                texture_position: (8, 20),
+                            ),
+                            (
+                                position: (9, 0, 20),
+                                texture_position: (8, 44),
+                            ),
+                            (
+                                position: (9, 8, 20),
+                                texture_position: (16, 44),
+                            ),
+                        ),
+                        // Back
+                        (
+                            (
+                                position: (1, 0, 44),
+                                texture_position: (8, 20),
+                            ),
+                            (
+                                position: (1, 8, 44),
+                                texture_position: (0, 20),
+                            ),
+                            (
+                                position: (1, 8, 20),
+                                texture_position: (0, 44),
+                            ),
+                            (
+                                position: (1, 0, 20),
+                                texture_position: (8, 44),
+                            ),
+                        ),
+                        // Right
+                        (
+                            (
+                                position: (1, 8, 44),
+                                texture_position: (32, 20),
+                            ),
+                            (
+                                position: (9, 8, 44),
+                                texture_position: (24, 20),
+                            ),
+                            (
+                                position: (9, 8, 20),
+                                texture_position: (24, 44),
+                            ),
+                            (
+                                position: (1, 8, 20),
+                                texture_position: (32, 44),
+                            ),
+                        ),
+                        // Left
+                        (
+                            (
+                                position: (9, 0, 44),
+                                texture_position: (24, 20),
+                            ),
+                            (
+                                position: (1, 0, 44),
+                                texture_position: (16, 20),
+                            ),
+                            (
+                                position: (1, 0, 20),
+                                texture_position: (16, 44),
+                            ),
+                            (
+                                position: (9, 0, 20),
+                                texture_position: (24, 44),
+                            ),
+                        ),
+                    ],
                 ),
-                // Right
-                (
-                    (
-                        position: (0, 21, 54),
-                        texture_position: (0, 10),
-                    ),
-                    (
-                        position: (10, 21, 54),
-                        texture_position: (10, 10),
-                    ),
-                    (
-                        position: (10, 21, 44),
-                        texture_position: (10, 20),
-                    ),
-                    (
-                        position: (0, 21, 44),
-                        texture_position: (0, 20),
-                    ),
+                "right_leg": (
+                    label: "right_leg",
+                    parent_label: "base",
+                    sides: [
+                        // Top
+                        (
+                            (
+                                position: (1, 24, 24),
+                                texture_position: (40, 44),
+                            ),
+                            (
+                                position: (1, 16, 24),
+                                texture_position: (48, 44),
+                            ),
+                            (
+                                position: (9, 16, 24),
+                                texture_position: (48, 52),
+                            ),
+                            (
+                                position: (9, 24, 24),
+                                texture_position: (40, 52),
+                            ),
+                        ),
+                        // Bottom
+                        (
+                            (
+                                position: (9, 24, 0),
+                                texture_position: (40, 52),
+                            ),
+                            (
+                                position: (9, 16, 0),
+                                texture_position: (48, 52),
+                            ),
+                            (
+                                position: (1, 16, 0),
+                                texture_position: (48, 60),
+                            ),
+                            (
+                                position: (1, 24, 0),
+                                texture_position: (40, 60),
+                            ),
+                        ),
+                        // Front
+                        (
+                            (
+                                position: (9, 24, 24),
+                                texture_position: (40, 20),
+                            ),
+                            (
+                                position: (9, 16, 24),
+                                texture_position: (48, 20),
+                            ),
+                            (
+                                position: (9, 16, 0),
+                                texture_position: (48, 44),
+                            ),
+                            (
+                                position: (9, 24, 0),
+                                texture_position: (40, 44),
+                            ),
+                        ),
+                        // Back
+                        (
+                            (
+                                position: (1, 16, 24),
+                                texture_position: (32, 20),
+                            ),
+                            (
+                                position: (1, 24, 24),
+                                texture_position: (40, 20),
+                            ),
+                            (
+                                position: (1, 24, 0),
+                                texture_position: (40, 44),
+                            ),
+                            (
+                                position: (1, 16, 0),
+                                texture_position: (32, 44),
+                            ),
+                        ),
+                        // Right
+                        (
+                            (
+                                position: (1, 24, 24),
+                                texture_position: (48, 20),
+                            ),
+                            (
+                                position: (9, 24, 24),
+                                texture_position: (56, 20),
+                            ),
+                            (
+                                position: (9, 24, 0),
+                                texture_position: (56, 44),
+                            ),
+                            (
+                                position: (1, 24, 0),
+                                texture_position: (48, 44),
+                            ),
+                        ),
+                        // Left
+                        (
+                            (
+                                position: (9, 16, 24),
+                                texture_position: (56, 20),
+                            ),
+                            (
+                                position: (1, 16, 24),
+                                texture_position: (64, 20),
+                            ),
+                            (
+                                position: (1, 16, 0),
+                                texture_position: (64, 44),
+                            ),
+                            (
+                                position: (9, 16, 0),
+                                texture_position: (56, 44),
+                            ),
+                        ),
+                    ],
                 ),
-                // Left
-                (
-                    (
-                        position: (10, 11, 54),
-                        texture_position: (20, 0),
-                    ),
-                    (
-                        position: (0, 11, 54),
-                        texture_position: (30, 0),
-                    ),
-                    (
-                        position: (0, 11, 44),
-                        texture_position: (30, 10),
-                    ),
-                    (
-                        position: (10, 11, 44),
-                        texture_position: (20, 10),
-                    ),
+                "left_leg": (
+                    label: "left_leg",
+                    parent_label: "base",
+                    sides: [
+                        // Top
+                        (
+                            (
+                                position: (1, 16, 24),
+                                texture_position: (48, 44),
+                            ),
+                            (
+                                position: (1, 8, 24),
+                                texture_position: (40, 44),
+                            ),
+                            (
+                                position: (9, 8, 24),
+                                texture_position: (40, 52),
+                            ),
+                            (
+                                position: (9, 16, 24),
+                                texture_position: (48, 52),
+                            ),
+                        ),
+                        // Bottom
+                        (
+                            (
+                                position: (9, 16, 0),
+                                texture_position: (48, 52),
+                            ),
+                            (
+                                position: (9, 8, 0),
+                                texture_position: (40, 52),
+                            ),
+                            (
+                                position: (1, 8, 0),
+                                texture_position: (40, 60),
+                            ),
+                            (
+                                position: (1, 16, 0),
+                                texture_position: (48, 60),
+                            ),
+                        ),
+                        // Front
+                        (
+                            (
+                                position: (9, 16, 24),
+                                texture_position: (48, 20),
+                            ),
+                            (
+                                position: (9, 8, 24),
+                                texture_position: (40, 20),
+                            ),
+                            (
+                                position: (9, 8, 0),
+                                texture_position: (40, 44),
+                            ),
+                            (
+                                position: (9, 16, 0),
+                                texture_position: (48, 44),
+                            ),
+                        ),
+                        // Back
+                        (
+                            (
+                                position: (1, 8, 24),
+                                texture_position: (40, 20),
+                            ),
+                            (
+                                position: (1, 16, 24),
+                                texture_position: (32, 20),
+                            ),
+                            (
+                                position: (1, 16, 0),
+                                texture_position: (32, 44),
+                            ),
+                            (
+                                position: (1, 8, 0),
+                                texture_position: (40, 44),
+                            ),
+                        ),
+                        // Right
+                        (
+                            (
+                                position: (1, 16, 24),
+                                texture_position: (64, 20),
+                            ),
+                            (
+                                position: (9, 16, 24),
+                                texture_position: (56, 20),
+                            ),
+                            (
+                                position: (9, 16, 0),
+                                texture_position: (56, 44),
+                            ),
+                            (
+                                position: (1, 16, 0),
+                                texture_position: (64, 44),
+                            ),
+                        ),
+                        // Left
+                        (
+                            (
+                                position: (9, 8, 24),
+                                texture_position: (56, 20),
+                            ),
+                            (
+                                position: (1, 8, 24),
+                                texture_position: (48, 20),
+                            ),
+                            (
+                                position: (1, 8, 0),
+                                texture_position: (48, 44),
+                            ),
+                            (
+                                position: (9, 8, 0),
+                                texture_position: (56, 44),
+                            ),
+                        ),
+                    ],
                 ),
-            ],
-        ),
-        "torso": (
-            label: "torso",
-            parent_label: "base",
-            sides: [
-                // Top
-                (
-                    (
-                        position: (1, 24, 44),
-                        texture_position: (16, 44),
-                    ),
-                    (
-                        position: (1, 8, 44),
-                        texture_position: (32, 44),
-                    ),
-                    (
-                        position: (9, 8, 44),
-                        texture_position: (32, 52),
-                    ),
-                    (
-                        position: (9, 24, 44),
-                        texture_position: (16, 52),
-                    ),
+            },
+            animations: {
+                "walking": (
+                    label: "walking",
+                    duration: 4,
+                    transformations: [
+                        (
+                            time: 0,
+                            body_part: "right_leg",
+                            operations: [],
+                        ),
+                        (
+                            time: 0,
+                            body_part: "left_leg",
+                            operations: [
+                                ( type: "Translate", value: (-5.0, -12.0, -24.0), ),
+                                ( type: "Scale", value: (1.0, 1.0, 0.8), ),
+                                ( type: "Translate", value: (5.0, 12.0, 24.0), ),
+                            ],
+                        ),
+                        (
+                            time: 1,
+                            body_part: "right_leg",
+                            operations: [
+                                ( type: "Translate", value: (-5.0, -20.0, -24.0), ),
+                                (
+                                    type: "Rotate",
+                                    value: (
+                                        axis: (0.0, 1.0, 0.0),
+                                        angle_degrees: 45.0,
+                                    ),
+                                ),
+                                ( type: "Translate", value: (5.0, 20.0, 24.0), ),
+                            ],
+                        ),
+                        (
+                            time: 1,
+                            body_part: "left_leg",
+                            operations: [
+                                ( type: "Translate", value: (-5.0, -12.0, -24.0), ),
+                                (
+                                    type: "Rotate",
+                                    value: (
+                                        axis: (0.0, 1.0, 0.0),
+                                        angle_degrees: -45.0,
+                                    ),
+                                ),
+                                ( type: "Translate", value: (5.0, 12.0, 24.0), ),
+                            ],
+                        ),
+                        (
+                            time: 2,
+                            body_part: "right_leg",
+                            operations: [
+                                ( type: "Translate", value: (-5.0, -20.0, -24.0), ),
+                                ( type: "Scale", value: (1.0, 1.0, 0.8), ),
+                                ( type: "Translate", value: (5.0, 20.0, 24.0), ),
+                            ],
+                        ),
+                        (
+                            time: 2,
+                            body_part: "left_leg",
+                            operations: [],
+                        ),
+                        (
+                            time: 3,
+                            body_part: "right_leg",
+                            operations: [
+                                ( type: "Translate", value: (-5.0, -20.0, -24.0), ),
+                                (
+                                    type: "Rotate",
+                                    value: (
+                                        axis: (0.0, 1.0, 0.0),
+                                        angle_degrees: -45.0,
+                                    ),
+                                ),
+                                ( type: "Translate", value: (5.0, 20.0, 24.0), ),
+                            ],
+                        ),
+                        (
+                            time: 3,
+                            body_part: "left_leg",
+                            operations: [
+                                ( type: "Translate", value: (-5.0, -12.0, -24.0), ),
+                                (
+                                    type: "Rotate",
+                                    value: (
+                                        axis: (0.0, 1.0, 0.0),
+                                        angle_degrees: 45.0,
+                                    ),
+                                ),
+                                ( type: "Translate", value: (5.0, 12.0, 24.0), ),
+                            ],
+                        ),
+                        (
+                            time: 4,
+                            body_part: "right_leg",
+                            operations: [],
+                        ),
+                        (
+                            time: 4,
+                            body_part: "left_leg",
+                            operations: [
+                                ( type: "Translate", value: (-5.0, -12.0, -24.0), ),
+                                ( type: "Scale", value: (1.0, 1.0, 0.8), ),
+                                ( type: "Translate", value: (5.0, 12.0, 24.0), ),
+                            ],
+                        ),
+                    ],
                 ),
-                // Bottom
-                (
-                    (
-                        position: (9, 24, 24),
-                        texture_position: (16, 52),
-                    ),
-                    (
-                        position: (9, 8, 24),
-                        texture_position: (32, 52),
-                    ),
-                    (
-                        position: (1, 8, 24),
-                        texture_position: (32, 60),
-                    ),
-                    (
-                        position: (1, 24, 24),
-                        texture_position: (16, 60),
-                    ),
-                ),
-                // Front
-                (
-                    (
-                        position: (9, 24, 44),
-                        texture_position: (30, 0),
-                    ),
-                    (
-                        position: (9, 8, 44),
-                        texture_position: (46, 0),
-                    ),
-                    (
-                        position: (9, 8, 24),
-                        texture_position: (46, 20),
-                    ),
-                    (
-                        position: (9, 24, 24),
-                        texture_position: (30, 20),
-                    ),
-                ),
-                // Back
-                (
-                    (
-                        position: (1, 8, 44),
-                        texture_position: (46, 0),
-                    ),
-                    (
-                        position: (1, 24, 44),
-                        texture_position: (62, 0),
-                    ),
-                    (
-                        position: (1, 24, 24),
-                        texture_position: (62, 20),
-                    ),
-                    (
-                        position: (1, 8, 24),
-                        texture_position: (46, 20),
-                    ),
-                ),
-                // Right
-                (
-                    (
-                        position: (1, 24, 44),
-                        texture_position: (0, 44),
-                    ),
-                    (
-                        position: (9, 24, 44),
-                        texture_position: (8, 44),
-                    ),
-                    (
-                        position: (9, 24, 24),
-                        texture_position: (8, 64),
-                    ),
-                    (
-                        position: (1, 24, 24),
-                        texture_position: (0, 64),
-                    ),
-                ),
-                // Left
-                (
-                    (
-                        position: (9, 8, 44),
-                        texture_position: (8, 44),
-                    ),
-                    (
-                        position: (1, 8, 44),
-                        texture_position: (16, 44),
-                    ),
-                    (
-                        position: (1, 8, 24),
-                        texture_position: (16, 64),
-                    ),
-                    (
-                        position: (9, 8, 24),
-                        texture_position: (8, 64),
-                    ),
-                ),
-            ],
-        ),
-        "right_hand": (
-            label: "right_hand",
-            parent_label: "base",
-            sides: [
-                // Top
-                (
-                    (
-                        position: (1, 32, 44),
-                        texture_position: (32, 44),
-                    ),
-                    (
-                        position: (1, 24, 44),
-                        texture_position: (40, 44),
-                    ),
-                    (
-                        position: (9, 24, 44),
-                        texture_position: (40, 52),
-                    ),
-                    (
-                        position: (9, 32, 44),
-                        texture_position: (32, 52),
-                    ),
-                ),
-                // Bottom
-                (
-                    (
-                        position: (9, 32, 20),
-                        texture_position: (32, 52),
-                    ),
-                    (
-                        position: (9, 24, 20),
-                        texture_position: (40, 52),
-                    ),
-                    (
-                        position: (1, 24, 20),
-                        texture_position: (40, 60),
-                    ),
-                    (
-                        position: (1, 32, 20),
-                        texture_position: (32, 60),
-                    ),
-                ),
-                // Front
-                (
-                    (
-                        position: (9, 32, 44),
-                        texture_position: (8, 20),
-                    ),
-                    (
-                        position: (9, 24, 44),
-                        texture_position: (16, 20),
-                    ),
-                    (
-                        position: (9, 24, 20),
-                        texture_position: (16, 44),
-                    ),
-                    (
-                        position: (9, 32, 20),
-                        texture_position: (8, 44),
-                    ),
-                ),
-                // Back
-                (
-                    (
-                        position: (1, 24, 44),
-                        texture_position: (0, 20),
-                    ),
-                    (
-                        position: (1, 32, 44),
-                        texture_position: (8, 20),
-                    ),
-                    (
-                        position: (1, 32, 20),
-                        texture_position: (8, 44),
-                    ),
-                    (
-                        position: (1, 24, 20),
-                        texture_position: (0, 44),
-                    ),
-                ),
-                // Right
-                (
-                    (
-                        position: (1, 32, 44),
-                        texture_position: (16, 20),
-                    ),
-                    (
-                        position: (9, 32, 44),
-                        texture_position: (24, 20),
-                    ),
-                    (
-                        position: (9, 32, 20),
-                        texture_position: (24, 44),
-                    ),
-                    (
-                        position: (1, 32, 20),
-                        texture_position: (16, 44),
-                    ),
-                ),
-                // Left
-                (
-                    (
-                        position: (9, 24, 44),
-                        texture_position: (24, 20),
-                    ),
-                    (
-                        position: (1, 24, 44),
-                        texture_position: (32, 20),
-                    ),
-                    (
-                        position: (1, 24, 20),
-                        texture_position: (32, 44),
-                    ),
-                    (
-                        position: (9, 24, 20),
-                        texture_position: (24, 44),
-                    ),
-                ),
-            ],
-        ),
-        "left_hand": (
-            label: "left_hand",
-            parent_label: "base",
-            sides: [
-                // Top
-                (
-                    (
-                        position: (1, 8, 44),
-                        texture_position: (40, 44),
-                    ),
-                    (
-                        position: (1, 0, 44),
-                        texture_position: (32, 44),
-                    ),
-                    (
-                        position: (9, 0, 44),
-                        texture_position: (32, 52),
-                    ),
-                    (
-                        position: (9, 8, 44),
-                        texture_position: (40, 52),
-                    ),
-                ),
-                // Bottom
-                (
-                    (
-                        position: (9, 8, 20),
-                        texture_position: (40, 52),
-                    ),
-                    (
-                        position: (9, 0, 20),
-                        texture_position: (32, 52),
-                    ),
-                    (
-                        position: (1, 0, 20),
-                        texture_position: (32, 60),
-                    ),
-                    (
-                        position: (1, 8, 20),
-                        texture_position: (40, 60),
-                    ),
-                ),
-                // Front
-                (
-                    (
-                        position: (9, 8, 44),
-                        texture_position: (16, 20),
-                    ),
-                    (
-                        position: (9, 0, 44),
-                        texture_position: (8, 20),
-                    ),
-                    (
-                        position: (9, 0, 20),
-                        texture_position: (8, 44),
-                    ),
-                    (
-                        position: (9, 8, 20),
-                        texture_position: (16, 44),
-                    ),
-                ),
-                // Back
-                (
-                    (
-                        position: (1, 0, 44),
-                        texture_position: (8, 20),
-                    ),
-                    (
-                        position: (1, 8, 44),
-                        texture_position: (0, 20),
-                    ),
-                    (
-                        position: (1, 8, 20),
-                        texture_position: (0, 44),
-                    ),
-                    (
-                        position: (1, 0, 20),
-                        texture_position: (8, 44),
-                    ),
-                ),
-                // Right
-                (
-                    (
-                        position: (1, 8, 44),
-                        texture_position: (32, 20),
-                    ),
-                    (
-                        position: (9, 8, 44),
-                        texture_position: (24, 20),
-                    ),
-                    (
-                        position: (9, 8, 20),
-                        texture_position: (24, 44),
-                    ),
-                    (
-                        position: (1, 8, 20),
-                        texture_position: (32, 44),
-                    ),
-                ),
-                // Left
-                (
-                    (
-                        position: (9, 0, 44),
-                        texture_position: (24, 20),
-                    ),
-                    (
-                        position: (1, 0, 44),
-                        texture_position: (16, 20),
-                    ),
-                    (
-                        position: (1, 0, 20),
-                        texture_position: (16, 44),
-                    ),
-                    (
-                        position: (9, 0, 20),
-                        texture_position: (24, 44),
-                    ),
-                ),
-            ],
-        ),
-        "right_leg": (
-            label: "right_leg",
-            parent_label: "base",
-            sides: [
-                // Top
-                (
-                    (
-                        position: (1, 24, 24),
-                        texture_position: (40, 44),
-                    ),
-                    (
-                        position: (1, 16, 24),
-                        texture_position: (48, 44),
-                    ),
-                    (
-                        position: (9, 16, 24),
-                        texture_position: (48, 52),
-                    ),
-                    (
-                        position: (9, 24, 24),
-                        texture_position: (40, 52),
-                    ),
-                ),
-                // Bottom
-                (
-                    (
-                        position: (9, 24, 0),
-                        texture_position: (40, 52),
-                    ),
-                    (
-                        position: (9, 16, 0),
-                        texture_position: (48, 52),
-                    ),
-                    (
-                        position: (1, 16, 0),
-                        texture_position: (48, 60),
-                    ),
-                    (
-                        position: (1, 24, 0),
-                        texture_position: (40, 60),
-                    ),
-                ),
-                // Front
-                (
-                    (
-                        position: (9, 24, 24),
-                        texture_position: (40, 20),
-                    ),
-                    (
-                        position: (9, 16, 24),
-                        texture_position: (48, 20),
-                    ),
-                    (
-                        position: (9, 16, 0),
-                        texture_position: (48, 44),
-                    ),
-                    (
-                        position: (9, 24, 0),
-                        texture_position: (40, 44),
-                    ),
-                ),
-                // Back
-                (
-                    (
-                        position: (1, 16, 24),
-                        texture_position: (32, 20),
-                    ),
-                    (
-                        position: (1, 24, 24),
-                        texture_position: (40, 20),
-                    ),
-                    (
-                        position: (1, 24, 0),
-                        texture_position: (40, 44),
-                    ),
-                    (
-                        position: (1, 16, 0),
-                        texture_position: (32, 44),
-                    ),
-                ),
-                // Right
-                (
-                    (
-                        position: (1, 24, 24),
-                        texture_position: (48, 20),
-                    ),
-                    (
-                        position: (9, 24, 24),
-                        texture_position: (56, 20),
-                    ),
-                    (
-                        position: (9, 24, 0),
-                        texture_position: (56, 44),
-                    ),
-                    (
-                        position: (1, 24, 0),
-                        texture_position: (48, 44),
-                    ),
-                ),
-                // Left
-                (
-                    (
-                        position: (9, 16, 24),
-                        texture_position: (56, 20),
-                    ),
-                    (
-                        position: (1, 16, 24),
-                        texture_position: (64, 20),
-                    ),
-                    (
-                        position: (1, 16, 0),
-                        texture_position: (64, 44),
-                    ),
-                    (
-                        position: (9, 16, 0),
-                        texture_position: (56, 44),
-                    ),
-                ),
-            ],
-        ),
-        "left_leg": (
-            label: "left_leg",
-            parent_label: "base",
-            sides: [
-                // Top
-                (
-                    (
-                        position: (1, 16, 24),
-                        texture_position: (48, 44),
-                    ),
-                    (
-                        position: (1, 8, 24),
-                        texture_position: (40, 44),
-                    ),
-                    (
-                        position: (9, 8, 24),
-                        texture_position: (40, 52),
-                    ),
-                    (
-                        position: (9, 16, 24),
-                        texture_position: (48, 52),
-                    ),
-                ),
-                // Bottom
-                (
-                    (
-                        position: (9, 16, 0),
-                        texture_position: (48, 52),
-                    ),
-                    (
-                        position: (9, 8, 0),
-                        texture_position: (40, 52),
-                    ),
-                    (
-                        position: (1, 8, 0),
-                        texture_position: (40, 60),
-                    ),
-                    (
-                        position: (1, 16, 0),
-                        texture_position: (48, 60),
-                    ),
-                ),
-                // Front
-                (
-                    (
-                        position: (9, 16, 24),
-                        texture_position: (48, 20),
-                    ),
-                    (
-                        position: (9, 8, 24),
-                        texture_position: (40, 20),
-                    ),
-                    (
-                        position: (9, 8, 0),
-                        texture_position: (40, 44),
-                    ),
-                    (
-                        position: (9, 16, 0),
-                        texture_position: (48, 44),
-                    ),
-                ),
-                // Back
-                (
-                    (
-                        position: (1, 8, 24),
-                        texture_position: (40, 20),
-                    ),
-                    (
-                        position: (1, 16, 24),
-                        texture_position: (32, 20),
-                    ),
-                    (
-                        position: (1, 16, 0),
-                        texture_position: (32, 44),
-                    ),
-                    (
-                        position: (1, 8, 0),
-                        texture_position: (40, 44),
-                    ),
-                ),
-                // Right
-                (
-                    (
-                        position: (1, 16, 24),
-                        texture_position: (64, 20),
-                    ),
-                    (
-                        position: (9, 16, 24),
-                        texture_position: (56, 20),
-                    ),
-                    (
-                        position: (9, 16, 0),
-                        texture_position: (56, 44),
-                    ),
-                    (
-                        position: (1, 16, 0),
-                        texture_position: (64, 44),
-                    ),
-                ),
-                // Left
-                (
-                    (
-                        position: (9, 8, 24),
-                        texture_position: (56, 20),
-                    ),
-                    (
-                        position: (1, 8, 24),
-                        texture_position: (48, 20),
-                    ),
-                    (
-                        position: (1, 8, 0),
-                        texture_position: (48, 44),
-                    ),
-                    (
-                        position: (9, 8, 0),
-                        texture_position: (56, 44),
-                    ),
-                ),
-            ],
+            }, 
         ),
     },
-    animations: {
-        "walking": (
-            label: "walking",
-            duration: 4,
-            transformations: [
-                (
-                    time: 0,
-                    body_part: "right_leg",
-                    operations: [],
-                ),
-                (
-                    time: 0,
-                    body_part: "left_leg",
-                    operations: [
-                        Translate((-5.0, -12.0, -24.0)),
-                        Scale((1.0, 1.0, 0.8)),
-                        Translate((5.0, 12.0, 24.0)),
-                    ],
-                ),
-                (
-                    time: 1,
-                    body_part: "right_leg",
-                    operations: [
-                        Translate((-5.0, -20.0, -24.0)),
-                        Rotate(
-                            axis: (0.0, 1.0, 0.0),
-                            angle_degrees: 45.0,
-                        ),
-                        Translate((5.0, 20.0, 24.0)),
-                    ],
-                ),
-                (
-                    time: 1,
-                    body_part: "left_leg",
-                    operations: [
-                        Translate((-5.0, -12.0, -24.0)),
-                        Rotate(
-                            axis: (0.0, 1.0, 0.0),
-                            angle_degrees: -45.0,
-                        ),
-                        Translate((5.0, 12.0, 24.0)),
-                    ],
-                ),
-                (
-                    time: 2,
-                    body_part: "right_leg",
-                    operations: [
-                        Translate((-5.0, -20.0, -24.0)),
-                        Scale((1.0, 1.0, 0.8)),
-                        Translate((5.0, 20.0, 24.0)),
-                    ],
-                ),
-                (
-                    time: 2,
-                    body_part: "left_leg",
-                    operations: [],
-                ),
-                (
-                    time: 3,
-                    body_part: "right_leg",
-                    operations: [
-                        Translate((-5.0, -20.0, -24.0)),
-                        Rotate(
-                            axis: (0.0, 1.0, 0.0),
-                            angle_degrees: -45.0,
-                        ),
-                        Translate((5.0, 20.0, 24.0)),
-                    ],
-                ),
-                (
-                    time: 3,
-                    body_part: "left_leg",
-                    operations: [
-                        Translate((-5.0, -12.0, -24.0)),
-                        Rotate(
-                            axis: (0.0, 1.0, 0.0),
-                            angle_degrees: 45.0,
-                        ),
-                        Translate((5.0, 12.0, 24.0)),
-                    ],
-                ),
-                (
-                    time: 4,
-                    body_part: "right_leg",
-                    operations: [],
-                ),
-                (
-                    time: 4,
-                    body_part: "left_leg",
-                    operations: [
-                        Translate((-5.0, -12.0, -24.0)),
-                        Scale((1.0, 1.0, 0.8)),
-                        Translate((5.0, 12.0, 24.0)),
-                    ],
-                ),
-            ],
-        ),
-    }, 
 )

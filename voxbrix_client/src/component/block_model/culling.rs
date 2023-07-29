@@ -1,5 +1,5 @@
-use serde::Deserialize;
 use crate::component::block_model::BlockModelComponent;
+use serde::Deserialize;
 
 pub type CullingBlockModelComponent = BlockModelComponent<Culling>;
 

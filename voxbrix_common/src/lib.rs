@@ -8,6 +8,7 @@ pub mod sparse_vec;
 pub mod system;
 
 use anyhow::Context;
+use arrayvec::ArrayVec;
 use component::block::BlocksVec;
 use entity::{
     block_class::BlockClass,
@@ -24,7 +25,6 @@ use std::{
     iter::FromIterator,
     path::Path,
 };
-use arrayvec::ArrayVec;
 
 #[macro_export]
 macro_rules! unblock {
@@ -99,7 +99,10 @@ impl<T, const N: usize> ArrayExt<T, N> for [T; N] {
         F: FnMut(&T) -> U,
     {
         unsafe {
-            self.iter().map(f).collect::<ArrayVec<_, N>>().into_inner_unchecked()
+            self.iter()
+                .map(f)
+                .collect::<ArrayVec<_, N>>()
+                .into_inner_unchecked()
         }
     }
 }

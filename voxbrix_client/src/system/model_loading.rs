@@ -1,55 +1,66 @@
-use crate::entity::block_model::BlockModel;
-use crate::component::block_model::BlockModelComponent;
-use anyhow::Error;
-use serde::Deserialize;
+use anyhow::{
+    Context,
+    Error,
+};
+use ron::Value;
+use serde::{
+    de::DeserializeOwned,
+    Deserialize,
+};
 use std::{
     collections::BTreeMap,
-    path::Path,
+    path::PathBuf,
 };
 use tokio::task;
 use voxbrix_common::{
     read_ron_file,
     LabelMap,
 };
-use ron::Value;
-use serde::de::DeserializeOwned;
 
-const MODELS_PATH: &str = "assets/client/models/blocks";
-const MODEL_LIST_PATH: &str = "assets/client/models/blocks.ron";
+pub const MODEL_PATH_PREFIX: &str = "assets/client/models";
 
 #[derive(Deserialize, Debug)]
 struct List {
     list: Vec<String>,
 }
 
+pub trait LoadableComponent<C> {
+    fn reload(&mut self, data: Vec<Option<C>>);
+}
+
 #[derive(Deserialize, Debug)]
-struct BlockModelDescriptior {
+struct ModelDescriptior {
     label: String,
     components: BTreeMap<String, Value>,
 }
 
-pub struct BlockModelLoadingSystem {
-    block_model_list: Vec<String>,
+pub struct ModelLoadingSystem {
+    model_list: Vec<String>,
     components: BTreeMap<String, Vec<Option<Value>>>,
 }
 
-impl BlockModelLoadingSystem {
-    pub async fn load_data() -> Result<Self, Error> {
-        task::spawn_blocking(|| {
-            let block_model_list = read_ron_file::<List>(MODEL_LIST_PATH)?.list;
+impl ModelLoadingSystem {
+    pub async fn load_data(postfix: &'static str) -> Result<Self, Error> {
+        task::spawn_blocking(move || {
+            let mut dir_path = PathBuf::from(MODEL_PATH_PREFIX);
+            let mut list_path = dir_path.clone();
+
+            dir_path.push(postfix);
+            list_path.push(&format!("{}.ron", postfix));
+
+            let model_list = read_ron_file::<List>(list_path)?.list;
 
             let mut components = BTreeMap::new();
 
-            for (block_model_id, block_model_label) in block_model_list.iter().enumerate() {
-                let file_name = format!("{}.ron", block_model_label);
+            for (model_id, model_label) in model_list.iter().enumerate() {
+                let file_name = format!("{}.ron", model_label);
 
-                let descriptor: BlockModelDescriptior =
-                    read_ron_file(Path::new(MODELS_PATH).join(file_name))?;
+                let descriptor: ModelDescriptior = read_ron_file(dir_path.join(file_name))?;
 
-                if descriptor.label != *block_model_label {
+                if descriptor.label != *model_label {
                     return Err(Error::msg(format!(
                         "Label defined in file differs from file name: {} in {}.ron",
-                        descriptor.label, block_model_label
+                        descriptor.label, model_label
                     )));
                 }
 
@@ -57,21 +68,19 @@ impl BlockModelLoadingSystem {
                     let component_vec = match components.get_mut(&component_label) {
                         Some(c) => c,
                         None => {
-                            components.insert(
-                                component_label.clone(),
-                                vec![None; block_model_list.len()],
-                            );
+                            components
+                                .insert(component_label.clone(), vec![None; model_list.len()]);
 
                             components.get_mut(&component_label).unwrap()
                         },
                     };
 
-                    component_vec[block_model_id] = Some(component_value);
+                    component_vec[model_id] = Some(component_value);
                 }
             }
 
             Ok(Self {
-                block_model_list,
+                model_list,
                 components,
             })
         })
@@ -82,7 +91,7 @@ impl BlockModelLoadingSystem {
     pub fn load_component<D, C, F>(
         &self,
         component_label: &str,
-        component: &mut BlockModelComponent<C>,
+        component: &mut impl LoadableComponent<C>,
         conversion: F,
     ) -> Result<(), Error>
     where
@@ -104,18 +113,24 @@ impl BlockModelLoadingSystem {
                     })
                     .transpose()
             })
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|err| {
+                err.context(format!(
+                    "unable to parse value for the model component \"{}\"",
+                    component_label
+                ))
+            })?;
 
         component.reload(data);
 
         Ok(())
     }
 
-    pub fn into_label_map(self) -> LabelMap<BlockModel> {
-        self.block_model_list
+    pub fn into_label_map<E>(self, f: impl Fn(usize) -> E) -> LabelMap<E> {
+        self.model_list
             .into_iter()
             .enumerate()
-            .map(|(c, l)| (l, BlockModel(c)))
+            .map(|(c, l)| (l, f(c)))
             .collect()
     }
 }

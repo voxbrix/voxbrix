@@ -1,17 +1,19 @@
-use crate::system::render::primitives::{
-    Polygon,
-    Vertex,
+use crate::{
+    component::block_model::BlockModelComponent,
+    system::render::primitives::{
+        Polygon,
+        Vertex,
+    },
 };
-use crate::component::block_model::BlockModelComponent;
+use anyhow::Error;
 use bitflags::bitflags;
 use serde::Deserialize;
 use voxbrix_common::{
     entity::chunk::Chunk,
     math::Vec3I32,
+    ArrayExt,
+    LabelMap,
 };
-use voxbrix_common::LabelMap;
-use voxbrix_common::ArrayExt;
-use anyhow::Error;
 
 pub type BuilderBlockModelComponent = BlockModelComponent<BlockModelBuilder>;
 
@@ -54,27 +56,44 @@ pub struct BlockModelBuilderDescriptor {
 impl BlockModelBuilderDescriptor {
     pub fn describe(&self, context: &BlockModelContext) -> Result<BlockModelBuilder, Error> {
         Ok(BlockModelBuilder {
-            polygons: self.polygons.iter().map(|desc| {
-                Ok::<_, Error>(PolygonBuilder {
-                    culling_neighbor: desc.culling_neighbor,
-                    texture_index: context.block_texture_label_map.get(&desc.texture_label).ok_or_else(|| {
-                        Error::msg(format!("block texture label \"{}\" is undefined", &desc.texture_label))
-                    })?,
-                    vertices: desc.vertices.map_ref(|BlockModelDescriptorVertex { position, texture_position }| {
-                        VertexBuilder {
-                            position: [
-                                position[0] as f32 / self.grid_size[0] as f32,
-                                position[1] as f32 / self.grid_size[1] as f32,
-                                position[2] as f32 / self.grid_size[2] as f32,
-                            ],
-                            texture_position: [
-                                texture_position[0] as f32 / self.texture_grid_size[0] as f32,
-                                texture_position[1] as f32 / self.texture_grid_size[1] as f32,
-                            ],
-                        }
-                    }),
+            polygons: self
+                .polygons
+                .iter()
+                .map(|desc| {
+                    Ok::<_, Error>(PolygonBuilder {
+                        culling_neighbor: desc.culling_neighbor,
+                        texture_index: context
+                            .block_texture_label_map
+                            .get(&desc.texture_label)
+                            .ok_or_else(|| {
+                                Error::msg(format!(
+                                    "block texture label \"{}\" is undefined",
+                                    &desc.texture_label
+                                ))
+                            })?,
+                        vertices: desc.vertices.map_ref(
+                            |BlockModelDescriptorVertex {
+                                 position,
+                                 texture_position,
+                             }| {
+                                VertexBuilder {
+                                    position: [
+                                        position[0] as f32 / self.grid_size[0] as f32,
+                                        position[1] as f32 / self.grid_size[1] as f32,
+                                        position[2] as f32 / self.grid_size[2] as f32,
+                                    ],
+                                    texture_position: [
+                                        texture_position[0] as f32
+                                            / self.texture_grid_size[0] as f32,
+                                        texture_position[1] as f32
+                                            / self.texture_grid_size[1] as f32,
+                                    ],
+                                }
+                            },
+                        ),
+                    })
                 })
-            }).collect::<Result<Vec<_>, Error>>()?,
+                .collect::<Result<Vec<_>, Error>>()?,
         })
     }
 }
@@ -129,63 +148,64 @@ impl BlockModelBuilder {
         cull_mask: CullFlags,
         sky_light_level: [u8; 6],
     ) {
-        let extension = self.polygons.iter().filter(|pb| {
-            match pb.culling_neighbor {
-                CullingNeighbor::None => true,
-                CullingNeighbor::NegativeX => cull_mask.contains(CullFlags::X0),
-                CullingNeighbor::PositiveX => cull_mask.contains(CullFlags::X1),
-                CullingNeighbor::NegativeY => cull_mask.contains(CullFlags::Y0),
-                CullingNeighbor::PositiveY => cull_mask.contains(CullFlags::Y1),
-                CullingNeighbor::NegativeZ => cull_mask.contains(CullFlags::Z0),
-                CullingNeighbor::PositiveZ => cull_mask.contains(CullFlags::Z1),
-            }
-        }).map(|pb| {
-            Polygon {
-                chunk: chunk.position.to_array(),
-                texture_index: pb.texture_index,
-                vertices: pb.vertices.map_ref(|vxb| {
-                    let mut position = vxb.position;
-                    
-                    position[0] += block[0] as f32;
-                    position[1] += block[1] as f32;
-                    position[2] += block[2] as f32;
+        let extension = self
+            .polygons
+            .iter()
+            .filter(|pb| {
+                match pb.culling_neighbor {
+                    CullingNeighbor::None => true,
+                    CullingNeighbor::NegativeX => cull_mask.contains(CullFlags::X0),
+                    CullingNeighbor::PositiveX => cull_mask.contains(CullFlags::X1),
+                    CullingNeighbor::NegativeY => cull_mask.contains(CullFlags::Y0),
+                    CullingNeighbor::PositiveY => cull_mask.contains(CullFlags::Y1),
+                    CullingNeighbor::NegativeZ => cull_mask.contains(CullFlags::Z0),
+                    CullingNeighbor::PositiveZ => cull_mask.contains(CullFlags::Z1),
+                }
+            })
+            .map(|pb| {
+                Polygon {
+                    chunk: chunk.position.to_array(),
+                    texture_index: pb.texture_index,
+                    vertices: pb.vertices.map_ref(|vxb| {
+                        let mut position = vxb.position;
 
-                    let sky_light_level = match pb.culling_neighbor {
-                        // TODO better lighting for non-cullable polygons
-                        CullingNeighbor::None => {
-                            let light_float = sky_light_level
-                                .iter()
-                                .map(|side_light| *side_light as f32)
-                                .sum::<f32>() / 6.0;
+                        position[0] += block[0] as f32;
+                        position[1] += block[1] as f32;
+                        position[2] += block[2] as f32;
 
-                            light_float.min(u8::MAX as f32) as u8
-                        },
-                        CullingNeighbor::NegativeX => sky_light_level[0],
-                        CullingNeighbor::PositiveX => sky_light_level[1],
-                        CullingNeighbor::NegativeY => sky_light_level[2],
-                        CullingNeighbor::PositiveY => sky_light_level[3],
-                        CullingNeighbor::NegativeZ => sky_light_level[4],
-                        CullingNeighbor::PositiveZ => sky_light_level[5],
-                    };
+                        let sky_light_level = match pb.culling_neighbor {
+                            // TODO better lighting for non-cullable polygons
+                            CullingNeighbor::None => {
+                                let light_float = sky_light_level
+                                    .iter()
+                                    .map(|side_light| *side_light as f32)
+                                    .sum::<f32>()
+                                    / 6.0;
 
-                    Vertex {
-                        position,
-                        texture_position: vxb.texture_position,
-                        light_level: [sky_light_level, 0, 0, 0]
-                    }
-                }),
-            }
-        });
+                                light_float.min(u8::MAX as f32) as u8
+                            },
+                            CullingNeighbor::NegativeX => sky_light_level[0],
+                            CullingNeighbor::PositiveX => sky_light_level[1],
+                            CullingNeighbor::NegativeY => sky_light_level[2],
+                            CullingNeighbor::PositiveY => sky_light_level[3],
+                            CullingNeighbor::NegativeZ => sky_light_level[4],
+                            CullingNeighbor::PositiveZ => sky_light_level[5],
+                        };
+
+                        Vertex {
+                            position,
+                            texture_position: vxb.texture_position,
+                            light_level: [sky_light_level, 0, 0, 0],
+                        }
+                    }),
+                }
+            });
 
         polygons.extend(extension);
     }
 }
 
-pub fn side_highlighting(
-    chunk: Vec3I32,
-    block_coords: [usize; 3],
-    side: usize,
-) -> Polygon {
+pub fn side_highlighting(chunk: Vec3I32, block_coords: [usize; 3], side: usize) -> Polygon {
     const ELEVATION: f32 = 0.01;
     const TEXTURE_INDEX: u32 = 0;
 

@@ -110,12 +110,7 @@ impl<'a> RenderSystemDescriptor<'a> {
             orientation_ac,
         );
 
-        let output_thread = OutputThread::new(
-            render_handle,
-            window_handle,
-            config,
-            None,
-        );
+        let output_thread = OutputThread::new(render_handle, window_handle, config, None);
 
         let depth_texture_size = wgpu::Extent3d {
             width: surface_size.width,

@@ -1,42 +1,35 @@
-use crate::entity::actor_model::ActorModel;
+use crate::{
+    entity::actor_model::ActorModel,
+    system::model_loading::LoadableComponent,
+};
+use ron::Value;
+use serde::Deserialize;
 use std::collections::BTreeMap;
-use voxbrix_common::math::MinMax;
 
-pub mod animation;
-pub mod body_part;
+pub mod builder;
 
-pub struct ActorModelComponent<K, T> {
-    data: BTreeMap<(ActorModel, K), T>,
+pub struct ActorModelComponent<T> {
+    data: Vec<Option<T>>,
 }
 
-impl<K, T> ActorModelComponent<K, T>
-where
-    K: Ord + Copy + MinMax,
-{
+impl<T> ActorModelComponent<T> {
     pub fn new() -> Self {
-        Self {
-            data: BTreeMap::new(),
-        }
+        Self { data: Vec::new() }
     }
 
-    pub fn insert(&mut self, model: ActorModel, key: K, new: T) -> Option<T> {
-        self.data.insert((model, key), new)
+    pub fn get(&self, i: ActorModel) -> Option<&T> {
+        self.data.get(i.0)?.as_ref()
     }
+}
 
-    pub fn get(&self, model: ActorModel, key: K) -> Option<&T> {
-        self.data.get(&(model, key))
+impl<T> LoadableComponent<T> for ActorModelComponent<T> {
+    fn reload(&mut self, data: Vec<Option<T>>) {
+        self.data = data;
     }
+}
 
-    pub fn get_actor_model(
-        &self,
-        model: ActorModel,
-    ) -> impl DoubleEndedIterator<Item = (ActorModel, K, &T)> {
-        self.data
-            .range((model, K::MIN) .. (model, K::MAX))
-            .map(|(&(m, k), t)| (m, k, t))
-    }
-
-    pub fn extend(&mut self, iter: impl Iterator<Item = (ActorModel, K, T)>) {
-        self.data.extend(iter.map(|(m, k, t)| ((m, k), t)))
-    }
+#[derive(Deserialize, Debug)]
+pub struct ActorModelDescriptor {
+    label: String,
+    components: BTreeMap<String, Value>,
 }

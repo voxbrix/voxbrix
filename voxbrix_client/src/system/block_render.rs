@@ -1,20 +1,23 @@
 use crate::{
-    component::block_class::model::ModelBlockClassComponent,
-    component::block_model::builder::{
-        self,
-        CullFlags,
-        BuilderBlockModelComponent,
-    },
-    component::block_model::
-        culling::{
-            Culling,
-            CullingBlockModelComponent,
+    component::{
+        block_class::model::ModelBlockClassComponent,
+        block_model::{
+            builder::{
+                self,
+                BuilderBlockModelComponent,
+                CullFlags,
+            },
+            culling::{
+                Culling,
+                CullingBlockModelComponent,
+            },
         },
+    },
     system::render::{
         gpu_vec::GpuVec,
         primitives::{
-            VertexDescription,
             Polygon,
+            VertexDescription,
         },
         RenderParameters,
         Renderer,
@@ -24,8 +27,10 @@ use crate::{
 use anyhow::Result;
 use arrayvec::ArrayVec;
 use rayon::prelude::*;
-use std::collections::BTreeMap;
-use std::mem;
+use std::{
+    collections::BTreeMap,
+    mem,
+};
 use voxbrix_common::{
     component::block::{
         class::ClassBlockComponent,
@@ -48,8 +53,8 @@ use voxbrix_common::{
 };
 use wgpu::util::DeviceExt;
 
-//const VERTEX_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK * 6 /*sides*/ * 4 /*vertices*/;
-//const INDEX_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK * 6 /*sides*/ * 2 /*polygons*/ * 3 /*vertices*/;
+// const VERTEX_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK * 6 /*sides*/ * 4 /*vertices*/;
+// const INDEX_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK * 6 /*sides*/ * 2 /*polygons*/ * 3 /*vertices*/;
 const POLYGON_SIZE: usize = Polygon::size() as usize;
 const POLYGON_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK * 6 /*sides*/;
 
@@ -68,7 +73,9 @@ fn neighbors_to_cull_flags(
         match neighbor {
             Neighbor::ThisChunk(n) => {
                 let class = this_chunk.get(*n);
-                let culling = model_bcc.get(*class).and_then(|model| culling_bmc.get(*model));
+                let culling = model_bcc
+                    .get(*class)
+                    .and_then(|model| culling_bmc.get(*model));
                 match culling {
                     Some(Culling::Full) => {
                         cull_flags.remove(side);
@@ -79,7 +86,9 @@ fn neighbors_to_cull_flags(
             Neighbor::OtherChunk(n) => {
                 if let Some(chunk) = neighbor_chunk {
                     let class = chunk.get(*n);
-                    let culling = model_bcc.get(*class).and_then(|model| culling_bmc.get(*model));
+                    let culling = model_bcc
+                        .get(*class)
+                        .and_then(|model| culling_bmc.get(*model));
                     match culling {
                         Some(Culling::Full) => {
                             cull_flags.remove(side);
@@ -102,10 +111,7 @@ struct ChunkInfo<'a> {
     polygon_buffer: Option<&'a mut [u8]>,
 }
 
-fn slice_buffers<'a>(
-    chunk_info: &mut [ChunkInfo<'a>],
-    mut polygon_buffer: &'a mut [u8],
-) {
+fn slice_buffers<'a>(chunk_info: &mut [ChunkInfo<'a>], mut polygon_buffer: &'a mut [u8]) {
     for chunk in chunk_info.iter_mut() {
         let (polygon_buffer_shard, residue) =
             polygon_buffer.split_at_mut(chunk.polygon_length * POLYGON_SIZE);
@@ -197,31 +203,21 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
                     multiview: None,
                 });
 
-        let vertex_buffer = 
-            render_handle.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Vertex Buffer"),
-                usage: wgpu::BufferUsages::VERTEX,
-                contents: bytemuck::cast_slice(&[
-                    VertexDescription {
-                        index: 0,
-                    },
-                    VertexDescription {
-                        index: 1,
-                    },
-                    VertexDescription {
-                        index: 3,
-                    },
-                    VertexDescription {
-                        index: 2,
-                    },
-                    VertexDescription {
-                        index: 3,
-                    },
-                    VertexDescription {
-                        index: 1,
-                    },
-                ]),
-            });
+        let vertex_buffer =
+            render_handle
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Vertex Buffer"),
+                    usage: wgpu::BufferUsages::VERTEX,
+                    contents: bytemuck::cast_slice(&[
+                        VertexDescription { index: 0 },
+                        VertexDescription { index: 1 },
+                        VertexDescription { index: 3 },
+                        VertexDescription { index: 2 },
+                        VertexDescription { index: 3 },
+                        VertexDescription { index: 1 },
+                    ]),
+                });
 
         let polygon_buffer = GpuVec::new(&render_handle.device, wgpu::BufferUsages::VERTEX);
 
@@ -305,7 +301,10 @@ impl BlockRenderSystem {
         });
 
         for (block, block_coords, block_class) in this_chunk_class.iter_with_coords() {
-            if let Some(model_builder) = model_bcc.get(*block_class).and_then(|m| builder_bmc.get(*m)) {
+            if let Some(model_builder) = model_bcc
+                .get(*block_class)
+                .and_then(|m| builder_bmc.get(*m))
+            {
                 let neighbors = block.neighbors_in_coords(block_coords);
 
                 let cull_flags = neighbors_to_cull_flags(
@@ -390,7 +389,7 @@ impl BlockRenderSystem {
 
     pub fn build_target_highlight(&mut self, target: Option<(Chunk, Block, usize)>) {
         if let Some((chunk, block, side)) = target {
-             self.target_highlighting = TargetHighlighting::New(builder::side_highlighting(
+            self.target_highlighting = TargetHighlighting::New(builder::side_highlighting(
                 chunk.position,
                 block.to_coords(),
                 side,
@@ -404,7 +403,10 @@ impl BlockRenderSystem {
         if self.update_chunk_buffer {
             let mut polygons_len = 0;
 
-            let mut chunk_info = self.chunk_buffer_shards.values().map(|chunk_shard| {
+            let mut chunk_info = self
+                .chunk_buffer_shards
+                .values()
+                .map(|chunk_shard| {
                     polygons_len += chunk_shard.len();
 
                     ChunkInfo {
@@ -412,7 +414,8 @@ impl BlockRenderSystem {
                         polygon_length: chunk_shard.len(),
                         polygon_buffer: None,
                     }
-                }).collect::<Vec<_>>();
+                })
+                .collect::<Vec<_>>();
 
             let polygon_buffer_byte_size = (polygons_len * POLYGON_SIZE) as u64;
 
@@ -423,10 +426,7 @@ impl BlockRenderSystem {
                     polygon_buffer_byte_size,
                 );
 
-                slice_buffers(
-                    &mut chunk_info,
-                    writer.as_mut(),
-                );
+                slice_buffers(&mut chunk_info, writer.as_mut());
 
                 chunk_info.par_iter_mut().for_each(|chunk| {
                     chunk
@@ -452,7 +452,8 @@ impl BlockRenderSystem {
             render_pass.draw(0 .. 6, 0 .. self.num_polygons);
         }
 
-        let target_highlighting = mem::replace(&mut self.target_highlighting, TargetHighlighting::Previous);
+        let target_highlighting =
+            mem::replace(&mut self.target_highlighting, TargetHighlighting::Previous);
 
         if !matches!(target_highlighting, TargetHighlighting::None) {
             if let TargetHighlighting::New(polygon) = target_highlighting {

@@ -1,9 +1,9 @@
-pub mod actor_model_loading;
 pub mod actor_render;
-pub mod block_model_loading;
 pub mod block_render;
 pub mod chunk_presence;
 pub mod controller;
+pub mod list_loading;
+pub mod model_loading;
 pub mod position;
 pub mod render;
 pub mod texture_loading;
