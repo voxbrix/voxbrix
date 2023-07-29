@@ -439,6 +439,11 @@ pub async fn run(
                     .await
                     .ok()
                     .flatten()
+                    .or_else(|| {
+                        // we need to inform the server loop
+                        let _ = local.event_tx.send(ServerEvent::RemovePlayer { player });
+                        None
+                    })
                 }
             }))
             .or_ff(self_rx.map(LoopEvent::SelfEvent)),
@@ -476,6 +481,5 @@ pub async fn run(
         }
     }
 
-    let _ = local.event_tx.send(ServerEvent::RemovePlayer { player });
     Ok(())
 }

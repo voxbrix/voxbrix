@@ -16,8 +16,8 @@ use voxbrix_common::{
 };
 
 const PATH_PREFIX: &str = "assets/client/textures";
-const BLOCK_TEXTURE_FORMAT: ImageFormat = ImageFormat::Png;
-const BLOCK_TEXTURE_FORMAT_NAME: &str = "png";
+const TEXTURE_FORMAT: ImageFormat = ImageFormat::Png;
+const TEXTURE_FORMAT_NAME: &str = "png";
 pub const GPU_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 
 #[derive(Deserialize, Debug)]
@@ -45,7 +45,7 @@ impl TextureLoadingSystem {
                 .iter()
                 .map(|texture_label| {
                     let file_path = textures_path_pfx
-                        .join(format!("{}.{}", texture_label, BLOCK_TEXTURE_FORMAT_NAME));
+                        .join(format!("{}.{}", texture_label, TEXTURE_FORMAT_NAME));
                     fs::read(&file_path).with_context(|| format!("reading {:?}", &file_path))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -78,8 +78,7 @@ impl TextureLoadingSystem {
             .iter()
             .map(|buf| {
                 let bytes_rgba =
-                    image::load_from_memory_with_format(buf.as_ref(), BLOCK_TEXTURE_FORMAT)?
-                        .into_rgba8();
+                    image::load_from_memory_with_format(buf.as_ref(), TEXTURE_FORMAT)?.into_rgba8();
 
                 Ok(bytes_rgba)
             })
