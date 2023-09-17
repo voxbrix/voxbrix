@@ -26,11 +26,14 @@ use crate::{
             client::ClientPlayerComponent,
         },
     },
-    entity::player::Player,
+    entity::{
+        actor::ActorRegistry,
+        player::Player,
+    },
     storage::{
+        IntoData,
+        IntoDataSized,
         StorageThread,
-        Store,
-        StoreSized,
     },
     system::chunk_ticket::ChunkTicketSystem,
     Local,
@@ -51,10 +54,7 @@ use local_channel::mpsc::{
 };
 use log::debug;
 use redb::ReadableTable;
-use std::{
-    rc::Rc,
-    time::Instant,
-};
+use std::rc::Rc;
 use tokio::time::{
     self,
     MissedTickBehavior,
@@ -65,20 +65,24 @@ use voxbrix_common::{
         BlocksVec,
     },
     entity::{
-        actor_class::ActorClass,
+        actor::Actor,
         block::{
             BLOCKS_IN_CHUNK,
             BLOCKS_IN_CHUNK_LAYER,
         },
+        chunk::Chunk,
+        snapshot::{
+            Snapshot,
+            MAX_SNAPSHOT_DIFF,
+        },
+        state_component::StateComponent,
     },
     messages::{
-        client::{
-            ActorStatus,
-            ClientAccept,
-        },
+        client::ClientAccept,
         server::ServerAccept,
+        StatePacker,
     },
-    pack::PackZip,
+    pack::Packer,
     system::block_class_loading::BlockClassLoadingSystem,
     ChunkData,
 };
@@ -115,9 +119,14 @@ pub enum ServerEvent {
 
 pub struct Client {
     tx: Sender<ClientEvent>,
+    // The last server snapshot received by the client
+    last_server_snapshot: Snapshot,
+    // The last client snapshot received from the client
+    last_client_snapshot: Snapshot,
+    last_confirmed_chunk: Option<Chunk>,
 }
 
-/// Packs data into Rc in one thread and extrachunk_ticket_system it in another
+/// Packs data into Rc in one thread and extract it in another
 pub struct SendRc<T>(Rc<T>);
 
 impl<T> SendRc<T>
@@ -153,17 +162,21 @@ pub async fn run(
         .expect("loading block classes");
     let block_class_label_map = block_class_loading_system.into_label_map();
 
-    let time_start = Instant::now();
+    let mut packer = Packer::new();
+
+    let mut actor_registry = ActorRegistry::new();
 
     let mut client_pc = ClientPlayerComponent::new();
     let mut actor_pc = ActorPlayerComponent::new();
-    let mut class_ac = ClassActorComponent::new();
+    // TODO replace hardcoded state components
+    let mut class_ac = ClassActorComponent::new(StateComponent(0));
+    let mut position_ac = PositionActorComponent::new(StateComponent(1));
+    let mut velocity_ac = VelocityActorComponent::new(StateComponent(2));
+    let mut orientation_ac = OrientationActorComponent::new(StateComponent(3));
     let mut chunk_ticket_ac = ChunkTicketActorComponent::new();
+
     let mut status_cc = StatusChunkComponent::new();
     let mut cache_cc = CacheChunkComponent::new();
-    let mut position_ac = PositionActorComponent::new();
-    let mut velocity_ac = VelocityActorComponent::new();
-    let mut orientation_ac = OrientationActorComponent::new();
     let mut chunk_ticket_system = ChunkTicketSystem::new();
     let mut class_bc = ClassBlockComponent::new();
 
@@ -183,42 +196,138 @@ pub async fn run(
 
     let storage = StorageThread::new();
 
+    let mut snapshot = Snapshot(1);
+
+    let mut server_state = StatePacker::new();
+
     while let Some(event) = stream.next().await {
+        // TODO entity deletion here
         match event {
             ServerEvent::Process => {
-                let timestamp = time_start.elapsed();
-
                 chunk_ticket_system.clear();
                 chunk_ticket_system.actor_tickets(&chunk_ticket_ac);
 
-                for (player, client, position) in actor_pc.iter().filter_map(|(player, actor)| {
-                    Some((player, client_pc.get(player)?, position_ac.get(actor)?))
-                }) {
-                    let chunk_radius = position.chunk.radius(PLAYER_CHUNK_TICKET_RADIUS);
+                for (player, player_actor, client) in actor_pc
+                    .iter()
+                    .filter_map(|(player, actor)| Some((player, actor, client_pc.get(player)?)))
+                {
+                    // Disconnect player if his last snapshot is too low
+                    /*if snapshot.0 - client.last_server_snapshot.0 > MAX_SNAPSHOT_DIFF
+                        // TODO after several seconds disconnect Snapshot(0) ones anyway:
+                        && client.last_server_snapshot != Snapshot(0) {
+                        let _ = local
+                            .event_tx
+                            .send(ServerEvent::RemovePlayer { player: *player });
 
-                    let status = class_ac
-                        .iter()
-                        .filter_map(|(actor, &class)| {
-                            let position = position_ac.get(&actor)?.clone();
-                            let orientation = orientation_ac.get(&actor)?.clone();
+                        continue;
+                    }*/
 
-                            if !chunk_radius.is_within(&position.chunk) {
-                                return None;
-                            }
+                    let position_chunk = match position_ac.get(&player_actor) {
+                        Some(v) => v.chunk,
+                        None => continue,
+                    };
 
-                            let velocity = velocity_ac.get(&actor)?.clone();
+                    let chunk_radius = position_chunk.radius(PLAYER_CHUNK_TICKET_RADIUS);
 
-                            Some(ActorStatus {
-                                actor,
-                                class,
-                                position,
-                                velocity,
-                                orientation,
-                            })
-                        })
-                        .collect();
+                    macro_rules! pack_components {
+                        ($actor_in_inters:ident) => {
+                            let actors_full_update = position_ac.actors_full_update();
 
-                    let data = ClientAccept::ActorStatus { timestamp, status }.pack_to_vec();
+                            class_ac.pack_changes(
+                                &mut server_state,
+                                snapshot,
+                                client.last_server_snapshot,
+                                player_actor,
+                                $actor_in_inters,
+                                actors_full_update,
+                            );
+
+                            velocity_ac.pack_changes(
+                                &mut server_state,
+                                snapshot,
+                                client.last_server_snapshot,
+                                player_actor,
+                                $actor_in_inters,
+                                actors_full_update,
+                            );
+
+                            orientation_ac.pack_changes(
+                                &mut server_state,
+                                snapshot,
+                                client.last_server_snapshot,
+                                player_actor,
+                                $actor_in_inters,
+                                actors_full_update,
+                            );
+                        };
+                    }
+
+                    if let Some(previous_chunk_radius) = client
+                        .last_confirmed_chunk
+                        // Enforces full update for the outdated clients
+                        .filter(|_| snapshot.0 - client.last_server_snapshot.0 <= MAX_SNAPSHOT_DIFF
+                            && client.last_server_snapshot != Snapshot(0))
+                        .map(|c| c.radius(PLAYER_CHUNK_TICKET_RADIUS))
+                    {
+                        let chunk_within_intersection = |chunk: Option<&Chunk>| -> bool {
+                            let chunk = match chunk {
+                                Some(v) => v,
+                                None => return false,
+                            };
+
+                            previous_chunk_radius.is_within(chunk) && chunk_radius.is_within(chunk)
+                        };
+
+                        // TODO optimize?
+                        let new_chunks = chunk_radius
+                            .into_iter()
+                            .filter(|c| !previous_chunk_radius.is_within(c));
+
+                        position_ac.pack_changes(
+                            &mut server_state,
+                            snapshot,
+                            client.last_server_snapshot,
+                            player_actor,
+                            chunk_within_intersection,
+                            new_chunks,
+                        );
+
+                        let actor_within_intersection = |actor: &Actor| {
+                            let actor_chunk = match position_ac.get(actor) {
+                                Some(v) => &v.chunk,
+                                None => return false,
+                            };
+
+                            previous_chunk_radius.is_within(actor_chunk)
+                                && chunk_radius.is_within(actor_chunk)
+                        };
+
+                        pack_components!(actor_within_intersection);
+                    } else {
+                        let chunk_within_intersection = |_chunk: Option<&Chunk>| false;
+
+                        let new_chunks = chunk_radius.into_iter();
+
+                        position_ac.pack_changes(
+                            &mut server_state,
+                            snapshot,
+                            client.last_server_snapshot,
+                            player_actor,
+                            chunk_within_intersection,
+                            new_chunks,
+                        );
+
+                        let actor_within_intersection = |_actor: &Actor| false;
+
+                        pack_components!(actor_within_intersection);
+                    }
+
+                    let data = ClientAccept::pack_state(
+                        snapshot,
+                        client.last_client_snapshot,
+                        &mut server_state,
+                        &mut packer,
+                    );
 
                     if client
                         .tx
@@ -242,7 +351,7 @@ pub async fn run(
                     &mut class_bc,
                     &mut cache_cc,
                     move |chunk| {
-                        let chunk_key = chunk.store_sized();
+                        let mut packer = Packer::new();
 
                         let block_classes = {
                             let db_read = shared.database.begin_read().unwrap();
@@ -250,9 +359,9 @@ pub async fn run(
                                 .open_table(BLOCK_CLASS_TABLE)
                                 .expect("server_loop: database read");
                             table
-                                .get(&chunk_key)
+                                .get(chunk.into_data_sized())
                                 .unwrap()
-                                .and_then(|bytes| bytes.value().unstore().ok())
+                                .map(|bytes| bytes.value().into_inner(&mut packer))
                         }
                         .unwrap_or_else(|| {
                             let block_classes = if chunk.position[2] == -1 {
@@ -274,7 +383,10 @@ pub async fn run(
                             {
                                 let mut table = db_write.open_table(BLOCK_CLASS_TABLE).unwrap();
                                 table
-                                    .insert(&chunk_key, block_classes.store_owned())
+                                    .insert(
+                                        chunk.into_data_sized(),
+                                        block_classes.into_data(&mut packer),
+                                    )
                                     .expect("server_loop: database write");
                             }
                             db_write.commit().unwrap();
@@ -287,23 +399,40 @@ pub async fn run(
                             block_classes,
                         };
 
-                        // Moving allocations and cloning away from the main thread
                         let data_encoded =
-                            SendRc::new(ClientAccept::ChunkData(data.clone()).pack_to_vec());
+                            SendRc::new(packer.pack_to_vec(&ClientAccept::ChunkData(data.clone())));
 
                         let _ = shared
                             .event_tx
                             .send(SharedEvent::ChunkLoaded { data, data_encoded });
                     },
                 );
+
+                snapshot = snapshot.next();
             },
             ServerEvent::AddPlayer {
                 player,
                 client_tx: tx,
             } => {
                 let tx_init = tx.clone();
-                let actor = class_ac.create_actor(ActorClass(0));
-                client_pc.insert(player, Client { tx });
+                let actor = actor_registry.add();
+
+                // TODO replace with "player class"
+                class_ac.insert(
+                    actor,
+                    voxbrix_common::entity::actor_class::ActorClass(0),
+                    snapshot,
+                );
+
+                client_pc.insert(
+                    player,
+                    Client {
+                        tx,
+                        last_server_snapshot: Snapshot(0),
+                        last_client_snapshot: Snapshot(0),
+                        last_confirmed_chunk: None,
+                    },
+                );
                 actor_pc.insert(player, actor);
 
                 if tx_init.send(ClientEvent::AssignActor { actor }).is_err() {
@@ -317,7 +446,7 @@ pub async fn run(
                 data,
             } => {
                 if channel == BASE_CHANNEL {
-                    let event = match ServerAccept::unpack(data) {
+                    let event = match packer.unpack::<ServerAccept>(data.as_ref()) {
                         Ok(e) => e,
                         Err(_) => {
                             debug!(
@@ -329,65 +458,86 @@ pub async fn run(
                     };
 
                     match event {
-                        ServerAccept::PlayerMovement {
-                            position,
-                            velocity,
-                            orientation,
+                        ServerAccept::State {
+                            snapshot: last_client_snapshot,
+                            last_server_snapshot,
+                            state,
                         } => {
                             let actor = match actor_pc.get(&player) {
                                 Some(a) => a,
                                 None => continue,
                             };
 
-                            let chunk = position.chunk;
+                            let client = match client_pc.get_mut(&player) {
+                                Some(c) => c,
+                                None => continue,
+                            };
 
-                            let curr_pos = position_ac.insert(*actor, position);
-                            velocity_ac.insert(*actor, velocity);
+                            client.last_server_snapshot = last_server_snapshot;
+                            client.last_client_snapshot = last_client_snapshot;
 
-                            orientation_ac.insert(*actor, orientation);
+                            velocity_ac.unpack_player(actor, &state, snapshot);
+                            orientation_ac.unpack_player(actor, &state, snapshot);
+
+                            position_ac.unpack_player_with(
+                                actor,
+                                &state,
+                                snapshot,
+                                |old_value, new_value| {
+                                    let chunk = match new_value {
+                                        Some(v) => v.chunk,
+                                        None => return,
+                                    };
+
+                                    client_pc.get_mut(&player).unwrap().last_confirmed_chunk =
+                                        Some(chunk);
+
+                                    if old_value.is_none()
+                                        || old_value.is_some() && old_value.unwrap().chunk != chunk
+                                    {
+                                        let curr_radius = chunk.radius(PLAYER_CHUNK_TICKET_RADIUS);
+
+                                        let prev_radius = chunk_ticket_ac
+                                            .insert(
+                                                *actor,
+                                                ActorChunkTicket {
+                                                    chunk,
+                                                    radius: PLAYER_CHUNK_TICKET_RADIUS,
+                                                },
+                                            )
+                                            .map(|c| c.chunk.radius(c.radius));
+
+                                        for chunk_data in
+                                            curr_radius.into_iter().filter_map(|chunk| {
+                                                if let Some(prev_radius) = &prev_radius {
+                                                    if prev_radius.is_within(&chunk) {
+                                                        return None;
+                                                    }
+                                                }
+
+                                                cache_cc.get(&chunk)
+                                            })
+                                        {
+                                            if let Some(client) = client_pc.get(&player) {
+                                                if client
+                                                    .tx
+                                                    .send(ClientEvent::SendDataReliable {
+                                                        channel: BASE_CHANNEL,
+                                                        data: SendData::Ref(chunk_data.clone()),
+                                                    })
+                                                    .is_err()
+                                                {
+                                                    let _ = local
+                                                        .event_tx
+                                                        .send(ServerEvent::RemovePlayer { player });
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                            );
 
                             status_updates.insert(*actor);
-
-                            if curr_pos.is_none()
-                                || curr_pos.is_some() && curr_pos.unwrap().chunk != chunk
-                            {
-                                let curr_radius = chunk.radius(PLAYER_CHUNK_TICKET_RADIUS);
-
-                                let prev_radius = chunk_ticket_ac
-                                    .insert(
-                                        *actor,
-                                        ActorChunkTicket {
-                                            chunk,
-                                            radius: PLAYER_CHUNK_TICKET_RADIUS,
-                                        },
-                                    )
-                                    .map(|c| c.chunk.radius(c.radius));
-
-                                for chunk_data in curr_radius.into_iter().filter_map(|chunk| {
-                                    if let Some(prev_radius) = &prev_radius {
-                                        if prev_radius.is_within(&chunk) {
-                                            return None;
-                                        }
-                                    }
-
-                                    cache_cc.get(&chunk)
-                                }) {
-                                    if let Some(client) = client_pc.get(&player) {
-                                        if client
-                                            .tx
-                                            .send(ClientEvent::SendDataReliable {
-                                                channel: BASE_CHANNEL,
-                                                data: SendData::Ref(chunk_data.clone()),
-                                            })
-                                            .is_err()
-                                        {
-                                            let _ = local
-                                                .event_tx
-                                                .send(ServerEvent::RemovePlayer { player });
-                                        }
-                                    }
-                                }
-                            }
                         },
                         ServerAccept::AlterBlock {
                             chunk,
@@ -400,14 +550,12 @@ pub async fn run(
                             {
                                 *block_class_ref = block_class;
 
-                                let data_buf = Rc::new(
-                                    ClientAccept::AlterBlock {
+                                let data_buf =
+                                    Rc::new(packer.pack_to_vec(&ClientAccept::AlterBlock {
                                         chunk,
                                         block,
                                         block_class,
-                                    }
-                                    .pack_to_vec(),
-                                );
+                                    }));
 
                                 for (player, client) in
                                     actor_pc.iter().filter_map(|(player, actor)| {
@@ -446,21 +594,25 @@ pub async fn run(
                                     block_classes: blocks_cache,
                                 });
 
-                                cache_cc.insert(chunk, Rc::new(cache_data.pack_to_vec()));
+                                cache_cc.insert(chunk, Rc::new(packer.pack_to_vec(&cache_data)));
 
                                 let blocks_cache = match cache_data {
                                     ClientAccept::ChunkData(b) => b.block_classes,
                                     _ => panic!(),
                                 };
 
-                                storage.execute(move |buf| {
+                                storage.execute(move || {
+                                    let mut packer = Packer::new();
                                     let db_write = shared.database.begin_write().unwrap();
                                     {
                                         let mut table =
                                             db_write.open_table(BLOCK_CLASS_TABLE).unwrap();
 
                                         table
-                                            .insert(chunk.store_sized(), blocks_cache.store(buf))
+                                            .insert(
+                                                chunk.into_data_sized(),
+                                                blocks_cache.into_data(&mut packer),
+                                            )
                                             .expect("server_loop: database write");
                                     }
                                     db_write.commit().unwrap();
@@ -473,8 +625,11 @@ pub async fn run(
             ServerEvent::RemovePlayer { player } => {
                 client_pc.remove(&player);
                 if let Some(actor) = actor_pc.remove(&player) {
-                    class_ac.remove(&actor);
-                    position_ac.remove(&actor);
+                    actor_registry.remove(&actor);
+                    class_ac.remove(&actor, snapshot);
+                    position_ac.remove(&actor, snapshot);
+                    velocity_ac.remove(&actor, snapshot);
+                    orientation_ac.remove(&actor, snapshot);
                     chunk_ticket_ac.remove(&actor);
                 }
             },

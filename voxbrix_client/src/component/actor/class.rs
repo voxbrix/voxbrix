@@ -1,6 +1,4 @@
-use voxbrix_common::{
-    component::actor::ActorComponentMap,
-    entity::actor_class::ActorClass,
-};
+use crate::component::actor::ActorComponentPackable;
+use voxbrix_common::entity::actor_class::ActorClass;
 
-pub type ClassActorComponent = ActorComponentMap<ActorClass>;
+pub type ClassActorComponent = ActorComponentPackable<ActorClass>;

@@ -1,11 +1,5 @@
 use crate::{
-    entity::{
-        chunk,
-        player::{
-            self,
-            Player,
-        },
-    },
+    entity::player::Player,
     storage::{
         player::PlayerProfile,
         Data,
@@ -54,16 +48,11 @@ const BASE_CHANNEL: Channel = 0;
 const PLAYER_CHUNK_TICKET_RADIUS: i32 = 4;
 const PROCESS_INTERVAL: Duration = Duration::from_millis(50);
 const CLIENT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
-const BLOCK_CLASS_TABLE: TableDefinition<
-    DataSized<Chunk, { chunk::KEY_LENGTH }>,
-    Data<BlocksVec<BlockClass>>,
-> = TableDefinition::new("block_class");
-const PLAYER_TABLE: TableDefinition<
-    DataSized<Player, { player::KEY_LENGTH }>,
-    Data<PlayerProfile>,
-> = TableDefinition::new("player");
-const USERNAME_TABLE: TableDefinition<&str, DataSized<Player, { player::KEY_LENGTH }>> =
-    TableDefinition::new("username");
+const BLOCK_CLASS_TABLE: TableDefinition<DataSized<Chunk>, Data<BlocksVec<BlockClass>>> =
+    TableDefinition::new("block_class");
+const PLAYER_TABLE: TableDefinition<DataSized<Player>, Data<PlayerProfile>> =
+    TableDefinition::new("player");
+const USERNAME_TABLE: TableDefinition<&str, DataSized<Player>> = TableDefinition::new("username");
 
 mod client;
 mod component;

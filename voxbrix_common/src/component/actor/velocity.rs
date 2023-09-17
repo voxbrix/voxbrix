@@ -14,7 +14,7 @@ use std::{
     time::Duration,
 };
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Velocity {
     pub vector: Vec3F32,
 }

@@ -36,6 +36,7 @@ use k256::ecdsa::{
     VerifyingKey,
 };
 use log::warn;
+use serde::de::DeserializeOwned;
 use std::{
     iter,
     time::Duration,
@@ -65,7 +66,10 @@ use voxbrix_common::{
             RegisterRequest,
         },
     },
-    pack::Pack,
+    pack::{
+        Pack,
+        Packer,
+    },
 };
 use voxbrix_protocol::client::{
     Client,
@@ -351,9 +355,14 @@ impl MenuScene {
     }
 }
 
-pub async fn send_recv<R>(buf: &[u8], tx: &mut Sender, rx: &mut Receiver) -> Result<R, &'static str>
+pub async fn send_recv<R>(
+    buf: &[u8],
+    tx: &mut Sender,
+    rx: &mut Receiver,
+    packer: &mut Packer,
+) -> Result<R, &'static str>
 where
-    R: Pack,
+    R: Pack + DeserializeOwned,
 {
     let (send_res, recv_res) = time::timeout(CONNECTION_TIMEOUT, async {
         future::zip(
@@ -373,7 +382,7 @@ where
                         .await
                         .map_err(|_| "Unable to get initialization response")?;
 
-                    if let Ok(res) = R::unpack(bytes) {
+                    if let Ok(res) = packer.unpack::<R>(bytes) {
                         return Ok(res);
                     } else {
                         warn!("unknown message, skipping");
@@ -414,6 +423,7 @@ impl Eq for Form {}
 impl Form {
     pub async fn connect(&self) -> Result<(Sender, Receiver, InitData), &'static str> {
         let mut tx_buffer = Vec::new();
+        let mut packer = Packer::new();
         let socket: std::net::SocketAddr = ([0, 0, 0, 0], 0).into();
         let server: std::net::SocketAddr = self
             .server_address
@@ -440,14 +450,14 @@ impl Form {
         let rx = &mut receiver;
 
         match self.action {
-            ActionType::Login => InitRequest::Login.pack(&mut tx_buffer),
-            ActionType::Registration => InitRequest::Register.pack(&mut tx_buffer),
+            ActionType::Login => packer.pack(&InitRequest::Login, &mut tx_buffer),
+            ActionType::Registration => packer.pack(&InitRequest::Register, &mut tx_buffer),
         };
 
         let InitResponse {
             public_key: server_key,
             key_signature,
-        } = send_recv::<InitResponse>(&tx_buffer, tx, rx).await?;
+        } = send_recv::<InitResponse>(&tx_buffer, tx, rx, &mut packer).await?;
 
         let server_key = VerifyingKey::from_sec1_bytes(&server_key)
             .map_err(|_| "Server provided incorrect public key")?;
@@ -480,13 +490,15 @@ impl Form {
         let init_data = match self.action {
             ActionType::Login => {
                 let signature: Signature = signing_key.sign(&self_key);
-                LoginRequest {
-                    username: self.username.clone(),
-                    key_signature: signature.to_bytes().into(),
-                }
-                .pack(&mut tx_buffer);
+                packer.pack(
+                    &LoginRequest {
+                        username: self.username.clone(),
+                        key_signature: signature.to_bytes().into(),
+                    },
+                    &mut tx_buffer,
+                );
 
-                let response = send_recv::<LoginResult>(&tx_buffer, tx, rx).await?;
+                let response = send_recv::<LoginResult>(&tx_buffer, tx, rx, &mut packer).await?;
 
                 match response {
                     LoginResult::Success(data) => data,
@@ -497,18 +509,20 @@ impl Form {
                 }
             },
             ActionType::Registration => {
-                RegisterRequest {
-                    username: self.username.clone(),
-                    public_key: signing_key
-                        .verifying_key()
-                        .to_encoded_point(true)
-                        .as_bytes()
-                        .try_into()
-                        .unwrap(),
-                }
-                .pack(&mut tx_buffer);
+                packer.pack(
+                    &RegisterRequest {
+                        username: self.username.clone(),
+                        public_key: signing_key
+                            .verifying_key()
+                            .to_encoded_point(true)
+                            .as_bytes()
+                            .try_into()
+                            .unwrap(),
+                    },
+                    &mut tx_buffer,
+                );
 
-                let response = send_recv::<RegisterResult>(&tx_buffer, tx, rx).await?;
+                let response = send_recv::<RegisterResult>(&tx_buffer, tx, rx, &mut packer).await?;
 
                 match response {
                     RegisterResult::Success(data) => data,

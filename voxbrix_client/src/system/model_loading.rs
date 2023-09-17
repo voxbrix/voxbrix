@@ -59,7 +59,7 @@ impl ModelLoadingSystem {
 
                 if descriptor.label != *model_label {
                     return Err(Error::msg(format!(
-                        "Label defined in file differs from file name: {} in {}.ron",
+                        "label defined in file differs from file name: {} in {}.ron",
                         descriptor.label, model_label
                     )));
                 }
@@ -103,7 +103,8 @@ impl ModelLoadingSystem {
             .get(component_label)
             .unwrap_or(&Vec::new())
             .into_iter()
-            .map(|val_opt| {
+            .enumerate()
+            .map(|(model_idx, val_opt)| {
                 val_opt
                     .as_ref()
                     .map(|val| {
@@ -112,14 +113,12 @@ impl ModelLoadingSystem {
                         conversion(descriptor)
                     })
                     .transpose()
+                    .with_context(|| {
+                        format!("model \"{}\"", self.model_list.get(model_idx).unwrap())
+                    })
             })
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|err| {
-                err.context(format!(
-                    "unable to parse value for the model component \"{}\"",
-                    component_label
-                ))
-            })?;
+            .with_context(|| format!("model component \"{}\"", component_label))?;
 
         component.reload(data);
 

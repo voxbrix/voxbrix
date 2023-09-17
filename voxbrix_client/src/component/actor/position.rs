@@ -1,6 +1,4 @@
-use voxbrix_common::component::actor::{
-    position::Position,
-    ActorComponentMap,
-};
+use crate::component::actor::ActorComponentPackable;
+use voxbrix_common::component::actor::position::Position;
 
-pub type PositionActorComponent = ActorComponentMap<Position>;
+pub type PositionActorComponent = ActorComponentPackable<Position>;

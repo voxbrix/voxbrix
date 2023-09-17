@@ -8,7 +8,7 @@ use serde::{
 };
 use std::ops::Add;
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Position {
     pub chunk: Chunk,
     pub offset: Vec3F32,

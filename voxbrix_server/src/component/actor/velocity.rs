@@ -1,6 +1,4 @@
-use voxbrix_common::component::actor::{
-    velocity::Velocity,
-    ActorComponentVec,
-};
+use crate::component::actor::ActorComponentPackable;
+use voxbrix_common::component::actor::velocity::Velocity;
 
-pub type VelocityActorComponent = ActorComponentVec<Velocity>;
+pub type VelocityActorComponent = ActorComponentPackable<Velocity>;

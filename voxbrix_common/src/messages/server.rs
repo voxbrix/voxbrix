@@ -1,17 +1,17 @@
 use crate::{
-    component::actor::{
-        orientation::Orientation,
-        position::Position,
-        velocity::Velocity,
-    },
     entity::{
         block::Block,
         block_class::BlockClass,
         chunk::Chunk,
+        snapshot::Snapshot,
+    },
+    messages::{
+        State,
+        StatePacker,
     },
     pack::{
-        PackDefault,
-        PackZipDefault,
+        Pack,
+        Packer,
     },
 };
 use serde::{
@@ -21,11 +21,13 @@ use serde::{
 use serde_big_array::BigArray;
 
 #[derive(Serialize, Deserialize)]
-pub enum ServerAccept {
-    PlayerMovement {
-        position: Position,
-        velocity: Velocity,
-        orientation: Orientation,
+pub enum ServerAccept<'a> {
+    State {
+        snapshot: Snapshot,
+        // last server's snapshot received by this client
+        last_server_snapshot: Snapshot,
+        #[serde(borrow)]
+        state: State<'a>,
     },
     AlterBlock {
         chunk: Chunk,
@@ -34,7 +36,37 @@ pub enum ServerAccept {
     },
 }
 
-impl PackZipDefault for ServerAccept {}
+impl<'a> ServerAccept<'a> {
+    pub fn pack_state(
+        snapshot: Snapshot,
+        last_server_snapshot: Snapshot,
+        state: &mut StatePacker,
+        packer: &mut Packer,
+    ) -> Vec<u8> {
+        let mut packed = Vec::new();
+
+        state.pack_state(|state| {
+            let msg = ServerAccept::State {
+                snapshot,
+                last_server_snapshot,
+                state,
+            };
+
+            packer.pack(&msg, &mut packed);
+
+            match msg {
+                ServerAccept::State { state, .. } => state,
+                _ => panic!(),
+            }
+        });
+
+        packed
+    }
+}
+
+impl Pack for ServerAccept<'_> {
+    const DEFAULT_COMPRESSED: bool = true;
+}
 
 #[derive(Serialize, Deserialize)]
 pub enum InitRequest {
@@ -42,7 +74,9 @@ pub enum InitRequest {
     Register,
 }
 
-impl PackDefault for InitRequest {}
+impl Pack for InitRequest {
+    const DEFAULT_COMPRESSED: bool = false;
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct LoginRequest {
@@ -51,7 +85,9 @@ pub struct LoginRequest {
     pub key_signature: [u8; 64],
 }
 
-impl PackDefault for LoginRequest {}
+impl Pack for LoginRequest {
+    const DEFAULT_COMPRESSED: bool = false;
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct RegisterRequest {
@@ -60,4 +96,6 @@ pub struct RegisterRequest {
     pub public_key: [u8; 33],
 }
 
-impl PackDefault for RegisterRequest {}
+impl Pack for RegisterRequest {
+    const DEFAULT_COMPRESSED: bool = false;
+}

@@ -3,8 +3,8 @@ use crate::{
     server::ServerEvent,
     storage::{
         player::PlayerProfile,
-        Store,
-        StoreSized,
+        IntoData,
+        IntoDataSized,
     },
     Local,
     Shared,
@@ -55,7 +55,7 @@ use voxbrix_common::{
             RegisterRequest,
         },
     },
-    pack::Pack,
+    pack::Packer,
 };
 use voxbrix_protocol::{
     server::{
@@ -143,6 +143,8 @@ pub async fn run(
 
     let (mut unreliable_tx, mut reliable_tx) = tx.split();
 
+    let mut packer = Packer::new();
+
     // Lookup for the player in the database,
     // if there's none - register,
     // if the password is not correct - send error
@@ -151,7 +153,11 @@ pub async fn run(
     })
     .await
     .map_err(|_| Error::Timeout)?
-    .and_then(|(_channel, data)| InitRequest::unpack(data).error(Error::UnexpectedMessage))?;
+    .and_then(|(_channel, data)| {
+        packer
+            .unpack::<InitRequest>(data.as_ref())
+            .error(Error::UnexpectedMessage)
+    })?;
 
     // TODO: read from config
     let private_key = SigningKey::from_bytes((&[3; 32]).into()).unwrap();
@@ -164,11 +170,13 @@ pub async fn run(
 
     let key_signature: Signature = private_key.sign(&self_key);
 
-    InitResponse {
-        public_key,
-        key_signature: key_signature.to_bytes().into(),
-    }
-    .pack(&mut buffer);
+    packer.pack(
+        &InitResponse {
+            public_key,
+            key_signature: key_signature.to_bytes().into(),
+        },
+        &mut buffer,
+    );
 
     time::timeout(CLIENT_CONNECTION_TIMEOUT, async {
         reliable_tx
@@ -190,10 +198,14 @@ pub async fn run(
             .await
             .map_err(|_| Error::Timeout)?
             .and_then(|(_channel, data)| {
-                LoginRequest::unpack(data).error(Error::UnexpectedMessage)
+                packer
+                    .unpack::<LoginRequest>(data.as_ref())
+                    .error(Error::UnexpectedMessage)
             })?;
 
             let player_res = task::spawn_blocking(move || {
+                let mut packer = Packer::new();
+
                 let db_read = shared.database.begin_read().expect("database write");
 
                 let username_table = db_read
@@ -207,13 +219,13 @@ pub async fn run(
                 let player_id = username_table
                     .get(username.as_str())
                     .expect("database read")
-                    .and_then(|bytes| bytes.value().unstore_sized().ok())
+                    .map(|bytes| bytes.value().into_inner())
                     .ok_or(LoginFailure::IncorrectCredentials)?;
 
                 let player = player_table
-                    .get(player_id.store_sized())
+                    .get(player_id.into_data_sized())
                     .expect("database read")
-                    .and_then(|bytes| bytes.value().unstore().ok())
+                    .map(|bytes| bytes.value().into_inner(&mut packer))
                     .ok_or(LoginFailure::IncorrectCredentials)?;
 
                 let public_key =
@@ -239,7 +251,7 @@ pub async fn run(
             match player_res {
                 Ok(p) => p,
                 Err(failure) => {
-                    LoginResult::Failure(failure).pack(&mut buffer);
+                    packer.pack(&LoginResult::Failure(failure), &mut buffer);
                     let _ = time::timeout(CLIENT_CONNECTION_TIMEOUT, async {
                         reliable_tx
                             .send_reliable(BASE_CHANNEL, &buffer)
@@ -262,10 +274,14 @@ pub async fn run(
             .await
             .map_err(|_| Error::Timeout)?
             .and_then(|(_channel, data)| {
-                RegisterRequest::unpack(data).error(Error::UnexpectedMessage)
+                packer
+                    .unpack::<RegisterRequest>(data.as_ref())
+                    .error(Error::UnexpectedMessage)
             })?;
 
             let player_res = task::spawn_blocking(move || {
+                let mut packer = Packer::new();
+
                 let db_write = shared.database.begin_write().expect("database write");
                 let player = {
                     let mut username_table = db_write
@@ -289,25 +305,25 @@ pub async fn run(
                         .expect("database read")
                         .next_back()
                         // TODO wrapping?
-                        .map(|(bytes, _)| {
-                            let player = bytes.value().unstore_sized().unwrap();
+                        .map(|(data, _)| {
+                            let player = data.value().into_inner();
                             // TODO: some kind of wrapping?
                             Player(player.0.checked_add(1).unwrap())
                         })
                         .unwrap_or(Player(0));
 
                     username_table
-                        .insert(username.as_str(), player.store_sized())
+                        .insert(username.as_str(), player.into_data_sized())
                         .expect("database write");
 
                     player_table
                         .insert(
-                            player.store_sized(),
+                            player.into_data_sized(),
                             PlayerProfile {
                                 username,
                                 public_key,
                             }
-                            .store_owned(),
+                            .into_data(&mut packer),
                         )
                         .expect("database write");
 
@@ -323,7 +339,7 @@ pub async fn run(
             match player_res {
                 Ok(p) => p,
                 Err(failure) => {
-                    RegisterResult::Failure(failure).pack(&mut buffer);
+                    packer.pack(&RegisterResult::Failure(failure), &mut buffer);
                     let _ = time::timeout(CLIENT_CONNECTION_TIMEOUT, async {
                         reliable_tx
                             .send_reliable(BASE_CHANNEL, &buffer)
@@ -395,18 +411,16 @@ pub async fn run(
 
     let init_data_response = match request {
         InitRequest::Login => {
-            LoginResult::Success(InitData {
+            packer.pack_to_vec(&LoginResult::Success(InitData {
                 actor,
                 player_ticket_radius: PLAYER_CHUNK_TICKET_RADIUS,
-            })
-            .pack_to_vec()
+            }))
         },
         InitRequest::Register => {
-            RegisterResult::Success(InitData {
+            packer.pack_to_vec(&RegisterResult::Success(InitData {
                 actor,
                 player_ticket_radius: PLAYER_CHUNK_TICKET_RADIUS,
-            })
-            .pack_to_vec()
+            }))
         },
     };
 

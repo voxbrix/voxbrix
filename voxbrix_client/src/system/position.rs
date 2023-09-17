@@ -26,6 +26,7 @@ use voxbrix_common::{
             BLOCKS_IN_CHUNK_EDGE,
         },
         chunk::Chunk,
+        snapshot::Snapshot,
     },
     math::{
         Round,
@@ -51,6 +52,7 @@ impl PositionSystem {
         collision_bcc: &CollisionBlockClassComponent,
         gpc: &mut PositionActorComponent,
         vc: &VelocityActorComponent,
+        snapshot: Snapshot,
     ) {
         enum MoveDirection {
             Positive,
@@ -70,11 +72,12 @@ impl PositionSystem {
         let v_radius = 0.95;
 
         for (actor, velocity) in vc.iter() {
-            if let Some(Position {
-                chunk: center_chunk,
-                offset: start_position,
-            }) = gpc.get_mut(&actor)
-            {
+            if let Some(mut writable_position) = gpc.get_writable(&actor, snapshot) {
+                let Position {
+                    chunk: mut center_chunk,
+                    offset: mut start_position,
+                } = *writable_position;
+
                 let radius = [h_radius, h_radius, v_radius];
 
                 let calc_pass = |finish_position: Vec3F32, axis_set: [usize; 3]| {
@@ -156,7 +159,7 @@ impl PositionSystem {
                                 chunk_offset[a1] = block_a1;
                                 chunk_offset[a2] = block_a2;
                                 let (chunk, block) =
-                                    Block::from_chunk_offset(*center_chunk, chunk_offset);
+                                    Block::from_chunk_offset(center_chunk, chunk_offset);
 
                                 if let Some(block_class) =
                                     class_bc.get_chunk(&chunk).map(|b| b.get(block))
@@ -198,7 +201,7 @@ impl PositionSystem {
                     None
                 };
 
-                let mut finish_position = *start_position + (velocity.clone() * dt).vector;
+                let mut finish_position = start_position + (velocity.clone() * dt).vector;
 
                 let axis_sets = [[0, 1, 2], [1, 0, 2], [2, 0, 1]];
 
@@ -261,7 +264,12 @@ impl PositionSystem {
                     finish_position = finish_position - actor_diff_vec;
                 }
 
-                *start_position = finish_position;
+                start_position = finish_position;
+
+                writable_position.update(Position {
+                    chunk: center_chunk,
+                    offset: start_position,
+                });
             }
         }
     }

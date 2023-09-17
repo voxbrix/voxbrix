@@ -1,124 +1,205 @@
+use bincode::Options;
 use lz4_flex::block as lz4;
-use postcard::Error;
 use serde::{
-    de::DeserializeOwned,
+    de::Deserialize,
     Serialize,
 };
-use std::mem;
+use std::io::Write;
+
+const COMPRESS_LENGTH: usize = 100;
+// TODO have this separate for client and server:
+const MAX_UNCOMPRESSED_BYTES: usize = 100_000_000;
+
+fn packer() -> impl Options {
+    bincode::options()
+}
+
+/// Low level packer with default config.
+pub fn serialize_into<T>(value: &T, buffer: &mut Vec<u8>)
+where
+    T: Serialize,
+{
+    let size = packer()
+        .serialized_size(value)
+        .expect("unable to calculate size for the serialized object") as usize;
+
+    buffer.clear();
+    buffer.reserve(size);
+
+    packer()
+        .serialize_into(buffer, value)
+        .expect("unable to serialize value");
+}
+
+/// Low level unpacker with default config.
+pub fn deserialize_from<'a, T>(buffer: &'a [u8]) -> Option<T>
+where
+    T: Deserialize<'a>,
+{
+    packer().deserialize(buffer).ok()
+}
 
 #[derive(Debug)]
 pub struct UnpackError;
 
 pub trait Pack {
-    fn pack(&self, buf: &mut Vec<u8>);
-    fn pack_to_vec(&self) -> Vec<u8>;
-    fn unpack<R>(buf: R) -> Result<Self, UnpackError>
-    where
-        Self: Sized,
-        R: AsRef<[u8]>;
+    const DEFAULT_COMPRESSED: bool;
 }
 
-pub trait PackDefault {}
+pub struct Packer {
+    buffer: Vec<u8>,
+}
 
-impl<T> Pack for T
-where
-    T: Serialize + DeserializeOwned + PackDefault,
-{
-    fn pack(&self, buf: &mut Vec<u8>) {
-        buf.clear();
-        match postcard::to_slice(self, buf.as_mut_slice()) {
-            Ok(_) => {},
-            Err(Error::SerializeBufferFull) => {
-                let mut new_buf = postcard::to_allocvec(self).unwrap();
-
-                mem::swap(&mut new_buf, buf);
-            },
-            Err(err) => panic!("serialization error: {:?}", err),
-        }
+impl Packer {
+    pub fn new() -> Self {
+        Self { buffer: Vec::new() }
     }
 
-    fn pack_to_vec(&self) -> Vec<u8> {
-        postcard::to_allocvec(self).unwrap()
-    }
-
-    fn unpack<R>(buf: R) -> Result<Self, UnpackError>
+    pub fn pack_uncompressed<T>(&self, data: &T, output: &mut Vec<u8>)
     where
-        Self: Sized,
-        R: AsRef<[u8]>,
+        T: Serialize,
     {
-        postcard::from_bytes::<Self>(buf.as_ref()).map_err(|_| UnpackError)
+        output.clear();
+        packer()
+            .serialize_into(output, &data)
+            .expect("serialization error");
     }
-}
 
-const COMPRESS_LENGTH: usize = 100;
-
-pub trait PackZip {
-    fn pack(&self, buf: &mut Vec<u8>);
-    fn pack_to_vec(&self) -> Vec<u8>;
-    fn unpack<R>(buf: R) -> Result<Self, UnpackError>
+    pub fn pack_compressed<T>(&mut self, data: &T, output: &mut Vec<u8>)
     where
-        Self: Sized,
-        R: AsRef<[u8]>;
-}
+        T: Serialize,
+    {
+        output.clear();
+        self.buffer.clear();
 
-pub trait PackZipDefault {}
+        let serialized_size = packer()
+            .serialized_size(&data)
+            .expect("serialized size calculation error") as usize;
 
-// TODO fix if Write and Read gets implemented for the postcard
-impl<T> PackZip for T
-where
-    T: Serialize + DeserializeOwned + PackZipDefault,
-{
-    fn pack(&self, buf: &mut Vec<u8>) {
-        buf.clear();
-        match postcard::to_slice(self, buf.as_mut_slice()) {
-            Ok(_) => {},
-            Err(Error::SerializeBufferFull) => {
-                let mut new_buf = postcard::to_allocvec(self).unwrap();
+        if serialized_size > COMPRESS_LENGTH {
+            packer()
+                .serialize_into(&mut self.buffer, &data)
+                .expect("serialization error");
 
-                mem::swap(&mut new_buf, buf);
-            },
-            Err(err) => panic!("serialization error: {:?}", err),
-        }
+            let uncompressed_len = self.buffer.len();
 
-        if buf.len() > COMPRESS_LENGTH {
-            // 1 is compression flag, 4 is uncompressed size
-            let max_output_size = 5 + lz4::get_maximum_output_size(buf.len());
-            let mut compressed = Vec::with_capacity(max_output_size.max(buf.capacity()));
-            compressed.resize(max_output_size, 0);
-            compressed[0] = 1;
-            compressed[1 .. 5].copy_from_slice(&(buf.len() as u32).to_le_bytes());
-            let len = lz4::compress_into(buf, &mut compressed[5 ..]).unwrap();
-            compressed.truncate(5 + len);
-            mem::swap(buf, &mut compressed);
+            // 1 is compression flag, 4 is prepended uncompressed size
+            let max_output_size = 5 + lz4::get_maximum_output_size(uncompressed_len);
+
+            output.reserve(max_output_size);
+
+            unsafe {
+                output.set_len(max_output_size);
+            }
+
+            output[0] = 1;
+            output[1 .. 5].copy_from_slice(&(uncompressed_len as u32).to_le_bytes());
+            let len = lz4::compress_into(self.buffer.as_ref(), &mut output[5 ..]).unwrap();
+            output.truncate(5 + len);
         } else {
-            buf.insert(0, 0);
+            output.write_all(&[0]).expect("serialization error");
+
+            packer()
+                .serialize_into(output, data)
+                .expect("serialization error");
         }
     }
 
-    fn pack_to_vec(&self) -> Vec<u8> {
-        let mut buf = Vec::new();
-        self.pack(&mut buf);
-        buf
+    pub fn pack_uncompressed_to_vec<T>(&mut self, data: &T) -> Vec<u8>
+    where
+        T: Serialize,
+    {
+        packer().serialize(data).expect("serialization error")
     }
 
-    fn unpack<R>(buf: R) -> Result<Self, UnpackError>
+    pub fn pack_compressed_to_vec<T>(&mut self, data: &T) -> Vec<u8>
     where
-        Self: Sized,
-        R: AsRef<[u8]>,
+        T: Serialize,
     {
-        let buf = buf.as_ref();
+        let mut output = Vec::new();
+        self.pack_compressed(data, &mut output);
+        output
+    }
 
-        match buf.first() {
-            Some(0) => Ok(postcard::from_bytes::<Self>(&buf[1 ..]).map_err(|_| UnpackError)?),
+    pub fn unpack_uncompressed<'a, T>(&self, input: &'a [u8]) -> Result<T, UnpackError>
+    where
+        T: Deserialize<'a>,
+    {
+        packer().deserialize::<T>(input).map_err(|_| UnpackError)
+    }
+
+    pub fn unpack_compressed<'a, T>(&'a mut self, input: &'a [u8]) -> Result<T, UnpackError>
+    where
+        T: Deserialize<'a>,
+    {
+        let input = input.as_ref();
+
+        match input.first() {
+            Some(0) => {
+                packer()
+                    .deserialize::<T>(&input[1 ..])
+                    .map_err(|_| UnpackError)
+            },
             Some(1) => {
-                let size = u32::from_le_bytes(buf[1 .. 5].try_into().unwrap());
+                let size = u32::from_le_bytes(input[1 .. 5].try_into().unwrap()) as usize;
 
-                let compressed =
-                    lz4::decompress(&buf[5 ..], size as usize).map_err(|_| UnpackError)?;
+                if size > MAX_UNCOMPRESSED_BYTES {
+                    return Err(UnpackError);
+                }
 
-                Ok(postcard::from_bytes::<Self>(&compressed).map_err(|_| UnpackError)?)
+                self.buffer.clear();
+                self.buffer.reserve(size as usize);
+                unsafe {
+                    self.buffer.set_len(size);
+                }
+
+                let actual_size = lz4::decompress_into(&input[5 ..], self.buffer.as_mut())
+                    .map_err(|_| UnpackError)?;
+
+                if actual_size != size {
+                    return Err(UnpackError);
+                }
+
+                packer()
+                    .deserialize::<T>(&self.buffer)
+                    .map_err(|_| UnpackError)
             },
             _ => Err(UnpackError),
+        }
+    }
+
+    pub fn pack<T>(&mut self, data: &T, output: &mut Vec<u8>)
+    where
+        T: Serialize + Pack,
+    {
+        output.clear();
+
+        if T::DEFAULT_COMPRESSED {
+            self.pack_compressed(data, output)
+        } else {
+            self.pack_uncompressed(data, output)
+        }
+    }
+
+    pub fn pack_to_vec<T>(&mut self, data: &T) -> Vec<u8>
+    where
+        T: Serialize + Pack,
+    {
+        if T::DEFAULT_COMPRESSED {
+            self.pack_compressed_to_vec(data)
+        } else {
+            self.pack_uncompressed_to_vec(data)
+        }
+    }
+
+    pub fn unpack<'a, T>(&'a mut self, input: &'a [u8]) -> Result<T, UnpackError>
+    where
+        T: Deserialize<'a> + Pack,
+    {
+        if T::DEFAULT_COMPRESSED {
+            self.unpack_compressed(input)
+        } else {
+            self.unpack_uncompressed(input)
         }
     }
 }

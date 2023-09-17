@@ -10,8 +10,14 @@ use std::{
     time::Duration,
 };
 use voxbrix_common::{
-    component::actor::orientation::Orientation,
-    entity::actor::Actor,
+    component::actor::{
+        orientation::Orientation,
+        velocity::Velocity,
+    },
+    entity::{
+        actor::Actor,
+        snapshot::Snapshot,
+    },
     math::{
         Directions,
         Vec3F32,
@@ -117,10 +123,15 @@ impl DirectControl {
         dt: Duration,
         velocity_component: &mut VelocityActorComponent,
         orientation_component: &mut OrientationActorComponent,
+        snapshot: Snapshot,
     ) {
         // TODO add actor instead?
-        let actor_orientation = orientation_component.get_mut(&self.actor).unwrap();
-        let actor_velocity = velocity_component.get_mut(&self.actor).unwrap();
+        let mut actor_orientation = orientation_component
+            .get_writable(&self.actor, snapshot)
+            .unwrap();
+        let mut actor_velocity = velocity_component
+            .get_writable(&self.actor, snapshot)
+            .unwrap();
 
         let dt = dt.as_secs_f32();
         self.yaw += self.rotate_horizontal * self.sensitivity * dt;
@@ -141,7 +152,7 @@ impl DirectControl {
             self.yaw += PI_2;
         }
 
-        *actor_orientation = Orientation::from_yaw_pitch(self.yaw, self.pitch);
+        actor_orientation.update(Orientation::from_yaw_pitch(self.yaw, self.pitch));
 
         let mut forward = actor_orientation.forward();
         forward[2] = 0.0;
@@ -158,10 +169,12 @@ impl DirectControl {
                 + Vec3F32::UP * (self.move_up - self.move_down)
         };
 
-        actor_velocity.vector = Some(direction)
-            .map(|d| d.normalize())
-            .filter(|d| !d.is_nan())
-            .map(|d| d * self.speed)
-            .unwrap_or(Vec3F32::new(0.0, 0.0, 0.0));
+        actor_velocity.update(Velocity {
+            vector: Some(direction)
+                .map(|d| d.normalize())
+                .filter(|d| !d.is_nan())
+                .map(|d| d * self.speed)
+                .unwrap_or(Vec3F32::new(0.0, 0.0, 0.0)),
+        });
     }
 }

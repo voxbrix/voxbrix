@@ -110,16 +110,16 @@ use voxbrix_common::{
         actor::Actor,
         block::Block,
         chunk::Chunk,
+        snapshot::Snapshot,
+        state_component::StateComponent,
     },
     math::Vec3F32,
     messages::{
-        client::{
-            ActorStatus,
-            ClientAccept,
-        },
+        client::ClientAccept,
         server::ServerAccept,
+        StatePacker,
     },
-    pack::PackZip,
+    pack::Packer,
     system::{
         block_class_loading::BlockClassLoadingSystem,
         sky_light::SkyLightSystem,
@@ -141,9 +141,9 @@ use winit::event::{
 
 pub enum Event {
     Process(OutputBundle),
-    SendPosition,
+    SendState,
     Input(InputEvent),
-    NetworkInput(Result<ClientAccept, ClientError>),
+    NetworkInput(Result<Vec<u8>, ClientError>),
     DrawChunk(Chunk),
 }
 
@@ -161,11 +161,17 @@ pub struct GameScene {
 
 impl GameScene {
     pub async fn run(self) -> Result<SceneSwitch> {
-        let (reliable_tx, mut reliable_rx) = local_channel::mpsc::channel::<ServerAccept>();
-        let (unreliable_tx, mut unreliable_rx) = local_channel::mpsc::channel::<ServerAccept>();
+        let (reliable_tx, mut reliable_rx) = local_channel::mpsc::channel::<Vec<u8>>();
+        let (unreliable_tx, mut unreliable_rx) = local_channel::mpsc::channel::<Vec<u8>>();
         let (event_tx, event_rx) = local_channel::mpsc::channel::<Event>();
 
-        let mut status_timestamp = Duration::ZERO;
+        let mut snapshot = Snapshot(1);
+        let mut client_state = StatePacker::new();
+        // Last client's snapshot received by the server
+        let mut last_client_snapshot = Snapshot(0);
+        let mut last_server_snapshot = Snapshot(0);
+
+        let mut packer = Packer::new();
 
         let GameSceneParameters {
             connection,
@@ -178,29 +184,21 @@ impl GameScene {
         let (mut unreliable, mut reliable) = tx.split();
 
         let _send_unrel_task = async_ext::spawn_scoped(async move {
-            let mut send_buf = Vec::new();
-
             while let Some(msg) = unreliable_rx.recv().await {
-                msg.pack(&mut send_buf);
-
                 unreliable
-                    .send_unreliable(0, &send_buf)
+                    .send_unreliable(0, &msg)
                     .await
-                    .expect("message sent");
+                    .expect("send_unreliable should not fail");
             }
         });
 
         let event_tx_network = event_tx.clone();
 
         let _send_rel_task = async_ext::spawn_scoped(async move {
-            let mut send_buf = Vec::new();
-
             while let Some(msg) = reliable_rx.recv().await {
-                msg.pack(&mut send_buf);
-
                 // https://github.com/rust-lang/rust/issues/70142
                 let result =
-                    match time::timeout(CONNECTION_TIMEOUT, reliable.send_reliable(0, &send_buf))
+                    match time::timeout(CONNECTION_TIMEOUT, reliable.send_reliable(0, &msg))
                         .await
                         .map_err(|_| ClientError::Io(StdIoErrorKind::TimedOut.into()))
                     {
@@ -218,7 +216,7 @@ impl GameScene {
 
         let event_tx_network = event_tx.clone();
 
-        // Should be dropped when the loop ends
+        // Must be dropped when the loop ends
         let _recv_task = async_ext::spawn_scoped(async move {
             loop {
                 let data = match rx.recv().await {
@@ -229,13 +227,8 @@ impl GameScene {
                     },
                 };
 
-                let message = match ClientAccept::unpack(data) {
-                    Ok(m) => m,
-                    Err(_) => continue,
-                };
-
                 if event_tx_network
-                    .send(Event::NetworkInput(Ok(message)))
+                    .send(Event::NetworkInput(Ok(data.to_vec())))
                     .is_err()
                 {
                     break;
@@ -313,11 +306,15 @@ impl GameScene {
         let sky_light_system = SkyLightSystem::new();
         let actor_texture_loading_system = TextureLoadingSystem::load_data("actors").await?;
 
-        let mut class_ac = ClassActorComponent::new();
-        let mut position_ac = PositionActorComponent::new();
-        let mut velocity_ac = VelocityActorComponent::new();
-        let mut orientation_ac = OrientationActorComponent::new();
+        let mut class_ac = ClassActorComponent::new(StateComponent(0), player_actor);
+        let mut position_ac = PositionActorComponent::new(StateComponent(1), player_actor);
+        let mut velocity_ac = VelocityActorComponent::new(StateComponent(2), player_actor);
+        let mut orientation_ac = OrientationActorComponent::new(StateComponent(3), player_actor);
         let mut animation_state_ac = AnimationStateActorComponent::new();
+
+        let state_components_label_map = List::load("assets/common/state_components.ron")
+            .await?
+            .into_label_map(|i| StateComponent(i as u32));
 
         let actor_model_loading_system = ModelLoadingSystem::load_data("actors").await?;
         let mut builder_amc = BuilderActorModelComponent::new();
@@ -352,14 +349,20 @@ impl GameScene {
                 },
                 offset: Vec3F32::new(0.0, 0.0, 4.0),
             },
+            snapshot,
         );
         velocity_ac.insert(
             player_actor,
             Velocity {
                 vector: Vec3F32::new(0.0, 0.0, 0.0),
             },
+            snapshot,
         );
-        orientation_ac.insert(player_actor, Orientation::from_yaw_pitch(0.0, 0.0));
+        orientation_ac.insert(
+            player_actor,
+            Orientation::from_yaw_pitch(0.0, 0.0),
+            snapshot,
+        );
 
         self.window_handle
             .window
@@ -419,13 +422,13 @@ impl GameScene {
         .await;
 
         let surface_stream = render_system.get_surface_stream();
-        let mut send_status_interval = time::interval(Duration::from_millis(50));
-        send_status_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        let mut send_state_interval = time::interval(Duration::from_millis(50));
+        send_state_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         let mut stream = stream::poll_fn(|cx| {
-            send_status_interval
+            send_state_interval
                 .poll_tick(cx)
-                .map(|_| Some(Event::SendPosition))
+                .map(|_| Some(Event::SendState))
         })
         .or_ff(self.window_handle.event_rx.stream().map(Event::Input))
         .or_ff(
@@ -439,6 +442,7 @@ impl GameScene {
         while let Some(event) = stream.next().await {
             match event {
                 Event::Process(surface) => {
+                    snapshot = snapshot.next();
                     let now = Instant::now();
                     let elapsed = now.saturating_duration_since(last_render_time);
                     last_render_time = now;
@@ -450,6 +454,7 @@ impl GameScene {
                         &collision_bcc,
                         &mut position_ac,
                         &velocity_ac,
+                        snapshot,
                     );
                     chunk_presence_system.process(
                         player_ticket_radius,
@@ -459,7 +464,12 @@ impl GameScene {
                         &mut status_cc,
                         &event_tx,
                     );
-                    direct_control_system.process(elapsed, &mut velocity_ac, &mut orientation_ac);
+                    direct_control_system.process(
+                        elapsed,
+                        &mut velocity_ac,
+                        &mut orientation_ac,
+                        snapshot,
+                    );
 
                     let position = position_ac.get(&player_actor).unwrap();
                     let orientation = orientation_ac.get(&player_actor).unwrap();
@@ -505,15 +515,19 @@ impl GameScene {
                         render_system.finish_render();
                     });
                 },
-                Event::SendPosition => {
-                    let position = position_ac.get(&player_actor).unwrap().clone();
-                    let velocity = velocity_ac.get(&player_actor).unwrap().clone();
-                    let orientation = orientation_ac.get(&player_actor).unwrap().clone();
-                    let _ = unreliable_tx.send(ServerAccept::PlayerMovement {
-                        position,
-                        velocity,
-                        orientation,
-                    });
+                Event::SendState => {
+                    position_ac.pack_player(&mut client_state, last_client_snapshot);
+                    velocity_ac.pack_player(&mut client_state, last_client_snapshot);
+                    orientation_ac.pack_player(&mut client_state, last_client_snapshot);
+
+                    let packed = ServerAccept::pack_state(
+                        snapshot,
+                        last_server_snapshot,
+                        &mut client_state,
+                        &mut packer,
+                    );
+
+                    let _ = unreliable_tx.send(packed);
                 },
                 Event::Input(event) => {
                     match event {
@@ -577,15 +591,14 @@ impl GameScene {
                                                         },
                                                     )
                                                 {
-                                                    let _ = reliable_tx.send(
-                                                        ServerAccept::AlterBlock {
+                                                    let _ = reliable_tx.send(packer.pack_to_vec(
+                                                        &ServerAccept::AlterBlock {
                                                             chunk,
                                                             block,
-                                                            block_class: block_class_map
-                                                                .get("air")
-                                                                .unwrap(),
+                                                            block_class:
+                                                                block_class_map.get("air").unwrap(),
                                                         },
-                                                    );
+                                                    ));
                                                 }
                                             },
                                             MouseButton::Right => {
@@ -624,13 +637,15 @@ impl GameScene {
                                                         Block::from_chunk_offset(chunk, block);
 
                                                     let _ = reliable_tx.send(
-                                                        ServerAccept::AlterBlock {
-                                                            chunk,
-                                                            block,
-                                                            block_class: block_class_map
-                                                                .get("grass")
-                                                                .unwrap(),
-                                                        },
+                                                        packer.pack_to_vec(
+                                                            &ServerAccept::AlterBlock {
+                                                                chunk,
+                                                                block,
+                                                                block_class: block_class_map
+                                                                    .get("grass")
+                                                                    .unwrap(),
+                                                            },
+                                                        ),
                                                     );
                                                 }
                                             },
@@ -653,7 +668,24 @@ impl GameScene {
                         },
                     };
 
+                    let message = match packer.unpack::<ClientAccept>(&message) {
+                        Ok(m) => m,
+                        Err(_) => continue,
+                    };
+
                     match message {
+                        ClientAccept::State {
+                            snapshot: new_lss,
+                            last_client_snapshot: new_lcs,
+                            state,
+                        } => {
+                            class_ac.unpack_state(&state);
+                            position_ac.unpack_state(&state);
+                            velocity_ac.unpack_state(&state);
+                            orientation_ac.unpack_state(&state);
+                            last_client_snapshot = new_lcs;
+                            last_server_snapshot = new_lss;
+                        },
                         ClientAccept::ChunkData(ChunkData {
                             chunk,
                             block_classes,
@@ -698,27 +730,6 @@ impl GameScene {
                                 for chunk in chunks_to_redraw.into_iter().filter(|c| *c != chunk) {
                                     let _ = event_tx.send(Event::DrawChunk(chunk));
                                 }
-                            }
-                        },
-                        ClientAccept::ActorStatus { timestamp, status } => {
-                            if timestamp > status_timestamp {
-                                for ActorStatus {
-                                    actor,
-                                    class,
-                                    position,
-                                    velocity,
-                                    orientation,
-                                } in status
-                                {
-                                    class_ac.insert(actor, class);
-                                    if actor != player_actor {
-                                        position_ac.insert(actor, position);
-                                        velocity_ac.insert(actor, velocity);
-                                        orientation_ac.insert(actor, orientation);
-                                    }
-                                }
-
-                                status_timestamp = timestamp;
                             }
                         },
                     }

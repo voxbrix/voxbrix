@@ -1,28 +1,33 @@
 use flume::Sender;
-use lz4_flex::block as lz4;
-use postcard::Error;
+use redb::{
+    RedbKey,
+    RedbValue,
+};
 use serde::{
-    de::DeserializeOwned,
+    Deserialize,
     Serialize,
 };
 use std::{
+    cmp::Ordering,
+    fmt::Debug,
     marker::PhantomData,
-    mem,
     thread,
+};
+use voxbrix_common::pack::{
+    Pack,
+    Packer,
 };
 
 pub struct StorageThread {
-    tx: Sender<Box<dyn FnMut(&mut Vec<u8>) + Send>>,
+    tx: Sender<Box<dyn FnMut() + Send>>,
 }
 
 impl StorageThread {
     pub fn new() -> Self {
-        let (tx, rx) = flume::unbounded::<Box<dyn FnMut(&mut Vec<u8>) + Send>>();
+        let (tx, rx) = flume::unbounded::<Box<dyn FnMut() + Send>>();
         thread::spawn(move || {
-            // Shared buffer to serialize data to db format
-            let mut buf = Vec::new();
             while let Ok(mut task) = rx.recv() {
-                task(&mut buf);
+                task();
             }
         });
 
@@ -31,9 +36,104 @@ impl StorageThread {
 
     pub fn execute<F>(&self, task: F)
     where
-        F: 'static + FnMut(&mut Vec<u8>) + Send,
+        F: 'static + FnMut() + Send,
     {
         let _ = self.tx.send(Box::new(task));
+    }
+}
+
+#[derive(Debug)]
+pub struct DataSized<T>(T);
+
+impl<T> DataSized<T>
+where
+    T: IntoDataSized,
+{
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+
+    pub fn from_inner(value: T) -> Self {
+        Self(value)
+    }
+}
+
+pub trait Array: AsRef<[u8]> {
+    const SIZE: usize;
+
+    fn from_slice(slice: &[u8]) -> Self;
+}
+
+impl<const SIZE: usize> Array for [u8; SIZE] {
+    const SIZE: usize = SIZE;
+
+    fn from_slice(slice: &[u8]) -> Self {
+        slice.try_into().expect("slice must have correct length")
+    }
+}
+
+pub trait IntoDataSized: TypeName {
+    type Array: Array;
+    const SIZE: usize = Self::Array::SIZE;
+
+    fn to_bytes(&self) -> Self::Array;
+    fn from_bytes(bytes: &Self::Array) -> Self;
+
+    fn into_data_sized(self) -> DataSized<Self>
+    where
+        Self: Sized,
+    {
+        DataSized::from_inner(self)
+    }
+
+    fn from_data_sized(value: DataSized<Self>) -> Self
+    where
+        Self: Sized,
+    {
+        value.0
+    }
+}
+
+impl<T> RedbValue for DataSized<T>
+where
+    T: IntoDataSized + Debug,
+{
+    type AsBytes<'a> = T::Array
+    where
+        Self: 'a;
+    type SelfType<'a> = DataSized<T>
+    where
+        Self: 'a;
+
+    fn fixed_width() -> Option<usize> {
+        Some(T::Array::SIZE)
+    }
+
+    fn from_bytes<'a>(data: &'a [u8]) -> Self::SelfType<'a>
+    where
+        Self: 'a,
+    {
+        DataSized(T::from_bytes(&T::Array::from_slice(data)))
+    }
+
+    fn as_bytes<'a, 'b: 'a>(value: &'a Self::SelfType<'b>) -> Self::AsBytes<'a>
+    where
+        Self: 'a + 'b,
+    {
+        value.0.to_bytes()
+    }
+
+    fn type_name() -> redb::TypeName {
+        redb::TypeName::new(T::NAME)
+    }
+}
+
+impl<T> RedbKey for DataSized<T>
+where
+    T: Ord + IntoDataSized + Debug,
+{
+    fn compare(data1: &[u8], data2: &[u8]) -> Ordering {
+        data1.cmp(&data2)
     }
 }
 
@@ -41,40 +141,7 @@ impl StorageThread {
 pub struct UnstoreError;
 
 #[derive(Debug)]
-pub struct DataSized<T, const SIZE: usize> {
-    kind: PhantomData<T>,
-    pub data: [u8; SIZE],
-}
-
-impl<T, const SIZE: usize> DataSized<T, SIZE> {
-    pub fn new(data: [u8; SIZE]) -> Self {
-        DataSized {
-            kind: PhantomData::<T>,
-            data,
-        }
-    }
-}
-
-impl<T, const SIZE: usize> DataSized<T, SIZE>
-where
-    T: StoreSized<SIZE>,
-{
-    pub fn unstore_sized(self) -> Result<T, UnstoreError> {
-        T::unstore_sized(self)
-    }
-}
-
-pub trait StoreSized<const SIZE: usize> {
-    fn store_sized(&self) -> DataSized<Self, SIZE>
-    where
-        Self: Sized;
-    fn unstore_sized(stored: DataSized<Self, SIZE>) -> Result<Self, UnstoreError>
-    where
-        Self: Sized;
-}
-
-#[derive(Debug)]
-pub enum DataContainer<'a> {
+enum DataContainer<'a> {
     Shared(&'a [u8]),
     Owned(Vec<u8>),
 }
@@ -88,22 +155,28 @@ impl<'a> AsRef<[u8]> for DataContainer<'a> {
     }
 }
 
+pub trait TypeName {
+    const NAME: &'static str;
+}
+
+/// Typed byte chunk for storage purposes. Implements `AsRef<u8>`, so you could deserialize it to
+/// concrete type.
 #[derive(Debug)]
 pub struct Data<'a, T> {
     kind: PhantomData<T>,
-    pub data: DataContainer<'a>,
+    data: DataContainer<'a>,
 }
 
-const COMPRESS_LENGTH: usize = 100;
-
 impl<'a, T> Data<'a, T> {
-    pub fn new_shared(data: &'a [u8]) -> Self {
+    pub fn new_shared(data: &'a [u8]) -> Data<'a, T> {
         Self {
             kind: PhantomData::<T>,
             data: DataContainer::Shared(data),
         }
     }
+}
 
+impl<T> Data<'static, T> {
     pub fn new_owned(data: Vec<u8>) -> Self {
         Self {
             kind: PhantomData::<T>,
@@ -114,116 +187,75 @@ impl<'a, T> Data<'a, T> {
 
 impl<'a, T> Data<'a, T>
 where
-    T: Store,
+    T: Pack + Deserialize<'a>,
 {
-    pub fn unstore(self) -> Result<T, UnstoreError> {
-        T::unstore(self)
+    pub fn into_inner(&'a self, packer: &'a mut Packer) -> T {
+        packer.unpack(self.data.as_ref()).unwrap()
     }
 }
 
-pub trait Store {
-    fn store<'a>(&'_ self, buf: &'a mut Vec<u8>) -> Data<'a, Self>
-    where
-        Self: Sized;
-    fn store_owned(&self) -> Data<Self>
-    where
-        Self: Sized;
-    fn unstore(stored: Data<Self>) -> Result<Self, UnstoreError>
-    where
-        Self: Sized;
-}
-
-pub trait StoreDefault {}
-
-// TODO fix if Write and Read gets implemented for the postcard
-impl<T> Store for T
+impl<T> Data<'static, T>
 where
-    T: Serialize + DeserializeOwned + StoreDefault,
+    T: Pack + Serialize,
 {
-    fn store<'a>(&'_ self, buf: &'a mut Vec<u8>) -> Data<'a, Self> {
-        buf.clear();
-        match postcard::to_slice(self, buf.as_mut_slice()) {
-            Ok(_) => {},
-            Err(Error::SerializeBufferFull) => {
-                let mut new_buf = postcard::to_allocvec(self).unwrap();
-
-                mem::swap(&mut new_buf, buf);
-            },
-            Err(err) => panic!("serialization error: {:?}", err),
-        }
-
-        if buf.len() > COMPRESS_LENGTH {
-            // 1 is compression flag, 4 is uncompressed size
-            let max_output_size = 5 + lz4::get_maximum_output_size(buf.len());
-            let mut compressed = Vec::with_capacity(max_output_size.max(buf.capacity()));
-            compressed.resize(max_output_size, 0);
-            compressed[0] = 1;
-            compressed[1 .. 5].copy_from_slice(&(buf.len() as u32).to_le_bytes());
-            let len = lz4::compress_into(buf, &mut compressed[5 ..]).unwrap();
-            compressed.truncate(5 + len);
-            mem::swap(buf, &mut compressed);
-        } else {
-            buf.insert(0, 0);
-        }
-
-        Data::new_shared(buf)
+    pub fn from_inner(value: &T, packer: &mut Packer) -> Self {
+        Self::new_owned(packer.pack_to_vec(value))
     }
+}
 
-    fn store_owned(&self) -> Data<Self> {
-        let mut buf = postcard::to_allocvec(&self).unwrap();
-
-        if buf.len() > COMPRESS_LENGTH {
-            // 1 is compression flag, 4 is uncompressed size
-            let max_output_size = 5 + lz4::get_maximum_output_size(buf.len());
-            let mut compressed = Vec::with_capacity(max_output_size.max(buf.capacity()));
-            compressed.resize(max_output_size, 0);
-            compressed[0] = 1;
-            compressed[1 .. 5].copy_from_slice(&(buf.len() as u32).to_le_bytes());
-            let len = lz4::compress_into(&buf, &mut compressed[5 ..]).unwrap();
-            compressed.truncate(5 + len);
-            mem::swap(&mut buf, &mut compressed);
-        } else {
-            buf.insert(0, 0);
-        }
-
-        Data::new_owned(buf)
-    }
-
-    fn unstore(stored: Data<T>) -> Result<Self, UnstoreError>
+pub trait IntoData {
+    fn into_data(&self, packer: &mut Packer) -> Data<'static, Self>
     where
-        Self: Sized,
+        Self: Pack + Serialize + Sized,
     {
-        let buf = stored.data.as_ref();
+        Data::from_inner(self, packer)
+    }
+}
 
-        match buf.first() {
-            Some(0) => Ok(postcard::from_bytes::<Self>(&buf[1 ..]).map_err(|_| UnstoreError)?),
-            Some(1) => {
-                let size = u32::from_le_bytes(buf[1 .. 5].try_into().unwrap());
+impl<T> IntoData for T where T: Pack + Serialize {}
 
-                let decompressed =
-                    lz4::decompress(&buf[5 ..], size as usize).map_err(|_| UnstoreError)?;
+impl<T> RedbValue for Data<'_, T>
+where
+    T: TypeName + Debug,
+{
+    type AsBytes<'a> = &'a [u8]
+    where
+        Self: 'a;
+    type SelfType<'a> = Data<'a, T>
+    where
+        Self: 'a;
 
-                Ok(postcard::from_bytes::<Self>(&decompressed).map_err(|_| UnstoreError)?)
-            },
-            _ => Err(UnstoreError),
-        }
+    fn fixed_width() -> Option<usize> {
+        None
+    }
+
+    fn from_bytes<'a>(data: &'a [u8]) -> Self::SelfType<'a>
+    where
+        Self: 'a,
+    {
+        Data::new_shared(data)
+    }
+
+    fn as_bytes<'a, 'b: 'a>(value: &'a Self::SelfType<'b>) -> Self::AsBytes<'a>
+    where
+        Self: 'a + 'b,
+    {
+        value.data.as_ref()
+    }
+
+    fn type_name() -> redb::TypeName {
+        redb::TypeName::new(T::NAME)
     }
 }
 
 pub mod player {
-    use crate::storage::{
-        Data,
-        StoreDefault,
-    };
-    use redb::{
-        RedbValue,
-        TypeName,
-    };
+    use crate::storage::TypeName;
     use serde::{
         Deserialize,
         Serialize,
     };
     use serde_big_array::BigArray;
+    use voxbrix_common::pack::Pack;
 
     #[derive(Serialize, Deserialize, Debug)]
     pub struct PlayerProfile {
@@ -232,36 +264,11 @@ pub mod player {
         pub public_key: [u8; 33],
     }
 
-    impl StoreDefault for PlayerProfile {}
+    impl Pack for PlayerProfile {
+        const DEFAULT_COMPRESSED: bool = false;
+    }
 
-    impl RedbValue for Data<'_, PlayerProfile> {
-        type AsBytes<'a> = &'a [u8]
-        where
-            Self: 'a;
-        type SelfType<'a> = Data<'a, PlayerProfile>
-        where
-            Self: 'a;
-
-        fn fixed_width() -> Option<usize> {
-            None
-        }
-
-        fn from_bytes<'a>(data: &'a [u8]) -> Self::SelfType<'a>
-        where
-            Self: 'a,
-        {
-            Data::new_shared(data)
-        }
-
-        fn as_bytes<'a, 'b: 'a>(value: &'a Self::SelfType<'b>) -> Self::AsBytes<'a>
-        where
-            Self: 'a + 'b,
-        {
-            value.data.as_ref()
-        }
-
-        fn type_name() -> TypeName {
-            TypeName::new("PlayerProfile")
-        }
+    impl TypeName for PlayerProfile {
+        const NAME: &'static str = "PlayerProfile";
     }
 }

@@ -8,7 +8,7 @@ use serde::{
     Serialize,
 };
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Orientation {
     rotation: QuatF32,
 }

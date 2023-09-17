@@ -6,26 +6,17 @@ use crate::{
         },
         chunk::Chunk,
     },
-    pack::PackZipDefault,
+    pack::Pack,
 };
+use nohash_hasher::IntMap;
 use serde::{
     Deserialize,
     Serialize,
 };
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 pub mod class;
 pub mod sky_light;
-
-// #[derive(Serialize, Deserialize, Debug)]
-// struct BlockDefinition {
-// components: HashMap<String, Value>,
-// }
-//
-// pub trait BlockComponent {
-// fn name(&self) -> &str;
-// fn from_definition(definition: Value) -> Self;
-// }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BlocksVec<T> {
@@ -65,15 +56,17 @@ impl<T> BlocksVec<T> {
     }
 }
 
-impl<T> PackZipDefault for BlocksVec<T> {}
+impl<T> Pack for BlocksVec<T> {
+    const DEFAULT_COMPRESSED: bool = true;
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BlocksMap<T> {
-    blocks: BTreeMap<Block, T>,
+    blocks: IntMap<Block, T>,
 }
 
 impl<T> BlocksMap<T> {
-    pub fn new(blocks: BTreeMap<Block, T>) -> Self {
+    pub fn new(blocks: IntMap<Block, T>) -> Self {
         Self { blocks }
     }
 
@@ -90,16 +83,14 @@ impl<T> BlocksMap<T> {
     }
 }
 
-impl<T> PackZipDefault for BlocksMap<T> {}
-
 pub struct BlockComponent<T> {
-    chunks: BTreeMap<Chunk, T>,
+    chunks: HashMap<Chunk, T>,
 }
 
 impl<T> BlockComponent<T> {
     pub fn new() -> Self {
         Self {
-            chunks: BTreeMap::new(),
+            chunks: HashMap::new(),
         }
     }
 

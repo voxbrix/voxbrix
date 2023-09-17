@@ -134,7 +134,10 @@ fn main() {
                         let adapter = window_handle
                             .instance
                             .enumerate_adapters(wgpu::Backends::VULKAN)
-                            .find(|adapter| adapter.is_surface_supported(&window_handle.surface))
+                            .find(|adapter| {
+                                adapter.is_surface_supported(&window_handle.surface)
+                                    && adapter.get_info().device_type != wgpu::DeviceType::DiscreteGpu
+                            })
                             .expect("no supported GPU adapters present");
 
                         let (device, queue) = adapter
@@ -162,7 +165,7 @@ fn main() {
                             render_handle,
                         };
                         if let Err(err) = scene_manager.run().await {
-                            error!("main_loop ended with error: {:?}", err);
+                            error!("main_loop ended with error: {:#}", err);
                         }
                     },
                 }

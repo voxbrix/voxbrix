@@ -1,6 +1,4 @@
-use voxbrix_common::component::actor::{
-    orientation::Orientation,
-    ActorComponentMap,
-};
+use crate::component::actor::ActorComponentPackable;
+use voxbrix_common::component::actor::orientation::Orientation;
 
-pub type OrientationActorComponent = ActorComponentMap<Orientation>;
+pub type OrientationActorComponent = ActorComponentPackable<Orientation>;

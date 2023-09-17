@@ -15,6 +15,14 @@ pub const BLOCKS_IN_CHUNK: usize =
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
 pub struct Block(pub usize);
 
+impl std::hash::Hash for Block {
+    fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
+        hasher.write_usize(self.0)
+    }
+}
+
+impl nohash_hasher::IsEnabled for Block {}
+
 impl Block {
     pub fn to_coords(&self) -> [usize; 3] {
         let z = self.0 / BLOCKS_IN_CHUNK_LAYER;

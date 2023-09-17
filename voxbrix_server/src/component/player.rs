@@ -1,17 +1,17 @@
 use crate::entity::player::Player;
-use std::collections::BTreeMap;
+use nohash_hasher::IntMap;
 
 pub mod actor;
 pub mod client;
 
 pub struct PlayerComponent<T> {
-    data: BTreeMap<Player, T>,
+    data: IntMap<Player, T>,
 }
 
 impl<T> PlayerComponent<T> {
     pub fn new() -> Self {
         Self {
-            data: BTreeMap::new(),
+            data: IntMap::default(),
         }
     }
 
@@ -21,6 +21,10 @@ impl<T> PlayerComponent<T> {
 
     pub fn get(&self, player: &Player) -> Option<&T> {
         self.data.get(player)
+    }
+
+    pub fn get_mut(&mut self, player: &Player) -> Option<&mut T> {
+        self.data.get_mut(player)
     }
 
     pub fn insert(&mut self, player: Player, value: T) -> Option<T> {

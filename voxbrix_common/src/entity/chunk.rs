@@ -65,6 +65,7 @@ impl Chunk {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct ChunkRadius {
     dimension: u32,
     min_position: (i32, i32, i32),

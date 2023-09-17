@@ -1,58 +1,18 @@
 use crate::storage::{
-    DataSized,
-    StoreSized,
-    UnstoreError,
-};
-use redb::{
-    RedbKey,
-    RedbValue,
+    IntoDataSized,
     TypeName,
 };
-use std::cmp::Ordering;
 use voxbrix_common::entity::chunk::Chunk;
 
-pub const KEY_LENGTH: usize = 16;
-
-impl RedbValue for DataSized<Chunk, KEY_LENGTH> {
-    type AsBytes<'b> = &'b [u8; KEY_LENGTH]
-    where
-        Self: 'b;
-    type SelfType<'b> = DataSized<Chunk, KEY_LENGTH>
-    where
-        Self: 'b;
-
-    fn fixed_width() -> Option<usize> {
-        Some(KEY_LENGTH)
-    }
-
-    fn from_bytes<'b>(data: &'b [u8]) -> Self::SelfType<'b>
-    where
-        Self: 'b,
-    {
-        DataSized::new(data.try_into().unwrap())
-    }
-
-    fn as_bytes<'b, 'c: 'b>(value: &'b Self::SelfType<'c>) -> Self::AsBytes<'b>
-    where
-        Self: 'b + 'c,
-    {
-        &value.data
-    }
-
-    fn type_name() -> TypeName {
-        TypeName::new("Blocks<BlockClass>")
-    }
+impl TypeName for Chunk {
+    const NAME: &'static str = "Chunk";
 }
 
-impl RedbKey for DataSized<Chunk, KEY_LENGTH> {
-    fn compare(data1: &[u8], data2: &[u8]) -> Ordering {
-        data1.cmp(data2)
-    }
-}
+impl IntoDataSized for Chunk {
+    type Array = [u8; 16];
 
-impl StoreSized<KEY_LENGTH> for Chunk {
-    fn store_sized(&self) -> DataSized<Self, KEY_LENGTH> {
-        let mut data = [0; KEY_LENGTH];
+    fn to_bytes(&self) -> [u8; Self::SIZE] {
+        let mut data = [0; Self::SIZE];
         let position = self.position.to_array().map(u32_from_i32);
 
         data[0 .. 4].copy_from_slice(&self.dimension.to_be_bytes());
@@ -60,20 +20,20 @@ impl StoreSized<KEY_LENGTH> for Chunk {
         data[8 .. 12].copy_from_slice(&position[1].to_be_bytes());
         data[12 .. 16].copy_from_slice(&position[0].to_be_bytes());
 
-        DataSized::new(data)
+        data
     }
 
-    fn unstore_sized(from: DataSized<Self, KEY_LENGTH>) -> Result<Self, UnstoreError> {
+    fn from_bytes(bytes: &[u8; Self::SIZE]) -> Self {
         let position = [
-            u32::from_be_bytes(from.data[12 .. 16].try_into().unwrap()),
-            u32::from_be_bytes(from.data[8 .. 12].try_into().unwrap()),
-            u32::from_be_bytes(from.data[4 .. 8].try_into().unwrap()),
+            u32::from_be_bytes(bytes[12 .. 16].try_into().unwrap()),
+            u32::from_be_bytes(bytes[8 .. 12].try_into().unwrap()),
+            u32::from_be_bytes(bytes[4 .. 8].try_into().unwrap()),
         ];
 
-        Ok(Self {
+        Self {
             position: position.map(i32_from_u32).into(),
-            dimension: u32::from_be_bytes(from.data[0 .. 4].try_into().unwrap()),
-        })
+            dimension: u32::from_be_bytes(bytes[0 .. 4].try_into().unwrap()),
+        }
     }
 }
 
