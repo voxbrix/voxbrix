@@ -23,7 +23,6 @@ backtrace = { workspace = true }
 voxbrix_protocol = { path = "../voxbrix_protocol", features = ["single", "client"] }
 voxbrix_common = { path = "../voxbrix_common" }
 local_channel = { path = "../local_channel" }
-either = "1.8"
 winit = "0.28"
 wgpu = "0.15"
 egui = "0.21"
