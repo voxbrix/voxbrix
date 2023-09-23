@@ -164,7 +164,7 @@ where
         state: &mut StatePacker,
         snapshot: Snapshot,
         client_last_snapshot: Snapshot,
-        player_actor: &Actor,
+        player_actor: Option<&Actor>,
         mut actor_filter_fn: impl FnMut(&Actor) -> bool,
         actors_full_update: &IntSet<Actor>,
     ) {
@@ -181,7 +181,7 @@ where
 
         let mut packer = self.packer.take().unwrap();
 
-        let changes_iter = self
+        let changed_actors_iter = self
             .changes
             .iter()
             .filter(|(actor, past_snapshot)| {
@@ -190,13 +190,21 @@ where
                     && !actors_full_update.contains(actor)
             })
             .map(|(actor, _)| actor)
-            .chain(actors_full_update.iter())
-            .filter(|actor| actor != &player_actor)
-            .map(|actor| (*actor, self.storage.get(actor)));
+            .chain(actors_full_update.iter());
 
         let buffer = state.get_component_buffer(self.state_component);
 
-        packer = packer.load(changes_iter).pack(buffer);
+        if let Some(player_actor) = player_actor {
+            let iter = changed_actors_iter
+                .filter(|actor| actor != &player_actor)
+                .map(|actor| (*actor, self.storage.get(actor)));
+
+            packer = packer.load(iter).pack(buffer);
+        } else {
+            let iter = changed_actors_iter.map(|actor| (*actor, self.storage.get(actor)));
+
+            packer = packer.load(iter).pack(buffer);
+        }
 
         self.packer = Some(packer);
     }

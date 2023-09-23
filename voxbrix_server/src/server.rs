@@ -233,20 +233,24 @@ pub async fn run(
                         ($actor_in_inters:ident) => {
                             let actors_full_update = position_ac.actors_full_update();
 
+                            // Server-controlled components, we pass `None` instead of `player_actor`.
+                            // These components will not filter out player's own components.
                             class_ac.pack_changes(
                                 &mut server_state,
                                 snapshot,
                                 client.last_server_snapshot,
-                                player_actor,
+                                None,
                                 $actor_in_inters,
                                 actors_full_update,
                             );
 
+                            // Client-conrolled components, we pass `Some(player_actor)`.
+                            // These components will filter out player's own components.
                             velocity_ac.pack_changes(
                                 &mut server_state,
                                 snapshot,
                                 client.last_server_snapshot,
-                                player_actor,
+                                Some(player_actor),
                                 $actor_in_inters,
                                 actors_full_update,
                             );
@@ -255,7 +259,7 @@ pub async fn run(
                                 &mut server_state,
                                 snapshot,
                                 client.last_server_snapshot,
-                                player_actor,
+                                Some(player_actor),
                                 $actor_in_inters,
                                 actors_full_update,
                             );

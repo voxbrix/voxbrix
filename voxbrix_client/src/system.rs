@@ -4,7 +4,7 @@ pub mod chunk_presence;
 pub mod controller;
 pub mod list_loading;
 pub mod model_loading;
-pub mod position;
+pub mod player_position;
 pub mod render;
 pub mod texture_loading;
 pub mod velocity;

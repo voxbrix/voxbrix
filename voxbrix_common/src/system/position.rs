@@ -71,9 +71,9 @@ pub fn process_actor(
     dt: Duration,
     class_bc: &ClassBlockComponent,
     collision_bcc: &CollisionBlockClassComponent,
-    position: Position,
-    velocity: Velocity,
-    radius: [f32; 3],
+    position: &Position,
+    velocity: &Velocity,
+    radius: &[f32; 3],
 ) -> Position {
     let Position {
         chunk: mut center_chunk,
@@ -259,14 +259,11 @@ pub fn process_actor(
     }
 }
 
-pub fn get_target_block<F>(
+pub fn get_target_block(
     position: &Position,
     orientation: &Orientation,
-    mut targeting: F,
-) -> Option<(Chunk, Block, usize)>
-where
-    F: FnMut(Chunk, Block) -> bool,
-{
+    mut targeting: impl FnMut(Chunk, Block) -> bool,
+) -> Option<(Chunk, Block, usize)> {
     let forward = orientation.forward();
 
     let mut time_block = None;

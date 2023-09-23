@@ -43,7 +43,7 @@ use crate::{
             ModelLoadingSystem,
             MODEL_PATH_PREFIX,
         },
-        position::PositionSystem,
+        player_position::PlayerPositionSystem,
         render::{
             camera::CameraParameters,
             output_thread::OutputBundle,
@@ -300,7 +300,7 @@ impl GameScene {
 
         let mut last_render_time = Instant::now();
 
-        let mut position_system = PositionSystem::new();
+        let mut player_position_system = PlayerPositionSystem::new(player_actor);
         let mut direct_control_system = DirectControl::new(player_actor, 10.0, 0.4);
         let chunk_presence_system = ChunkPresenceSystem::new();
         let sky_light_system = SkyLightSystem::new();
@@ -448,7 +448,7 @@ impl GameScene {
                     last_render_time = now;
 
                     // TODO consider what should really be unblocked?
-                    position_system.process(
+                    player_position_system.process(
                         elapsed,
                         &class_bc,
                         &collision_bcc,
@@ -471,11 +471,10 @@ impl GameScene {
                         snapshot,
                     );
 
-                    let position = position_ac.get(&player_actor).unwrap();
-                    let orientation = orientation_ac.get(&player_actor).unwrap();
-
-                    let target =
-                        PositionSystem::get_target_block(position, orientation, |chunk, block| {
+                    let target = player_position_system.get_target_block(
+                        &position_ac,
+                        &orientation_ac,
+                        |chunk, block| {
                             // TODO: better targeting collision?
                             class_bc
                                 .get_chunk(&chunk)
@@ -484,7 +483,8 @@ impl GameScene {
                                     collision_bcc.get(*class).is_some()
                                 })
                                 .unwrap_or(false)
-                        });
+                        },
+                    );
 
                     block_render_system.build_target_highlight(target);
 
@@ -569,15 +569,10 @@ impl GameScene {
                                     if state == ElementState::Pressed {
                                         match button {
                                             MouseButton::Left => {
-                                                let position =
-                                                    position_ac.get(&player_actor).unwrap();
-                                                let orientation =
-                                                    orientation_ac.get(&player_actor).unwrap();
-
                                                 if let Some((chunk, block, _side)) =
-                                                    PositionSystem::get_target_block(
-                                                        position,
-                                                        orientation,
+                                                    player_position_system.get_target_block(
+                                                        &position_ac,
+                                                        &orientation_ac,
                                                         |chunk, block| {
                                                             class_bc
                                                                 .get_chunk(&chunk)
@@ -602,15 +597,10 @@ impl GameScene {
                                                 }
                                             },
                                             MouseButton::Right => {
-                                                let position =
-                                                    position_ac.get(&player_actor).unwrap();
-                                                let orientation =
-                                                    orientation_ac.get(&player_actor).unwrap();
-
                                                 if let Some((chunk, block, side)) =
-                                                    PositionSystem::get_target_block(
-                                                        position,
-                                                        orientation,
+                                                    player_position_system.get_target_block(
+                                                        &position_ac,
+                                                        &orientation_ac,
                                                         |chunk, block| {
                                                             class_bc
                                                                 .get_chunk(&chunk)
