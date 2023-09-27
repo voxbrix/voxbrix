@@ -29,6 +29,7 @@ use voxbrix_common::{
 pub mod chunk_ticket;
 pub mod class;
 pub mod orientation;
+pub mod player;
 pub mod position;
 pub mod velocity;
 

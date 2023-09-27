@@ -11,6 +11,7 @@ use crate::{
             },
             class::ClassActorComponent,
             orientation::OrientationActorComponent,
+            player::PlayerActorComponent,
             position::PositionActorComponent,
             velocity::VelocityActorComponent,
         },
@@ -35,7 +36,10 @@ use crate::{
         IntoDataSized,
         StorageThread,
     },
-    system::chunk_ticket::ChunkTicketSystem,
+    system::{
+        chunk_ticket::ChunkTicketSystem,
+        position::PositionSystem,
+    },
     Local,
     Shared,
     BASE_CHANNEL,
@@ -54,15 +58,24 @@ use local_channel::mpsc::{
 };
 use log::debug;
 use redb::ReadableTable;
-use std::rc::Rc;
+use std::{
+    rc::Rc,
+    time::Instant,
+};
 use tokio::time::{
     self,
     MissedTickBehavior,
 };
 use voxbrix_common::{
-    component::block::{
-        class::ClassBlockComponent,
-        BlocksVec,
+    component::{
+        block::{
+            class::ClassBlockComponent,
+            BlocksVec,
+        },
+        block_class::collision::{
+            Collision,
+            CollisionBlockClassComponent,
+        },
     },
     entity::{
         actor::Actor,
@@ -160,7 +173,6 @@ pub async fn run(
     let block_class_loading_system = BlockClassLoadingSystem::load_data()
         .await
         .expect("loading block classes");
-    let block_class_label_map = block_class_loading_system.into_label_map();
 
     let mut packer = Packer::new();
 
@@ -173,15 +185,23 @@ pub async fn run(
     let mut position_ac = PositionActorComponent::new(StateComponent(1));
     let mut velocity_ac = VelocityActorComponent::new(StateComponent(2));
     let mut orientation_ac = OrientationActorComponent::new(StateComponent(3));
+    let mut player_ac = PlayerActorComponent::new();
     let mut chunk_ticket_ac = ChunkTicketActorComponent::new();
 
     let mut status_cc = StatusChunkComponent::new();
     let mut cache_cc = CacheChunkComponent::new();
     let mut chunk_ticket_system = ChunkTicketSystem::new();
-    let mut class_bc = ClassBlockComponent::new();
 
-    // TODO classify actors to know what to send without a buffer
-    let mut status_updates = std::collections::BTreeSet::new();
+    let mut class_bc = ClassBlockComponent::new();
+    let mut collision_bcc = CollisionBlockClassComponent::new();
+
+    let mut position_system = PositionSystem::new();
+
+    block_class_loading_system
+        .load_component("collision", &mut collision_bcc, |desc: Collision| Ok(desc))
+        .expect("unable to load collision block class component");
+
+    let block_class_label_map = block_class_loading_system.into_label_map();
 
     let mut send_status_interval = time::interval(PROCESS_INTERVAL);
     send_status_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -200,12 +220,28 @@ pub async fn run(
 
     let mut server_state = StatePacker::new();
 
+    let mut last_process_time = Instant::now();
+
     while let Some(event) = stream.next().await {
         // TODO entity deletion here
         match event {
             ServerEvent::Process => {
                 chunk_ticket_system.clear();
                 chunk_ticket_system.actor_tickets(&chunk_ticket_ac);
+
+                let now = Instant::now();
+                let elapsed = now.saturating_duration_since(last_process_time);
+                last_process_time = now;
+
+                position_system.process(
+                    elapsed,
+                    &class_bc,
+                    &collision_bcc,
+                    &mut position_ac,
+                    &velocity_ac,
+                    &player_ac,
+                    snapshot,
+                );
 
                 for (player, player_actor, client) in actor_pc
                     .iter()
@@ -428,6 +464,8 @@ pub async fn run(
                     snapshot,
                 );
 
+                player_ac.insert(actor, player);
+
                 client_pc.insert(
                     player,
                     Client {
@@ -540,8 +578,6 @@ pub async fn run(
                                     }
                                 },
                             );
-
-                            status_updates.insert(*actor);
                         },
                         ServerAccept::AlterBlock {
                             chunk,
@@ -634,6 +670,7 @@ pub async fn run(
                     position_ac.remove(&actor, snapshot);
                     velocity_ac.remove(&actor, snapshot);
                     orientation_ac.remove(&actor, snapshot);
+                    player_ac.remove(&actor);
                     chunk_ticket_ac.remove(&actor);
                 }
             },

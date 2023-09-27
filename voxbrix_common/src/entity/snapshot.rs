@@ -5,6 +5,8 @@ use serde::{
 
 pub const MAX_SNAPSHOT_DIFF: usize = 300; // approx. 15 secs
 
+/// Currently, Snapshot(0) means totally uninitialized client/server.
+/// All loops should start with Snapshot(1).
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
 pub struct Snapshot(pub usize);
 

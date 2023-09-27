@@ -165,8 +165,9 @@ impl GameScene {
         let (unreliable_tx, mut unreliable_rx) = local_channel::mpsc::channel::<Vec<u8>>();
         let (event_tx, event_rx) = local_channel::mpsc::channel::<Event>();
 
-        let mut snapshot = Snapshot(1);
         let mut client_state = StatePacker::new();
+
+        let mut snapshot = Snapshot(1);
         // Last client's snapshot received by the server
         let mut last_client_snapshot = Snapshot(0);
         let mut last_server_snapshot = Snapshot(0);
@@ -442,7 +443,6 @@ impl GameScene {
         while let Some(event) = stream.next().await {
             match event {
                 Event::Process(surface) => {
-                    snapshot = snapshot.next();
                     let now = Instant::now();
                     let elapsed = now.saturating_duration_since(last_render_time);
                     last_render_time = now;
@@ -528,6 +528,8 @@ impl GameScene {
                     );
 
                     let _ = unreliable_tx.send(packed);
+
+                    snapshot = snapshot.next();
                 },
                 Event::Input(event) => {
                     match event {
