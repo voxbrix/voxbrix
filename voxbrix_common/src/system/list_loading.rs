@@ -1,3 +1,7 @@
+use crate::{
+    read_ron_file,
+    LabelMap,
+};
 use anyhow::{
     Context,
     Error,
@@ -8,10 +12,6 @@ use std::{
     path::Path,
 };
 use tokio::task;
-use voxbrix_common::{
-    read_ron_file,
-    LabelMap,
-};
 
 #[derive(Deserialize, Debug)]
 pub struct List {

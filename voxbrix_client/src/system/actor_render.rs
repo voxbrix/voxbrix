@@ -10,6 +10,7 @@ use crate::{
             position::PositionActorComponent,
             velocity::VelocityActorComponent,
         },
+        actor_class::model::ModelActorClassComponent,
         actor_model::builder::{
             BuilderActorModelComponent,
             BASE_BODY_PART,
@@ -179,22 +180,24 @@ impl ActorRenderSystem {
         position_ac: &PositionActorComponent,
         velocity_ac: &VelocityActorComponent,
         orientation_ac: &OrientationActorComponent,
+        model_acc: &ModelActorClassComponent,
         builder_amc: &BuilderActorModelComponent,
         animation_state_ac: &mut AnimationStateActorComponent,
     ) {
         self.polygons.clear();
 
-        for (actor, _class, position) in position_ac
+        for (actor, class, position, model) in position_ac
             .iter()
             .filter(|(actor, _)| *actor != player_actor)
-            .filter_map(|(actor, position)| Some((actor, class_ac.get(&actor)?, position)))
+            .filter_map(|(actor, position)| {
+                let class = class_ac.get(&actor)?;
+                let model = model_acc.get(&actor, class)?;
+                Some((actor, class, position, model))
+            })
         {
             self.body_part_buffer.clear();
 
-            // TODO replace with actual model
-            let actor_model = crate::entity::actor_model::ActorModel(0);
-
-            let model_builder = match builder_amc.get(actor_model) {
+            let model_builder = match builder_amc.get(model) {
                 Some(s) => s,
                 None => continue,
             };

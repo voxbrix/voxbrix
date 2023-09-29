@@ -9,20 +9,14 @@ use serde::{
 };
 use std::{
     collections::BTreeMap,
-    path::PathBuf,
+    path::Path,
 };
 use tokio::task;
 use voxbrix_common::{
     read_ron_file,
+    system::list_loading::List,
     LabelMap,
 };
-
-pub const MODEL_PATH_PREFIX: &str = "assets/client/models";
-
-#[derive(Deserialize, Debug)]
-struct List {
-    list: Vec<String>,
-}
 
 pub trait LoadableComponent<C> {
     fn reload(&mut self, data: Vec<Option<C>>);
@@ -40,14 +34,11 @@ pub struct ModelLoadingSystem {
 }
 
 impl ModelLoadingSystem {
-    pub async fn load_data(postfix: &'static str) -> Result<Self, Error> {
+    pub async fn load_data(
+        list_path: &'static str,
+        path_prefix: &'static str,
+    ) -> Result<Self, Error> {
         task::spawn_blocking(move || {
-            let mut dir_path = PathBuf::from(MODEL_PATH_PREFIX);
-            let mut list_path = dir_path.clone();
-
-            dir_path.push(postfix);
-            list_path.push(&format!("{}.ron", postfix));
-
             let model_list = read_ron_file::<List>(list_path)?.list;
 
             let mut components = BTreeMap::new();
@@ -55,7 +46,8 @@ impl ModelLoadingSystem {
             for (model_id, model_label) in model_list.iter().enumerate() {
                 let file_name = format!("{}.ron", model_label);
 
-                let descriptor: ModelDescriptior = read_ron_file(dir_path.join(file_name))?;
+                let descriptor: ModelDescriptior =
+                    read_ron_file(Path::new(path_prefix).join(file_name))?;
 
                 if descriptor.label != *model_label {
                     return Err(Error::msg(format!(

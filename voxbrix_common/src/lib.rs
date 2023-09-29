@@ -1,3 +1,4 @@
+pub mod assets;
 pub mod async_ext;
 pub mod component;
 pub mod entity;

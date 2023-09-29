@@ -1,4 +1,15 @@
 use crate::{
+    assets::{
+        ACTOR_MODEL_ANIMATION_LIST_PATH,
+        ACTOR_MODEL_BODY_PART_LIST_PATH,
+        ACTOR_MODEL_PATH_PREFIX,
+        ACTOR_TEXTURE_LIST_PATH,
+        ACTOR_TEXTURE_PATH_PREFIX,
+        BLOCK_MODEL_LIST_PATH,
+        BLOCK_MODEL_PATH_PREFIX,
+        BLOCK_TEXTURE_LIST_PATH,
+        BLOCK_TEXTURE_PATH_PREFIX,
+    },
     component::{
         actor::{
             animation_state::AnimationStateActorComponent,
@@ -7,6 +18,7 @@ use crate::{
             position::PositionActorComponent,
             velocity::VelocityActorComponent,
         },
+        actor_class::model::ModelActorClassComponent,
         actor_model::builder::{
             ActorModelBuilderContext,
             ActorModelBuilderDescriptor,
@@ -38,11 +50,7 @@ use crate::{
         block_render::BlockRenderSystemDescriptor,
         chunk_presence::ChunkPresenceSystem,
         controller::DirectControl,
-        list_loading::List,
-        model_loading::{
-            ModelLoadingSystem,
-            MODEL_PATH_PREFIX,
-        },
+        model_loading::ModelLoadingSystem,
         player_position::PlayerPositionSystem,
         render::{
             camera::CameraParameters,
@@ -77,6 +85,7 @@ use tokio::time::{
     MissedTickBehavior,
 };
 use voxbrix_common::{
+    assets::ACTOR_MODEL_LIST_PATH,
     async_ext::{
         self,
         StreamExt as _,
@@ -108,6 +117,7 @@ use voxbrix_common::{
     },
     entity::{
         actor::Actor,
+        actor_model::ActorModel,
         block::Block,
         chunk::Chunk,
         snapshot::Snapshot,
@@ -121,7 +131,9 @@ use voxbrix_common::{
     },
     pack::Packer,
     system::{
+        actor_class_loading::ActorClassLoadingSystem,
         block_class_loading::BlockClassLoadingSystem,
+        list_loading::List,
         sky_light::SkyLightSystem,
     },
     unblock,
@@ -238,12 +250,15 @@ impl GameScene {
         });
 
         let block_class_loading_system = BlockClassLoadingSystem::load_data().await?;
-        let block_texture_loading_system = TextureLoadingSystem::load_data("blocks").await?;
+        let block_texture_loading_system =
+            TextureLoadingSystem::load_data(BLOCK_TEXTURE_LIST_PATH, BLOCK_TEXTURE_PATH_PREFIX)
+                .await?;
 
         let mut builder_bmc = BuilderBlockModelComponent::new();
         let mut culling_bmc = CullingBlockModelComponent::new();
 
-        let block_model_loading_system = ModelLoadingSystem::load_data("blocks").await?;
+        let block_model_loading_system =
+            ModelLoadingSystem::load_data(BLOCK_MODEL_LIST_PATH, BLOCK_MODEL_PATH_PREFIX).await?;
 
         let block_model_context = BlockModelContext {
             block_texture_label_map: &block_texture_loading_system.label_map,
@@ -305,7 +320,9 @@ impl GameScene {
         let mut direct_control_system = DirectControl::new(player_actor, 10.0, 0.4);
         let chunk_presence_system = ChunkPresenceSystem::new();
         let sky_light_system = SkyLightSystem::new();
-        let actor_texture_loading_system = TextureLoadingSystem::load_data("actors").await?;
+        let actor_texture_loading_system =
+            TextureLoadingSystem::load_data(ACTOR_TEXTURE_LIST_PATH, ACTOR_TEXTURE_PATH_PREFIX)
+                .await?;
 
         let mut class_ac = ClassActorComponent::new(StateComponent(0), player_actor);
         let mut position_ac = PositionActorComponent::new(StateComponent(1), player_actor);
@@ -313,21 +330,23 @@ impl GameScene {
         let mut orientation_ac = OrientationActorComponent::new(StateComponent(3), player_actor);
         let mut animation_state_ac = AnimationStateActorComponent::new();
 
+        let mut model_acc = ModelActorClassComponent::new(StateComponent(4), player_actor);
+
         let state_components_label_map = List::load("assets/common/state_components.ron")
             .await?
             .into_label_map(|i| StateComponent(i as u32));
 
-        let actor_model_loading_system = ModelLoadingSystem::load_data("actors").await?;
+        let actor_class_loading_system = ActorClassLoadingSystem::load_data().await?;
+        let actor_model_loading_system =
+            ModelLoadingSystem::load_data(ACTOR_MODEL_LIST_PATH, ACTOR_MODEL_PATH_PREFIX).await?;
         let mut builder_amc = BuilderActorModelComponent::new();
 
-        let actor_body_part_label_map =
-            List::load(Path::new(MODEL_PATH_PREFIX).join("actor_body_parts.ron"))
-                .await?
-                .into_label_map(ActorBodyPart);
-        let actor_animation_label_map =
-            List::load(Path::new(MODEL_PATH_PREFIX).join("actor_animations.ron"))
-                .await?
-                .into_label_map(ActorAnimation);
+        let actor_body_part_label_map = List::load(ACTOR_MODEL_BODY_PART_LIST_PATH)
+            .await?
+            .into_label_map(ActorBodyPart);
+        let actor_animation_label_map = List::load(ACTOR_MODEL_ANIMATION_LIST_PATH)
+            .await?
+            .into_label_map(ActorAnimation);
 
         let ctx = ActorModelBuilderContext {
             actor_texture_label_map: &actor_texture_loading_system.label_map,
@@ -340,6 +359,20 @@ impl GameScene {
             &mut builder_amc,
             |desc: ActorModelBuilderDescriptor| desc.describe(&ctx),
         )?;
+
+        let actor_model_label_map = actor_model_loading_system.into_label_map(ActorModel);
+
+        actor_class_loading_system.load_component(
+            "model",
+            &mut model_acc,
+            |model_label: String| {
+                actor_model_label_map.get(&model_label).ok_or_else(|| {
+                    anyhow::Error::msg(format!("actor model \"{}\" is undefined", model_label))
+                })
+            },
+        )?;
+
+        let actor_class_map = actor_class_loading_system.into_label_map();
 
         position_ac.insert(
             player_actor,
@@ -495,6 +528,7 @@ impl GameScene {
                         &position_ac,
                         &velocity_ac,
                         &orientation_ac,
+                        &model_acc,
                         &builder_amc,
                         &mut animation_state_ac,
                     );
@@ -672,6 +706,7 @@ impl GameScene {
                             state,
                         } => {
                             class_ac.unpack_state(&state);
+                            model_acc.unpack_state(&state);
                             position_ac.unpack_state(&state);
                             velocity_ac.unpack_state(&state);
                             orientation_ac.unpack_state(&state);

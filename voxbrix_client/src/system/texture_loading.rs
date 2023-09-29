@@ -15,7 +15,6 @@ use voxbrix_common::{
     LabelMap,
 };
 
-const PATH_PREFIX: &str = "assets/client/textures";
 const TEXTURE_FORMAT: ImageFormat = ImageFormat::Png;
 const TEXTURE_FORMAT_NAME: &str = "png";
 pub const GPU_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
@@ -33,10 +32,10 @@ pub struct TextureLoadingSystem {
 }
 
 impl TextureLoadingSystem {
-    pub async fn load_data(category_name: &str) -> Result<Self, Error> {
-        let list_path = Path::new(PATH_PREFIX).join(format!("{}.ron", category_name));
-        let textures_path_pfx = Path::new(PATH_PREFIX).join(category_name);
-
+    pub async fn load_data(
+        list_path: &'static str,
+        path_prefix: &'static str,
+    ) -> Result<Self, Error> {
         task::spawn_blocking(move || {
             let texture_list: TextureList = read_ron_file(list_path)?;
 
@@ -44,7 +43,7 @@ impl TextureLoadingSystem {
                 .list
                 .iter()
                 .map(|texture_label| {
-                    let file_path = textures_path_pfx
+                    let file_path = Path::new(path_prefix)
                         .join(format!("{}.{}", texture_label, TEXTURE_FORMAT_NAME));
                     fs::read(&file_path).with_context(|| format!("reading {:?}", &file_path))
                 })

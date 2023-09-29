@@ -23,6 +23,7 @@ use tokio::{
 };
 use window::WindowHandle;
 
+mod assets;
 mod component;
 mod entity;
 mod scene;

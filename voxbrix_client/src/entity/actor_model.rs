@@ -1,9 +1,6 @@
 use voxbrix_common::math::MinMax;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
-pub struct ActorModel(pub usize);
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
 pub struct ActorAnimation(pub usize);
 
 impl std::hash::Hash for ActorAnimation {

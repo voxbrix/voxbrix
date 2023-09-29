@@ -15,6 +15,7 @@ use crate::{
             position::PositionActorComponent,
             velocity::VelocityActorComponent,
         },
+        actor_class::model::ModelActorClassComponent,
         chunk::{
             cache::CacheChunkComponent,
             status::{
@@ -67,6 +68,7 @@ use tokio::time::{
     MissedTickBehavior,
 };
 use voxbrix_common::{
+    assets::ACTOR_MODEL_LIST_PATH,
     component::{
         block::{
             class::ClassBlockComponent,
@@ -79,6 +81,7 @@ use voxbrix_common::{
     },
     entity::{
         actor::Actor,
+        actor_model::ActorModel,
         block::{
             BLOCKS_IN_CHUNK,
             BLOCKS_IN_CHUNK_LAYER,
@@ -96,7 +99,11 @@ use voxbrix_common::{
         StatePacker,
     },
     pack::Packer,
-    system::block_class_loading::BlockClassLoadingSystem,
+    system::{
+        actor_class_loading::ActorClassLoadingSystem,
+        block_class_loading::BlockClassLoadingSystem,
+        list_loading::List,
+    },
     ChunkData,
 };
 use voxbrix_protocol::{
@@ -170,6 +177,10 @@ pub async fn run(
     event_rx: Receiver<ServerEvent>,
     event_shared_rx: SharedReceiver<SharedEvent>,
 ) {
+    let actor_class_loading_system = ActorClassLoadingSystem::load_data()
+        .await
+        .expect("loading actor classes");
+
     let block_class_loading_system = BlockClassLoadingSystem::load_data()
         .await
         .expect("loading block classes");
@@ -188,6 +199,8 @@ pub async fn run(
     let mut player_ac = PlayerActorComponent::new();
     let mut chunk_ticket_ac = ChunkTicketActorComponent::new();
 
+    let mut model_acc = ModelActorClassComponent::new(StateComponent(4));
+
     let mut status_cc = StatusChunkComponent::new();
     let mut cache_cc = CacheChunkComponent::new();
     let mut chunk_ticket_system = ChunkTicketSystem::new();
@@ -196,6 +209,21 @@ pub async fn run(
     let mut collision_bcc = CollisionBlockClassComponent::new();
 
     let mut position_system = PositionSystem::new();
+
+    let actor_model_label_map = List::load(ACTOR_MODEL_LIST_PATH)
+        .await
+        .expect("loading actor model label map")
+        .into_label_map(ActorModel);
+
+    actor_class_loading_system
+        .load_component("model", &mut model_acc, |desc: String| {
+            actor_model_label_map.get(&desc).ok_or_else(|| {
+                anyhow::Error::msg(format!("model \"{}\" not found in the model list", desc))
+            })
+        })
+        .expect("unable to load collision block class component");
+
+    let actor_class_label_map = actor_class_loading_system.into_label_map();
 
     block_class_loading_system
         .load_component("collision", &mut collision_bcc, |desc: Collision| Ok(desc))
@@ -276,6 +304,15 @@ pub async fn run(
                                 snapshot,
                                 client.last_server_snapshot,
                                 None,
+                                $actor_in_inters,
+                                actors_full_update,
+                            );
+
+                            model_acc.pack_changes(
+                                &mut server_state,
+                                snapshot,
+                                client.last_server_snapshot,
+                                Some(player_actor),
                                 $actor_in_inters,
                                 actors_full_update,
                             );
@@ -457,12 +494,7 @@ pub async fn run(
                 let tx_init = tx.clone();
                 let actor = actor_registry.add();
 
-                // TODO replace with "player class"
-                class_ac.insert(
-                    actor,
-                    voxbrix_common::entity::actor_class::ActorClass(0),
-                    snapshot,
-                );
+                class_ac.insert(actor, actor_class_label_map.get("human").unwrap(), snapshot);
 
                 player_ac.insert(actor, player);
 
@@ -672,6 +704,8 @@ pub async fn run(
                     orientation_ac.remove(&actor, snapshot);
                     player_ac.remove(&actor);
                     chunk_ticket_ac.remove(&actor);
+
+                    model_acc.remove_actor(&actor, snapshot);
                 }
             },
             ServerEvent::SharedEvent(event) => {

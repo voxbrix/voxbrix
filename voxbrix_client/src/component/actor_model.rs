@@ -1,10 +1,8 @@
-use crate::{
-    entity::actor_model::ActorModel,
-    system::model_loading::LoadableComponent,
-};
+use crate::system::model_loading::LoadableComponent;
 use ron::Value;
 use serde::Deserialize;
 use std::collections::BTreeMap;
+use voxbrix_common::entity::actor_model::ActorModel;
 
 pub mod builder;
 
@@ -17,8 +15,8 @@ impl<T> ActorModelComponent<T> {
         Self { data: Vec::new() }
     }
 
-    pub fn get(&self, i: ActorModel) -> Option<&T> {
-        self.data.get(i.0)?.as_ref()
+    pub fn get(&self, model: &ActorModel) -> Option<&T> {
+        self.data.get(model.0)?.as_ref()
     }
 }
 
