@@ -85,7 +85,10 @@ use tokio::time::{
     MissedTickBehavior,
 };
 use voxbrix_common::{
-    assets::ACTOR_MODEL_LIST_PATH,
+    assets::{
+        ACTOR_MODEL_LIST_PATH,
+        STATE_COMPONENTS_PATH,
+    },
     async_ext::{
         self,
         StreamExt as _,
@@ -324,17 +327,37 @@ impl GameScene {
             TextureLoadingSystem::load_data(ACTOR_TEXTURE_LIST_PATH, ACTOR_TEXTURE_PATH_PREFIX)
                 .await?;
 
-        let mut class_ac = ClassActorComponent::new(StateComponent(0), player_actor);
-        let mut position_ac = PositionActorComponent::new(StateComponent(1), player_actor);
-        let mut velocity_ac = VelocityActorComponent::new(StateComponent(2), player_actor);
-        let mut orientation_ac = OrientationActorComponent::new(StateComponent(3), player_actor);
-        let mut animation_state_ac = AnimationStateActorComponent::new();
-
-        let mut model_acc = ModelActorClassComponent::new(StateComponent(4), player_actor);
-
-        let state_components_label_map = List::load("assets/common/state_components.ron")
+        let state_components_label_map = List::load(STATE_COMPONENTS_PATH)
             .await?
             .into_label_map(|i| StateComponent(i as u32));
+
+        let mut class_ac = ClassActorComponent::new(
+            state_components_label_map.get("actor_class").unwrap(),
+            player_actor,
+            false,
+        );
+        let mut position_ac = PositionActorComponent::new(
+            state_components_label_map.get("actor_position").unwrap(),
+            player_actor,
+            true,
+        );
+        let mut velocity_ac = VelocityActorComponent::new(
+            state_components_label_map.get("actor_velocity").unwrap(),
+            player_actor,
+            true,
+        );
+        let mut orientation_ac = OrientationActorComponent::new(
+            state_components_label_map.get("actor_orientation").unwrap(),
+            player_actor,
+            true,
+        );
+        let mut animation_state_ac = AnimationStateActorComponent::new();
+
+        let mut model_acc = ModelActorClassComponent::new(
+            state_components_label_map.get("actor_model").unwrap(),
+            player_actor,
+            false,
+        );
 
         let actor_class_loading_system = ActorClassLoadingSystem::load_data().await?;
         let actor_model_loading_system =

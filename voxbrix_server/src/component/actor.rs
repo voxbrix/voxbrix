@@ -20,6 +20,7 @@ use voxbrix_common::{
         state_component::StateComponent,
     },
     messages::{
+        ActorStatePack,
         State,
         StatePacker,
     },
@@ -33,8 +34,16 @@ pub mod player;
 pub mod position;
 pub mod velocity;
 
+enum LoadedData {
+    Changes,
+    Full,
+    None,
+}
+
 struct ActorComponentPacker<'a, T> {
-    data: Vec<(Actor, Option<&'a T>)>,
+    loaded_data: LoadedData,
+    data_changes: Vec<(Actor, Option<&'a T>)>,
+    data_full: Vec<(Actor, &'a T)>,
 }
 
 impl<T> ActorComponentPacker<'static, T>
@@ -42,15 +51,30 @@ where
     T: Serialize,
 {
     fn new() -> Self {
-        Self { data: Vec::new() }
+        Self {
+            loaded_data: LoadedData::None,
+            data_full: Vec::new(),
+            data_changes: Vec::new(),
+        }
     }
 
-    fn load<'a>(
+    fn load_changes<'a>(
         self,
         iter: impl Iterator<Item = (Actor, Option<&'a T>)>,
     ) -> ActorComponentPacker<'a, T> {
         let mut new = self;
-        new.data.extend(iter);
+        new.data_changes.extend(iter);
+        new.loaded_data = LoadedData::Changes;
+        new
+    }
+
+    fn load_full<'a>(
+        self,
+        iter: impl Iterator<Item = (Actor, &'a T)>,
+    ) -> ActorComponentPacker<'a, T> {
+        let mut new = self;
+        new.data_full.extend(iter);
+        new.loaded_data = LoadedData::Full;
         new
     }
 }
@@ -60,9 +84,23 @@ where
     T: Serialize,
 {
     fn pack(mut self, buffer: &mut Vec<u8>) -> ActorComponentPacker<'static, T> {
-        pack::serialize_into(&self.data, buffer);
+        match self.loaded_data {
+            LoadedData::Changes => {
+                let msg = ActorStatePack::Change(&self.data_changes);
+                pack::serialize_into(&msg, buffer);
+            },
+            LoadedData::Full => {
+                let msg = ActorStatePack::Full(&self.data_full);
+                pack::serialize_into(&msg, buffer);
+            },
+            LoadedData::None => {
+                panic!("no changes loaded");
+            },
+        }
 
-        self.data.clear();
+        self.data_changes.clear();
+        self.data_full.clear();
+        self.loaded_data = LoadedData::None;
 
         // Safety: the `self.data` is `Vec` that contains references with lifetime `'a`.
         // It is the only field of the struct that utilizes the `'a` lifetime and since we
@@ -160,14 +198,42 @@ where
         }
     }
 
+    pub fn pack_full(
+        &mut self,
+        state: &mut StatePacker,
+        player_actor: Option<&Actor>,
+        actors_full_update: &IntSet<Actor>,
+    ) {
+        let mut packer = self.packer.take().unwrap();
+
+        let buffer = state.get_component_buffer(self.state_component);
+
+        if let Some(player_actor) = player_actor {
+            let iter = actors_full_update
+                .iter()
+                .filter(|actor| actor != &player_actor)
+                .filter_map(|actor| Some((*actor, self.storage.get(actor)?)));
+
+            packer = packer.load_full(iter).pack(buffer);
+        } else {
+            let iter = actors_full_update
+                .iter()
+                .filter_map(|actor| Some((*actor, self.storage.get(actor)?)));
+
+            packer = packer.load_full(iter).pack(buffer);
+        }
+
+        self.packer = Some(packer);
+    }
+
     pub fn pack_changes(
         &mut self,
         state: &mut StatePacker,
         snapshot: Snapshot,
         client_last_snapshot: Snapshot,
         player_actor: Option<&Actor>,
-        mut actor_filter_fn: impl FnMut(&Actor) -> bool,
         actors_full_update: &IntSet<Actor>,
+        actors_partial_update: &IntSet<Actor>,
     ) {
         if snapshot.0 > self.last_packed_snapshot.0 {
             self.changes
@@ -176,20 +242,12 @@ where
             self.last_packed_snapshot = snapshot;
         }
 
-        // if snapshot.0 - client_last_snapshot.0 > MAX_SNAPSHOT_DIFF {
-        // TODO SEND ALL FOR DIFF > MAX_SNAPSHOT_DIFF
-        //}
-
         let mut packer = self.packer.take().unwrap();
 
-        let changed_actors_iter = self
-            .changes
+        let changed_actors_iter = actors_partial_update
             .iter()
-            .filter(|(actor, past_snapshot)| {
-                past_snapshot.0 > client_last_snapshot.0
-                    && actor_filter_fn(actor)
-                    && !actors_full_update.contains(actor)
-            })
+            .filter_map(|actor| self.changes.get_key_value(actor))
+            .filter(|(actor, past_snapshot)| past_snapshot.0 > client_last_snapshot.0)
             .map(|(actor, _)| actor)
             .chain(actors_full_update.iter());
 
@@ -200,11 +258,11 @@ where
                 .filter(|actor| actor != &player_actor)
                 .map(|actor| (*actor, self.storage.get(actor)));
 
-            packer = packer.load(iter).pack(buffer);
+            packer = packer.load_changes(iter).pack(buffer);
         } else {
             let iter = changed_actors_iter.map(|actor| (*actor, self.storage.get(actor)));
 
-            packer = packer.load(iter).pack(buffer);
+            packer = packer.load_changes(iter).pack(buffer);
         }
 
         self.packer = Some(packer);

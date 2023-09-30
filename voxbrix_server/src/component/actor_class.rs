@@ -35,22 +35,32 @@ where
         }
     }
 
+    pub fn pack_full(
+        &mut self,
+        state: &mut StatePacker,
+        player_actor: Option<&Actor>,
+        actors_full_update: &IntSet<Actor>,
+    ) {
+        self.overrides
+            .pack_full(state, player_actor, actors_full_update)
+    }
+
     pub fn pack_changes(
         &mut self,
         state: &mut StatePacker,
         snapshot: Snapshot,
         client_last_snapshot: Snapshot,
         player_actor: Option<&Actor>,
-        actor_filter_fn: impl FnMut(&Actor) -> bool,
         actors_full_update: &IntSet<Actor>,
+        actors_partial_update: &IntSet<Actor>,
     ) {
         self.overrides.pack_changes(
             state,
             snapshot,
             client_last_snapshot,
             player_actor,
-            actor_filter_fn,
             actors_full_update,
+            actors_partial_update,
         )
     }
 

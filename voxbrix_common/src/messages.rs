@@ -92,8 +92,14 @@ impl StatePacker {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct ActorState<T> {
-    pub full: Vec<(Actor, T)>,
-    pub change: Vec<(Actor, Option<T>)>,
+#[derive(Deserialize)]
+pub enum ActorStateUnpack<T> {
+    Full(Vec<(Actor, T)>),
+    Change(Vec<(Actor, Option<T>)>),
+}
+
+#[derive(Serialize)]
+pub enum ActorStatePack<'a, T> {
+    Full(&'a Vec<(Actor, &'a T)>),
+    Change(&'a Vec<(Actor, Option<&'a T>)>),
 }

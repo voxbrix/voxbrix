@@ -35,10 +35,7 @@ use tokio::{
     time,
 };
 use voxbrix_common::{
-    async_ext::{
-        self,
-        StreamExt as _,
-    },
+    async_ext::StreamExt as _,
     entity::actor::Actor,
     messages::{
         client::{
@@ -356,7 +353,6 @@ pub async fn run(
     };
 
     let (client_tx, mut server_rx) = local_channel::mpsc::channel();
-    let (self_tx, self_rx) = local_channel::mpsc::channel();
 
     let _ = local
         .event_tx
@@ -369,23 +365,23 @@ pub async fn run(
 
     let (unreliable_loop_tx, mut unreliable_loop_rx) =
         local_channel::mpsc::channel::<(Channel, SendData)>();
-    let self_tx_local = self_tx.clone();
-    let _usend_task = async_ext::spawn_scoped(async move {
+    let unrel_send_task = stream::once_future(async move {
         while let Some((channel, data)) = unreliable_loop_rx.recv().await {
             if let Err(err) = unreliable_tx
                 .send_unreliable(channel, data.as_slice())
                 .await
             {
                 warn!("client_loop: send_unreliable error {:?}", err);
-                let _ = self_tx_local.send(SelfEvent::Exit);
-                return;
+                break;
             }
         }
+
+        LoopEvent::SelfEvent(SelfEvent::Exit)
     });
 
     let (reliable_loop_tx, mut reliable_loop_rx) =
         local_channel::mpsc::channel::<(Channel, SendData)>();
-    let _rsend_task = async_ext::spawn_scoped(async move {
+    let rel_send_task = stream::once_future(async move {
         while let Some((channel, data)) = reliable_loop_rx.recv().await {
             match time::timeout(
                 CLIENT_CONNECTION_TIMEOUT,
@@ -396,17 +392,17 @@ pub async fn run(
             {
                 Err(_) => {
                     warn!("client_loop: send_reliable timeout {:?}", player);
-                    let _ = self_tx.send(SelfEvent::Exit);
-                    return;
+                    break;
                 },
                 Ok(Err(err)) => {
                     warn!("client_loop: send_reliable error {:?}", err);
-                    let _ = self_tx.send(SelfEvent::Exit);
-                    return;
+                    break;
                 },
                 Ok(Ok(())) => {},
             }
         }
+
+        LoopEvent::SelfEvent(SelfEvent::Exit)
     });
 
     let init_data_response = match request {
@@ -434,33 +430,37 @@ pub async fn run(
         return Err(Error::SenderClosed);
     }
 
+    let recv_stream = stream::unfold(&mut rx, |rx| {
+        async move {
+            time::timeout(CLIENT_CONNECTION_TIMEOUT, async move {
+                match rx.recv().await {
+                    Ok((channel, data)) => Some((LoopEvent::PeerMessage { channel, data }, rx)),
+                    Err(err) => {
+                        warn!("client_loop: connection interrupted: {:?}", err);
+                        None
+                    },
+                }
+            })
+            .await
+            .map_err(|_| {
+                warn!("client_loop: receive timeout");
+            })
+            .ok()
+            .flatten()
+            .or_else(|| {
+                // we need to inform the server loop
+                let _ = local.event_tx.send(ServerEvent::RemovePlayer { player });
+                None
+            })
+        }
+    });
+
     let mut events = Box::pin(
         server_rx
             .map(LoopEvent::ServerLoop)
-            .or_ff(stream::unfold(rx, |mut rx| {
-                async move {
-                    time::timeout(CLIENT_CONNECTION_TIMEOUT, async move {
-                        match rx.recv().await {
-                            Ok((channel, data)) => {
-                                Some((LoopEvent::PeerMessage { channel, data }, rx))
-                            },
-                            Err(err) => {
-                                warn!("client_loop: connection interrupted: {:?}", err);
-                                None
-                            },
-                        }
-                    })
-                    .await
-                    .ok()
-                    .flatten()
-                    .or_else(|| {
-                        // we need to inform the server loop
-                        let _ = local.event_tx.send(ServerEvent::RemovePlayer { player });
-                        None
-                    })
-                }
-            }))
-            .or_ff(self_rx.map(LoopEvent::SelfEvent)),
+            .rr_ff(recv_stream)
+            .rr_ff(rel_send_task)
+            .rr_ff(unrel_send_task),
     );
 
     while let Some(event) = events.next().await {

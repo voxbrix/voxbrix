@@ -186,13 +186,13 @@ impl ActorRenderSystem {
     ) {
         self.polygons.clear();
 
-        for (actor, class, position, model) in position_ac
+        for (actor, position, model) in position_ac
             .iter()
             .filter(|(actor, _)| *actor != player_actor)
             .filter_map(|(actor, position)| {
                 let class = class_ac.get(&actor)?;
                 let model = model_acc.get(&actor, class)?;
-                Some((actor, class, position, model))
+                Some((actor, position, model))
             })
         {
             self.body_part_buffer.clear();

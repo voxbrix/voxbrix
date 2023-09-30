@@ -1,7 +1,9 @@
 (
     list: [
-        "position",
-        "velocity",
-        "orientation",
+        "actor_class",
+        "actor_position",
+        "actor_velocity",
+        "actor_orientation",
+        "actor_model",
     ],
 )

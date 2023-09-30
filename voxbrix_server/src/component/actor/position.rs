@@ -93,7 +93,14 @@ pub struct PositionActorComponent {
     packer: Option<ActorComponentPacker<'static, Position>>,
     storage: IntMap<Actor, Position>,
     chunk_actor_component: BTreeSet<(Chunk, Actor)>,
+    /// Actors that must have all components packed.
+    /// Filled on packing this component.
+    /// Includes the Player Actor.
     actors_full_update: IntSet<Actor>,
+    /// Actors that can have changes in components.
+    /// Filled on packing this component.
+    /// Includes the Player Actor.
+    actors_partial_update: IntSet<Actor>,
 }
 
 impl PositionActorComponent {
@@ -137,10 +144,51 @@ impl PositionActorComponent {
             storage: IntMap::default(),
             chunk_actor_component: BTreeSet::new(),
             actors_full_update: IntSet::default(),
+            actors_partial_update: IntSet::default(),
         }
     }
 
-    /// Returns the Vec of Actors that have to have all components packed.
+    /// Packs all the data for the actors in the chunks.
+    /// Saves the list of actors, so other components could do the same.
+    pub fn pack_full(
+        &mut self,
+        state: &mut StatePacker,
+        player_actor: &Actor,
+        // Those will have to have all components packed:
+        full_update_chunks: impl Iterator<Item = Chunk>,
+    ) {
+        self.actors_full_update.clear();
+        self.actors_partial_update.clear();
+
+        self.actors_full_update
+            .extend(full_update_chunks.flat_map(|chunk| {
+                // Actors on chunks that were freshly loaded.
+                // TODO?: currently includes Actors that were already loaded in the intersection
+                // of the old chunks and new chunks (persisted chunks) and move simultaniously with
+                // the player to the new (unloaded before) chunks loaded by the player.
+                // This could lead to sending redundant data about these Actors, but this
+                // is a complex edge case that (with removing moved-away-from-view actors in client) could
+                // introduce subtle but serious bugs if we exclude those Actors.
+                self.chunk_actor_component
+                    .range((chunk, Actor(0)) ..= (chunk, Actor(usize::MAX)))
+                    .map(|(_, actor)| (*actor))
+            }));
+
+        let change_iter = self
+            .actors_full_update
+            .iter()
+            .filter(|actor| *actor != player_actor)
+            .filter_map(|actor| Some((*actor, self.storage.get(actor)?)));
+
+        let mut packer = self.packer.take().unwrap();
+
+        let buffer = state.get_component_buffer(self.state_component);
+
+        packer = packer.load_full(change_iter).pack(buffer);
+
+        self.packer = Some(packer);
+    }
+
     pub fn pack_changes(
         &mut self,
         state: &mut StatePacker,
@@ -153,8 +201,10 @@ impl PositionActorComponent {
         //         to the current (during snapshot) one.
         //         None argument considered to be "out", so must return `false`.
         is_within_intersection: impl Fn(Option<&Chunk>) -> bool,
-        // Those will have to have all components packed:
-        add_actors_in_chunks: impl Iterator<Item = Chunk>,
+        // Those will have to have all components packed (new chunks):
+        full_update_chunks: impl Iterator<Item = Chunk>,
+        // Those must have changes packed (new/old intersection chunks):
+        partial_update_chunks: impl Iterator<Item = Chunk>,
     ) {
         if snapshot.0 > self.last_packed_snapshot.0 {
             self.changes.retain(move |_, change_snapshot| {
@@ -171,8 +221,10 @@ impl PositionActorComponent {
         }
 
         self.actors_full_update.clear();
+        self.actors_partial_update.clear();
+
         self.actors_full_update.extend(
-            add_actors_in_chunks
+            full_update_chunks
                 .flat_map(|chunk| {
                     // Actors on chunks that were freshly loaded.
                     // TODO?: currently includes Actors that were already loaded in the intersection
@@ -213,8 +265,7 @@ impl PositionActorComponent {
                             },
                         )
                         .map(|c| c.actor),
-                )
-                .filter(|actor| actor != player_actor || last_server_snapshot == Snapshot(0)),
+                ),
         );
 
         // Actors that moved out of the intersection (persisted chunks).
@@ -241,34 +292,46 @@ impl PositionActorComponent {
                     !is_within_intersection(self.storage.get(&actor).map(|pos| pos.chunk).as_ref())
                 },
             )
-            .map(|c| (c.actor, self.storage.get(&c.actor)));
+            .map(|c| c.actor);
+
+        self.actors_partial_update.extend(
+            partial_update_chunks
+                .flat_map(|chunk| {
+                    self.chunk_actor_component
+                        .range((chunk, Actor(0)) ..= (chunk, Actor(usize::MAX)))
+                        .map(|(_, actor)| (*actor))
+                })
+                .chain(actors_moved_away)
+                .filter(|actor| !self.actors_full_update.contains(actor)),
+        );
 
         let change_iter = self
-            .changes
+            .actors_partial_update
             .iter()
+            .filter_map(|actor| self.changes.get_key_value(&actor))
             .filter(move |(_, change_snapshot)| change_snapshot.0 > last_server_snapshot.0)
-            .map(|(actor, _)| (*actor, self.storage.get(actor)))
-            .filter(|(_, value)| is_within_intersection(value.map(|v| v.chunk).as_ref()))
-            .chain(actors_moved_away)
-            .filter(|(actor, _)| actor != player_actor)
-            // Avoiding duplication:
-            .filter(|(actor, _)| !self.actors_full_update.contains(actor))
-            // The above check is already included for full-packed actors:
-            .chain(
-                self.actors_full_update
-                    .iter()
-                    .map(|actor| (*actor, self.storage.get(actor))),
-            );
+            .map(|(actor, _)| actor)
+            .chain(self.actors_full_update.iter())
+            .filter(|actor| *actor != player_actor)
+            .map(|actor| (*actor, self.storage.get(actor)));
 
         let mut packer = self.packer.take().unwrap();
 
         let buffer = state.get_component_buffer(self.state_component);
 
-        packer = packer.load(change_iter).pack(buffer);
+        packer = packer.load_changes(change_iter).pack(buffer);
 
         self.packer = Some(packer);
     }
 
+    /// Filled on packing this component.
+    /// Includes the Player Actor.
+    pub fn actors_partial_update(&self) -> &IntSet<Actor> {
+        &self.actors_partial_update
+    }
+
+    /// Filled on packing this component.
+    /// Includes the Player Actor.
     pub fn actors_full_update(&self) -> &IntSet<Actor> {
         &self.actors_full_update
     }

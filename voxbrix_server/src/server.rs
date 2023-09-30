@@ -68,7 +68,10 @@ use tokio::time::{
     MissedTickBehavior,
 };
 use voxbrix_common::{
-    assets::ACTOR_MODEL_LIST_PATH,
+    assets::{
+        ACTOR_MODEL_LIST_PATH,
+        STATE_COMPONENTS_PATH,
+    },
     component::{
         block::{
             class::ClassBlockComponent,
@@ -191,15 +194,26 @@ pub async fn run(
 
     let mut client_pc = ClientPlayerComponent::new();
     let mut actor_pc = ActorPlayerComponent::new();
-    // TODO replace hardcoded state components
-    let mut class_ac = ClassActorComponent::new(StateComponent(0));
-    let mut position_ac = PositionActorComponent::new(StateComponent(1));
-    let mut velocity_ac = VelocityActorComponent::new(StateComponent(2));
-    let mut orientation_ac = OrientationActorComponent::new(StateComponent(3));
+
+    let state_components_label_map = List::load(STATE_COMPONENTS_PATH)
+        .await
+        .expect("state component list not found")
+        .into_label_map(|i| StateComponent(i as u32));
+
+    let mut class_ac =
+        ClassActorComponent::new(state_components_label_map.get("actor_class").unwrap());
+    let mut position_ac =
+        PositionActorComponent::new(state_components_label_map.get("actor_position").unwrap());
+    let mut velocity_ac =
+        VelocityActorComponent::new(state_components_label_map.get("actor_velocity").unwrap());
+    let mut orientation_ac = OrientationActorComponent::new(
+        state_components_label_map.get("actor_orientation").unwrap(),
+    );
     let mut player_ac = PlayerActorComponent::new();
     let mut chunk_ticket_ac = ChunkTicketActorComponent::new();
 
-    let mut model_acc = ModelActorClassComponent::new(StateComponent(4));
+    let mut model_acc =
+        ModelActorClassComponent::new(state_components_label_map.get("actor_model").unwrap());
 
     let mut status_cc = StatusChunkComponent::new();
     let mut cache_cc = CacheChunkComponent::new();
@@ -293,57 +307,13 @@ pub async fn run(
 
                     let chunk_radius = position_chunk.radius(PLAYER_CHUNK_TICKET_RADIUS);
 
-                    macro_rules! pack_components {
-                        ($actor_in_inters:ident) => {
-                            let actors_full_update = position_ac.actors_full_update();
-
-                            // Server-controlled components, we pass `None` instead of `player_actor`.
-                            // These components will not filter out player's own components.
-                            class_ac.pack_changes(
-                                &mut server_state,
-                                snapshot,
-                                client.last_server_snapshot,
-                                None,
-                                $actor_in_inters,
-                                actors_full_update,
-                            );
-
-                            model_acc.pack_changes(
-                                &mut server_state,
-                                snapshot,
-                                client.last_server_snapshot,
-                                Some(player_actor),
-                                $actor_in_inters,
-                                actors_full_update,
-                            );
-
-                            // Client-conrolled components, we pass `Some(player_actor)`.
-                            // These components will filter out player's own components.
-                            velocity_ac.pack_changes(
-                                &mut server_state,
-                                snapshot,
-                                client.last_server_snapshot,
-                                Some(player_actor),
-                                $actor_in_inters,
-                                actors_full_update,
-                            );
-
-                            orientation_ac.pack_changes(
-                                &mut server_state,
-                                snapshot,
-                                client.last_server_snapshot,
-                                Some(player_actor),
-                                $actor_in_inters,
-                                actors_full_update,
-                            );
-                        };
-                    }
+                    let client_is_outdated = client.last_server_snapshot == Snapshot(0)
+                        || snapshot.0 - client.last_server_snapshot.0 > MAX_SNAPSHOT_DIFF;
 
                     if let Some(previous_chunk_radius) = client
                         .last_confirmed_chunk
                         // Enforces full update for the outdated clients
-                        .filter(|_| snapshot.0 - client.last_server_snapshot.0 <= MAX_SNAPSHOT_DIFF
-                            && client.last_server_snapshot != Snapshot(0))
+                        .filter(|_| !client_is_outdated)
                         .map(|c| c.radius(PLAYER_CHUNK_TICKET_RADIUS))
                     {
                         let chunk_within_intersection = |chunk: Option<&Chunk>| -> bool {
@@ -360,6 +330,11 @@ pub async fn run(
                             .into_iter()
                             .filter(|c| !previous_chunk_radius.is_within(c));
 
+                        // TODO optimize?
+                        let intersection_chunks = chunk_radius
+                            .into_iter()
+                            .filter(|c| previous_chunk_radius.is_within(c));
+
                         position_ac.pack_changes(
                             &mut server_state,
                             snapshot,
@@ -367,36 +342,86 @@ pub async fn run(
                             player_actor,
                             chunk_within_intersection,
                             new_chunks,
+                            intersection_chunks,
                         );
 
-                        let actor_within_intersection = |actor: &Actor| {
-                            let actor_chunk = match position_ac.get(actor) {
-                                Some(v) => &v.chunk,
-                                None => return false,
-                            };
+                        // Server-controlled components, we pass `None` instead of `player_actor`.
+                        // These components will not filter out player's own components.
+                        class_ac.pack_changes(
+                            &mut server_state,
+                            snapshot,
+                            client.last_server_snapshot,
+                            None,
+                            position_ac.actors_full_update(),
+                            position_ac.actors_partial_update(),
+                        );
 
-                            previous_chunk_radius.is_within(actor_chunk)
-                                && chunk_radius.is_within(actor_chunk)
-                        };
+                        model_acc.pack_changes(
+                            &mut server_state,
+                            snapshot,
+                            client.last_server_snapshot,
+                            Some(player_actor),
+                            position_ac.actors_full_update(),
+                            position_ac.actors_partial_update(),
+                        );
 
-                        pack_components!(actor_within_intersection);
+                        // Client-conrolled components, we pass `Some(player_actor)`.
+                        // These components will filter out player's own components.
+                        velocity_ac.pack_changes(
+                            &mut server_state,
+                            snapshot,
+                            client.last_server_snapshot,
+                            Some(player_actor),
+                            position_ac.actors_full_update(),
+                            position_ac.actors_partial_update(),
+                        );
+
+                        orientation_ac.pack_changes(
+                            &mut server_state,
+                            snapshot,
+                            client.last_server_snapshot,
+                            Some(player_actor),
+                            position_ac.actors_full_update(),
+                            position_ac.actors_partial_update(),
+                        );
                     } else {
-                        let chunk_within_intersection = |_chunk: Option<&Chunk>| false;
+                        // TODO optimize?
+                        let new_chunks = chunk_radius
+                            .into_iter();
 
-                        let new_chunks = chunk_radius.into_iter();
-
-                        position_ac.pack_changes(
+                        position_ac.pack_full(
                             &mut server_state,
-                            snapshot,
-                            client.last_server_snapshot,
                             player_actor,
-                            chunk_within_intersection,
                             new_chunks,
                         );
 
-                        let actor_within_intersection = |_actor: &Actor| false;
+                        // Server-controlled components, we pass `None` instead of `player_actor`.
+                        // These components will not filter out player's own components.
+                        class_ac.pack_full(
+                            &mut server_state,
+                            None,
+                            position_ac.actors_full_update(),
+                        );
 
-                        pack_components!(actor_within_intersection);
+                        model_acc.pack_full(
+                            &mut server_state,
+                            None,
+                            position_ac.actors_full_update(),
+                        );
+
+                        // Client-conrolled components, we pass `Some(player_actor)`.
+                        // These components will filter out player's own components.
+                        velocity_ac.pack_full(
+                            &mut server_state,
+                            Some(player_actor),
+                            position_ac.actors_full_update(),
+                        );
+
+                        orientation_ac.pack_full(
+                            &mut server_state,
+                            Some(player_actor),
+                            position_ac.actors_full_update(),
+                        );
                     }
 
                     let data = ClientAccept::pack_state(
@@ -546,6 +571,10 @@ pub async fn run(
                                 Some(c) => c,
                                 None => continue,
                             };
+
+                            if client.last_client_snapshot >= last_client_snapshot {
+                                continue;
+                            }
 
                             client.last_server_snapshot = last_server_snapshot;
                             client.last_client_snapshot = last_client_snapshot;

@@ -15,6 +15,7 @@ use voxbrix_common::{
     },
     math::MinMax,
     messages::{
+        ActorStateUnpack,
         State,
         StatePacker,
     },
@@ -68,6 +69,7 @@ where
     T: 'static,
 {
     state_component: StateComponent,
+    is_client_controlled: bool,
     player_actor: Actor,
     last_change_snapshot: Snapshot,
     storage: IntMap<Actor, T>,
@@ -77,10 +79,15 @@ impl<T> ActorComponentPackable<T>
 where
     T: 'static,
 {
-    pub fn new(state_component: StateComponent, player_actor: Actor) -> Self {
+    pub fn new(
+        state_component: StateComponent,
+        player_actor: Actor,
+        is_client_controlled: bool,
+    ) -> Self {
         Self {
             state_component,
             player_actor,
+            is_client_controlled,
             last_change_snapshot: Snapshot(0),
             storage: IntMap::default(),
         }
@@ -136,14 +143,30 @@ where
     pub fn unpack_state(&mut self, state: &State<'a>) {
         if let Some(changes) = state
             .get_component(&self.state_component)
-            .and_then(|buffer| pack::deserialize_from::<Vec<(Actor, Option<T>)>>(buffer))
+            .and_then(|buffer| pack::deserialize_from::<ActorStateUnpack<T>>(buffer))
         {
-            for (actor, change) in changes {
-                if let Some(component) = change {
-                    self.storage.insert(actor, component);
-                } else {
-                    self.storage.remove(&actor);
-                }
+            match changes {
+                ActorStateUnpack::Change(changes) => {
+                    for (actor, change) in changes {
+                        if let Some(component) = change {
+                            self.storage.insert(actor, component);
+                        } else {
+                            self.storage.remove(&actor);
+                        }
+                    }
+                },
+                ActorStateUnpack::Full(full) => {
+                    let player_value = self.storage.remove(&self.player_actor);
+
+                    self.storage.clear();
+                    self.storage.extend(full.into_iter());
+
+                    if let Some(player_value) = player_value {
+                        if self.is_client_controlled {
+                            self.storage.insert(self.player_actor, player_value);
+                        }
+                    }
+                },
             }
         }
     }
