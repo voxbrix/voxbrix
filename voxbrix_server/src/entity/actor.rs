@@ -11,10 +11,10 @@ impl ActorRegistry {
     }
 
     pub fn add(&mut self) -> Actor {
-        Actor(self.0.push(()))
+        Actor::from_usize(self.0.push(()))
     }
 
     pub fn remove(&mut self, actor: &Actor) -> bool {
-        self.0.remove(actor.0).is_some()
+        self.0.remove(actor.into_usize()).is_some()
     }
 }

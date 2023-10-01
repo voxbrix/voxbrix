@@ -3,16 +3,16 @@ use serde::{
     Serialize,
 };
 
-pub const MAX_SNAPSHOT_DIFF: usize = 300; // approx. 15 secs
+pub const MAX_SNAPSHOT_DIFF: u64 = 300; // approx. 15 secs
 
 /// Currently, Snapshot(0) means totally uninitialized client/server.
 /// All loops should start with Snapshot(1).
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
-pub struct Snapshot(pub usize);
+pub struct Snapshot(pub u64);
 
 impl std::hash::Hash for Snapshot {
     fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
-        hasher.write_usize(self.0)
+        hasher.write_u64(self.0)
     }
 }
 

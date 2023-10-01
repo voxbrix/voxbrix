@@ -156,7 +156,7 @@ pub fn process_actor(
                     let (chunk, block) = Block::from_chunk_offset(center_chunk, chunk_offset);
 
                     if let Some(block_class) = class_bc.get_chunk(&chunk).map(|b| b.get(block)) {
-                        if let Some(collision) = collision_bcc.get(*block_class) {
+                        if let Some(collision) = collision_bcc.get(block_class) {
                             match collision {
                                 Collision::SolidCube => {
                                     return Some(MoveLimit {

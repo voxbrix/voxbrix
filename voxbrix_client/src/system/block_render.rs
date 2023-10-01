@@ -74,8 +74,8 @@ fn neighbors_to_cull_flags(
             Neighbor::ThisChunk(n) => {
                 let class = this_chunk.get(*n);
                 let culling = model_bcc
-                    .get(*class)
-                    .and_then(|model| culling_bmc.get(*model));
+                    .get(class)
+                    .and_then(|model| culling_bmc.get(model));
                 match culling {
                     Some(Culling::Full) => {
                         cull_flags.remove(side);
@@ -87,8 +87,8 @@ fn neighbors_to_cull_flags(
                 if let Some(chunk) = neighbor_chunk {
                     let class = chunk.get(*n);
                     let culling = model_bcc
-                        .get(*class)
-                        .and_then(|model| culling_bmc.get(*model));
+                        .get(class)
+                        .and_then(|model| culling_bmc.get(model));
                     match culling {
                         Some(Culling::Full) => {
                             cull_flags.remove(side);
@@ -301,9 +301,7 @@ impl BlockRenderSystem {
         });
 
         for (block, block_coords, block_class) in this_chunk_class.iter_with_coords() {
-            if let Some(model_builder) = model_bcc
-                .get(*block_class)
-                .and_then(|m| builder_bmc.get(*m))
+            if let Some(model_builder) = model_bcc.get(block_class).and_then(|m| builder_bmc.get(m))
             {
                 let neighbors = block.neighbors_in_coords(block_coords);
 

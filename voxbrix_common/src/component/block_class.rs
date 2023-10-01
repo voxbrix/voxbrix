@@ -14,8 +14,8 @@ impl<T> BlockClassComponent<T> {
         }
     }
 
-    pub fn get(&self, block_class: BlockClass) -> Option<&T> {
-        self.classes.get(block_class.0)?.as_ref()
+    pub fn get(&self, block_class: &BlockClass) -> Option<&T> {
+        self.classes.get(block_class.into_usize())?.as_ref()
     }
 
     pub fn reload(&mut self, data: Vec<Option<T>>) {

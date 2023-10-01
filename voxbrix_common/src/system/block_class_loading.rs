@@ -117,7 +117,7 @@ impl BlockClassLoadingSystem {
         self.block_class_list
             .into_iter()
             .enumerate()
-            .map(|(c, l)| (l, BlockClass(c)))
+            .map(|(c, l)| (l, BlockClass::from_usize(c)))
             .collect()
     }
 }

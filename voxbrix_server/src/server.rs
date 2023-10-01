@@ -83,7 +83,6 @@ use voxbrix_common::{
         },
     },
     entity::{
-        actor::Actor,
         actor_model::ActorModel,
         block::{
             BLOCKS_IN_CHUNK,
@@ -198,7 +197,7 @@ pub async fn run(
     let state_components_label_map = List::load(STATE_COMPONENTS_PATH)
         .await
         .expect("state component list not found")
-        .into_label_map(|i| StateComponent(i as u32));
+        .into_label_map(StateComponent::from_usize);
 
     let mut class_ac =
         ClassActorComponent::new(state_components_label_map.get("actor_class").unwrap());
@@ -227,7 +226,7 @@ pub async fn run(
     let actor_model_label_map = List::load(ACTOR_MODEL_LIST_PATH)
         .await
         .expect("loading actor model label map")
-        .into_label_map(ActorModel);
+        .into_label_map(ActorModel::from_usize);
 
     actor_class_loading_system
         .load_component("model", &mut model_acc, |desc: String| {

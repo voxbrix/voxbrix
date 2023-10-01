@@ -18,8 +18,8 @@ impl<T> BlockModelComponent<T> {
         Self { data: Vec::new() }
     }
 
-    pub fn get(&self, i: BlockModel) -> Option<&T> {
-        self.data.get(i.0)?.as_ref()
+    pub fn get(&self, block_model: &BlockModel) -> Option<&T> {
+        self.data.get(block_model.into_usize())?.as_ref()
     }
 }
 

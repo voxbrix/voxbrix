@@ -273,7 +273,7 @@ impl LightDispersion<'_> {
                 let neighbor_class = chunk_class.get(*neighbor_block);
                 let neighbor_light = chunk_light.get_mut(*neighbor_block);
 
-                match opacity_bcc.get(*neighbor_class) {
+                match opacity_bcc.get(neighbor_class) {
                     Some(Opacity::Full) => {},
                     None => {
                         if side == 4 && block_light == SkyLight::MAX {
@@ -348,7 +348,7 @@ impl AddSide<'_> {
                 let old_block_light = old_chunk_light.as_ref().map(|c| *c.get(block));
 
                 // TODO block transparency analysis
-                if let Some(Opacity::Full) = opacity_bcc.get(*block_class) {
+                if let Some(Opacity::Full) = opacity_bcc.get(block_class) {
                     *block_light = SkyLight::MIN;
 
                     if old_block_light != Some(*block_light) {
@@ -456,7 +456,7 @@ impl CheckSide<'_> {
                         continue;
                     };
 
-                let neighbor_transparent = match opacity_bcc.get(*neighbor_block_class) {
+                let neighbor_transparent = match opacity_bcc.get(neighbor_block_class) {
                     Some(Opacity::Full) => false,
                     None => true,
                 };

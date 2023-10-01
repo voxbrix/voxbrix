@@ -119,7 +119,7 @@ impl ActorClassLoadingSystem {
         self.actor_class_list
             .into_iter()
             .enumerate()
-            .map(|(c, l)| (l, ActorClass(c)))
+            .map(|(c, l)| (l, ActorClass::from_usize(c)))
             .collect()
     }
 }

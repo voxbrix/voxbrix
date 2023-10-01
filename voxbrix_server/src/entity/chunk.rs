@@ -2,7 +2,10 @@ use crate::storage::{
     IntoDataSized,
     TypeName,
 };
-use voxbrix_common::entity::chunk::Chunk;
+use voxbrix_common::entity::chunk::{
+    Chunk,
+    Dimension,
+};
 
 impl TypeName for Chunk {
     const NAME: &'static str = "Chunk";
@@ -32,7 +35,7 @@ impl IntoDataSized for Chunk {
 
         Self {
             position: position.map(i32_from_u32).into(),
-            dimension: u32::from_be_bytes(bytes[0 .. 4].try_into().unwrap()),
+            dimension: Dimension::from_be_bytes(bytes[0 .. 4].try_into().unwrap()),
         }
     }
 }

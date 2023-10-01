@@ -45,7 +45,7 @@ impl<T> OverridableActorClassComponent<T> {
     pub fn get(&self, actor: &Actor, actor_class: &ActorClass) -> Option<&T> {
         self.overrides
             .get(actor)
-            .or_else(|| self.classes.get(actor_class.0)?.as_ref())
+            .or_else(|| self.classes.get(actor_class.into_usize())?.as_ref())
     }
 
     pub fn remove_actor(&mut self, actor: &Actor) -> Option<T> {

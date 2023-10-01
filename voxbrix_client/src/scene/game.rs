@@ -80,7 +80,6 @@ use futures_lite::{
 use log::error;
 use std::{
     io::ErrorKind as StdIoErrorKind,
-    path::Path,
     time::{
         Duration,
         Instant,
@@ -128,7 +127,10 @@ use voxbrix_common::{
         actor::Actor,
         actor_model::ActorModel,
         block::Block,
-        chunk::Chunk,
+        chunk::{
+            Chunk,
+            Dimension,
+        },
         snapshot::Snapshot,
         state_component::StateComponent,
     },
@@ -301,7 +303,8 @@ impl GameScene {
         let mut collision_bcc = CollisionBlockClassComponent::new();
         let mut opacity_bcc = OpacityBlockClassComponent::new();
 
-        let block_model_label_map = block_model_loading_system.into_label_map(BlockModel);
+        let block_model_label_map =
+            block_model_loading_system.into_label_map(BlockModel::from_usize);
 
         block_class_loading_system.load_component(
             "model",
@@ -342,7 +345,7 @@ impl GameScene {
 
         let state_components_label_map = List::load(STATE_COMPONENTS_PATH)
             .await?
-            .into_label_map(|i| StateComponent(i as u32));
+            .into_label_map(StateComponent::from_usize);
 
         let mut class_ac = ClassActorComponent::new(
             state_components_label_map.get("actor_class").unwrap(),
@@ -379,10 +382,10 @@ impl GameScene {
 
         let actor_body_part_label_map = List::load(ACTOR_MODEL_BODY_PART_LIST_PATH)
             .await?
-            .into_label_map(ActorBodyPart);
+            .into_label_map(ActorBodyPart::from_usize);
         let actor_animation_label_map = List::load(ACTOR_MODEL_ANIMATION_LIST_PATH)
             .await?
-            .into_label_map(ActorAnimation);
+            .into_label_map(ActorAnimation::from_usize);
 
         let ctx = ActorModelBuilderContext {
             actor_texture_label_map: &actor_texture_loading_system.label_map,
@@ -396,7 +399,8 @@ impl GameScene {
             |desc: ActorModelBuilderDescriptor| desc.describe(&ctx),
         )?;
 
-        let actor_model_label_map = actor_model_loading_system.into_label_map(ActorModel);
+        let actor_model_label_map =
+            actor_model_loading_system.into_label_map(ActorModel::from_usize);
 
         actor_class_loading_system.load_component(
             "model",
@@ -415,7 +419,7 @@ impl GameScene {
             Position {
                 chunk: Chunk {
                     position: [0, 0, 0].into(),
-                    dimension: 0,
+                    dimension: Dimension { index: 0 },
                 },
                 offset: Vec3F32::new(0.0, 0.0, 4.0),
             },
@@ -549,7 +553,7 @@ impl GameScene {
                                 .get_chunk(&chunk)
                                 .map(|blocks| {
                                     let class = blocks.get(block);
-                                    collision_bcc.get(*class).is_some()
+                                    collision_bcc.get(class).is_some()
                                 })
                                 .unwrap_or(false)
                         },
@@ -651,7 +655,7 @@ impl GameScene {
                                                                 .map(|blocks| {
                                                                     let class = blocks.get(block);
                                                                     collision_bcc
-                                                                        .get(*class)
+                                                                        .get(class)
                                                                         .is_some()
                                                                 })
                                                                 .unwrap_or(false)
@@ -679,7 +683,7 @@ impl GameScene {
                                                                 .map(|blocks| {
                                                                     let class = blocks.get(block);
                                                                     collision_bcc
-                                                                        .get(*class)
+                                                                        .get(class)
                                                                         .is_some()
                                                                 })
                                                                 .unwrap_or(false)

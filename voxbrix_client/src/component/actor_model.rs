@@ -16,7 +16,7 @@ impl<T> ActorModelComponent<T> {
     }
 
     pub fn get(&self, model: &ActorModel) -> Option<&T> {
-        self.data.get(model.0)?.as_ref()
+        self.data.get(model.into_usize())?.as_ref()
     }
 }
 

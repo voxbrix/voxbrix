@@ -247,7 +247,7 @@ where
         let changed_actors_iter = actors_partial_update
             .iter()
             .filter_map(|actor| self.changes.get_key_value(actor))
-            .filter(|(actor, past_snapshot)| past_snapshot.0 > client_last_snapshot.0)
+            .filter(|(_, past_snapshot)| past_snapshot.0 > client_last_snapshot.0)
             .map(|(actor, _)| actor)
             .chain(actors_full_update.iter());
 

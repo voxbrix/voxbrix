@@ -21,6 +21,7 @@ use voxbrix_common::{
         },
         state_component::StateComponent,
     },
+    math::MinMax,
     messages::{
         State,
         StatePacker,
@@ -170,7 +171,7 @@ impl PositionActorComponent {
                 // is a complex edge case that (with removing moved-away-from-view actors in client) could
                 // introduce subtle but serious bugs if we exclude those Actors.
                 self.chunk_actor_component
-                    .range((chunk, Actor(0)) ..= (chunk, Actor(usize::MAX)))
+                    .range((chunk, Actor::MIN) ..= (chunk, Actor::MAX))
                     .map(|(_, actor)| (*actor))
             }));
 
@@ -234,7 +235,7 @@ impl PositionActorComponent {
                     // is a complex edge case that (with removing moved-away-from-view actors in client) could
                     // introduce subtle but serious bugs if we exclude those Actors.
                     self.chunk_actor_component
-                        .range((chunk, Actor(0)) ..= (chunk, Actor(usize::MAX)))
+                        .range((chunk, Actor::MIN) ..= (chunk, Actor::MAX))
                         .map(|(_, actor)| (*actor))
                 })
                 .chain(
@@ -298,7 +299,7 @@ impl PositionActorComponent {
             partial_update_chunks
                 .flat_map(|chunk| {
                     self.chunk_actor_component
-                        .range((chunk, Actor(0)) ..= (chunk, Actor(usize::MAX)))
+                        .range((chunk, Actor::MIN) ..= (chunk, Actor::MAX))
                         .map(|(_, actor)| (*actor))
                 })
                 .chain(actors_moved_away)
