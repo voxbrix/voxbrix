@@ -67,9 +67,15 @@ use crate::{
     CONNECTION_TIMEOUT,
 };
 use anyhow::Result;
-use futures_lite::stream::{
-    self,
-    StreamExt,
+use futures_lite::{
+    future::{
+        self,
+        FutureExt,
+    },
+    stream::{
+        self,
+        StreamExt,
+    },
 };
 use log::error;
 use std::{
@@ -211,7 +217,14 @@ impl GameScene {
         let event_tx_network = event_tx.clone();
 
         let _send_rel_task = async_ext::spawn_scoped(async move {
-            while let Some(msg) = reliable_rx.recv().await {
+            while let Some(msg) = reliable_rx
+                .recv()
+                .or(async {
+                    let _ = future::zip(reliable.wait_complete(), future::pending::<()>()).await;
+                    unreachable!();
+                })
+                .await
+            {
                 // https://github.com/rust-lang/rust/issues/70142
                 let result =
                     match time::timeout(CONNECTION_TIMEOUT, reliable.send_reliable(0, &msg))

@@ -14,9 +14,15 @@ use crate::{
     PLAYER_TABLE,
     USERNAME_TABLE,
 };
-use futures_lite::stream::{
-    self,
-    StreamExt,
+use futures_lite::{
+    future::{
+        self,
+        FutureExt,
+    },
+    stream::{
+        self,
+        StreamExt,
+    },
 };
 use k256::ecdsa::{
     signature::{
@@ -382,7 +388,14 @@ pub async fn run(
     let (reliable_loop_tx, mut reliable_loop_rx) =
         local_channel::mpsc::channel::<(Channel, SendData)>();
     let rel_send_task = stream::once_future(async move {
-        while let Some((channel, data)) = reliable_loop_rx.recv().await {
+        while let Some((channel, data)) = reliable_loop_rx
+            .recv()
+            .or(async {
+                let _ = future::zip(reliable_tx.wait_complete(), future::pending::<()>()).await;
+                unreachable!();
+            })
+            .await
+        {
             match time::timeout(
                 CLIENT_CONNECTION_TIMEOUT,
                 reliable_tx.send_reliable(channel, data.as_slice()),
