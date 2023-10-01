@@ -44,7 +44,7 @@ use voxbrix_common::{
         block::{
             Block,
             Neighbor,
-            BLOCKS_IN_CHUNK,
+            BLOCKS_IN_CHUNK_USIZE,
         },
         block_class::BlockClass,
         chunk::Chunk,
@@ -56,7 +56,7 @@ use wgpu::util::DeviceExt;
 // const VERTEX_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK * 6 /*sides*/ * 4 /*vertices*/;
 // const INDEX_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK * 6 /*sides*/ * 2 /*polygons*/ * 3 /*vertices*/;
 const POLYGON_SIZE: usize = Polygon::size() as usize;
-const POLYGON_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK * 6 /*sides*/;
+const POLYGON_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK_USIZE * 6 /*sides*/;
 
 fn neighbors_to_cull_flags(
     neighbors: &[Neighbor; 6],

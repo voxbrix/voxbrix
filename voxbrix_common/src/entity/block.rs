@@ -7,24 +7,40 @@ use serde::{
     Serialize,
 };
 
-pub const BLOCKS_IN_CHUNK_EDGE: usize = 32;
-pub const BLOCKS_IN_CHUNK_LAYER: usize = BLOCKS_IN_CHUNK_EDGE * BLOCKS_IN_CHUNK_EDGE;
-pub const BLOCKS_IN_CHUNK: usize =
+pub const BLOCKS_IN_CHUNK_EDGE: u16 = 32;
+pub const BLOCKS_IN_CHUNK_LAYER: u16 = BLOCKS_IN_CHUNK_EDGE * BLOCKS_IN_CHUNK_EDGE;
+pub const BLOCKS_IN_CHUNK: u16 =
     BLOCKS_IN_CHUNK_EDGE * BLOCKS_IN_CHUNK_EDGE * BLOCKS_IN_CHUNK_EDGE;
 
+pub const BLOCKS_IN_CHUNK_EDGE_USIZE: usize = BLOCKS_IN_CHUNK_EDGE as usize;
+pub const BLOCKS_IN_CHUNK_LAYER_USIZE: usize = BLOCKS_IN_CHUNK_LAYER as usize;
+pub const BLOCKS_IN_CHUNK_USIZE: usize = BLOCKS_IN_CHUNK as usize;
+
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
-pub struct Block(pub usize);
+pub struct Block(pub u16);
+
+pub type BlockCoords = [u16; 3];
 
 impl std::hash::Hash for Block {
     fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
-        hasher.write_usize(self.0)
+        hasher.write_u16(self.0)
     }
 }
 
 impl nohash_hasher::IsEnabled for Block {}
 
 impl Block {
-    pub fn to_coords(&self) -> [usize; 3] {
+    pub fn from_usize(value: usize) -> Self {
+        Self(value.try_into().expect("value is out of bounds"))
+    }
+
+    pub fn into_usize(self) -> usize {
+        self.0.try_into().expect("value is out of bounds")
+    }
+}
+
+impl Block {
+    pub fn to_coords(&self) -> BlockCoords {
         let z = self.0 / BLOCKS_IN_CHUNK_LAYER;
         let x_y = self.0 % BLOCKS_IN_CHUNK_LAYER;
         let y = x_y / BLOCKS_IN_CHUNK_EDGE;
@@ -33,14 +49,14 @@ impl Block {
         [x, y, z]
     }
 
-    pub fn from_coords([x, y, z]: [usize; 3]) -> Self {
+    pub fn from_coords([x, y, z]: BlockCoords) -> Self {
         Self(z * BLOCKS_IN_CHUNK_LAYER + y * BLOCKS_IN_CHUNK_EDGE + x)
     }
 
     /// Must provide correct block coords,
     /// you have to make `Block` from coords with `.from_coords()` or
     /// extract coords from the `Block` with `.to_coords()`
-    pub fn neighbors_in_coords(&self, [x, y, z]: [usize; 3]) -> [Neighbor; 6] {
+    pub fn neighbors_in_coords(&self, [x, y, z]: BlockCoords) -> [Neighbor; 6] {
         let x_m = if x == 0 {
             Neighbor::OtherChunk(Block(self.0 + BLOCKS_IN_CHUNK_EDGE - 1))
         } else {
@@ -83,7 +99,7 @@ impl Block {
     /// Must provide correct block coords,
     /// you have to make `Block` from coords with `.from_coords()` or
     /// extract coords from the `Block` with `.to_coords()`
-    pub fn same_chunk_neighbors(&self, [x, y, z]: [usize; 3]) -> [Option<(Block, [usize; 3])>; 6] {
+    pub fn same_chunk_neighbors(&self, [x, y, z]: BlockCoords) -> [Option<(Block, BlockCoords)>; 6] {
         let x_m = if x == 0 {
             None
         } else {
@@ -128,8 +144,8 @@ impl Block {
     /// extract coords from the `Block` with `.to_coords()`
     pub fn neighbor_with_coords_side(
         &self,
-        side: usize,
-        [x, y, z]: [usize; 3],
+        side: u16,
+        [x, y, z]: BlockCoords,
     ) -> NeighborWithCoords {
         match side {
             0 => {
@@ -234,9 +250,9 @@ impl Block {
         };
 
         let block = Self::from_coords([
-            chunks_blocks[0].1 as usize,
-            chunks_blocks[1].1 as usize,
-            chunks_blocks[2].1 as usize,
+            chunks_blocks[0].1 as u16,
+            chunks_blocks[1].1 as u16,
+            chunks_blocks[2].1 as u16,
         ]);
 
         (actual_chunk, block)
@@ -249,6 +265,6 @@ pub enum Neighbor {
 }
 
 pub enum NeighborWithCoords {
-    ThisChunk(Block, [usize; 3]),
-    OtherChunk(Block, [usize; 3]),
+    ThisChunk(Block, BlockCoords),
+    OtherChunk(Block, BlockCoords),
 }

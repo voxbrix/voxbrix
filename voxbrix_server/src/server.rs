@@ -85,8 +85,8 @@ use voxbrix_common::{
     entity::{
         actor_model::ActorModel,
         block::{
-            BLOCKS_IN_CHUNK,
-            BLOCKS_IN_CHUNK_LAYER,
+            BLOCKS_IN_CHUNK_USIZE,
+            BLOCKS_IN_CHUNK_LAYER_USIZE,
         },
         chunk::Chunk,
         snapshot::{
@@ -466,18 +466,18 @@ pub async fn run(
                         }
                         .unwrap_or_else(|| {
                             let block_classes = if chunk.position[2] == -1 {
-                                let mut chunk_blocks = vec![stone; BLOCKS_IN_CHUNK];
+                                let mut chunk_blocks = vec![stone; BLOCKS_IN_CHUNK_USIZE];
                                 for block_class in (&mut chunk_blocks
-                                    [BLOCKS_IN_CHUNK - BLOCKS_IN_CHUNK_LAYER .. BLOCKS_IN_CHUNK])
+                                    [BLOCKS_IN_CHUNK_USIZE - BLOCKS_IN_CHUNK_LAYER_USIZE .. BLOCKS_IN_CHUNK_USIZE])
                                     .iter_mut()
                                 {
                                     *block_class = grass;
                                 }
                                 BlocksVec::new(chunk_blocks)
                             } else if chunk.position[2] < -1 {
-                                BlocksVec::new(vec![stone; BLOCKS_IN_CHUNK])
+                                BlocksVec::new(vec![stone; BLOCKS_IN_CHUNK_USIZE])
                             } else {
-                                BlocksVec::new(vec![air; BLOCKS_IN_CHUNK])
+                                BlocksVec::new(vec![air; BLOCKS_IN_CHUNK_USIZE])
                             };
 
                             let db_write = shared.database.begin_write().unwrap();

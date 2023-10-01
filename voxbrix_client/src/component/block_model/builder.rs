@@ -10,6 +10,7 @@ use bitflags::bitflags;
 use serde::Deserialize;
 use voxbrix_common::{
     entity::chunk::Chunk,
+    entity::block::BlockCoords,
     math::Vec3I32,
     ArrayExt,
     LabelMap,
@@ -31,7 +32,7 @@ enum CullingNeighbor {
 
 #[derive(Deserialize, Debug)]
 struct BlockModelDescriptorVertex {
-    position: [usize; 3],
+    position: BlockCoords,
     texture_position: [usize; 2],
 }
 
@@ -48,7 +49,7 @@ pub struct BlockModelContext<'a> {
 
 #[derive(Deserialize, Debug)]
 pub struct BlockModelBuilderDescriptor {
-    grid_size: [usize; 3],
+    grid_size: BlockCoords,
     texture_grid_size: [usize; 2],
     polygons: Vec<BlockModelDescriptorPolygon>,
 }
@@ -144,7 +145,7 @@ impl BlockModelBuilder {
         &self,
         polygons: &mut Vec<Polygon>,
         chunk: &Chunk,
-        block: [usize; 3],
+        block: BlockCoords,
         cull_mask: CullFlags,
         sky_light_level: [u8; 6],
     ) {
@@ -205,7 +206,7 @@ impl BlockModelBuilder {
     }
 }
 
-pub fn side_highlighting(chunk: Vec3I32, block_coords: [usize; 3], side: usize) -> Polygon {
+pub fn side_highlighting(chunk: Vec3I32, block_coords: BlockCoords, side: usize) -> Polygon {
     const ELEVATION: f32 = 0.01;
     const TEXTURE_INDEX: u32 = 0;
 

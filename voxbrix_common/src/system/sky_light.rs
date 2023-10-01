@@ -16,7 +16,8 @@ use crate::{
     entity::{
         block::{
             Block,
-            BLOCKS_IN_CHUNK,
+            BlockCoords,
+            BLOCKS_IN_CHUNK_USIZE,
             BLOCKS_IN_CHUNK_EDGE,
         },
         block_class::BlockClass,
@@ -64,7 +65,7 @@ impl SkyLightSystem {
             .get_chunk(&chunk)
             .expect("calculating light for existing chunk");
 
-        let mut chunk_light = BlocksVec::new(vec![SkyLight::MIN; BLOCKS_IN_CHUNK]);
+        let mut chunk_light = BlocksVec::new(vec![SkyLight::MIN; BLOCKS_IN_CHUNK_USIZE]);
 
         let neighbor_chunk_ids = [
             Vec3I32::new(-1, 0, 0),
@@ -244,12 +245,12 @@ impl SkyLightSystem {
 
 struct LightDispersion<'a> {
     block: Block,
-    block_coords: [usize; 3],
+    block_coords: BlockCoords,
     block_light: SkyLight,
     chunk_class: &'a BlocksVec<BlockClass>,
     opacity_bcc: &'a OpacityBlockClassComponent,
     chunk_light: &'a mut BlocksVec<SkyLight>,
-    queue: &'a mut VecDeque<(Block, [usize; 3])>,
+    queue: &'a mut VecDeque<(Block, BlockCoords)>,
 }
 
 // Assigns light to the neighbor blocks within the chunk
