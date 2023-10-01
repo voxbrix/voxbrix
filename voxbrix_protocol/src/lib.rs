@@ -336,6 +336,7 @@ mod tests {
         },
         sync::atomic::{
             AtomicU16,
+            AtomicU64,
             Ordering,
         },
         thread,
@@ -1335,6 +1336,110 @@ mod tests {
                 task.borrow_mut().take().unwrap().await.unwrap();
             })
             .await;
+    }
+
+    #[tokio::test]
+    async fn reliable_test_redundancy() {
+        let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
+
+        // Should resend only the packages that were not delivered
+
+        let amount = 1210;
+        let missed_packets = 20;
+
+        let client_port = 30000 + test_num * 10 + 1;
+        let server_port = 30000 + test_num * 10;
+
+        let client_addr: SocketAddr = ([127, 0, 0, 1], client_port).into();
+        let server_addr: SocketAddr = ([127, 0, 0, 1], server_port).into();
+
+        let packet_num: &'static _ = Box::leak(Box::new(AtomicU64::new(0)));
+
+        let proxy_addr = create_proxy(test_num, client_addr, server_addr, move |i, addr| {
+            if addr == server_addr {
+                packet_num.fetch_add(1, Ordering::Relaxed);
+
+                for j in 1 ..= missed_packets {
+                    if i == j * 10 {
+                        return false;
+                    }
+                }
+            }
+
+            true
+        });
+
+        let task: &_ = Box::leak(Box::new(RefCell::new(None)));
+        LocalSet::new()
+            .run_until(async move {
+                task::spawn_local(async move {
+                    let mut server = ServerParameters::default()
+                        .bind(server_addr)
+                        .await
+                        .expect("server socket bind");
+
+                    loop {
+                        let server::Connection {
+                            sender: tx,
+                            receiver: rx,
+                            ..
+                        } = server.accept().await.expect("connection accepted");
+
+                        *task.borrow_mut() = Some(task::spawn_local(async move {
+                            let mut tx = tx;
+                            let mut rx = rx;
+                            for i in 0 .. amount {
+                                tx.send_reliable(0, format!("HelloWorld{}", i).as_bytes())
+                                    .await
+                                    .expect("server sent packet");
+                            }
+
+                            task::spawn_local(async move { tx.wait_complete().await });
+
+                            for i in 0 .. amount {
+                                let (channel, result) =
+                                    rx.recv().await.expect("client message receive");
+                                assert_eq!(result.as_ref(), format!("HelloWorld{}", i).as_bytes());
+                                assert_eq!(channel, 0);
+                            }
+                        }));
+                    }
+                });
+
+                time::sleep(Duration::from_millis(5)).await;
+
+                let client = Client::bind(client_addr).await.expect("client bound");
+
+                let client::Connection {
+                    sender: mut tx,
+                    receiver: mut rx,
+                    ..
+                } = client.connect(proxy_addr).await.expect("client connection");
+
+                for i in 0 .. amount {
+                    let (channel, result) = rx.recv().await.expect("client message receive");
+                    assert_eq!(result, format!("HelloWorld{}", i).as_bytes());
+                    assert_eq!(channel, 0);
+                }
+
+                task::spawn_local(async move { while let Ok(_) = rx.recv().await {} });
+
+                for i in 0 .. amount {
+                    tx.send_reliable(0, format!("HelloWorld{}", i).as_bytes())
+                        .await
+                        .expect("server sent packet");
+                }
+
+                task::spawn_local(async move { tx.wait_complete().await });
+
+                task.borrow_mut().take().unwrap().await.unwrap();
+            })
+            .await;
+
+        assert_eq!(
+            amount * 2 + 2 + missed_packets as u64,
+            packet_num.load(Ordering::Relaxed)
+        );
     }
 
     #[tokio::test]
