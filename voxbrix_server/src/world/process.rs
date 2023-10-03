@@ -38,9 +38,45 @@ use voxbrix_common::{
 
 impl World {
     pub fn process(mut self) -> World {
+        // Sending chunks to players
+        for (player, client, prev_radius, curr_radius) in
+            self.chunk_update_pc
+                .drain()
+                .filter_map(|(player, chunk_change)| {
+                    let actor = self.actor_pc.get(&player)?;
+                    let curr_ticket = self.chunk_ticket_ac.get(&actor)?;
+                    let position = self.position_ac.get(&actor)?;
+                    let curr_radius = position.chunk.radius(curr_ticket.radius);
+                    let client = self.client_pc.get(&player)?;
+
+                    Some((player, client, chunk_change.previous_ticket, curr_radius))
+                })
+        {
+            for chunk_data in curr_radius.into_iter().filter_map(|chunk| {
+                if let Some(prev_radius) = &prev_radius {
+                    if prev_radius.is_within(&chunk) {
+                        return None;
+                    }
+                }
+
+                self.cache_cc.get(&chunk)
+            }) {
+                if client
+                    .tx
+                    .send(ClientEvent::SendDataReliable {
+                        channel: BASE_CHANNEL,
+                        data: SendData::Ref(chunk_data.clone()),
+                    })
+                    .is_err()
+                {
+                    self.remove_queue.remove_player(&player);
+                }
+            }
+        }
+
         self.chunk_ticket_system.clear();
         self.chunk_ticket_system
-            .actor_tickets(&self.chunk_ticket_ac);
+            .actor_tickets(&self.chunk_ticket_ac, &self.position_ac);
 
         let now = Instant::now();
         let elapsed = now.saturating_duration_since(self.last_process_time);

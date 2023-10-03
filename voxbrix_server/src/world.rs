@@ -18,6 +18,7 @@ use crate::{
         },
         player::{
             actor::ActorPlayerComponent,
+            chunk_update::ChunkUpdatePlayerComponent,
             client::{
                 Client,
                 ClientEvent,
@@ -129,6 +130,7 @@ pub struct World {
 
     pub client_pc: ClientPlayerComponent,
     pub actor_pc: ActorPlayerComponent,
+    pub chunk_update_pc: ChunkUpdatePlayerComponent,
 
     pub class_ac: ClassActorComponent,
     pub position_ac: PositionActorComponent,
@@ -241,12 +243,10 @@ impl World {
         let chunk = chunk_data.chunk;
 
         for (player, client) in self.actor_pc.iter().filter_map(|(player, actor)| {
+            let position = self.position_ac.get(actor)?;
             let chunk_ticket = self.chunk_ticket_ac.get(actor)?;
-            if chunk_ticket
-                .chunk
-                .radius(chunk_ticket.radius)
-                .is_within(&chunk)
-            {
+
+            if position.chunk.radius(chunk_ticket.radius).is_within(&chunk) {
                 Some((player, self.client_pc.get(player)?))
             } else {
                 None

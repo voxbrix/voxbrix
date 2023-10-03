@@ -1,9 +1,12 @@
 use crate::{
     component::{
         actor::chunk_ticket::ActorChunkTicket,
-        player::client::{
-            ClientEvent,
-            SendData,
+        player::{
+            chunk_update::ChunkUpdate,
+            client::{
+                ClientEvent,
+                SendData,
+            },
         },
     },
     entity::player::Player,
@@ -29,7 +32,7 @@ use voxbrix_common::{
 use voxbrix_protocol::server::Packet;
 
 impl World {
-    pub fn player_event(mut self, player: Player, data: Packet) -> World {
+    pub fn player_event(&mut self, player: Player, data: Packet) {
         let event = match self.packer.unpack::<ServerAccept>(data.as_ref()) {
             Ok(e) => e,
             Err(_) => {
@@ -37,7 +40,7 @@ impl World {
                     "server_loop: unable to parse data from player {:?} on base channel",
                     player
                 );
-                return self;
+                return;
             },
         };
 
@@ -49,16 +52,16 @@ impl World {
             } => {
                 let actor = match self.actor_pc.get(&player) {
                     Some(a) => a,
-                    None => return self,
+                    None => return,
                 };
 
                 let client = match self.client_pc.get_mut(&player) {
                     Some(c) => c,
-                    None => return self,
+                    None => return,
                 };
 
                 if client.last_client_snapshot >= last_client_snapshot {
-                    return self;
+                    return;
                 }
 
                 client.last_server_snapshot = last_server_snapshot;
@@ -86,40 +89,28 @@ impl World {
                         if old_value.is_none()
                             || old_value.is_some() && old_value.unwrap().chunk != chunk
                         {
-                            let curr_radius = chunk.radius(PLAYER_CHUNK_TICKET_RADIUS);
+                            let prev_radius = match self.chunk_ticket_ac.get(actor) {
+                                Some(r) => r.radius,
+                                None => {
+                                    self.chunk_ticket_ac.insert(
+                                        *actor,
+                                        ActorChunkTicket {
+                                            radius: PLAYER_CHUNK_TICKET_RADIUS,
+                                        },
+                                    );
 
-                            let prev_radius = self
-                                .chunk_ticket_ac
-                                .insert(
-                                    *actor,
-                                    ActorChunkTicket {
-                                        chunk,
-                                        radius: PLAYER_CHUNK_TICKET_RADIUS,
-                                    },
-                                )
-                                .map(|c| c.chunk.radius(c.radius));
+                                    PLAYER_CHUNK_TICKET_RADIUS
+                                },
+                            };
 
-                            for chunk_data in curr_radius.into_iter().filter_map(|chunk| {
-                                if let Some(prev_radius) = &prev_radius {
-                                    if prev_radius.is_within(&chunk) {
-                                        return None;
-                                    }
-                                }
+                            let previous_ticket =
+                                old_value.map(|old_pos| old_pos.chunk.radius(prev_radius));
 
-                                self.cache_cc.get(&chunk)
-                            }) {
-                                if let Some(client) = self.client_pc.get(&player) {
-                                    if client
-                                        .tx
-                                        .send(ClientEvent::SendDataReliable {
-                                            channel: BASE_CHANNEL,
-                                            data: SendData::Ref(chunk_data.clone()),
-                                        })
-                                        .is_err()
-                                    {
-                                        self.remove_queue.remove_player(&player);
-                                    }
-                                }
+                            if self.chunk_update_pc.get(&player).is_some() {
+                                return;
+                            } else {
+                                self.chunk_update_pc
+                                    .insert(player, ChunkUpdate { previous_ticket });
                             }
                         }
                     },
@@ -145,7 +136,9 @@ impl World {
 
                     for (player, client) in self.actor_pc.iter().filter_map(|(player, actor)| {
                         let ticket = self.chunk_ticket_ac.get(actor)?;
-                        ticket
+                        let position = self.position_ac.get(actor)?;
+
+                        position
                             .chunk
                             .radius(ticket.radius)
                             .is_within(&chunk)
@@ -184,9 +177,11 @@ impl World {
                         _ => panic!(),
                     };
 
+                    let shared = self.shared;
+
                     self.storage.execute(move || {
                         let mut packer = Packer::new();
-                        let db_write = self.shared.database.begin_write().unwrap();
+                        let db_write = shared.database.begin_write().unwrap();
                         {
                             let mut table = db_write.open_table(BLOCK_CLASS_TABLE).unwrap();
 
@@ -202,7 +197,5 @@ impl World {
                 }
             },
         }
-
-        self
     }
 }

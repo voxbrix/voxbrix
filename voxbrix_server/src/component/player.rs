@@ -2,6 +2,7 @@ use crate::entity::player::Player;
 use nohash_hasher::IntMap;
 
 pub mod actor;
+pub mod chunk_update;
 pub mod client;
 
 pub struct PlayerComponent<T> {
@@ -37,5 +38,9 @@ impl<T> PlayerComponent<T> {
 
     pub fn iter(&self) -> impl Iterator<Item = (&Player, &T)> {
         self.data.iter()
+    }
+
+    pub fn drain(&mut self) -> impl Iterator<Item = (Player, T)> + '_ {
+        self.data.drain()
     }
 }

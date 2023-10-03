@@ -1,7 +1,10 @@
 use crate::component::{
-    actor::chunk_ticket::{
-        ActorChunkTicket,
-        ChunkTicketActorComponent,
+    actor::{
+        chunk_ticket::{
+            ActorChunkTicket,
+            ChunkTicketActorComponent,
+        },
+        position::PositionActorComponent,
     },
     chunk::{
         cache::CacheChunkComponent,
@@ -33,12 +36,21 @@ impl ChunkTicketSystem {
         self.data.clear();
     }
 
-    pub fn actor_tickets(&mut self, chunk_ticket_ac: &ChunkTicketActorComponent) {
-        let iter = chunk_ticket_ac.iter().flat_map(|(_, chunk_ticket)| {
-            let ActorChunkTicket { chunk, radius } = chunk_ticket;
-            let radius = chunk.radius(*radius);
-            radius.into_iter()
-        });
+    pub fn actor_tickets(
+        &mut self,
+        chunk_ticket_ac: &ChunkTicketActorComponent,
+        position_ac: &PositionActorComponent,
+    ) {
+        let iter = chunk_ticket_ac
+            .iter()
+            .filter_map(|(actor, chunk_ticket)| {
+                Some((position_ac.get(&actor)?.chunk, chunk_ticket))
+            })
+            .flat_map(|(chunk, chunk_ticket)| {
+                let ActorChunkTicket { radius } = chunk_ticket;
+                let radius = chunk.radius(*radius);
+                radius.into_iter()
+            });
 
         self.data.extend(iter);
     }

@@ -15,6 +15,7 @@ use crate::{
         },
         player::{
             actor::ActorPlayerComponent,
+            chunk_update::ChunkUpdatePlayerComponent,
             client::{
                 ClientEvent,
                 ClientPlayerComponent,
@@ -223,6 +224,7 @@ pub async fn run(
 
         client_pc: ClientPlayerComponent::new(),
         actor_pc: ActorPlayerComponent::new(),
+        chunk_update_pc: ChunkUpdatePlayerComponent::new(),
 
         class_ac,
         position_ac,
@@ -273,7 +275,7 @@ pub async fn run(
                 data,
             } => {
                 if channel == BASE_CHANNEL {
-                    world = world.player_event(player, data);
+                    world.player_event(player, data);
                 }
             },
             ServerEvent::RemovePlayer { player } => {
