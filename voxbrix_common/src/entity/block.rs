@@ -9,8 +9,7 @@ use serde::{
 
 pub const BLOCKS_IN_CHUNK_EDGE: u16 = 32;
 pub const BLOCKS_IN_CHUNK_LAYER: u16 = BLOCKS_IN_CHUNK_EDGE * BLOCKS_IN_CHUNK_EDGE;
-pub const BLOCKS_IN_CHUNK: u16 =
-    BLOCKS_IN_CHUNK_EDGE * BLOCKS_IN_CHUNK_EDGE * BLOCKS_IN_CHUNK_EDGE;
+pub const BLOCKS_IN_CHUNK: u16 = BLOCKS_IN_CHUNK_EDGE * BLOCKS_IN_CHUNK_EDGE * BLOCKS_IN_CHUNK_EDGE;
 
 pub const BLOCKS_IN_CHUNK_EDGE_USIZE: usize = BLOCKS_IN_CHUNK_EDGE as usize;
 pub const BLOCKS_IN_CHUNK_LAYER_USIZE: usize = BLOCKS_IN_CHUNK_LAYER as usize;
@@ -99,7 +98,10 @@ impl Block {
     /// Must provide correct block coords,
     /// you have to make `Block` from coords with `.from_coords()` or
     /// extract coords from the `Block` with `.to_coords()`
-    pub fn same_chunk_neighbors(&self, [x, y, z]: BlockCoords) -> [Option<(Block, BlockCoords)>; 6] {
+    pub fn same_chunk_neighbors(
+        &self,
+        [x, y, z]: BlockCoords,
+    ) -> [Option<(Block, BlockCoords)>; 6] {
         let x_m = if x == 0 {
             None
         } else {

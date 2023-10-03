@@ -60,6 +60,7 @@ mod entity;
 mod server;
 mod storage;
 mod system;
+mod world;
 
 pub struct Local {
     pub event_tx: Sender<ServerEvent>,

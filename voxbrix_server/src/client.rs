@@ -1,4 +1,8 @@
 use crate::{
+    component::player::client::{
+        ClientEvent,
+        SendData,
+    },
     entity::player::Player,
     server::ServerEvent,
     storage::{
@@ -35,14 +39,12 @@ use k256::ecdsa::{
 };
 use log::warn;
 use redb::ReadableTable;
-use std::rc::Rc;
 use tokio::{
     task,
     time,
 };
 use voxbrix_common::{
     async_ext::StreamExt as _,
-    entity::actor::Actor,
     messages::{
         client::{
             InitData,
@@ -68,46 +70,26 @@ use voxbrix_protocol::{
     Channel,
 };
 
-// Client loop input
-pub enum ClientEvent {
-    AssignActor { actor: Actor },
-    SendDataUnreliable { channel: Channel, data: SendData },
-    SendDataReliable { channel: Channel, data: SendData },
-}
-
-enum SelfEvent {
-    Exit,
-}
-
 enum LoopEvent {
     ServerLoop(ClientEvent),
     PeerMessage { channel: usize, data: Packet },
-    SelfEvent(SelfEvent),
-}
-
-pub enum SendData {
-    Owned(Vec<u8>),
-    Ref(Rc<Vec<u8>>),
-}
-
-impl SendData {
-    fn as_slice(&self) -> &[u8] {
-        match self {
-            Self::Owned(v) => v.as_slice(),
-            Self::Ref(v) => v.as_slice(),
-        }
-    }
+    Exit,
 }
 
 #[derive(Debug)]
 pub enum Error {
     UnexpectedMessage,
-    Timeout,
+    InitializationTimeout,
     Io,
     FailedRegistration,
     FailedLogin,
     ReceiverClosed,
     SenderClosed,
+    ReliableSendTimeout,
+    ReceiveTimeout,
+    ReliableSendError,
+    UnreliableSendError,
+    ReceiveError,
 }
 
 trait ConvertResultError<T> {
@@ -155,7 +137,7 @@ pub async fn run(
         rx.recv().await.error(Error::ReceiverClosed)
     })
     .await
-    .map_err(|_| Error::Timeout)?
+    .map_err(|_| Error::InitializationTimeout)?
     .and_then(|(_channel, data)| {
         packer
             .unpack::<InitRequest>(data.as_ref())
@@ -188,7 +170,7 @@ pub async fn run(
             .error(Error::Io)
     })
     .await
-    .map_err(|_| Error::Timeout)??;
+    .map_err(|_| Error::InitializationTimeout)??;
 
     let player = match request {
         InitRequest::Login => {
@@ -199,7 +181,7 @@ pub async fn run(
                 rx.recv().await.error(Error::ReceiverClosed)
             })
             .await
-            .map_err(|_| Error::Timeout)?
+            .map_err(|_| Error::InitializationTimeout)?
             .and_then(|(_channel, data)| {
                 packer
                     .unpack::<LoginRequest>(data.as_ref())
@@ -275,7 +257,7 @@ pub async fn run(
                 rx.recv().await.error(Error::ReceiverClosed)
             })
             .await
-            .map_err(|_| Error::Timeout)?
+            .map_err(|_| Error::InitializationTimeout)?
             .and_then(|(_channel, data)| {
                 packer
                     .unpack::<RegisterRequest>(data.as_ref())
@@ -350,7 +332,7 @@ pub async fn run(
                             .error(Error::Io)
                     })
                     .await
-                    .map_err(|_| Error::Timeout)?;
+                    .map_err(|_| Error::InitializationTimeout)?;
 
                     return Err(Error::FailedRegistration);
                 },
@@ -378,11 +360,11 @@ pub async fn run(
                 .await
             {
                 warn!("client_loop: send_unreliable error {:?}", err);
-                break;
+                return Err(Error::UnreliableSendError);
             }
         }
 
-        LoopEvent::SelfEvent(SelfEvent::Exit)
+        Ok(LoopEvent::Exit)
     });
 
     let (reliable_loop_tx, mut reliable_loop_rx) =
@@ -405,17 +387,17 @@ pub async fn run(
             {
                 Err(_) => {
                     warn!("client_loop: send_reliable timeout {:?}", player);
-                    break;
+                    return Err(Error::ReliableSendTimeout);
                 },
                 Ok(Err(err)) => {
                     warn!("client_loop: send_reliable error {:?}", err);
-                    break;
+                    return Err(Error::ReliableSendError);
                 },
                 Ok(Ok(())) => {},
             }
         }
 
-        LoopEvent::SelfEvent(SelfEvent::Exit)
+        Ok(LoopEvent::Exit)
     });
 
     let init_data_response = match request {
@@ -445,39 +427,46 @@ pub async fn run(
 
     let recv_stream = stream::unfold(&mut rx, |rx| {
         async move {
-            time::timeout(CLIENT_CONNECTION_TIMEOUT, async move {
-                match rx.recv().await {
-                    Ok((channel, data)) => Some((LoopEvent::PeerMessage { channel, data }, rx)),
-                    Err(err) => {
+            let nested_result = time::timeout(CLIENT_CONNECTION_TIMEOUT, async {
+                rx.recv()
+                    .await
+                    .map(|(channel, data)| LoopEvent::PeerMessage { channel, data })
+                    .map_err(|err| {
                         warn!("client_loop: connection interrupted: {:?}", err);
-                        None
-                    },
-                }
+                        Error::ReceiveError
+                    })
             })
             .await
             .map_err(|_| {
                 warn!("client_loop: receive timeout");
-            })
-            .ok()
-            .flatten()
-            .or_else(|| {
+                Error::ReceiveTimeout
+            });
+
+            let next = match nested_result {
+                Ok(Ok(next)) => Ok(next),
+                Ok(Err(err)) => Err(err),
+                Err(err) => Err(err),
+            };
+
+            if next.is_err() {
                 // we need to inform the server loop
                 let _ = local.event_tx.send(ServerEvent::RemovePlayer { player });
-                None
-            })
+            }
+
+            Some((next, rx))
         }
     });
 
     let mut events = Box::pin(
         server_rx
-            .map(LoopEvent::ServerLoop)
+            .map(|e| Ok(LoopEvent::ServerLoop(e)))
             .rr_ff(recv_stream)
             .rr_ff(rel_send_task)
             .rr_ff(unrel_send_task),
     );
 
     while let Some(event) = events.next().await {
-        match event {
+        match event? {
             LoopEvent::ServerLoop(event) => {
                 match event {
                     ClientEvent::SendDataUnreliable { channel, data } => {
@@ -500,11 +489,7 @@ pub async fn run(
                     })
                     .error(Error::SenderClosed)?;
             },
-            LoopEvent::SelfEvent(event) => {
-                match event {
-                    SelfEvent::Exit => break,
-                }
-            },
+            LoopEvent::Exit => break,
         }
     }
 

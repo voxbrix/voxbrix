@@ -31,12 +31,15 @@ use std::{
 macro_rules! unblock {
     (($($a:ident),+)$e:expr) => {
         {
+            let (task_output_tx, task_output_rx) = flume::bounded(1);
             let res;
 
-            (($($a),+), res) = tokio::task::spawn_blocking(move || {
+            rayon::spawn(move || {
                 let res = $e;
-                (($($a),+), res)
-            }).await.unwrap();
+                task_output_tx.try_send((($($a),+), res)).unwrap();
+            });
+
+            (($($a),+), res) = task_output_rx.recv_async().await.unwrap();
 
             res
         }

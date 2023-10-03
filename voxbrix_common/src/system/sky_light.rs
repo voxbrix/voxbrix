@@ -17,8 +17,8 @@ use crate::{
         block::{
             Block,
             BlockCoords,
-            BLOCKS_IN_CHUNK_USIZE,
             BLOCKS_IN_CHUNK_EDGE,
+            BLOCKS_IN_CHUNK_USIZE,
         },
         block_class::BlockClass,
         chunk::Chunk,

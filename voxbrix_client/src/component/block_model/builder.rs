@@ -9,8 +9,10 @@ use anyhow::Error;
 use bitflags::bitflags;
 use serde::Deserialize;
 use voxbrix_common::{
-    entity::chunk::Chunk,
-    entity::block::BlockCoords,
+    entity::{
+        block::BlockCoords,
+        chunk::Chunk,
+    },
     math::Vec3I32,
     ArrayExt,
     LabelMap,
