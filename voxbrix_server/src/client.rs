@@ -14,7 +14,7 @@ use crate::{
     Shared,
     BASE_CHANNEL,
     CLIENT_CONNECTION_TIMEOUT,
-    PLAYER_CHUNK_TICKET_RADIUS,
+    PLAYER_CHUNK_VIEW_RADIUS,
     PLAYER_TABLE,
     USERNAME_TABLE,
 };
@@ -404,13 +404,13 @@ pub async fn run(
         InitRequest::Login => {
             packer.pack_to_vec(&LoginResult::Success(InitData {
                 actor,
-                player_ticket_radius: PLAYER_CHUNK_TICKET_RADIUS,
+                player_chunk_view_radius: PLAYER_CHUNK_VIEW_RADIUS,
             }))
         },
         InitRequest::Register => {
             packer.pack_to_vec(&RegisterResult::Success(InitData {
                 actor,
-                player_ticket_radius: PLAYER_CHUNK_TICKET_RADIUS,
+                player_chunk_view_radius: PLAYER_CHUNK_VIEW_RADIUS,
             }))
         },
     };

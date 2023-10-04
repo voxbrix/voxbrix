@@ -14,7 +14,6 @@ use crate::{
     world::World,
     BASE_CHANNEL,
     BLOCK_CLASS_TABLE,
-    PLAYER_CHUNK_TICKET_RADIUS,
 };
 use redb::ReadableTable;
 use std::time::Instant;
@@ -42,14 +41,15 @@ impl World {
         for (player, client, prev_radius, curr_radius) in
             self.chunk_update_pc
                 .drain()
-                .filter_map(|(player, chunk_change)| {
+                .filter_map(|(player, prev_view)| {
                     let actor = self.actor_pc.get(&player)?;
-                    let curr_ticket = self.chunk_ticket_ac.get(&actor)?;
-                    let position = self.position_ac.get(&actor)?;
-                    let curr_radius = position.chunk.radius(curr_ticket.radius);
                     let client = self.client_pc.get(&player)?;
+                    let position = self.position_ac.get(&actor)?;
+                    let curr_view = self.chunk_view_pc.get(&player)?;
+                    let curr_radius = position.chunk.radius(curr_view.radius);
+                    let prev_radius = prev_view.previous_view.map(|v| v.chunk.radius(v.radius));
 
-                    Some((player, client, chunk_change.previous_ticket, curr_radius))
+                    Some((player, client, prev_radius, curr_radius))
                 })
         {
             for chunk_data in curr_radius.into_iter().filter_map(|chunk| {
@@ -74,9 +74,9 @@ impl World {
             }
         }
 
-        self.chunk_ticket_system.clear();
-        self.chunk_ticket_system
-            .actor_tickets(&self.chunk_ticket_ac, &self.position_ac);
+        self.chunk_activation_system.clear();
+        self.chunk_activation_system
+            .actor_activations(&self.chunk_activation_ac, &self.position_ac);
 
         let now = Instant::now();
         let elapsed = now.saturating_duration_since(self.last_process_time);
@@ -113,7 +113,12 @@ impl World {
                 None => continue,
             };
 
-            let chunk_radius = position_chunk.radius(PLAYER_CHUNK_TICKET_RADIUS);
+            let chunk_view_radius = match self.chunk_view_pc.get(&player) {
+                Some(v) => v.radius,
+                None => continue,
+            };
+
+            let chunk_radius = position_chunk.radius(chunk_view_radius);
 
             let client_is_outdated = client.last_server_snapshot == Snapshot(0)
                 || self.snapshot.0 - client.last_server_snapshot.0 > MAX_SNAPSHOT_DIFF;
@@ -122,7 +127,8 @@ impl World {
                 .last_confirmed_chunk
                 // Enforces full update for the outdated clients
                 .filter(|_| !client_is_outdated)
-                .map(|c| c.radius(PLAYER_CHUNK_TICKET_RADIUS))
+                // TODO Should be `previous_view` if the view is runtime-variable.
+                .map(|c| c.radius(chunk_view_radius))
             {
                 let chunk_within_intersection = |chunk: Option<&Chunk>| -> bool {
                     let chunk = match chunk {
@@ -250,7 +256,7 @@ impl World {
         let air = self.block_class_label_map.get("air").unwrap();
         let grass = self.block_class_label_map.get("grass").unwrap();
         let stone = self.block_class_label_map.get("stone").unwrap();
-        self.chunk_ticket_system.apply(
+        self.chunk_activation_system.apply(
             &mut self.status_cc,
             &mut self.class_bc,
             &mut self.cache_cc,

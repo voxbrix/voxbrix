@@ -173,7 +173,7 @@ pub enum Event {
 pub struct GameSceneParameters {
     pub connection: (Sender, Receiver),
     pub player_actor: Actor,
-    pub player_ticket_radius: i32,
+    pub player_chunk_view_radius: i32,
 }
 
 pub struct GameScene {
@@ -200,7 +200,7 @@ impl GameScene {
         let GameSceneParameters {
             connection,
             player_actor,
-            player_ticket_radius,
+            player_chunk_view_radius,
         } = self.parameters;
 
         let (tx, mut rx) = connection;
@@ -530,7 +530,7 @@ impl GameScene {
                         snapshot,
                     );
                     chunk_presence_system.process(
-                        player_ticket_radius,
+                        player_chunk_view_radius,
                         &player_actor,
                         &position_ac,
                         &mut class_bc,

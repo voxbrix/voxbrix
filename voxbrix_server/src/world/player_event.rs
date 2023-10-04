@@ -1,12 +1,12 @@
 use crate::{
-    component::{
-        actor::chunk_ticket::ActorChunkTicket,
-        player::{
-            chunk_update::ChunkUpdate,
-            client::{
-                ClientEvent,
-                SendData,
-            },
+    component::player::{
+        chunk_update::{
+            ChunkUpdate,
+            FullChunkView,
+        },
+        client::{
+            ClientEvent,
+            SendData,
         },
     },
     entity::player::Player,
@@ -17,7 +17,6 @@ use crate::{
     world::World,
     BASE_CHANNEL,
     BLOCK_CLASS_TABLE,
-    PLAYER_CHUNK_TICKET_RADIUS,
 };
 use log::debug;
 use std::rc::Rc;
@@ -89,28 +88,23 @@ impl World {
                         if old_value.is_none()
                             || old_value.is_some() && old_value.unwrap().chunk != chunk
                         {
-                            let prev_radius = match self.chunk_ticket_ac.get(actor) {
+                            let prev_view_radius = match self.chunk_view_pc.get(&player) {
                                 Some(r) => r.radius,
-                                None => {
-                                    self.chunk_ticket_ac.insert(
-                                        *actor,
-                                        ActorChunkTicket {
-                                            radius: PLAYER_CHUNK_TICKET_RADIUS,
-                                        },
-                                    );
-
-                                    PLAYER_CHUNK_TICKET_RADIUS
-                                },
+                                None => return,
                             };
 
-                            let previous_ticket =
-                                old_value.map(|old_pos| old_pos.chunk.radius(prev_radius));
+                            let previous_view = old_value.map(|old_pos| {
+                                FullChunkView {
+                                    chunk: old_pos.chunk,
+                                    radius: prev_view_radius,
+                                }
+                            });
 
                             if self.chunk_update_pc.get(&player).is_some() {
                                 return;
                             } else {
                                 self.chunk_update_pc
-                                    .insert(player, ChunkUpdate { previous_ticket });
+                                    .insert(player, ChunkUpdate { previous_view });
                             }
                         }
                     },
@@ -135,12 +129,12 @@ impl World {
                     }));
 
                     for (player, client) in self.actor_pc.iter().filter_map(|(player, actor)| {
-                        let ticket = self.chunk_ticket_ac.get(actor)?;
+                        let view = self.chunk_view_pc.get(player)?;
                         let position = self.position_ac.get(actor)?;
 
                         position
                             .chunk
-                            .radius(ticket.radius)
+                            .radius(view.radius)
                             .is_within(&chunk)
                             .then_some(())?;
                         let client = self.client_pc.get(player)?;

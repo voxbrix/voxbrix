@@ -231,14 +231,14 @@ impl MenuScene {
                                         .map(|(tx, rx, init_data)| {
                                             let InitData {
                                                 actor,
-                                                player_ticket_radius,
+                                                player_chunk_view_radius,
                                             } = init_data;
 
                                             SceneSwitch::Game {
                                                 parameters: GameSceneParameters {
                                                     connection: (tx, rx),
                                                     player_actor: actor,
-                                                    player_ticket_radius,
+                                                    player_chunk_view_radius,
                                                 },
                                             }
                                         })

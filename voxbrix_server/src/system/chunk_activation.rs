@@ -1,8 +1,8 @@
 use crate::component::{
     actor::{
-        chunk_ticket::{
-            ActorChunkTicket,
-            ChunkTicketActorComponent,
+        chunk_activation::{
+            ActorChunkActivation,
+            ChunkActivationActorComponent,
         },
         position::PositionActorComponent,
     },
@@ -14,21 +14,21 @@ use crate::component::{
         },
     },
 };
-use std::collections::BTreeSet;
+use ahash::AHashSet;
 use tokio::task;
 use voxbrix_common::{
     component::block::class::ClassBlockComponent,
     entity::chunk::Chunk,
 };
 
-pub struct ChunkTicketSystem {
-    data: BTreeSet<Chunk>,
+pub struct ChunkActivationSystem {
+    data: AHashSet<Chunk>,
 }
 
-impl ChunkTicketSystem {
+impl ChunkActivationSystem {
     pub fn new() -> Self {
         Self {
-            data: BTreeSet::new(),
+            data: AHashSet::new(),
         }
     }
 
@@ -36,18 +36,18 @@ impl ChunkTicketSystem {
         self.data.clear();
     }
 
-    pub fn actor_tickets(
+    pub fn actor_activations(
         &mut self,
-        chunk_ticket_ac: &ChunkTicketActorComponent,
+        chunk_activation_ac: &ChunkActivationActorComponent,
         position_ac: &PositionActorComponent,
     ) {
-        let iter = chunk_ticket_ac
+        let iter = chunk_activation_ac
             .iter()
-            .filter_map(|(actor, chunk_ticket)| {
-                Some((position_ac.get(&actor)?.chunk, chunk_ticket))
+            .filter_map(|(actor, chunk_activation)| {
+                Some((position_ac.get(&actor)?.chunk, chunk_activation))
             })
-            .flat_map(|(chunk, chunk_ticket)| {
-                let ActorChunkTicket { radius } = chunk_ticket;
+            .flat_map(|(chunk, chunk_activation)| {
+                let ActorChunkActivation { radius } = chunk_activation;
                 let radius = chunk.radius(*radius);
                 radius.into_iter()
             });

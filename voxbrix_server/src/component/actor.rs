@@ -27,7 +27,7 @@ use voxbrix_common::{
     pack,
 };
 
-pub mod chunk_ticket;
+pub mod chunk_activation;
 pub mod class;
 pub mod orientation;
 pub mod player;

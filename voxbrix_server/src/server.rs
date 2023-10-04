@@ -1,7 +1,7 @@
 use crate::{
     component::{
         actor::{
-            chunk_ticket::ChunkTicketActorComponent,
+            chunk_activation::ChunkActivationActorComponent,
             class::ClassActorComponent,
             orientation::OrientationActorComponent,
             player::PlayerActorComponent,
@@ -16,6 +16,7 @@ use crate::{
         player::{
             actor::ActorPlayerComponent,
             chunk_update::ChunkUpdatePlayerComponent,
+            chunk_view::ChunkViewPlayerComponent,
             client::{
                 ClientEvent,
                 ClientPlayerComponent,
@@ -28,7 +29,7 @@ use crate::{
     },
     storage::StorageThread,
     system::{
-        chunk_ticket::ChunkTicketSystem,
+        chunk_activation::ChunkActivationSystem,
         position::PositionSystem,
     },
     world::{
@@ -167,14 +168,14 @@ pub async fn run(
         state_components_label_map.get("actor_orientation").unwrap(),
     );
     let player_ac = PlayerActorComponent::new();
-    let chunk_ticket_ac = ChunkTicketActorComponent::new();
+    let chunk_activation_ac = ChunkActivationActorComponent::new();
 
     let mut model_acc =
         ModelActorClassComponent::new(state_components_label_map.get("actor_model").unwrap());
 
     let status_cc = StatusChunkComponent::new();
     let cache_cc = CacheChunkComponent::new();
-    let chunk_ticket_system = ChunkTicketSystem::new();
+    let chunk_activation_system = ChunkActivationSystem::new();
 
     let class_bc = ClassBlockComponent::new();
     let mut collision_bcc = CollisionBlockClassComponent::new();
@@ -225,13 +226,14 @@ pub async fn run(
         client_pc: ClientPlayerComponent::new(),
         actor_pc: ActorPlayerComponent::new(),
         chunk_update_pc: ChunkUpdatePlayerComponent::new(),
+        chunk_view_pc: ChunkViewPlayerComponent::new(),
 
         class_ac,
         position_ac,
         velocity_ac,
         orientation_ac,
         player_ac,
-        chunk_ticket_ac,
+        chunk_activation_ac,
 
         model_acc,
 
@@ -246,7 +248,7 @@ pub async fn run(
         block_class_label_map,
 
         position_system,
-        chunk_ticket_system,
+        chunk_activation_system,
 
         storage,
 

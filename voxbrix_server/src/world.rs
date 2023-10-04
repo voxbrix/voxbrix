@@ -1,7 +1,10 @@
 use crate::{
     component::{
         actor::{
-            chunk_ticket::ChunkTicketActorComponent,
+            chunk_activation::{
+                ActorChunkActivation,
+                ChunkActivationActorComponent,
+            },
             class::ClassActorComponent,
             orientation::OrientationActorComponent,
             player::PlayerActorComponent,
@@ -19,6 +22,10 @@ use crate::{
         player::{
             actor::ActorPlayerComponent,
             chunk_update::ChunkUpdatePlayerComponent,
+            chunk_view::{
+                ChunkView,
+                ChunkViewPlayerComponent,
+            },
             client::{
                 Client,
                 ClientEvent,
@@ -34,12 +41,13 @@ use crate::{
     server::SendRc,
     storage::StorageThread,
     system::{
-        chunk_ticket::ChunkTicketSystem,
+        chunk_activation::ChunkActivationSystem,
         position::PositionSystem,
     },
     Local,
     Shared,
     BASE_CHANNEL,
+    PLAYER_CHUNK_VIEW_RADIUS,
 };
 use local_channel::mpsc::Sender;
 use nohash_hasher::IntSet;
@@ -131,13 +139,14 @@ pub struct World {
     pub client_pc: ClientPlayerComponent,
     pub actor_pc: ActorPlayerComponent,
     pub chunk_update_pc: ChunkUpdatePlayerComponent,
+    pub chunk_view_pc: ChunkViewPlayerComponent,
 
     pub class_ac: ClassActorComponent,
     pub position_ac: PositionActorComponent,
     pub velocity_ac: VelocityActorComponent,
     pub orientation_ac: OrientationActorComponent,
     pub player_ac: PlayerActorComponent,
-    pub chunk_ticket_ac: ChunkTicketActorComponent,
+    pub chunk_activation_ac: ChunkActivationActorComponent,
 
     pub model_acc: ModelActorClassComponent,
 
@@ -151,7 +160,7 @@ pub struct World {
     pub block_class_label_map: LabelMap<BlockClass>,
 
     pub position_system: PositionSystem,
-    pub chunk_ticket_system: ChunkTicketSystem,
+    pub chunk_activation_system: ChunkActivationSystem,
 
     pub storage: StorageThread,
 
@@ -188,11 +197,13 @@ impl World {
         self.velocity_ac.remove(actor, self.snapshot);
         self.orientation_ac.remove(actor, self.snapshot);
         self.player_ac.remove(actor);
-        self.chunk_ticket_ac.remove(actor);
+        self.chunk_activation_ac.remove(actor);
     }
 
     pub fn remove_player(&mut self, player: &Player) {
         self.client_pc.remove(&player);
+        self.chunk_update_pc.remove(&player);
+        self.chunk_view_pc.remove(&player);
         if let Some(actor) = self.actor_pc.remove(&player) {
             self.remove_actor(&actor);
         }
@@ -210,6 +221,13 @@ impl World {
 
         self.player_ac.insert(actor, player);
 
+        self.chunk_activation_ac.insert(
+            actor,
+            ActorChunkActivation {
+                radius: PLAYER_CHUNK_VIEW_RADIUS,
+            },
+        );
+
         self.client_pc.insert(
             player,
             Client {
@@ -219,7 +237,15 @@ impl World {
                 last_confirmed_chunk: None,
             },
         );
+
         self.actor_pc.insert(player, actor);
+
+        self.chunk_view_pc.insert(
+            player,
+            ChunkView {
+                radius: PLAYER_CHUNK_VIEW_RADIUS,
+            },
+        );
 
         if tx_init.send(ClientEvent::AssignActor { actor }).is_err() {
             self.remove_player(&player);
@@ -244,7 +270,7 @@ impl World {
 
         for (player, client) in self.actor_pc.iter().filter_map(|(player, actor)| {
             let position = self.position_ac.get(actor)?;
-            let chunk_ticket = self.chunk_ticket_ac.get(actor)?;
+            let chunk_ticket = self.chunk_activation_ac.get(actor)?;
 
             if position.chunk.radius(chunk_ticket.radius).is_within(&chunk) {
                 Some((player, self.client_pc.get(player)?))

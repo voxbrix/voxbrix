@@ -53,7 +53,7 @@ pub enum RegisterFailure {
 pub struct InitData {
     pub actor: Actor,
     // position: Position,
-    pub player_ticket_radius: i32,
+    pub player_chunk_view_radius: i32,
 }
 
 impl Pack for InitData {
