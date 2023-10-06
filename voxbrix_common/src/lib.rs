@@ -58,7 +58,7 @@ where
     Ok(data)
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct LabelMap<T>(BTreeMap<String, T>);
 
 impl<T> LabelMap<T>

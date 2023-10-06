@@ -30,6 +30,7 @@ use crate::{
     storage::StorageThread,
     system::{
         chunk_activation::ChunkActivationSystem,
+        chunk_generation::ChunkGenerationSystem,
         position::PositionSystem,
     },
     world::{
@@ -72,10 +73,14 @@ use voxbrix_common::{
     },
     entity::{
         actor_model::ActorModel,
+        chunk::Chunk,
         snapshot::Snapshot,
         state_component::StateComponent,
     },
-    messages::StatePacker,
+    messages::{
+        client::ClientAccept,
+        StatePacker,
+    },
     pack::Packer,
     system::{
         actor_class_loading::ActorClassLoadingSystem,
@@ -94,6 +99,7 @@ pub enum SharedEvent {
         data: ChunkData,
         data_encoded: SendRc<Vec<u8>>,
     },
+    ChunkGeneration(Chunk),
 }
 
 // Server loop input
@@ -175,7 +181,6 @@ pub async fn run(
 
     let status_cc = StatusChunkComponent::new();
     let cache_cc = CacheChunkComponent::new();
-    let chunk_activation_system = ChunkActivationSystem::new();
 
     let class_bc = ClassBlockComponent::new();
     let mut collision_bcc = CollisionBlockClassComponent::new();
@@ -202,6 +207,24 @@ pub async fn run(
         .expect("unable to load collision block class component");
 
     let block_class_label_map = block_class_loading_system.into_label_map();
+
+    let chunk_generation_system = ChunkGenerationSystem::new(
+        shared,
+        block_class_label_map.clone(),
+        |chunk, block_classes, packer| {
+            let data = ChunkData {
+                chunk,
+                block_classes,
+            };
+
+            let data_encoded =
+                SendRc::new(packer.pack_to_vec(&ClientAccept::ChunkData(data.clone())));
+
+            let _ = shared
+                .event_tx
+                .send(SharedEvent::ChunkLoaded { data, data_encoded });
+        },
+    );
 
     let mut send_status_interval = time::interval(PROCESS_INTERVAL);
     send_status_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -248,7 +271,8 @@ pub async fn run(
         block_class_label_map,
 
         position_system,
-        chunk_activation_system,
+        chunk_activation_system: ChunkActivationSystem::new(),
+        chunk_generation_system,
 
         storage,
 
@@ -289,6 +313,9 @@ pub async fn run(
                         data: chunk_data,
                         data_encoded,
                     } => world.chunk_loaded(chunk_data, data_encoded),
+                    SharedEvent::ChunkGeneration(chunk) => {
+                        world.chunk_generation_system.generate_chunk(chunk);
+                    },
                 }
             },
             ServerEvent::ServerConnectionClosed => return,

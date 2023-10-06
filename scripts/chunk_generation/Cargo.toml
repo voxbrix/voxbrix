@@ -1,0 +1,15 @@
+[package]
+name = "chunk_generation"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[workspace]
+
+[profile.release]
+lto = true
+
+[dependencies]
+paste = "1.0"

@@ -7,23 +7,13 @@ use crate::{
         SendRc,
         SharedEvent,
     },
-    storage::{
-        IntoData,
-        IntoDataSized,
-    },
+    system::chunk_activation::ChunkActivationOutcome,
     world::World,
     BASE_CHANNEL,
-    BLOCK_CLASS_TABLE,
 };
-use redb::ReadableTable;
 use std::time::Instant;
 use voxbrix_common::{
-    component::block::BlocksVec,
     entity::{
-        block::{
-            BLOCKS_IN_CHUNK_LAYER_USIZE,
-            BLOCKS_IN_CHUNK_USIZE,
-        },
         chunk::Chunk,
         snapshot::{
             Snapshot,
@@ -31,12 +21,15 @@ use voxbrix_common::{
         },
     },
     messages::client::ClientAccept,
-    pack::Packer,
     ChunkData,
 };
 
 impl World {
     pub fn process(mut self) -> World {
+        let now = Instant::now();
+        let elapsed = now.saturating_duration_since(self.last_process_time);
+        self.last_process_time = now;
+
         // Sending chunks to players
         for (player, client, prev_radius, curr_radius) in
             self.chunk_update_pc
@@ -77,10 +70,6 @@ impl World {
         self.chunk_activation_system.clear();
         self.chunk_activation_system
             .actor_activations(&self.chunk_activation_ac, &self.position_ac);
-
-        let now = Instant::now();
-        let elapsed = now.saturating_duration_since(self.last_process_time);
-        self.last_process_time = now;
 
         self.position_system.process(
             elapsed,
@@ -253,70 +242,34 @@ impl World {
             }
         }
 
-        let air = self.block_class_label_map.get("air").unwrap();
-        let grass = self.block_class_label_map.get("grass").unwrap();
-        let stone = self.block_class_label_map.get("stone").unwrap();
         self.chunk_activation_system.apply(
+            self.shared,
             &mut self.status_cc,
             &mut self.class_bc,
             &mut self.cache_cc,
-            move |chunk| {
-                let mut packer = Packer::new();
+            move |chunk, activation_outcome, packer| {
+                match activation_outcome {
+                    ChunkActivationOutcome::ChunkActivated(block_classes) => {
+                        let data = ChunkData {
+                            chunk,
+                            block_classes,
+                        };
 
-                let block_classes = {
-                    let db_read = self.shared.database.begin_read().unwrap();
-                    let table = db_read
-                        .open_table(BLOCK_CLASS_TABLE)
-                        .expect("server_loop: database read");
-                    table
-                        .get(chunk.into_data_sized())
-                        .unwrap()
-                        .map(|bytes| bytes.value().into_inner(&mut packer))
+                        let data_encoded =
+                            SendRc::new(packer.pack_to_vec(&ClientAccept::ChunkData(data.clone())));
+
+                        let _ = self
+                            .shared
+                            .event_tx
+                            .send(SharedEvent::ChunkLoaded { data, data_encoded });
+                    },
+                    ChunkActivationOutcome::ChunkNeedsGeneration => {
+                        let _ = self
+                            .shared
+                            .event_tx
+                            .send(SharedEvent::ChunkGeneration(chunk));
+                    },
                 }
-                .unwrap_or_else(|| {
-                    let block_classes = if chunk.position[2] == -1 {
-                        let mut chunk_blocks = vec![stone; BLOCKS_IN_CHUNK_USIZE];
-                        for block_class in (&mut chunk_blocks[BLOCKS_IN_CHUNK_USIZE
-                            - BLOCKS_IN_CHUNK_LAYER_USIZE
-                            .. BLOCKS_IN_CHUNK_USIZE])
-                            .iter_mut()
-                        {
-                            *block_class = grass;
-                        }
-                        BlocksVec::new(chunk_blocks)
-                    } else if chunk.position[2] < -1 {
-                        BlocksVec::new(vec![stone; BLOCKS_IN_CHUNK_USIZE])
-                    } else {
-                        BlocksVec::new(vec![air; BLOCKS_IN_CHUNK_USIZE])
-                    };
-
-                    let db_write = self.shared.database.begin_write().unwrap();
-                    {
-                        let mut table = db_write.open_table(BLOCK_CLASS_TABLE).unwrap();
-                        table
-                            .insert(
-                                chunk.into_data_sized(),
-                                block_classes.into_data(&mut packer),
-                            )
-                            .expect("server_loop: database write");
-                    }
-                    db_write.commit().unwrap();
-
-                    block_classes
-                });
-
-                let data = ChunkData {
-                    chunk: *chunk,
-                    block_classes,
-                };
-
-                let data_encoded =
-                    SendRc::new(packer.pack_to_vec(&ClientAccept::ChunkData(data.clone())));
-
-                let _ = self
-                    .shared
-                    .event_tx
-                    .send(SharedEvent::ChunkLoaded { data, data_encoded });
             },
         );
 

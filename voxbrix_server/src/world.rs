@@ -42,6 +42,7 @@ use crate::{
     storage::StorageThread,
     system::{
         chunk_activation::ChunkActivationSystem,
+        chunk_generation::ChunkGenerationSystem,
         position::PositionSystem,
     },
     Local,
@@ -161,6 +162,7 @@ pub struct World {
 
     pub position_system: PositionSystem,
     pub chunk_activation_system: ChunkActivationSystem,
+    pub chunk_generation_system: ChunkGenerationSystem,
 
     pub storage: StorageThread,
 

@@ -54,6 +54,7 @@ const PLAYER_TABLE: TableDefinition<DataSized<Player>, Data<PlayerProfile>> =
     TableDefinition::new("player");
 const USERNAME_TABLE: TableDefinition<&str, DataSized<Player>> = TableDefinition::new("username");
 
+mod assets;
 mod client;
 mod component;
 mod entity;
