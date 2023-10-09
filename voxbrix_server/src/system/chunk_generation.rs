@@ -34,6 +34,7 @@ use wasmtime::{
     Linker,
     Module,
     Store,
+    Config,
 };
 
 pub struct ChunkGenerationSystem {
@@ -54,7 +55,17 @@ impl ChunkGenerationSystem {
         let (new_chunks_tx, new_chunks_rx) = flume::unbounded();
 
         thread::spawn(move || {
-            let engine = Engine::default();
+            let mut engine_config = Config::new();
+
+            engine_config
+                .wasm_threads(false)
+                .wasm_reference_types(false)
+                .wasm_multi_value(false)
+                .wasm_multi_memory(false);
+
+            let engine = Engine::new(&engine_config)
+                .expect("unable to initialize wasm engine");
+
             let module = Module::from_file(&engine, CHUNK_GENERATION_SCRIPT).unwrap();
             let mut linker = Linker::new(&engine);
             let mut store = Store::new(
@@ -106,18 +117,20 @@ impl ChunkGenerationSystem {
             let instance = linker.instantiate(&mut store, &module).unwrap();
 
             let generate_fn = instance
-                .get_typed_func::<(u32, i32, i32, i32), ()>(&mut store, "generate_chunk")
+                .get_typed_func::<(u64, i32, i32, i32), ()>(&mut store, "generate_chunk")
                 .unwrap();
 
             let mut packer = Packer::new();
 
+            let seed = 0;
+
             while let Ok(chunk) = new_chunks_rx.recv() {
                 let Chunk {
                     position,
-                    dimension: Dimension { index },
+                    dimension: Dimension { index: _ },
                 } = chunk;
 
-                generate_fn.call(&mut store, (index, position.x, position.y, position.z));
+                generate_fn.call(&mut store, (seed, position.x, position.y, position.z));
 
                 let block_classes = BlocksVec::new(mem::replace(
                     &mut store.data_mut().block_classes,
