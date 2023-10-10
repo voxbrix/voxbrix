@@ -25,24 +25,47 @@ use crate::{
     },
     math::Vec3I32,
 };
+use ahash::AHashSet;
 use arrayvec::ArrayVec;
 use rayon::iter::{
-    IntoParallelIterator,
+    ParallelDrainRange,
+    ParallelExtend,
     ParallelIterator,
 };
-use std::collections::{
-    BTreeSet,
-    VecDeque,
+use std::{
+    collections::VecDeque,
+    iter,
+    mem,
 };
 
 const SKY_SIDE: usize = 5;
 const GROUND_SIDE: usize = 4;
 
-pub struct SkyLightSystem;
+#[derive(Clone, Copy)]
+enum ChunkKind {
+    Even,
+    Odd,
+}
+
+pub struct SkyLightSystem {
+    processed_chunks: AHashSet<Chunk>,
+    next_compute: ChunkKind,
+    chunks_to_compute_even: AHashSet<Chunk>,
+    chunks_to_compute_odd: AHashSet<Chunk>,
+    pre_compute_buffer: Vec<(Chunk, Option<BlocksVec<SkyLight>>)>,
+    post_compute_buffer: Vec<(Chunk, BlocksVec<SkyLight>, ArrayVec<Chunk, 6>)>,
+}
 
 impl SkyLightSystem {
     pub fn new() -> Self {
-        Self
+        Self {
+            processed_chunks: AHashSet::new(),
+            next_compute: ChunkKind::Even,
+            chunks_to_compute_even: AHashSet::new(),
+            chunks_to_compute_odd: AHashSet::new(),
+            pre_compute_buffer: Vec::new(),
+            post_compute_buffer: Vec::new(),
+        }
     }
 
     /// Should only be called on existing chunk that has `ClassBlockComponent` defined,
@@ -182,64 +205,95 @@ impl SkyLightSystem {
         (chunk_light, chunks_to_recalc)
     }
 
-    /// Calculates light for chunk an all required neighbors recursively
-    pub fn calc_chunk_finalize(
-        &self,
-        chunk: Chunk,
+    /// Computes light for the chunk and adds changed neighbors to the queue
+    /// to be recalculated.
+    pub fn compute_queued(
+        &mut self,
         class_bc: &ClassBlockComponent,
         opacity_bcc: &OpacityBlockClassComponent,
         sky_light_bc: &mut SkyLightBlockComponent,
-    ) -> BTreeSet<Chunk> {
-        let mut processed_chunks = BTreeSet::new();
+    ) {
+        let mut chunks_to_compute = match self.next_compute {
+            ChunkKind::Even => mem::take(&mut self.chunks_to_compute_even),
+            ChunkKind::Odd => mem::take(&mut self.chunks_to_compute_odd),
+        };
 
-        let (light_component, chunks_to_recalc) =
-            self.calc_chunk(chunk, None, &class_bc, &opacity_bcc, &sky_light_bc);
+        let mut pre_compute_buffer = mem::take(&mut self.pre_compute_buffer);
+        let mut post_compute_buffer = mem::take(&mut self.post_compute_buffer);
 
-        let mut chunks_to_recalc: BTreeSet<_> = chunks_to_recalc.into_iter().collect();
+        let expansion = iter::from_fn(|| {
+            let next = *chunks_to_compute.iter().next()?;
+            chunks_to_compute.remove(&next);
+            Some(next)
+        })
+        .filter(|chunk| class_bc.get_chunk(chunk).is_some())
+        .map(|chunk| (chunk, sky_light_bc.remove_chunk(&chunk)))
+        .take(rayon::current_num_threads());
 
-        sky_light_bc.insert_chunk(chunk, light_component);
+        pre_compute_buffer.clear();
+        pre_compute_buffer.extend(expansion);
 
-        processed_chunks.insert(chunk);
+        let expansion = pre_compute_buffer
+            .par_drain(..)
+            .map(|(chunk, old_light_component)| {
+                let (light_component, chunks_to_recalc) = self.calc_chunk(
+                    chunk,
+                    old_light_component,
+                    &class_bc,
+                    &opacity_bcc,
+                    &sky_light_bc,
+                );
 
-        loop {
-            let results = chunks_to_recalc
-                .iter()
-                .filter_map(|chunk| Some((chunk, sky_light_bc.remove_chunk(chunk)?)))
-                .collect::<Vec<_>>();
+                (chunk, light_component, chunks_to_recalc)
+            });
 
-            if results.is_empty() {
-                break;
-            }
+        post_compute_buffer.clear();
+        post_compute_buffer.par_extend(expansion);
 
-            let results = results
-                .into_par_iter()
-                .map(|(chunk, old_light_component)| {
-                    let (light_component, chunks_to_recalc) = self.calc_chunk(
-                        *chunk,
-                        Some(old_light_component),
-                        &class_bc,
-                        &opacity_bcc,
-                        &sky_light_bc,
-                    );
+        let expansion =
+            post_compute_buffer
+                .drain(..)
+                .flat_map(|(chunk, light_component, chunks_to_recalc)| {
+                    sky_light_bc.insert_chunk(chunk, light_component);
+                    self.processed_chunks.insert(chunk);
+                    chunks_to_recalc.into_iter()
+                });
 
-                    (*chunk, light_component, chunks_to_recalc)
-                })
-                .collect::<Vec<_>>();
-
-            let expansion =
-                results
-                    .into_iter()
-                    .flat_map(|(chunk, light_component, chunks_to_recalc)| {
-                        sky_light_bc.insert_chunk(chunk, light_component);
-                        processed_chunks.insert(chunk);
-                        chunks_to_recalc.into_iter()
-                    });
-
-            chunks_to_recalc.clear();
-            chunks_to_recalc.extend(expansion);
+        match self.next_compute {
+            ChunkKind::Even => {
+                if chunks_to_compute.is_empty() {
+                    self.next_compute = ChunkKind::Odd;
+                }
+                self.chunks_to_compute_even = chunks_to_compute;
+                self.chunks_to_compute_odd.extend(expansion);
+            },
+            ChunkKind::Odd => {
+                if chunks_to_compute.is_empty() {
+                    self.next_compute = ChunkKind::Even;
+                }
+                self.chunks_to_compute_odd = chunks_to_compute;
+                self.chunks_to_compute_even.extend(expansion);
+            },
         }
 
-        processed_chunks
+        self.pre_compute_buffer = pre_compute_buffer;
+        self.post_compute_buffer = post_compute_buffer;
+    }
+
+    pub fn add_chunk(&mut self, chunk: Chunk) {
+        if chunk.position.to_array().iter().sum::<i32>() % 2 == 0 {
+            self.chunks_to_compute_even.insert(chunk);
+        } else {
+            self.chunks_to_compute_odd.insert(chunk);
+        }
+    }
+
+    pub fn drain_processed_chunks<'a>(&'a mut self) -> impl Iterator<Item = Chunk> + 'a {
+        self.processed_chunks.drain()
+    }
+
+    pub fn has_chunks_in_queue(&self) -> bool {
+        !self.chunks_to_compute_even.is_empty() || !self.chunks_to_compute_odd.is_empty()
     }
 }
 

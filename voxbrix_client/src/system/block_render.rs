@@ -366,6 +366,7 @@ impl BlockRenderSystem {
         .filter_map(|offset| {
             let chunk = chunk.offset(offset)?;
             class_bc.get_chunk(&chunk)?;
+            sky_light_bc.get_chunk(&chunk)?;
 
             Some((
                 chunk,

@@ -168,6 +168,7 @@ pub enum Event {
     Input(InputEvent),
     NetworkInput(Result<Vec<u8>, ClientError>),
     DrawChunk(Chunk),
+    ComputeLight,
 }
 
 pub struct GameSceneParameters {
@@ -338,7 +339,7 @@ impl GameScene {
         let mut player_position_system = PlayerPositionSystem::new(player_actor);
         let mut direct_control_system = DirectControl::new(player_actor, 10.0, 0.4);
         let chunk_presence_system = ChunkPresenceSystem::new();
-        let sky_light_system = SkyLightSystem::new();
+        let mut sky_light_system = SkyLightSystem::new();
         let actor_texture_loading_system =
             TextureLoadingSystem::load_data(ACTOR_TEXTURE_LIST_PATH, ACTOR_TEXTURE_PATH_PREFIX)
                 .await?;
@@ -760,19 +761,8 @@ impl GameScene {
                             class_bc.insert_chunk(chunk, block_classes);
                             status_cc.insert(chunk, ChunkStatus::Active);
 
-                            let chunks_to_redraw = sky_light_system.calc_chunk_finalize(
-                                chunk,
-                                &class_bc,
-                                &opacity_bcc,
-                                &mut sky_light_bc,
-                            );
-
-                            // The one that has actual block class changes should be drawn
-                            // first
-                            let _ = event_tx.send(Event::DrawChunk(chunk));
-                            for chunk in chunks_to_redraw.into_iter().filter(|c| *c != chunk) {
-                                let _ = event_tx.send(Event::DrawChunk(chunk));
-                            }
+                            sky_light_system.add_chunk(chunk);
+                            let _ = event_tx.send(Event::ComputeLight);
                         },
                         ClientAccept::AlterBlock {
                             chunk,
@@ -784,19 +774,8 @@ impl GameScene {
                             {
                                 *block_class_ref = block_class;
 
-                                let chunks_to_redraw = sky_light_system.calc_chunk_finalize(
-                                    chunk,
-                                    &class_bc,
-                                    &opacity_bcc,
-                                    &mut sky_light_bc,
-                                );
-
-                                // The one that has actual block class changes should be drawn
-                                // first
-                                let _ = event_tx.send(Event::DrawChunk(chunk));
-                                for chunk in chunks_to_redraw.into_iter().filter(|c| *c != chunk) {
-                                    let _ = event_tx.send(Event::DrawChunk(chunk));
-                                }
+                                sky_light_system.add_chunk(chunk);
+                                let _ = event_tx.send(Event::ComputeLight);
                             }
                         },
                     }
@@ -807,6 +786,17 @@ impl GameScene {
                     unblock!((block_render_system, class_bc, model_bcc, builder_bmc, culling_bmc, sky_light_bc) {
                         block_render_system.build_chunk(&chunk, &class_bc, &model_bcc, &builder_bmc, &culling_bmc, &sky_light_bc);
                     });
+                },
+                Event::ComputeLight => {
+                    sky_light_system.compute_queued(&class_bc, &opacity_bcc, &mut sky_light_bc);
+
+                    for chunk in sky_light_system.drain_processed_chunks() {
+                        let _ = event_tx.send(Event::DrawChunk(chunk));
+                    }
+
+                    if sky_light_system.has_chunks_in_queue() {
+                        let _ = event_tx.send(Event::ComputeLight);
+                    }
                 },
             }
         }

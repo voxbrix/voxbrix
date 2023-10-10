@@ -30,11 +30,11 @@ use voxbrix_common::{
 };
 use wasmtime::{
     Caller,
+    Config,
     Engine,
     Linker,
     Module,
     Store,
-    Config,
 };
 
 pub struct ChunkGenerationSystem {
@@ -63,8 +63,7 @@ impl ChunkGenerationSystem {
                 .wasm_multi_value(false)
                 .wasm_multi_memory(false);
 
-            let engine = Engine::new(&engine_config)
-                .expect("unable to initialize wasm engine");
+            let engine = Engine::new(&engine_config).expect("unable to initialize wasm engine");
 
             let module = Module::from_file(&engine, CHUNK_GENERATION_SCRIPT).unwrap();
             let mut linker = Linker::new(&engine);
