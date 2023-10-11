@@ -24,13 +24,11 @@ use crate::{
     },
     RenderHandle,
 };
+use ahash::AHashMap;
 use anyhow::Result;
 use arrayvec::ArrayVec;
 use rayon::prelude::*;
-use std::{
-    collections::BTreeMap,
-    mem,
-};
+use std::mem;
 use voxbrix_common::{
     component::block::{
         class::ClassBlockComponent,
@@ -233,7 +231,7 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
         BlockRenderSystem {
             render_handle,
             render_pipeline,
-            chunk_buffer_shards: BTreeMap::new(),
+            chunk_buffer_shards: AHashMap::new(),
             update_chunk_buffer: false,
             prepared_vertex_buffer: vertex_buffer,
             prepared_polygon_buffer: polygon_buffer,
@@ -254,7 +252,7 @@ enum TargetHighlighting {
 pub struct BlockRenderSystem {
     render_handle: &'static RenderHandle,
     render_pipeline: wgpu::RenderPipeline,
-    chunk_buffer_shards: BTreeMap<Chunk, Vec<Polygon>>,
+    chunk_buffer_shards: AHashMap<Chunk, Vec<Polygon>>,
     update_chunk_buffer: bool,
     prepared_vertex_buffer: wgpu::Buffer,
     prepared_polygon_buffer: GpuVec,
