@@ -26,6 +26,8 @@ pub mod animation_state;
 pub mod class;
 pub mod orientation;
 pub mod position;
+pub mod target_orientation;
+pub mod target_position;
 pub mod velocity;
 
 pub struct Writable<'a, T> {
@@ -49,9 +51,10 @@ where
         } = self;
 
         if *is_player && value != **data {
-            **data = value;
             **last_change_snapshot = *snapshot;
         }
+
+        **data = value;
     }
 }
 
@@ -64,6 +67,7 @@ impl<'a, T> Deref for Writable<'a, T> {
 }
 
 /// Component that can be packed into State and sent to the server
+#[derive(Debug)]
 pub struct ActorComponentPackable<T>
 where
     T: 'static,
@@ -160,6 +164,48 @@ where
 
                     self.storage.clear();
                     self.storage.extend(full.into_iter());
+
+                    if let Some(player_value) = player_value {
+                        if self.is_client_controlled {
+                            self.storage.insert(self.player_actor, player_value);
+                        }
+                    }
+                },
+            }
+        }
+    }
+}
+
+impl<T> ActorComponentPackable<T> {
+    pub fn unpack_state_convert<'a, U>(
+        &mut self,
+        state: &State<'a>,
+        mut convert: impl FnMut(Actor, U) -> T,
+    ) where
+        U: Deserialize<'a>,
+    {
+        if let Some(changes) = state
+            .get_component(&self.state_component)
+            .and_then(|buffer| pack::deserialize_from::<ActorStateUnpack<U>>(buffer))
+        {
+            match changes {
+                ActorStateUnpack::Change(changes) => {
+                    for (actor, change) in changes {
+                        if let Some(component) = change {
+                            self.storage.insert(actor, convert(actor, component));
+                        } else {
+                            self.storage.remove(&actor);
+                        }
+                    }
+                },
+                ActorStateUnpack::Full(full) => {
+                    let player_value = self.storage.remove(&self.player_actor);
+
+                    self.storage.clear();
+                    self.storage.extend(
+                        full.into_iter()
+                            .map(|(actor, component)| (actor, convert(actor, component))),
+                    );
 
                     if let Some(player_value) = player_value {
                         if self.is_client_controlled {

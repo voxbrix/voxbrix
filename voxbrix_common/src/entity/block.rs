@@ -15,6 +15,8 @@ pub const BLOCKS_IN_CHUNK_EDGE_USIZE: usize = BLOCKS_IN_CHUNK_EDGE as usize;
 pub const BLOCKS_IN_CHUNK_LAYER_USIZE: usize = BLOCKS_IN_CHUNK_LAYER as usize;
 pub const BLOCKS_IN_CHUNK_USIZE: usize = BLOCKS_IN_CHUNK as usize;
 
+pub const BLOCKS_IN_CHUNK_EDGE_F32: f32 = 32.0;
+
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
 pub struct Block(pub u16);
 

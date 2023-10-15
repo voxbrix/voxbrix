@@ -16,6 +16,14 @@ use crate::{
             class::ClassActorComponent,
             orientation::OrientationActorComponent,
             position::PositionActorComponent,
+            target_orientation::{
+                TargetOrientation,
+                TargetOrientationActorComponent,
+            },
+            target_position::{
+                TargetPosition,
+                TargetPositionActorComponent,
+            },
             velocity::VelocityActorComponent,
         },
         actor_class::model::ModelActorClassComponent,
@@ -51,6 +59,7 @@ use crate::{
         chunk_presence::ChunkPresenceSystem,
         controller::DirectControl,
         model_loading::ModelLoadingSystem,
+        movement_interpolation::MovementInterpolationSystem,
         player_position::PlayerPositionSystem,
         render::{
             camera::CameraParameters,
@@ -337,6 +346,7 @@ impl GameScene {
         let mut last_render_time = Instant::now();
 
         let mut player_position_system = PlayerPositionSystem::new(player_actor);
+        let mut movement_interpolation_system = MovementInterpolationSystem::new();
         let mut direct_control_system = DirectControl::new(player_actor, 10.0, 0.4);
         let chunk_presence_system = ChunkPresenceSystem::new();
         let mut sky_light_system = SkyLightSystem::new();
@@ -369,6 +379,16 @@ impl GameScene {
             true,
         );
         let mut animation_state_ac = AnimationStateActorComponent::new();
+        let mut target_orientation_ac = TargetOrientationActorComponent::new(
+            state_components_label_map.get("actor_orientation").unwrap(),
+            player_actor,
+            false,
+        );
+        let mut target_position_ac = TargetPositionActorComponent::new(
+            state_components_label_map.get("actor_position").unwrap(),
+            player_actor,
+            false,
+        );
 
         let mut model_acc = ModelActorClassComponent::new(
             state_components_label_map.get("actor_model").unwrap(),
@@ -541,6 +561,13 @@ impl GameScene {
                     direct_control_system.process(
                         elapsed,
                         &mut velocity_ac,
+                        &mut orientation_ac,
+                        snapshot,
+                    );
+                    movement_interpolation_system.process(
+                        &target_position_ac,
+                        &target_orientation_ac,
+                        &mut position_ac,
                         &mut orientation_ac,
                         snapshot,
                     );
@@ -746,11 +773,36 @@ impl GameScene {
                             last_client_snapshot: new_lcs,
                             state,
                         } => {
+                            let receive_time = Instant::now();
                             class_ac.unpack_state(&state);
                             model_acc.unpack_state(&state);
-                            position_ac.unpack_state(&state);
                             velocity_ac.unpack_state(&state);
-                            orientation_ac.unpack_state(&state);
+                            target_orientation_ac.unpack_state_convert(
+                                &state,
+                                |actor, orientation: Orientation| {
+                                    TargetOrientation {
+                                        receive_time,
+                                        starting_orientation: orientation_ac
+                                            .get(&actor)
+                                            .cloned()
+                                            .unwrap_or(orientation),
+                                        target_orientation: orientation,
+                                    }
+                                },
+                            );
+                            target_position_ac.unpack_state_convert(
+                                &state,
+                                |actor, position: Position| {
+                                    TargetPosition {
+                                        receive_time,
+                                        starting_position: position_ac
+                                            .get(&actor)
+                                            .cloned()
+                                            .unwrap_or(position),
+                                        target_position: position,
+                                    }
+                                },
+                            );
                             last_client_snapshot = new_lcs;
                             last_server_snapshot = new_lss;
                         },
