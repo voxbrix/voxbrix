@@ -1,3 +1,5 @@
+use crate::system::movement_interpolation::TARGET_QUEUE_LENGTH;
+use arrayvec::ArrayVec;
 use nohash_hasher::IntMap;
 use serde::{
     Deserialize,
@@ -6,6 +8,7 @@ use serde::{
 use std::{
     collections::BTreeMap,
     ops::Deref,
+    time::Instant,
 };
 use voxbrix_common::{
     entity::{
@@ -176,49 +179,7 @@ where
     }
 }
 
-impl<T> ActorComponentPackable<T> {
-    pub fn unpack_state_convert<'a, U>(
-        &mut self,
-        state: &State<'a>,
-        mut convert: impl FnMut(Actor, U) -> T,
-    ) where
-        U: Deserialize<'a>,
-    {
-        if let Some(changes) = state
-            .get_component(&self.state_component)
-            .and_then(|buffer| pack::deserialize_from::<ActorStateUnpack<U>>(buffer))
-        {
-            match changes {
-                ActorStateUnpack::Change(changes) => {
-                    for (actor, change) in changes {
-                        if let Some(component) = change {
-                            self.storage.insert(actor, convert(actor, component));
-                        } else {
-                            self.storage.remove(&actor);
-                        }
-                    }
-                },
-                ActorStateUnpack::Full(full) => {
-                    let player_value = self.storage.remove(&self.player_actor);
-
-                    self.storage.clear();
-                    self.storage.extend(
-                        full.into_iter()
-                            .map(|(actor, component)| (actor, convert(actor, component))),
-                    );
-
-                    if let Some(player_value) = player_value {
-                        if self.is_client_controlled {
-                            self.storage.insert(self.player_actor, player_value);
-                        }
-                    }
-                },
-            }
-        }
-    }
-}
-
-/// Internal component that is not shared with the client
+/// Internal component that is not shared with the server.
 pub struct ActorComponent<T> {
     storage: IntMap<Actor, T>,
 }
@@ -252,6 +213,86 @@ impl<T> ActorComponent<T> {
 
     pub fn remove(&mut self, i: &Actor) -> Option<T> {
         self.storage.remove(i)
+    }
+}
+
+/// Internal component that is received from the server.
+pub struct ActorComponentUnpackable<T> {
+    state_component: StateComponent,
+    storage: IntMap<Actor, T>,
+}
+
+impl<T> ActorComponentUnpackable<T> {
+    pub fn new(state_component: StateComponent) -> Self {
+        Self {
+            state_component,
+            storage: IntMap::default(),
+        }
+    }
+
+    pub fn insert(&mut self, i: Actor, new: T) -> Option<T> {
+        self.storage.insert(i, new)
+    }
+
+    pub fn get(&self, i: &Actor) -> Option<&T> {
+        self.storage.get(i)
+    }
+
+    pub fn get_mut(&mut self, i: &Actor) -> Option<&mut T> {
+        self.storage.get_mut(i)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (Actor, &T)> {
+        self.storage.iter().map(|(&a, t)| (a, t))
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (Actor, &mut T)> {
+        self.storage.iter_mut().map(|(&a, t)| (a, t))
+    }
+
+    pub fn remove(&mut self, i: &Actor) -> Option<T> {
+        self.storage.remove(i)
+    }
+}
+
+impl<T> ActorComponentUnpackable<T> {
+    pub fn unpack_state_convert<'a, U>(
+        &mut self,
+        state: &State<'a>,
+        mut convert: impl FnMut(Actor, Option<T>, U) -> T,
+    ) where
+        U: Deserialize<'a>,
+    {
+        if let Some(changes) = state
+            .get_component(&self.state_component)
+            .and_then(|buffer| pack::deserialize_from::<ActorStateUnpack<U>>(buffer))
+        {
+            match changes {
+                ActorStateUnpack::Change(changes) => {
+                    for (actor, change) in changes {
+                        if let Some(component) = change {
+                            let previous = self.storage.remove(&actor);
+                            self.storage
+                                .insert(actor, convert(actor, previous, component));
+                        } else {
+                            self.storage.remove(&actor);
+                        }
+                    }
+                },
+                ActorStateUnpack::Full(full) => {
+                    let full = full
+                        .into_iter()
+                        .map(|(actor, component)| {
+                            let previous = self.storage.remove(&actor);
+                            (actor, convert(actor, previous, component))
+                        })
+                        .collect::<Vec<_>>();
+
+                    self.storage.clear();
+                    self.storage.extend(full);
+                },
+            }
+        }
     }
 }
 
@@ -290,4 +331,18 @@ where
     pub fn remove(&mut self, actor: Actor, key: K) -> Option<T> {
         self.data.remove(&(actor, key))
     }
+}
+
+const TARGET_QUEUE_LENGTH_EXTRA: usize = TARGET_QUEUE_LENGTH + 1;
+
+#[derive(Clone, Copy)]
+pub struct Target<T> {
+    pub server_snapshot: Snapshot,
+    pub value: T,
+    pub reach_time: Instant,
+}
+
+pub struct TargetQueue<T> {
+    pub starting: T,
+    pub target_queue: ArrayVec<Target<T>, TARGET_QUEUE_LENGTH_EXTRA>,
 }

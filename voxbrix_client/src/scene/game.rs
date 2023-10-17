@@ -16,15 +16,11 @@ use crate::{
             class::ClassActorComponent,
             orientation::OrientationActorComponent,
             position::PositionActorComponent,
-            target_orientation::{
-                TargetOrientation,
-                TargetOrientationActorComponent,
-            },
-            target_position::{
-                TargetPosition,
-                TargetPositionActorComponent,
-            },
+            target_orientation::TargetOrientationActorComponent,
+            target_position::TargetPositionActorComponent,
             velocity::VelocityActorComponent,
+            Target,
+            TargetQueue,
         },
         actor_class::model::ModelActorClassComponent,
         actor_model::builder::{
@@ -381,13 +377,9 @@ impl GameScene {
         let mut animation_state_ac = AnimationStateActorComponent::new();
         let mut target_orientation_ac = TargetOrientationActorComponent::new(
             state_components_label_map.get("actor_orientation").unwrap(),
-            player_actor,
-            false,
         );
         let mut target_position_ac = TargetPositionActorComponent::new(
             state_components_label_map.get("actor_position").unwrap(),
-            player_actor,
-            false,
         );
 
         let mut model_acc = ModelActorClassComponent::new(
@@ -565,8 +557,8 @@ impl GameScene {
                         snapshot,
                     );
                     movement_interpolation_system.process(
-                        &target_position_ac,
-                        &target_orientation_ac,
+                        &mut target_position_ac,
+                        &mut target_orientation_ac,
                         &mut position_ac,
                         &mut orientation_ac,
                         snapshot,
@@ -773,34 +765,80 @@ impl GameScene {
                             last_client_snapshot: new_lcs,
                             state,
                         } => {
-                            let receive_time = Instant::now();
+                            let reach_time = Instant::now();
                             class_ac.unpack_state(&state);
                             model_acc.unpack_state(&state);
                             velocity_ac.unpack_state(&state);
                             target_orientation_ac.unpack_state_convert(
                                 &state,
-                                |actor, orientation: Orientation| {
-                                    TargetOrientation {
-                                        receive_time,
-                                        starting_orientation: orientation_ac
+                                |actor, previous, orientation: Orientation| {
+                                    if orientation_ac.get(&actor).is_none() {
+                                        orientation_ac.insert(actor, orientation, snapshot);
+                                    }
+
+                                    let mut target_queue = previous.unwrap_or(TargetQueue {
+                                        starting: orientation_ac
                                             .get(&actor)
                                             .cloned()
                                             .unwrap_or(orientation),
-                                        target_orientation: orientation,
+                                        target_queue: arrayvec::ArrayVec::new(),
+                                    });
+
+                                    let last = target_queue.target_queue.last().copied();
+
+                                    if last.is_none()
+                                        || last.is_some() && last.unwrap().server_snapshot < new_lss
+                                    {
+                                        let new = Target {
+                                            server_snapshot: new_lss,
+                                            value: orientation,
+                                            reach_time,
+                                        };
+
+                                        if target_queue.target_queue.is_full() {
+                                            *target_queue.target_queue.last_mut().unwrap() = new;
+                                        } else {
+                                            target_queue.target_queue.push(new);
+                                        }
                                     }
+
+                                    target_queue
                                 },
                             );
                             target_position_ac.unpack_state_convert(
                                 &state,
-                                |actor, position: Position| {
-                                    TargetPosition {
-                                        receive_time,
-                                        starting_position: position_ac
+                                |actor, previous, position: Position| {
+                                    if position_ac.get(&actor).is_none() {
+                                        position_ac.insert(actor, position, snapshot);
+                                    }
+
+                                    let mut target_queue = previous.unwrap_or(TargetQueue {
+                                        starting: position_ac
                                             .get(&actor)
                                             .cloned()
                                             .unwrap_or(position),
-                                        target_position: position,
+                                        target_queue: arrayvec::ArrayVec::new(),
+                                    });
+
+                                    let last = target_queue.target_queue.last().copied();
+
+                                    if last.is_none()
+                                        || last.is_some() && last.unwrap().server_snapshot < new_lss
+                                    {
+                                        let new = Target {
+                                            server_snapshot: new_lss,
+                                            value: position,
+                                            reach_time,
+                                        };
+
+                                        if target_queue.target_queue.is_full() {
+                                            *target_queue.target_queue.last_mut().unwrap() = new;
+                                        } else {
+                                            target_queue.target_queue.push(new);
+                                        }
                                     }
+
+                                    target_queue
                                 },
                             );
                             last_client_snapshot = new_lcs;

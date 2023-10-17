@@ -1,11 +1,7 @@
-use crate::component::actor::ActorComponentPackable;
-use std::time::Instant;
+use crate::component::actor::{
+    ActorComponentUnpackable,
+    TargetQueue,
+};
 use voxbrix_common::component::actor::orientation::Orientation;
 
-pub struct TargetOrientation {
-    pub receive_time: Instant,
-    pub starting_orientation: Orientation,
-    pub target_orientation: Orientation,
-}
-
-pub type TargetOrientationActorComponent = ActorComponentPackable<TargetOrientation>;
+pub type TargetOrientationActorComponent = ActorComponentUnpackable<TargetQueue<Orientation>>;
