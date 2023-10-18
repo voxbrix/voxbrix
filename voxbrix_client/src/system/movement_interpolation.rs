@@ -4,6 +4,7 @@ use crate::component::actor::{
     target_orientation::TargetOrientationActorComponent,
     target_position::TargetPositionActorComponent,
     TargetQueue,
+    Writable,
 };
 use std::time::{
     Duration,
@@ -40,48 +41,21 @@ impl MovementInterpolationSystem {
         orientation_ac: &mut OrientationActorComponent,
         snapshot: Snapshot,
     ) {
-        for (
-            actor,
-            TargetQueue {
-                starting,
-                target_queue,
-            },
-        ) in target_position_ac.iter_mut()
-        {
+        let current_time = Instant::now() - SERVER_TICK_INTERVAL * TARGET_QUEUE_LENGTH_U32;
+
+        for (actor, target_queue) in target_position_ac.iter_mut() {
             let mut position = match position_ac.get_writable(&actor, snapshot) {
                 Some(v) => v,
                 None => continue,
             };
 
-            let current_time = Instant::now() - SERVER_TICK_INTERVAL * TARGET_QUEUE_LENGTH_U32;
-
-            let mut result = None;
-
-            while let Some(target_position) = target_queue.first().copied() {
-                let time_left = target_position
-                    .reach_time
-                    .saturating_duration_since(current_time);
-
-                if !time_left.is_zero() {
-                    if time_left <= SERVER_TICK_INTERVAL {
-                        // This target is NOT too far in the future
-                        result = Some((target_position, time_left));
-                    }
-
-                    break;
-                }
-
-                // This target is already reached
-                *starting = target_position.value;
-                position.update(*starting);
-                target_queue.pop_at(0);
-            }
-
-            if let Some((target_position, time_left)) = result {
+            if let Some((target_position, time_left)) =
+                Self::find_next_target(target_queue, &mut position, current_time)
+            {
                 let completion = (SERVER_TICK_INTERVAL - time_left).as_secs_f32()
                     / SERVER_TICK_INTERVAL.as_secs_f32();
 
-                let target_position = target_position.value;
+                let starting = target_queue.starting;
 
                 if target_position.chunk.dimension != starting.chunk.dimension {
                     position.update(target_position.clone());
@@ -107,55 +81,62 @@ impl MovementInterpolationSystem {
             }
         }
 
-        for (
-            actor,
-            TargetQueue {
-                starting,
-                target_queue,
-            },
-        ) in target_orientation_ac.iter_mut()
-        {
+        for (actor, target_queue) in target_orientation_ac.iter_mut() {
             let mut orientation = match orientation_ac.get_writable(&actor, snapshot) {
                 Some(v) => v,
                 None => continue,
             };
 
-            let current_time = Instant::now() - SERVER_TICK_INTERVAL * TARGET_QUEUE_LENGTH_U32;
-
-            let mut result = None;
-
-            while let Some(target_orientation) = target_queue.first().copied() {
-                let time_left = target_orientation
-                    .reach_time
-                    .saturating_duration_since(current_time);
-
-                if !time_left.is_zero() {
-                    if time_left <= SERVER_TICK_INTERVAL {
-                        // This target is NOT too far in the future
-                        result = Some((target_orientation, time_left));
-                    }
-
-                    break;
-                }
-
-                // This target is already reached
-                *starting = target_orientation.value;
-                orientation.update(*starting);
-                target_queue.pop_at(0);
-            }
-
-            if let Some((target_orientation, time_left)) = result {
+            if let Some((target_orientation, time_left)) =
+                Self::find_next_target(target_queue, &mut orientation, current_time)
+            {
                 let completion = (SERVER_TICK_INTERVAL - time_left).as_secs_f32()
                     / SERVER_TICK_INTERVAL.as_secs_f32();
 
-                let target_orientation = target_orientation.value;
-
-                let rotation = starting
+                let rotation = target_queue
+                    .starting
                     .rotation
                     .lerp(target_orientation.rotation, completion);
 
                 orientation.update(Orientation { rotation });
             }
         }
+    }
+
+    /// Returns the next target and the time left to reach it.
+    fn find_next_target<T>(
+        target_queue: &mut TargetQueue<T>,
+        value: &mut Writable<T>,
+        current_time: Instant,
+    ) -> Option<(T, Duration)>
+    where
+        T: PartialEq + Copy,
+    {
+        let TargetQueue {
+            starting,
+            target_queue,
+        } = target_queue;
+
+        while let Some(target_orientation) = target_queue.first().copied() {
+            let time_left = target_orientation
+                .reach_time
+                .saturating_duration_since(current_time);
+
+            if !time_left.is_zero() {
+                if time_left <= SERVER_TICK_INTERVAL {
+                    // This target is NOT too far in the future
+                    return Some((target_orientation.value, time_left));
+                }
+
+                break;
+            }
+
+            // This target is already reached
+            *starting = target_orientation.value;
+            value.update(*starting);
+            target_queue.pop_at(0);
+        }
+
+        None
     }
 }

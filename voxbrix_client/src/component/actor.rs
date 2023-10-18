@@ -346,3 +346,39 @@ pub struct TargetQueue<T> {
     pub starting: T,
     pub target_queue: ArrayVec<Target<T>, TARGET_QUEUE_LENGTH_EXTRA>,
 }
+
+impl<T> TargetQueue<T> {
+    pub fn from_previous(
+        previous: Option<TargetQueue<T>>,
+        current_value: T,
+        new_target: T,
+        current_time: Instant,
+        server_snapshot: Snapshot,
+    ) -> Self
+    where
+        T: Copy,
+    {
+        let mut target_queue = previous.unwrap_or(TargetQueue {
+            starting: current_value,
+            target_queue: ArrayVec::new(),
+        });
+
+        let last = target_queue.target_queue.last().copied();
+
+        if last.is_none() || last.is_some() && last.unwrap().server_snapshot < server_snapshot {
+            let new = Target {
+                server_snapshot,
+                value: new_target,
+                reach_time: current_time,
+            };
+
+            if target_queue.target_queue.is_full() {
+                *target_queue.target_queue.last_mut().unwrap() = new;
+            } else {
+                target_queue.target_queue.push(new);
+            }
+        }
+
+        target_queue
+    }
+}

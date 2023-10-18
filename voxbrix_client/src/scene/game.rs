@@ -19,7 +19,6 @@ use crate::{
             target_orientation::TargetOrientationActorComponent,
             target_position::TargetPositionActorComponent,
             velocity::VelocityActorComponent,
-            Target,
             TargetQueue,
         },
         actor_class::model::ModelActorClassComponent,
@@ -765,80 +764,47 @@ impl GameScene {
                             last_client_snapshot: new_lcs,
                             state,
                         } => {
-                            let reach_time = Instant::now();
+                            let current_time = Instant::now();
                             class_ac.unpack_state(&state);
                             model_acc.unpack_state(&state);
                             velocity_ac.unpack_state(&state);
                             target_orientation_ac.unpack_state_convert(
                                 &state,
                                 |actor, previous, orientation: Orientation| {
-                                    if orientation_ac.get(&actor).is_none() {
-                                        orientation_ac.insert(actor, orientation, snapshot);
-                                    }
-
-                                    let mut target_queue = previous.unwrap_or(TargetQueue {
-                                        starting: orientation_ac
-                                            .get(&actor)
-                                            .cloned()
-                                            .unwrap_or(orientation),
-                                        target_queue: arrayvec::ArrayVec::new(),
-                                    });
-
-                                    let last = target_queue.target_queue.last().copied();
-
-                                    if last.is_none()
-                                        || last.is_some() && last.unwrap().server_snapshot < new_lss
+                                    let current_value = if let Some(p) = orientation_ac.get(&actor)
                                     {
-                                        let new = Target {
-                                            server_snapshot: new_lss,
-                                            value: orientation,
-                                            reach_time,
-                                        };
+                                        *p
+                                    } else {
+                                        orientation_ac.insert(actor, orientation, snapshot);
+                                        orientation
+                                    };
 
-                                        if target_queue.target_queue.is_full() {
-                                            *target_queue.target_queue.last_mut().unwrap() = new;
-                                        } else {
-                                            target_queue.target_queue.push(new);
-                                        }
-                                    }
-
-                                    target_queue
+                                    TargetQueue::from_previous(
+                                        previous,
+                                        current_value,
+                                        orientation,
+                                        current_time,
+                                        new_lss,
+                                    )
                                 },
                             );
                             target_position_ac.unpack_state_convert(
                                 &state,
                                 |actor, previous, position: Position| {
-                                    if position_ac.get(&actor).is_none() {
+                                    let current_value = if let Some(p) = position_ac.get(&actor) {
+                                        *p
+                                    } else {
                                         position_ac.insert(actor, position, snapshot);
-                                    }
+                                        position
+                                    };
 
-                                    let mut target_queue = previous.unwrap_or(TargetQueue {
-                                        starting: position_ac
-                                            .get(&actor)
-                                            .cloned()
-                                            .unwrap_or(position),
-                                        target_queue: arrayvec::ArrayVec::new(),
-                                    });
-
-                                    let last = target_queue.target_queue.last().copied();
-
-                                    if last.is_none()
-                                        || last.is_some() && last.unwrap().server_snapshot < new_lss
-                                    {
-                                        let new = Target {
-                                            server_snapshot: new_lss,
-                                            value: position,
-                                            reach_time,
-                                        };
-
-                                        if target_queue.target_queue.is_full() {
-                                            *target_queue.target_queue.last_mut().unwrap() = new;
-                                        } else {
-                                            target_queue.target_queue.push(new);
-                                        }
-                                    }
-
-                                    target_queue
+                                    TargetQueue::from_previous(
+                                        previous,
+                                        current_value,
+                                        position,
+                                        current_time,
+                                        new_lss,
+                                    )
                                 },
                             );
                             last_client_snapshot = new_lcs;
