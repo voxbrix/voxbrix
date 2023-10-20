@@ -1,15 +1,14 @@
-use crate::{
-    component::actor::position::PositionActorComponent,
-    scene::game::Event,
-};
-use local_channel::mpsc::Sender;
+use crate::component::actor::position::PositionActorComponent;
 use voxbrix_common::{
     component::{
         actor::position::Position,
         block::class::ClassBlockComponent,
         chunk::status::StatusChunkComponent,
     },
-    entity::actor::Actor,
+    entity::{
+        actor::Actor,
+        chunk::Chunk,
+    },
 };
 
 pub struct ChunkPresenceSystem;
@@ -26,7 +25,7 @@ impl ChunkPresenceSystem {
         gpc: &PositionActorComponent,
         class_bc: &mut ClassBlockComponent,
         status_cc: &mut StatusChunkComponent,
-        event_tx: &Sender<Event>,
+        mut redraw_chunk: impl FnMut(Chunk),
     ) {
         let Position {
             chunk: player_chunk,
@@ -38,7 +37,7 @@ impl ChunkPresenceSystem {
             let retain = radius.is_within(chunk);
             if !retain {
                 class_bc.remove_chunk(chunk);
-                let _ = event_tx.send(Event::DrawChunk(*chunk));
+                redraw_chunk(*chunk);
             }
             retain
         });

@@ -1,4 +1,5 @@
 use crate::{
+    system::render::output_thread::OutputThread,
     window::WindowHandle,
     RenderHandle,
 };
@@ -7,13 +8,16 @@ use game::{
     GameScene,
     GameSceneParameters,
 };
-use menu::MenuScene;
+use menu::{
+    MenuScene,
+    MenuSceneParameters,
+};
 
 pub mod game;
 pub mod menu;
 
 pub enum SceneSwitch {
-    Menu,
+    Menu { parameters: MenuSceneParameters },
     Game { parameters: GameSceneParameters },
     Exit,
 }
@@ -21,19 +25,34 @@ pub enum SceneSwitch {
 pub struct SceneManager {
     pub window_handle: &'static WindowHandle,
     pub render_handle: &'static RenderHandle,
+    pub interface_state: egui_winit::State,
+    pub output_thread: OutputThread,
 }
 
 impl SceneManager {
     pub async fn run(self) -> Result<()> {
-        let mut next_loop = Some(SceneSwitch::Menu);
+        let Self {
+            window_handle,
+            render_handle,
+            interface_state,
+            output_thread,
+        } = self;
+
+        let mut next_loop = Some(SceneSwitch::Menu {
+            parameters: MenuSceneParameters {
+                interface_state,
+                output_thread,
+            },
+        });
 
         loop {
             match next_loop.take().unwrap_or(SceneSwitch::Exit) {
-                SceneSwitch::Menu => {
+                SceneSwitch::Menu { parameters } => {
                     next_loop = Some(
                         MenuScene {
-                            window_handle: self.window_handle,
-                            render_handle: self.render_handle,
+                            window_handle,
+                            render_handle,
+                            parameters,
                         }
                         .run()
                         .await?,
@@ -42,8 +61,8 @@ impl SceneManager {
                 SceneSwitch::Game { parameters } => {
                     next_loop = Some(
                         GameScene {
-                            window_handle: self.window_handle,
-                            render_handle: self.render_handle,
+                            window_handle,
+                            render_handle,
                             parameters,
                         }
                         .run()

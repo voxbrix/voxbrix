@@ -47,18 +47,25 @@ use crate::{
         },
         block_model::BlockModel,
     },
-    scene::SceneSwitch,
+    scene::{
+        menu::MenuSceneParameters,
+        SceneSwitch,
+    },
     system::{
         actor_render::ActorRenderSystemDescriptor,
         block_render::BlockRenderSystemDescriptor,
         chunk_presence::ChunkPresenceSystem,
         controller::DirectControl,
+        interface_render::InterfaceRenderSystemDescriptor,
         model_loading::ModelLoadingSystem,
         movement_interpolation::MovementInterpolationSystem,
         player_position::PlayerPositionSystem,
         render::{
             camera::CameraParameters,
-            output_thread::OutputBundle,
+            output_thread::{
+                OutputBundle,
+                OutputThread,
+            },
             RenderSystemDescriptor,
         },
         texture_loading::TextureLoadingSystem,
@@ -70,6 +77,7 @@ use crate::{
     RenderHandle,
     CONNECTION_TIMEOUT,
 };
+use ahash::AHashSet;
 use anyhow::Result;
 use futures_lite::{
     future::{
@@ -171,11 +179,11 @@ pub enum Event {
     SendState,
     Input(InputEvent),
     NetworkInput(Result<Vec<u8>, ClientError>),
-    DrawChunk(Chunk),
-    ComputeLight,
 }
 
 pub struct GameSceneParameters {
+    pub interface_state: egui_winit::State,
+    pub output_thread: OutputThread,
     pub connection: (Sender, Receiver),
     pub player_actor: Actor,
     pub player_chunk_view_radius: i32,
@@ -189,6 +197,19 @@ pub struct GameScene {
 
 impl GameScene {
     pub async fn run(self) -> Result<SceneSwitch> {
+        let GameScene {
+            window_handle,
+            render_handle,
+            parameters:
+                GameSceneParameters {
+                    interface_state,
+                    output_thread,
+                    connection,
+                    player_actor,
+                    player_chunk_view_radius,
+                },
+        } = self;
+
         let (reliable_tx, mut reliable_rx) = local_channel::mpsc::channel::<Vec<u8>>();
         let (unreliable_tx, mut unreliable_rx) = local_channel::mpsc::channel::<Vec<u8>>();
         let (event_tx, event_rx) = local_channel::mpsc::channel::<Event>();
@@ -201,12 +222,6 @@ impl GameScene {
         let mut last_server_snapshot = Snapshot(0);
 
         let mut packer = Packer::new();
-
-        let GameSceneParameters {
-            connection,
-            player_actor,
-            player_chunk_view_radius,
-        } = self.parameters;
 
         let (tx, mut rx) = connection;
 
@@ -450,29 +465,44 @@ impl GameScene {
             snapshot,
         );
 
-        self.window_handle
+        window_handle
             .window
             .set_cursor_grab(winit::window::CursorGrabMode::Confined)
             .or_else(|_| {
-                self.window_handle
+                window_handle
                     .window
                     .set_cursor_grab(winit::window::CursorGrabMode::Locked)
             })?;
-        self.window_handle.window.set_cursor_visible(false);
+        window_handle.window.set_cursor_visible(false);
+
+        let texture_format = output_thread.current_surface_config().format;
 
         let (block_texture_bind_group_layout, block_texture_bind_group) =
-            block_texture_loading_system
-                .prepare_buffer(&self.render_handle.device, &self.render_handle.queue);
+            block_texture_loading_system.prepare_buffer(
+                &render_handle.device,
+                &render_handle.queue,
+                &texture_format,
+            );
 
         let (actor_texture_bind_group_layout, actor_texture_bind_group) =
-            actor_texture_loading_system
-                .prepare_buffer(&self.render_handle.device, &self.render_handle.queue);
+            actor_texture_loading_system.prepare_buffer(
+                &render_handle.device,
+                &render_handle.queue,
+                &texture_format,
+            );
 
-        let surface_size = self.window_handle.window.inner_size();
+        let surface_size = window_handle.window.inner_size();
+
+        let mut interface_render_system = InterfaceRenderSystemDescriptor {
+            render_handle,
+            window_handle,
+            state: interface_state,
+            output_thread: &output_thread,
+        }
+        .build();
 
         let mut render_system = RenderSystemDescriptor {
-            render_handle: self.render_handle,
-            window_handle: self.window_handle,
+            render_handle,
             player_actor,
             // TODO hide?
             camera_parameters: CameraParameters {
@@ -483,14 +513,14 @@ impl GameScene {
             },
             position_ac: &position_ac,
             orientation_ac: &orientation_ac,
+            output_thread,
         }
-        .build()
-        .await;
+        .build();
 
         let render_parameters = render_system.get_render_parameters();
 
         let mut block_render_system = BlockRenderSystemDescriptor {
-            render_handle: self.render_handle,
+            render_handle,
             render_parameters,
             block_texture_bind_group_layout,
             block_texture_bind_group,
@@ -499,7 +529,7 @@ impl GameScene {
         .await;
 
         let mut actor_render_system = ActorRenderSystemDescriptor {
-            render_handle: self.render_handle,
+            render_handle,
             render_parameters,
             actor_texture_bind_group_layout,
             actor_texture_bind_group,
@@ -516,7 +546,7 @@ impl GameScene {
                 .poll_tick(cx)
                 .map(|_| Some(Event::SendState))
         })
-        .or_ff(self.window_handle.event_rx.stream().map(Event::Input))
+        .or_ff(window_handle.event_rx.stream().map(Event::Input))
         .or_ff(
             surface_stream
                 .stream()
@@ -525,14 +555,54 @@ impl GameScene {
                 .rr_ff(event_rx),
         );
 
+        let mut redraw_chunks = AHashSet::new();
+        let mut cursor_visible = false;
+
         while let Some(event) = stream.next().await {
             match event {
                 Event::Process(surface) => {
+                    if interface_render_system.inventory_open && !cursor_visible {
+                        window_handle.window.set_cursor_visible(true);
+                        window_handle
+                            .window
+                            .set_cursor_grab(winit::window::CursorGrabMode::None)?;
+                        cursor_visible = true;
+                    } else if !interface_render_system.inventory_open && cursor_visible {
+                        window_handle.window.set_cursor_visible(false);
+                        window_handle
+                            .window
+                            .set_cursor_grab(winit::window::CursorGrabMode::Confined)
+                            .or_else(|_| {
+                                window_handle
+                                    .window
+                                    .set_cursor_grab(winit::window::CursorGrabMode::Locked)
+                            })?;
+                        cursor_visible = false;
+                    }
+
                     let now = Instant::now();
                     let elapsed = now.saturating_duration_since(last_render_time);
                     last_render_time = now;
 
-                    // TODO consider what should really be unblocked?
+                    // TODO: automatically scale by detecting how long it takes
+                    // and how much time do we have between frames
+                    if let Some(chunk) = redraw_chunks.iter().next().copied() {
+                        redraw_chunks.remove(&chunk);
+
+                        block_render_system.build_chunk(
+                            &chunk,
+                            &class_bc,
+                            &model_bcc,
+                            &builder_bmc,
+                            &culling_bmc,
+                            &sky_light_bc,
+                        );
+                    } else {
+                        sky_light_system.compute_queued(&class_bc, &opacity_bcc, &mut sky_light_bc);
+
+                        redraw_chunks.extend(sky_light_system.drain_processed_chunks());
+                    }
+
                     player_position_system.process(
                         elapsed,
                         &class_bc,
@@ -547,7 +617,9 @@ impl GameScene {
                         &position_ac,
                         &mut class_bc,
                         &mut status_cc,
-                        &event_tx,
+                        |chunk| {
+                            redraw_chunks.insert(chunk);
+                        },
                     );
                     direct_control_system.process(
                         elapsed,
@@ -592,16 +664,19 @@ impl GameScene {
                         &mut animation_state_ac,
                     );
 
-                    unblock!((render_system, block_render_system, actor_render_system) {
+                    unblock!((render_system, block_render_system, interface_render_system, actor_render_system) {
                         render_system.start_render(surface);
 
-                        let mut renderers = render_system.get_renderers::<2>().into_iter();
+                        let mut renderers = render_system.get_renderers::<3>().into_iter();
 
                         block_render_system.render(renderers.next().unwrap())
                             .expect("block render");
 
                         actor_render_system.render(renderers.next().unwrap())
                             .expect("actor render");
+
+                        interface_render_system.render(renderers.next().unwrap())
+                            .expect("interface render");
 
                         drop(renderers);
 
@@ -630,17 +705,22 @@ impl GameScene {
                             device_id: _,
                             event,
                         } => {
-                            match event {
-                                DeviceEvent::MouseMotion {
-                                    delta: (horizontal, vertical),
-                                } => {
-                                    direct_control_system
-                                        .process_mouse(horizontal as f32, vertical as f32);
-                                },
-                                _ => {},
+                            if !interface_render_system.inventory_open {
+                                match event {
+                                    DeviceEvent::MouseMotion {
+                                        delta: (horizontal, vertical),
+                                    } => {
+                                        direct_control_system
+                                            .process_mouse(horizontal as f32, vertical as f32);
+                                    },
+                                    _ => {},
+                                }
                             }
                         },
                         InputEvent::WindowEvent { event } => {
+                            if interface_render_system.inventory_open {
+                                interface_render_system.window_event(&event);
+                            }
                             match event {
                                 WindowEvent::Resized(size) => {
                                     render_system.resize(size);
@@ -653,10 +733,20 @@ impl GameScene {
                                     input,
                                     is_synthetic: _,
                                 } => {
-                                    if let Some(winit::event::VirtualKeyCode::Escape) =
-                                        input.virtual_keycode
-                                    {
-                                        break;
+                                    if let Some(button) = input.virtual_keycode {
+                                        if matches!(
+                                            input.state,
+                                            winit::event::ElementState::Pressed
+                                        ) {
+                                            match button {
+                                                winit::event::VirtualKeyCode::Escape => break,
+                                                winit::event::VirtualKeyCode::I => {
+                                                    interface_render_system.inventory_open =
+                                                        !interface_render_system.inventory_open;
+                                                },
+                                                _ => {},
+                                            }
+                                        }
                                     }
                                     direct_control_system.process_keyboard(&input);
                                 },
@@ -749,7 +839,12 @@ impl GameScene {
                         Err(err) => {
                             // TODO handle properly, pass error to menu to display there
                             error!("game::run: connection error: {:?}", err);
-                            return Ok(SceneSwitch::Menu);
+                            return Ok(SceneSwitch::Menu {
+                                parameters: MenuSceneParameters {
+                                    interface_state: interface_render_system.into_interface_state(),
+                                    output_thread: render_system.into_output(),
+                                },
+                            });
                         },
                     };
 
@@ -818,7 +913,6 @@ impl GameScene {
                             status_cc.insert(chunk, ChunkStatus::Active);
 
                             sky_light_system.add_chunk(chunk);
-                            let _ = event_tx.send(Event::ComputeLight);
                         },
                         ClientAccept::AlterBlock {
                             chunk,
@@ -831,32 +925,18 @@ impl GameScene {
                                 *block_class_ref = block_class;
 
                                 sky_light_system.add_chunk(chunk);
-                                let _ = event_tx.send(Event::ComputeLight);
                             }
                         },
-                    }
-                },
-                Event::DrawChunk(chunk) => {
-                    // TODO: use separate *set* as a queue and take up to num_cpus each time the event
-                    // comes
-                    unblock!((block_render_system, class_bc, model_bcc, builder_bmc, culling_bmc, sky_light_bc) {
-                        block_render_system.build_chunk(&chunk, &class_bc, &model_bcc, &builder_bmc, &culling_bmc, &sky_light_bc);
-                    });
-                },
-                Event::ComputeLight => {
-                    sky_light_system.compute_queued(&class_bc, &opacity_bcc, &mut sky_light_bc);
-
-                    for chunk in sky_light_system.drain_processed_chunks() {
-                        let _ = event_tx.send(Event::DrawChunk(chunk));
-                    }
-
-                    if sky_light_system.has_chunks_in_queue() {
-                        let _ = event_tx.send(Event::ComputeLight);
                     }
                 },
             }
         }
 
-        Ok(SceneSwitch::Menu)
+        Ok(SceneSwitch::Menu {
+            parameters: MenuSceneParameters {
+                interface_state: interface_render_system.into_interface_state(),
+                output_thread: render_system.into_output(),
+            },
+        })
     }
 }

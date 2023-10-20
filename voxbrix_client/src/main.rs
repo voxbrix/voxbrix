@@ -1,3 +1,4 @@
+use crate::system::render::output_thread::OutputThread;
 use backtrace::Backtrace;
 use log::error;
 use scene::SceneManager;
@@ -82,7 +83,7 @@ fn main() {
     let (panic_tx, panic_rx) = flume::bounded(1);
     let main_thread = thread::current().id();
 
-    thread::spawn(move || {
+    thread::Builder::new().name("runtime".to_owned()).spawn(move || {
         let is_panic = panic::catch_unwind(|| {
             let rt = RuntimeBuilder::new_current_thread()
                 .enable_io()
@@ -161,10 +162,39 @@ fn main() {
                             device,
                             queue,
                         }));
+
+                        let physical_size = window_handle.window.inner_size();
+
+                        let capabilities = window_handle
+                            .surface
+                            .get_capabilities(&render_handle.adapter);
+
+                        let format = capabilities.formats.iter()
+                            .copied()
+                            .find(|f| *f == wgpu::TextureFormat::Rgba8UnormSrgb)
+                            .expect("The GPU does not support Rgba8UnormSrgb texture format");
+
+                        let config = wgpu::SurfaceConfiguration {
+                            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                            format,
+                            width: physical_size.width,
+                            height: physical_size.height,
+                            present_mode: wgpu::PresentMode::Fifo,
+                            alpha_mode: wgpu::CompositeAlphaMode::Auto,
+                            view_formats: vec![format],
+                        };
+
+                        //let interface_state = egui_winit::State::new(&window_handle.window);
+                        let interface_state = egui_winit::State::new_with_wayland_display(None);
+                        let output_thread = OutputThread::new(render_handle, window_handle, config, None);
+
                         let scene_manager = SceneManager {
                             window_handle,
                             render_handle,
+                            interface_state,
+                            output_thread,
                         };
+
                         if let Err(err) = scene_manager.run().await {
                             error!("main_loop ended with error: {:#}", err);
                         }
@@ -178,7 +208,7 @@ fn main() {
         } else {
             process::exit(0);
         }
-    });
+    }).expect("unable to spawn the runtime thread");
 
     window::create_window(window_tx).expect("window creation");
 }

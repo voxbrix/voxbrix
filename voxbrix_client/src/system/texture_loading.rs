@@ -17,7 +17,7 @@ use voxbrix_common::{
 
 const TEXTURE_FORMAT: ImageFormat = ImageFormat::Png;
 const TEXTURE_FORMAT_NAME: &str = "png";
-pub const GPU_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+const TEXTURE_FORMAT_WGPU: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 
 #[derive(Deserialize, Debug)]
 struct TextureList {
@@ -70,6 +70,7 @@ impl TextureLoadingSystem {
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        texture_format: &wgpu::TextureFormat,
     ) -> (wgpu::BindGroupLayout, wgpu::BindGroup) {
         let textures = &self.textures;
 
@@ -98,10 +99,10 @@ impl TextureLoadingSystem {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: GPU_TEXTURE_FORMAT,
+            format: TEXTURE_FORMAT_WGPU,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             label: Some("texture"),
-            view_formats: &[GPU_TEXTURE_FORMAT],
+            view_formats: &[*texture_format],
         };
 
         let texture_views = texture_bytes

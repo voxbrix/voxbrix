@@ -3,6 +3,10 @@ use crate::{
         game::GameSceneParameters,
         SceneSwitch,
     },
+    system::render::output_thread::{
+        OutputBundle,
+        OutputThread,
+    },
     window::{
         InputEvent,
         WindowHandle,
@@ -23,7 +27,6 @@ use egui_wgpu::renderer::{
 use egui_winit::State;
 use futures_lite::{
     future,
-    stream,
     StreamExt as _,
 };
 use k256::ecdsa::{
@@ -37,19 +40,12 @@ use k256::ecdsa::{
 };
 use log::warn;
 use serde::de::DeserializeOwned;
-use std::{
-    iter,
-    time::Duration,
-};
 use tokio::{
     task::{
         self,
         JoinHandle,
     },
-    time::{
-        self,
-        MissedTickBehavior,
-    },
+    time,
 };
 use voxbrix_common::{
     async_ext::StreamExt as _,
@@ -79,6 +75,11 @@ use voxbrix_protocol::client::{
 };
 use winit::event::WindowEvent;
 
+pub struct MenuSceneParameters {
+    pub interface_state: egui_winit::State,
+    pub output_thread: OutputThread,
+}
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 enum ActionType {
     Login,
@@ -86,7 +87,7 @@ enum ActionType {
 }
 
 enum Event {
-    Process,
+    Process(OutputBundle),
     Input(InputEvent),
 }
 
@@ -99,71 +100,50 @@ fn set_ui_scale(scale: f32, sd: &mut ScreenDescriptor, ctx: &Context, state: &mu
 pub struct MenuScene {
     pub window_handle: &'static WindowHandle,
     pub render_handle: &'static RenderHandle,
+    pub parameters: MenuSceneParameters,
 }
 
 impl MenuScene {
     pub async fn run(self) -> Result<SceneSwitch> {
-        let physical_size = self.window_handle.window.inner_size();
+        let Self {
+            window_handle,
+            render_handle,
+            parameters:
+                MenuSceneParameters {
+                    interface_state: mut state,
+                    mut output_thread,
+                },
+        } = self;
 
-        let capabilities = self
-            .window_handle
-            .surface
-            .get_capabilities(&self.render_handle.adapter);
-
-        let format = capabilities.formats[0];
-
-        let present_mode = capabilities
-            .present_modes
-            .into_iter()
-            .find(|pm| *pm == wgpu::PresentMode::Mailbox)
-            .unwrap_or(wgpu::PresentMode::Immediate);
-
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format,
-            width: physical_size.width,
-            height: physical_size.height,
-            // Fifo makes SurfaceTexture::present() block
-            // which is bad for current rendering implementation
-            present_mode,
-            alpha_mode: wgpu::CompositeAlphaMode::Auto,
-            view_formats: vec![format],
+        let (format, width, height) = {
+            let sc = output_thread.current_surface_config();
+            (sc.format, sc.width, sc.height)
         };
 
-        self.window_handle
-            .surface
-            .configure(&self.render_handle.device, &config);
-
-        let _ = self
-            .window_handle
+        let _ = window_handle
             .window
             .set_cursor_grab(winit::window::CursorGrabMode::None);
-        self.window_handle.window.set_cursor_visible(true);
+        window_handle.window.set_cursor_visible(true);
 
         let mut resized = false;
 
         let mut screen_descriptor = ScreenDescriptor {
-            size_in_pixels: [physical_size.width, physical_size.height],
+            size_in_pixels: [width, height],
             pixels_per_point: 1.0,
         };
 
-        let mut renderer = Renderer::new(&self.render_handle.device, format, None, 1);
+        let mut renderer = Renderer::new(&render_handle.device, format, None, 1);
 
         let ctx = Context::default();
 
-        let mut state = State::new_with_wayland_display(None);
-
         set_ui_scale(2.0, &mut screen_descriptor, &ctx, &mut state);
 
-        let mut send_status_interval = time::interval(Duration::from_millis(15));
-        send_status_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        let surface_stream = output_thread.get_surface_stream();
 
-        let mut stream = stream::poll_fn(|cx| {
-            send_status_interval
-                .poll_tick(cx)
-                .map(|_| Some(Event::Process))
-        })
-        .or_ff(self.window_handle.event_rx.stream().map(Event::Input));
+        let mut stream = surface_stream
+            .stream()
+            .map(Event::Process)
+            .or_ff(window_handle.event_rx.stream().map(Event::Input));
 
         let mut error_message = String::new();
 
@@ -179,7 +159,7 @@ impl MenuScene {
 
         let mut form = prev_form.clone();
 
-        let mut connect_task: Option<JoinHandle<Result<SceneSwitch, String>>> = None;
+        let mut connect_task: Option<JoinHandle<Result<_, String>>> = None;
 
         while let Some(event) = stream.next().await {
             if prev_form != form {
@@ -187,21 +167,8 @@ impl MenuScene {
                 prev_form = form.clone();
             }
             match event {
-                Event::Process => {
-                    if let Some(ct) = connect_task.as_ref() {
-                        if ct.is_finished() {
-                            match connect_task.take().unwrap().await.unwrap() {
-                                Ok(scene_switch) => {
-                                    return Ok(scene_switch);
-                                },
-                                Err(err) => {
-                                    error_message = err;
-                                },
-                            }
-                        }
-                    }
-
-                    let input = state.take_egui_input(&self.window_handle.window);
+                Event::Process(mut output_bundle) => {
+                    let input = state.take_egui_input(&window_handle.window);
                     let full_output = ctx.run(input, |ctx| {
                         CentralPanel::default().show(&ctx, |ui| {
                             ui.label("Voxbrix");
@@ -226,23 +193,7 @@ impl MenuScene {
                                 let form = form.clone();
 
                                 connect_task = Some(task::spawn_local(async move {
-                                    form.connect()
-                                        .await
-                                        .map(|(tx, rx, init_data)| {
-                                            let InitData {
-                                                actor,
-                                                player_chunk_view_radius,
-                                            } = init_data;
-
-                                            SceneSwitch::Game {
-                                                parameters: GameSceneParameters {
-                                                    connection: (tx, rx),
-                                                    player_actor: actor,
-                                                    player_chunk_view_radius,
-                                                },
-                                            }
-                                        })
-                                        .map_err(|msg| msg.to_owned())
+                                    form.connect().await.map_err(|msg| msg.to_owned())
                                 }));
                             }
                             ui.add_space(16.0);
@@ -251,46 +202,18 @@ impl MenuScene {
                     });
                     let clipped_primitives = ctx.tessellate(full_output.shapes);
 
-                    if resized {
-                        let physical_size = self.window_handle.window.inner_size();
-
-                        screen_descriptor.size_in_pixels =
-                            [physical_size.width, physical_size.height];
-
-                        let config = wgpu::SurfaceConfiguration {
-                            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                            format,
-                            width: physical_size.width,
-                            height: physical_size.height,
-                            // Fifo makes SurfaceTexture::present() block
-                            // which is bad for current rendering implementation
-                            present_mode,
-                            alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                            view_formats: vec![format],
-                        };
-
-                        self.window_handle
-                            .surface
-                            .configure(&self.render_handle.device, &config);
-
-                        resized = false;
-                    }
-
-                    let output = self.window_handle.surface.get_current_texture()?;
-
-                    let view = output
-                        .texture
-                        .create_view(&wgpu::TextureViewDescriptor::default());
-
-                    let mut encoder = self.render_handle.device.create_command_encoder(
+                    let mut encoder = render_handle.device.create_command_encoder(
                         &wgpu::CommandEncoderDescriptor {
                             label: Some("Render Encoder"),
                         },
                     );
 
+                    let config = output_thread.current_surface_config();
+                    screen_descriptor.size_in_pixels = [config.width, config.height];
+
                     renderer.update_buffers(
-                        &self.render_handle.device,
-                        &self.render_handle.queue,
+                        &render_handle.device,
+                        &render_handle.queue,
                         &mut encoder,
                         &clipped_primitives,
                         &screen_descriptor,
@@ -298,12 +221,17 @@ impl MenuScene {
 
                     for (id, image_delta) in &full_output.textures_delta.set {
                         renderer.update_texture(
-                            &self.render_handle.device,
-                            &self.render_handle.queue,
+                            &render_handle.device,
+                            &render_handle.queue,
                             *id,
                             image_delta,
                         );
                     }
+
+                    let view = output_bundle
+                        .output()
+                        .texture
+                        .create_view(&wgpu::TextureViewDescriptor::default());
 
                     let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                         label: Some("Render Pass"),
@@ -327,11 +255,45 @@ impl MenuScene {
 
                     drop(render_pass);
 
-                    self.render_handle
-                        .queue
-                        .submit(iter::once(encoder.finish()));
+                    output_bundle.encoders().push(encoder);
 
-                    output.present();
+                    if resized {
+                        let physical_size = window_handle.window.inner_size();
+
+                        let config = output_thread.next_surface_config();
+                        config.width = physical_size.width;
+                        config.height = physical_size.height;
+
+                        resized = false;
+                    }
+
+                    output_thread.present_output(output_bundle);
+
+                    if let Some(ct) = connect_task.as_ref() {
+                        if ct.is_finished() {
+                            match connect_task.take().unwrap().await.unwrap() {
+                                Ok((tx, rx, init_data)) => {
+                                    let InitData {
+                                        actor,
+                                        player_chunk_view_radius,
+                                    } = init_data;
+
+                                    return Ok(SceneSwitch::Game {
+                                        parameters: GameSceneParameters {
+                                            interface_state: state,
+                                            output_thread,
+                                            connection: (tx, rx),
+                                            player_actor: actor,
+                                            player_chunk_view_radius,
+                                        },
+                                    });
+                                },
+                                Err(err) => {
+                                    error_message = err;
+                                },
+                            }
+                        }
+                    }
                 },
                 Event::Input(event) => {
                     if let InputEvent::WindowEvent { event } = event {
