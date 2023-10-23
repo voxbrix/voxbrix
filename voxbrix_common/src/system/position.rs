@@ -14,14 +14,17 @@ use crate::{
     entity::{
         block::{
             Block,
-            BLOCKS_IN_CHUNK_EDGE,
+            BLOCKS_IN_CHUNK_EDGE_F32,
+            BLOCKS_IN_CHUNK_EDGE_I32,
         },
-        chunk::Chunk,
+        chunk::{
+            Chunk,
+            ChunkPositionOperations,
+        },
     },
     math::{
         Round,
         Vec3F32,
-        Vec3I32,
     },
 };
 use arrayvec::ArrayVec;
@@ -153,34 +156,41 @@ pub fn process_actor(
                     chunk_offset[a0] = block_a0;
                     chunk_offset[a1] = block_a1;
                     chunk_offset[a2] = block_a2;
-                    let (chunk, block) = Block::from_chunk_offset(center_chunk, chunk_offset);
-
-                    if let Some(block_class) = class_bc.get_chunk(&chunk).map(|b| b.get(block)) {
-                        if let Some(collision) = collision_bcc.get(block_class) {
-                            match collision {
-                                Collision::SolidCube => {
-                                    return Some(MoveLimit {
-                                        axis_set,
-                                        collider_distance: (block_a0 as f32 + 0.5
-                                            - start_position[a0])
-                                            .powi(2)
-                                            + (block_a1 as f32 + 0.5 - start_position[a1]).powi(2)
-                                            + (block_a2 as f32 + 0.5 - start_position[a2]).powi(2),
-                                        max_movement: (block_a0 + block_offset) as f32
-                                            + match move_dir {
-                                                MoveDirection::Negative => {
-                                                    radius[a0] + COLLISION_PUSHBACK
+                    if let Some((chunk, block)) =
+                        Block::from_chunk_offset(center_chunk, chunk_offset)
+                    {
+                        if let Some(block_class) = class_bc.get_chunk(&chunk).map(|b| b.get(block))
+                        {
+                            if let Some(collision) = collision_bcc.get(block_class) {
+                                match collision {
+                                    Collision::SolidCube => {
+                                        return Some(MoveLimit {
+                                            axis_set,
+                                            collider_distance: (block_a0 as f32 + 0.5
+                                                - start_position[a0])
+                                                .powi(2)
+                                                + (block_a1 as f32 + 0.5 - start_position[a1])
+                                                    .powi(2)
+                                                + (block_a2 as f32 + 0.5 - start_position[a2])
+                                                    .powi(2),
+                                            max_movement: (block_a0 + block_offset) as f32
+                                                + match move_dir {
+                                                    MoveDirection::Negative => {
+                                                        radius[a0] + COLLISION_PUSHBACK
+                                                    },
+                                                    MoveDirection::Positive => {
+                                                        -radius[a0] - COLLISION_PUSHBACK
+                                                    },
                                                 },
-                                                MoveDirection::Positive => {
-                                                    -radius[a0] - COLLISION_PUSHBACK
-                                                },
-                                            },
-                                    });
-                                },
+                                        });
+                                    },
+                                }
                             }
+                        } else {
+                            // TODO chunk not loaded
                         }
                     } else {
-                        // TODO chunk not loaded
+                        // TODO chunk out of boundaries
                     }
                 }
             }
@@ -234,19 +244,21 @@ pub fn process_actor(
     if finish_position
         .as_ref()
         .iter()
-        .any(|dist| dist.abs() > BLOCKS_IN_CHUNK_EDGE as f32)
+        .any(|dist| dist.abs() > BLOCKS_IN_CHUNK_EDGE_F32)
     {
-        let chunk_diff_vec: Vec3I32 = finish_position
+        let chunk_diff = finish_position
             .to_array()
-            .map(|f| f as i32 / BLOCKS_IN_CHUNK_EDGE as i32)
+            .map(|f| f as i32 / BLOCKS_IN_CHUNK_EDGE_I32);
+
+        let final_chunk = chunk_diff.saturating_add(center_chunk.position);
+
+        let actor_diff_vec: Vec3F32 = final_chunk
+            .checked_sub(center_chunk.position)
+            .expect("cannot fail")
+            .map(|i| i as f32 * BLOCKS_IN_CHUNK_EDGE_F32)
             .into();
 
-        let actor_diff_vec: Vec3F32 = chunk_diff_vec
-            .to_array()
-            .map(|i| i as f32 * BLOCKS_IN_CHUNK_EDGE as f32)
-            .into();
-
-        center_chunk.position = center_chunk.position + chunk_diff_vec;
+        center_chunk.position = final_chunk;
 
         finish_position = finish_position - actor_diff_vec;
     }
@@ -317,10 +329,11 @@ pub fn get_target_block(
                 block_offset[axis_1] = block_axis_1;
                 block_offset[axis_2] = block_axis_2;
 
-                let (chunk, block) = Block::from_chunk_offset(position.chunk, block_offset);
-
-                if targeting(chunk, block) {
-                    time_block = Some((time, (chunk, block, side_index)));
+                if let Some((chunk, block)) = Block::from_chunk_offset(position.chunk, block_offset)
+                {
+                    if targeting(chunk, block) {
+                        time_block = Some((time, (chunk, block, side_index)));
+                    }
                 }
             }
         }

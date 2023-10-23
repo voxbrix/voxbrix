@@ -18,15 +18,15 @@ use egui_wgpu::renderer::{
 };
 use winit::event::WindowEvent;
 
-pub struct InterfaceRenderSystemDescriptor<'a> {
+pub struct InterfaceSystemDescriptor<'a> {
     pub render_handle: &'static RenderHandle,
     pub window_handle: &'static WindowHandle,
     pub state: egui_winit::State,
     pub output_thread: &'a OutputThread,
 }
 
-impl InterfaceRenderSystemDescriptor<'_> {
-    pub fn build(self) -> InterfaceRenderSystem {
+impl InterfaceSystemDescriptor<'_> {
+    pub fn build(self) -> InterfaceSystem {
         let Self {
             render_handle,
             window_handle,
@@ -34,7 +34,7 @@ impl InterfaceRenderSystemDescriptor<'_> {
             output_thread,
         } = self;
 
-        InterfaceRenderSystem {
+        InterfaceSystem {
             render_handle,
             window_handle,
             state,
@@ -50,7 +50,7 @@ impl InterfaceRenderSystemDescriptor<'_> {
     }
 }
 
-pub struct InterfaceRenderSystem {
+pub struct InterfaceSystem {
     render_handle: &'static RenderHandle,
     window_handle: &'static WindowHandle,
     state: egui_winit::State,
@@ -59,7 +59,7 @@ pub struct InterfaceRenderSystem {
     pub inventory_open: bool,
 }
 
-impl InterfaceRenderSystem {
+impl InterfaceSystem {
     pub fn render(&mut self, renderer: Renderer) -> Result<(), wgpu::SurfaceError> {
         let input = self.state.take_egui_input(&self.window_handle.window);
         let interface = self.context.run(input, |ctx| {

@@ -23,7 +23,6 @@ use crate::{
         block_class::BlockClass,
         chunk::Chunk,
     },
-    math::Vec3I32,
 };
 use ahash::AHashSet;
 use arrayvec::ArrayVec;
@@ -91,14 +90,14 @@ impl SkyLightSystem {
         let mut chunk_light = BlocksVec::new(vec![SkyLight::MIN; BLOCKS_IN_CHUNK_USIZE]);
 
         let neighbor_chunk_ids = [
-            Vec3I32::new(-1, 0, 0),
-            Vec3I32::new(1, 0, 0),
-            Vec3I32::new(0, -1, 0),
-            Vec3I32::new(0, 1, 0),
-            Vec3I32::new(0, 0, -1),
-            Vec3I32::new(0, 0, 1),
+            [-1, 0, 0],
+            [1, 0, 0],
+            [0, -1, 0],
+            [0, 1, 0],
+            [0, 0, -1],
+            [0, 0, 1],
         ]
-        .map(|offset| chunk.offset(offset));
+        .map(|offset| chunk.checked_add(offset));
 
         let neighbor_chunks = neighbor_chunk_ids
             .into_iter()
@@ -281,7 +280,7 @@ impl SkyLightSystem {
     }
 
     pub fn add_chunk(&mut self, chunk: Chunk) {
-        if chunk.position.to_array().iter().sum::<i32>() % 2 == 0 {
+        if chunk.position.iter().sum::<i32>() % 2 == 0 {
             self.chunks_to_compute_even.insert(chunk);
         } else {
             self.chunks_to_compute_odd.insert(chunk);

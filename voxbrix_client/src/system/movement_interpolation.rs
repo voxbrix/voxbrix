@@ -17,6 +17,7 @@ use voxbrix_common::{
     },
     entity::{
         block::BLOCKS_IN_CHUNK_EDGE_F32,
+        chunk::ChunkPositionOperations,
         snapshot::Snapshot,
     },
     math::Vec3F32,
@@ -62,9 +63,11 @@ impl MovementInterpolationSystem {
                     continue;
                 }
 
-                let chunk_offset: Vec3F32 = (target_position.chunk.position
-                    - starting.chunk.position)
-                    .to_array()
+                let chunk_offset: Vec3F32 = target_position
+                    .chunk
+                    .position
+                    .checked_sub(starting.chunk.position)
+                    .expect("should not fail")
                     .map(|i| i as f32 * BLOCKS_IN_CHUNK_EDGE_F32)
                     .into();
 

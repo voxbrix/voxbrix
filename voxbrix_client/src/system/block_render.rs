@@ -47,7 +47,6 @@ use voxbrix_common::{
         block_class::BlockClass,
         chunk::Chunk,
     },
-    math::Vec3I32,
 };
 use wgpu::util::DeviceExt;
 
@@ -274,14 +273,14 @@ impl BlockRenderSystem {
         let mut polygon_buffer = Vec::with_capacity(POLYGON_BUFFER_CAPACITY);
 
         let neighbor_chunk_ids = [
-            Vec3I32::new(-1, 0, 0),
-            Vec3I32::new(1, 0, 0),
-            Vec3I32::new(0, -1, 0),
-            Vec3I32::new(0, 1, 0),
-            Vec3I32::new(0, 0, -1),
-            Vec3I32::new(0, 0, 1),
+            [-1, 0, 0],
+            [1, 0, 0],
+            [0, -1, 0],
+            [0, 1, 0],
+            [0, 0, -1],
+            [0, 0, 1],
         ]
-        .map(|offset| chunk.offset(offset));
+        .map(|offset| chunk.checked_add(offset));
 
         let this_chunk_class = class_bc.get_chunk(chunk).unwrap();
         let this_chunk_light = sky_light_bc.get_chunk(chunk).unwrap();
@@ -352,17 +351,17 @@ impl BlockRenderSystem {
         }
 
         let par_iter = [
-            Vec3I32::new(0, 0, 0),
-            Vec3I32::new(-1, 0, 0),
-            Vec3I32::new(1, 0, 0),
-            Vec3I32::new(0, -1, 0),
-            Vec3I32::new(0, 1, 0),
-            Vec3I32::new(0, 0, -1),
-            Vec3I32::new(0, 0, 1),
+            [0, 0, 0],
+            [-1, 0, 0],
+            [1, 0, 0],
+            [0, -1, 0],
+            [0, 1, 0],
+            [0, 0, -1],
+            [0, 0, 1],
         ]
         .into_par_iter()
         .filter_map(|offset| {
-            let chunk = chunk.offset(offset)?;
+            let chunk = chunk.checked_add(offset)?;
             class_bc.get_chunk(&chunk)?;
             sky_light_bc.get_chunk(&chunk)?;
 

@@ -129,7 +129,7 @@ impl ChunkGenerationSystem {
                     dimension: Dimension { index: _ },
                 } = chunk;
 
-                generate_fn.call(&mut store, (seed, position.x, position.y, position.z));
+                generate_fn.call(&mut store, (seed, position[0], position[1], position[2]));
 
                 let block_classes = BlocksVec::new(mem::replace(
                     &mut store.data_mut().block_classes,

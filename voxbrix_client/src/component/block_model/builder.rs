@@ -13,7 +13,6 @@ use voxbrix_common::{
         block::BlockCoords,
         chunk::Chunk,
     },
-    math::Vec3I32,
     ArrayExt,
     LabelMap,
 };
@@ -167,7 +166,7 @@ impl BlockModelBuilder {
             })
             .map(|pb| {
                 Polygon {
-                    chunk: chunk.position.to_array(),
+                    chunk: chunk.position,
                     texture_index: pb.texture_index,
                     vertices: pb.vertices.map_ref(|vxb| {
                         let mut position = vxb.position;
@@ -208,7 +207,7 @@ impl BlockModelBuilder {
     }
 }
 
-pub fn side_highlighting(chunk: Vec3I32, block_coords: BlockCoords, side: usize) -> Polygon {
+pub fn side_highlighting(chunk: [i32; 3], block_coords: BlockCoords, side: usize) -> Polygon {
     const ELEVATION: f32 = 0.01;
     const TEXTURE_INDEX: u32 = 0;
 
@@ -262,7 +261,7 @@ pub fn side_highlighting(chunk: Vec3I32, block_coords: BlockCoords, side: usize)
     });
 
     Polygon {
-        chunk: chunk.into(),
+        chunk,
         texture_index: TEXTURE_INDEX,
         vertices: [
             Vertex {

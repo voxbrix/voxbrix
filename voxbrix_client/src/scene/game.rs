@@ -56,7 +56,7 @@ use crate::{
         block_render::BlockRenderSystemDescriptor,
         chunk_presence::ChunkPresenceSystem,
         controller::DirectControl,
-        interface_render::InterfaceRenderSystemDescriptor,
+        interface::InterfaceSystemDescriptor,
         model_loading::ModelLoadingSystem,
         movement_interpolation::MovementInterpolationSystem,
         player_position::PlayerPositionSystem,
@@ -445,7 +445,7 @@ impl GameScene {
             player_actor,
             Position {
                 chunk: Chunk {
-                    position: [0, 0, 0].into(),
+                    position: [i32::MIN, 0, 0].into(),
                     dimension: Dimension { index: 0 },
                 },
                 offset: Vec3F32::new(0.0, 0.0, 4.0),
@@ -493,7 +493,7 @@ impl GameScene {
 
         let surface_size = window_handle.window.inner_size();
 
-        let mut interface_render_system = InterfaceRenderSystemDescriptor {
+        let mut interface_system = InterfaceSystemDescriptor {
             render_handle,
             window_handle,
             state: interface_state,
@@ -561,13 +561,13 @@ impl GameScene {
         while let Some(event) = stream.next().await {
             match event {
                 Event::Process(surface) => {
-                    if interface_render_system.inventory_open && !cursor_visible {
+                    if interface_system.inventory_open && !cursor_visible {
                         window_handle.window.set_cursor_visible(true);
                         window_handle
                             .window
                             .set_cursor_grab(winit::window::CursorGrabMode::None)?;
                         cursor_visible = true;
-                    } else if !interface_render_system.inventory_open && cursor_visible {
+                    } else if !interface_system.inventory_open && cursor_visible {
                         window_handle.window.set_cursor_visible(false);
                         window_handle
                             .window
@@ -664,7 +664,7 @@ impl GameScene {
                         &mut animation_state_ac,
                     );
 
-                    unblock!((render_system, block_render_system, interface_render_system, actor_render_system) {
+                    unblock!((render_system, block_render_system, interface_system, actor_render_system) {
                         render_system.start_render(surface);
 
                         let mut renderers = render_system.get_renderers::<3>().into_iter();
@@ -675,7 +675,7 @@ impl GameScene {
                         actor_render_system.render(renderers.next().unwrap())
                             .expect("actor render");
 
-                        interface_render_system.render(renderers.next().unwrap())
+                        interface_system.render(renderers.next().unwrap())
                             .expect("interface render");
 
                         drop(renderers);
@@ -705,7 +705,7 @@ impl GameScene {
                             device_id: _,
                             event,
                         } => {
-                            if !interface_render_system.inventory_open {
+                            if !interface_system.inventory_open {
                                 match event {
                                     DeviceEvent::MouseMotion {
                                         delta: (horizontal, vertical),
@@ -718,8 +718,8 @@ impl GameScene {
                             }
                         },
                         InputEvent::WindowEvent { event } => {
-                            if interface_render_system.inventory_open {
-                                interface_render_system.window_event(&event);
+                            if interface_system.inventory_open {
+                                interface_system.window_event(&event);
                             }
                             match event {
                                 WindowEvent::Resized(size) => {
@@ -741,8 +741,8 @@ impl GameScene {
                                             match button {
                                                 winit::event::VirtualKeyCode::Escape => break,
                                                 winit::event::VirtualKeyCode::I => {
-                                                    interface_render_system.inventory_open =
-                                                        !interface_render_system.inventory_open;
+                                                    interface_system.inventory_open =
+                                                        !interface_system.inventory_open;
                                                 },
                                                 _ => {},
                                             }
@@ -808,20 +808,21 @@ impl GameScene {
                                                     let mut block =
                                                         block.to_coords().map(|u| u as i32);
                                                     block[axis] += direction;
-                                                    let (chunk, block) =
-                                                        Block::from_chunk_offset(chunk, block);
-
-                                                    let _ = reliable_tx.send(
-                                                        packer.pack_to_vec(
-                                                            &ServerAccept::AlterBlock {
-                                                                chunk,
-                                                                block,
-                                                                block_class: block_class_map
-                                                                    .get("grass")
-                                                                    .unwrap(),
-                                                            },
-                                                        ),
-                                                    );
+                                                    if let Some((chunk, block)) =
+                                                        Block::from_chunk_offset(chunk, block)
+                                                    {
+                                                        let _ = reliable_tx.send(
+                                                            packer.pack_to_vec(
+                                                                &ServerAccept::AlterBlock {
+                                                                    chunk,
+                                                                    block,
+                                                                    block_class: block_class_map
+                                                                        .get("grass")
+                                                                        .unwrap(),
+                                                                },
+                                                            ),
+                                                        );
+                                                    }
                                                 }
                                             },
                                             _ => {},
@@ -841,7 +842,7 @@ impl GameScene {
                             error!("game::run: connection error: {:?}", err);
                             return Ok(SceneSwitch::Menu {
                                 parameters: MenuSceneParameters {
-                                    interface_state: interface_render_system.into_interface_state(),
+                                    interface_state: interface_system.into_interface_state(),
                                     output_thread: render_system.into_output(),
                                 },
                             });
@@ -934,7 +935,7 @@ impl GameScene {
 
         Ok(SceneSwitch::Menu {
             parameters: MenuSceneParameters {
-                interface_state: interface_render_system.into_interface_state(),
+                interface_state: interface_system.into_interface_state(),
                 output_thread: render_system.into_output(),
             },
         })

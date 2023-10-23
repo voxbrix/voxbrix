@@ -1,7 +1,4 @@
-use crate::{
-    entity::chunk::Chunk,
-    math::Vec3I32,
-};
+use crate::entity::chunk::Chunk;
 use serde::{
     Deserialize,
     Serialize,
@@ -16,6 +13,8 @@ pub const BLOCKS_IN_CHUNK_LAYER_USIZE: usize = BLOCKS_IN_CHUNK_LAYER as usize;
 pub const BLOCKS_IN_CHUNK_USIZE: usize = BLOCKS_IN_CHUNK as usize;
 
 pub const BLOCKS_IN_CHUNK_EDGE_F32: f32 = 32.0;
+
+pub const BLOCKS_IN_CHUNK_EDGE_I32: i32 = BLOCKS_IN_CHUNK_EDGE as i32;
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
 pub struct Block(pub u16);
@@ -228,10 +227,7 @@ impl Block {
         }
     }
 
-    // TODO: check if the chunk is on the edge of the map
-    pub fn from_chunk_offset(chunk: Chunk, offset: [i32; 3]) -> (Chunk, Block) {
-        const BLOCKS_IN_CHUNK_EDGE_I32: i32 = BLOCKS_IN_CHUNK_EDGE as i32;
-
+    pub fn from_chunk_offset(chunk: Chunk, offset: [i32; 3]) -> Option<(Chunk, Block)> {
         let chunks_blocks = offset.map(|offset| {
             let mut chunk_offset = offset / BLOCKS_IN_CHUNK_EDGE_I32;
             let mut block = offset % BLOCKS_IN_CHUNK_EDGE_I32;
@@ -245,11 +241,11 @@ impl Block {
         });
 
         let actual_chunk = Chunk {
-            position: Vec3I32::new(
-                chunks_blocks[0].0 + chunk.position[0],
-                chunks_blocks[1].0 + chunk.position[1],
-                chunks_blocks[2].0 + chunk.position[2],
-            ),
+            position: [
+                chunks_blocks[0].0.checked_add(chunk.position[0])?,
+                chunks_blocks[1].0.checked_add(chunk.position[1])?,
+                chunks_blocks[2].0.checked_add(chunk.position[2])?,
+            ],
             dimension: chunk.dimension,
         };
 
@@ -259,7 +255,7 @@ impl Block {
             chunks_blocks[2].1 as u16,
         ]);
 
-        (actual_chunk, block)
+        Some((actual_chunk, block))
     }
 }
 

@@ -16,7 +16,7 @@ impl IntoDataSized for Chunk {
 
     fn to_bytes(&self) -> [u8; Self::SIZE] {
         let mut data = [0; Self::SIZE];
-        let position = self.position.to_array().map(u32_from_i32);
+        let position = self.position.map(u32_from_i32);
 
         data[0 .. 4].copy_from_slice(&self.dimension.to_be_bytes());
         data[4 .. 8].copy_from_slice(&position[2].to_be_bytes());
