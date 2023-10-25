@@ -60,7 +60,7 @@ impl Chunk {
         ChunkRadius {
             dimension: self.dimension,
             min_position: self.position.map(|i| i.saturating_sub(radius)),
-            max_position: self.position.map(|i| i.saturating_add(radius)),
+            max_position: self.position.map(|i| i.saturating_add(radius - 1)),
         }
     }
 
@@ -156,30 +156,115 @@ impl ChunkPositionOperations for [i32; 3] {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct ChunkRadius {
     dimension: Dimension,
     min_position: [i32; 3],
     max_position: [i32; 3],
 }
 
+enum EitherIter<A, B, C> {
+    A(A),
+    B(B),
+    C(C),
+}
+
+impl<T, A, B, C> Iterator for EitherIter<A, B, C>
+where
+    A: Iterator<Item = T>,
+    B: Iterator<Item = T>,
+    C: Iterator<Item = T>,
+{
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::A(iter) => iter.next(),
+            Self::B(iter) => iter.next(),
+            Self::C(iter) => iter.next(),
+        }
+    }
+}
+
+impl<T, A, B, C> DoubleEndedIterator for EitherIter<A, B, C>
+where
+    A: DoubleEndedIterator<Item = T>,
+    B: DoubleEndedIterator<Item = T>,
+    C: DoubleEndedIterator<Item = T>,
+{
+    fn next_back(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::A(iter) => iter.next_back(),
+            Self::B(iter) => iter.next_back(),
+            Self::C(iter) => iter.next_back(),
+        }
+    }
+}
+
 impl ChunkRadius {
     pub fn is_within(&self, chunk: &Chunk) -> bool {
         chunk.dimension == self.dimension
             && chunk.position[0] >= self.min_position[0]
-            && chunk.position[0] < self.max_position[0]
+            && chunk.position[0] <= self.max_position[0]
             && chunk.position[1] >= self.min_position[1]
-            && chunk.position[1] < self.max_position[1]
+            && chunk.position[1] <= self.max_position[1]
             && chunk.position[2] >= self.min_position[2]
-            && chunk.position[2] < self.max_position[2]
+            && chunk.position[2] <= self.max_position[2]
     }
 
-    // TODO: Proper IntoIterator impl
-    // https://github.com/rust-lang/rust/issues/63063
-    pub fn into_iter(self) -> impl Iterator<Item = Chunk> {
-        (self.min_position[2] .. self.max_position[2]).flat_map(move |z| {
-            (self.min_position[1] .. self.max_position[1]).flat_map(move |y| {
-                (self.min_position[0] .. self.max_position[0]).map(move |x| {
+    pub fn into_iter_expanding(self) -> impl DoubleEndedIterator<Item = Chunk> {
+        let min_diameter = self
+            .min_position
+            .iter()
+            .zip(self.max_position.iter())
+            .map(|(min, max)| max - min)
+            .min()
+            .unwrap();
+
+        let max_step = {
+            let dv = min_diameter / 2;
+            let md = min_diameter % 2;
+
+            dv + md
+        };
+
+        (0 .. max_step)
+            .map(move |step| {
+                let min_z = self.min_position[2].saturating_add(step);
+                let max_z = self.max_position[2].saturating_sub(step);
+                let min_y = self.min_position[1].saturating_add(step);
+                let max_y = self.max_position[1].saturating_sub(step);
+                let min_x = self.min_position[0].saturating_add(step);
+                let max_x = self.max_position[0].saturating_sub(step);
+
+                (min_z, max_z, min_y, max_y, min_x, max_x)
+            })
+            .rev()
+            .flat_map(move |(min_z, max_z, min_y, max_y, min_x, max_x)| {
+                (min_z ..= max_z).flat_map(move |z| {
+                    (min_y ..= max_y).flat_map(move |y| {
+                        if z == min_z || z == max_z || y == min_y || y == max_y {
+                            EitherIter::A(min_x ..= max_x)
+                        } else if min_x != max_x {
+                            EitherIter::B([min_x, max_x].into_iter())
+                        } else {
+                            EitherIter::C([min_x].into_iter())
+                        }
+                        .map(move |x| {
+                            Chunk {
+                                position: [x, y, z],
+                                dimension: self.dimension,
+                            }
+                        })
+                    })
+                })
+            })
+    }
+
+    pub fn into_iter_simple(self) -> impl Iterator<Item = Chunk> {
+        (self.min_position[2] ..= self.max_position[2]).flat_map(move |z| {
+            (self.min_position[1] ..= self.max_position[1]).flat_map(move |y| {
+                (self.min_position[0] ..= self.max_position[0]).map(move |x| {
                     Chunk {
                         position: [x, y, z],
                         dimension: self.dimension,
@@ -187,5 +272,70 @@ impl ChunkRadius {
                 })
             })
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn check_chunk_radius_expanding_iter() {
+        let dimension = Dimension { index: 0 };
+
+        let position = [0, 0, 0];
+
+        let radius = Chunk {
+            dimension,
+            position,
+        }
+        .radius(5);
+
+        let chunks_sorted = radius
+            .into_iter_expanding()
+            .inspect(|chunk| assert!(radius.is_within(chunk)))
+            .collect::<Vec<_>>();
+
+        assert_eq!(chunks_sorted.len(), 1000);
+
+        let max_dist_for_index = |index: usize| {
+            chunks_sorted[index]
+                .position
+                .iter()
+                .zip(position.iter())
+                .map(|(chunk_pos, position)| chunk_pos.abs_diff(*position))
+                .max()
+                .unwrap()
+        };
+
+        for index in 0 .. 8 {
+            let max_dist: u32 = max_dist_for_index(index);
+            assert!(max_dist <= 1);
+        }
+
+        for index in 0 .. 64 {
+            let max_dist: u32 = max_dist_for_index(index);
+            assert!(max_dist <= 2);
+        }
+
+        for index in 0 .. 999 {
+            let max_dist_1: u32 = max_dist_for_index(index);
+            // + 1 here is the margin between layers' max coordinate distance, for example
+            //
+            //
+            // | <- chunk with max dist -2 (2)
+            // |           | <- center chunk 0
+            // |           |     | <- chunk with max dist 1 (1)
+            // |___________|_____|_____
+            // |     |     |     |     |
+            // |     |     |     |     |
+            // |_____|_____|_____|_____|
+            // |---------radius--------|
+            //
+            // chunks (1) and (2) are in the same outer layer
+            let max_dist_2: u32 = max_dist_for_index(index + 1);
+
+            assert!(max_dist_1 <= max_dist_2 + 1);
+        }
     }
 }

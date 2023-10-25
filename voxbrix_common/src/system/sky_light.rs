@@ -32,6 +32,7 @@ use rayon::iter::{
     ParallelIterator,
 };
 use std::{
+    cmp::Ordering,
     collections::VecDeque,
     iter,
     mem,
@@ -39,6 +40,42 @@ use std::{
 
 const SKY_SIDE: usize = 5;
 const GROUND_SIDE: usize = 4;
+const SKY_GROUND_AXIS: usize = 2;
+
+fn from_sky_to_ground_sort(chunk1: &Chunk, chunk2: &Chunk) -> Ordering {
+    chunk1.position[SKY_GROUND_AXIS]
+        .cmp(&chunk2.position[SKY_GROUND_AXIS])
+        .reverse()
+}
+
+fn from_sky_to_ground_sort_with_player(
+    chunk1: &Chunk,
+    chunk2: &Chunk,
+    player_chunk: &Chunk,
+) -> Ordering {
+    from_sky_to_ground_sort(chunk1, chunk2).then_with(|| {
+        // We skip SKY_GROUND_AXIS below:
+        let chunk1_player_distance: i64 = [
+            player_chunk.position[0] - chunk1.position[0],
+            player_chunk.position[1] - chunk1.position[1],
+            // player_chunk.position[2] - chunk1.position[2],
+        ]
+        .map(|i| (i as i64).pow(2))
+        .iter()
+        .sum();
+
+        let chunk2_player_distance: i64 = [
+            player_chunk.position[0] - chunk2.position[0],
+            player_chunk.position[1] - chunk2.position[1],
+            // player_chunk.position[2] - chunk2.position[2],
+        ]
+        .map(|i| (i as i64).pow(2))
+        .iter()
+        .sum();
+
+        chunk1_player_distance.cmp(&chunk2_player_distance)
+    })
+}
 
 #[derive(Clone, Copy)]
 enum ChunkKind {
@@ -51,6 +88,7 @@ pub struct SkyLightSystem {
     next_compute: ChunkKind,
     chunks_to_compute_even: AHashSet<Chunk>,
     chunks_to_compute_odd: AHashSet<Chunk>,
+    queue_buffer: Vec<Chunk>,
     pre_compute_buffer: Vec<(Chunk, Option<BlocksVec<SkyLight>>)>,
     post_compute_buffer: Vec<(Chunk, BlocksVec<SkyLight>, ArrayVec<Chunk, 6>)>,
 }
@@ -62,6 +100,7 @@ impl SkyLightSystem {
             next_compute: ChunkKind::Even,
             chunks_to_compute_even: AHashSet::new(),
             chunks_to_compute_odd: AHashSet::new(),
+            queue_buffer: Vec::new(),
             pre_compute_buffer: Vec::new(),
             post_compute_buffer: Vec::new(),
         }
@@ -211,17 +250,30 @@ impl SkyLightSystem {
         class_bc: &ClassBlockComponent,
         opacity_bcc: &OpacityBlockClassComponent,
         sky_light_bc: &mut SkyLightBlockComponent,
+        player_chunk: Option<Chunk>,
     ) {
         let mut chunks_to_compute = match self.next_compute {
             ChunkKind::Even => mem::take(&mut self.chunks_to_compute_even),
             ChunkKind::Odd => mem::take(&mut self.chunks_to_compute_odd),
         };
 
+        self.queue_buffer.clear();
+        self.queue_buffer.extend(chunks_to_compute.iter());
+        if let Some(player_chunk) = player_chunk {
+            self.queue_buffer.sort_unstable_by(|c1, c2| {
+                from_sky_to_ground_sort_with_player(c1, c2, &player_chunk)
+            });
+        } else {
+            self.queue_buffer
+                .sort_unstable_by(|c1, c2| from_sky_to_ground_sort(c1, c2));
+        }
+        let mut chunks_iter = self.queue_buffer.iter();
+
         let mut pre_compute_buffer = mem::take(&mut self.pre_compute_buffer);
         let mut post_compute_buffer = mem::take(&mut self.post_compute_buffer);
 
         let expansion = iter::from_fn(|| {
-            let next = *chunks_to_compute.iter().next()?;
+            let next = *chunks_iter.next()?;
             chunks_to_compute.remove(&next);
             Some(next)
         })
@@ -260,16 +312,12 @@ impl SkyLightSystem {
 
         match self.next_compute {
             ChunkKind::Even => {
-                if chunks_to_compute.is_empty() {
-                    self.next_compute = ChunkKind::Odd;
-                }
+                self.next_compute = ChunkKind::Odd;
                 self.chunks_to_compute_even = chunks_to_compute;
                 self.chunks_to_compute_odd.extend(expansion);
             },
             ChunkKind::Odd => {
-                if chunks_to_compute.is_empty() {
-                    self.next_compute = ChunkKind::Even;
-                }
+                self.next_compute = ChunkKind::Even;
                 self.chunks_to_compute_odd = chunks_to_compute;
                 self.chunks_to_compute_even.extend(expansion);
             },

@@ -445,7 +445,7 @@ impl GameScene {
             player_actor,
             Position {
                 chunk: Chunk {
-                    position: [i32::MIN, 0, 0].into(),
+                    position: [0, 0, 0],
                     dimension: Dimension { index: 0 },
                 },
                 offset: Vec3F32::new(0.0, 0.0, 4.0),
@@ -555,19 +555,19 @@ impl GameScene {
                 .rr_ff(event_rx),
         );
 
-        let mut redraw_chunks = AHashSet::new();
         let mut cursor_visible = false;
+        let mut inventory_open = false;
 
         while let Some(event) = stream.next().await {
             match event {
                 Event::Process(surface) => {
-                    if interface_system.inventory_open && !cursor_visible {
+                    if inventory_open && !cursor_visible {
                         window_handle.window.set_cursor_visible(true);
                         window_handle
                             .window
                             .set_cursor_grab(winit::window::CursorGrabMode::None)?;
                         cursor_visible = true;
-                    } else if !interface_system.inventory_open && cursor_visible {
+                    } else if !inventory_open && cursor_visible {
                         window_handle.window.set_cursor_visible(false);
                         window_handle
                             .window
@@ -586,21 +586,32 @@ impl GameScene {
 
                     // TODO: automatically scale by detecting how long it takes
                     // and how much time do we have between frames
-                    if let Some(chunk) = redraw_chunks.iter().next().copied() {
-                        redraw_chunks.remove(&chunk);
+                    let chunk_built = block_render_system.build_next_chunk(
+                        &class_bc,
+                        &model_bcc,
+                        &builder_bmc,
+                        &culling_bmc,
+                        &sky_light_bc,
+                        &position_ac,
+                        &player_actor,
+                    );
 
-                        block_render_system.build_chunk(
-                            &chunk,
+                    if !chunk_built {
+                        let player_chunk = position_ac
+                            .get(&player_actor)
+                            .expect("player Actor must exist")
+                            .chunk;
+
+                        sky_light_system.compute_queued(
                             &class_bc,
-                            &model_bcc,
-                            &builder_bmc,
-                            &culling_bmc,
-                            &sky_light_bc,
+                            &opacity_bcc,
+                            &mut sky_light_bc,
+                            Some(player_chunk),
                         );
-                    } else {
-                        sky_light_system.compute_queued(&class_bc, &opacity_bcc, &mut sky_light_bc);
 
-                        redraw_chunks.extend(sky_light_system.drain_processed_chunks());
+                        for chunk in sky_light_system.drain_processed_chunks() {
+                            block_render_system.add_chunk(chunk);
+                        }
                     }
 
                     player_position_system.process(
@@ -618,7 +629,7 @@ impl GameScene {
                         &mut class_bc,
                         &mut status_cc,
                         |chunk| {
-                            redraw_chunks.insert(chunk);
+                            block_render_system.add_chunk(chunk);
                         },
                     );
                     direct_control_system.process(
@@ -652,6 +663,16 @@ impl GameScene {
 
                     block_render_system.build_target_highlight(target);
 
+                    interface_system.start();
+
+                    interface_system.add_interface(|ctx| {
+                        egui::Window::new("Inventory")
+                            .open(&mut inventory_open)
+                            .show(ctx, |ui| {
+                                ui.label("Hello World!");
+                            });
+                    });
+
                     render_system.update(&position_ac, &orientation_ac);
                     actor_render_system.update(
                         player_actor,
@@ -664,7 +685,13 @@ impl GameScene {
                         &mut animation_state_ac,
                     );
 
-                    unblock!((render_system, block_render_system, interface_system, actor_render_system) {
+                    unblock!((
+                        render_system,
+                        block_render_system,
+                        interface_system,
+                        actor_render_system,
+                        inventory_open
+                    ) {
                         render_system.start_render(surface);
 
                         let mut renderers = render_system.get_renderers::<3>().into_iter();
@@ -705,7 +732,7 @@ impl GameScene {
                             device_id: _,
                             event,
                         } => {
-                            if !interface_system.inventory_open {
+                            if !inventory_open {
                                 match event {
                                     DeviceEvent::MouseMotion {
                                         delta: (horizontal, vertical),
@@ -718,7 +745,7 @@ impl GameScene {
                             }
                         },
                         InputEvent::WindowEvent { event } => {
-                            if interface_system.inventory_open {
+                            if inventory_open {
                                 interface_system.window_event(&event);
                             }
                             match event {
@@ -741,8 +768,7 @@ impl GameScene {
                                             match button {
                                                 winit::event::VirtualKeyCode::Escape => break,
                                                 winit::event::VirtualKeyCode::I => {
-                                                    interface_system.inventory_open =
-                                                        !interface_system.inventory_open;
+                                                    inventory_open = !inventory_open;
                                                 },
                                                 _ => {},
                                             }

@@ -1,5 +1,6 @@
 use crate::{
     component::{
+        actor::position::PositionActorComponent,
         block_class::model::ModelBlockClassComponent,
         block_model::{
             builder::{
@@ -24,7 +25,10 @@ use crate::{
     },
     RenderHandle,
 };
-use ahash::AHashMap;
+use ahash::{
+    AHashMap,
+    AHashSet,
+};
 use anyhow::Result;
 use arrayvec::ArrayVec;
 use rayon::prelude::*;
@@ -39,6 +43,7 @@ use voxbrix_common::{
         BlocksVec,
     },
     entity::{
+        actor::Actor,
         block::{
             Block,
             Neighbor,
@@ -230,6 +235,8 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
         BlockRenderSystem {
             render_handle,
             render_pipeline,
+            build_queue: AHashSet::new(),
+            build_queue_sort_buffer: Vec::new(),
             chunk_buffer_shards: AHashMap::new(),
             update_chunk_buffer: false,
             prepared_vertex_buffer: vertex_buffer,
@@ -251,6 +258,8 @@ enum TargetHighlighting {
 pub struct BlockRenderSystem {
     render_handle: &'static RenderHandle,
     render_pipeline: wgpu::RenderPipeline,
+    build_queue: AHashSet<Chunk>,
+    build_queue_sort_buffer: Vec<Chunk>,
     chunk_buffer_shards: AHashMap<Chunk, Vec<Polygon>>,
     update_chunk_buffer: bool,
     prepared_vertex_buffer: wgpu::Buffer,
@@ -262,6 +271,10 @@ pub struct BlockRenderSystem {
 }
 
 impl BlockRenderSystem {
+    pub fn add_chunk(&mut self, chunk: Chunk) {
+        self.build_queue.insert(chunk);
+    }
+
     fn build_chunk_buffer_shard(
         chunk: &Chunk,
         class_bc: &ClassBlockComponent,
@@ -337,15 +350,55 @@ impl BlockRenderSystem {
         polygon_buffer
     }
 
-    pub fn build_chunk(
+    pub fn build_next_chunk(
         &mut self,
-        chunk: &Chunk,
         class_bc: &ClassBlockComponent,
         model_bcc: &ModelBlockClassComponent,
         builder_bmc: &BuilderBlockModelComponent,
         culling_bmc: &CullingBlockModelComponent,
         sky_light_bc: &SkyLightBlockComponent,
-    ) {
+        position_ac: &PositionActorComponent,
+        player_actor: &Actor,
+    ) -> bool {
+        if self.build_queue.is_empty() {
+            return false;
+        }
+
+        let player_chunk = position_ac
+            .get(player_actor)
+            .expect("player Actor must exist")
+            .chunk;
+
+        self.build_queue_sort_buffer.clear();
+        self.build_queue_sort_buffer
+            .extend(self.build_queue.iter().cloned());
+        self.build_queue_sort_buffer
+            .sort_unstable_by(|chunk1, chunk2| {
+                let chunk1_player_distance: i64 = [
+                    player_chunk.position[0] - chunk1.position[0],
+                    player_chunk.position[1] - chunk1.position[1],
+                    player_chunk.position[2] - chunk1.position[2],
+                ]
+                .map(|i| (i as i64).pow(2))
+                .iter()
+                .sum();
+
+                let chunk2_player_distance: i64 = [
+                    player_chunk.position[0] - chunk2.position[0],
+                    player_chunk.position[1] - chunk2.position[1],
+                    player_chunk.position[2] - chunk2.position[2],
+                ]
+                .map(|i| (i as i64).pow(2))
+                .iter()
+                .sum();
+
+                chunk1_player_distance.cmp(&chunk2_player_distance)
+            });
+
+        let chunk = self.build_queue_sort_buffer.first().unwrap();
+
+        self.build_queue.remove(chunk);
+
         if class_bc.get_chunk(chunk).is_none() {
             self.chunk_buffer_shards.remove(chunk);
         }
@@ -381,6 +434,8 @@ impl BlockRenderSystem {
         self.chunk_buffer_shards.par_extend(par_iter);
 
         self.update_chunk_buffer = true;
+
+        true
     }
 
     pub fn build_target_highlight(&mut self, target: Option<(Chunk, Block, usize)>) {

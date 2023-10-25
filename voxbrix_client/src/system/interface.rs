@@ -1,17 +1,13 @@
 use crate::{
     system::render::{
         output_thread::OutputThread,
-        primitives::Polygon,
         Renderer,
     },
     RenderHandle,
     WindowHandle,
 };
 use anyhow::Result;
-use egui::{
-    CentralPanel,
-    Context,
-};
+use egui::Context;
 use egui_wgpu::renderer::{
     Renderer as InterfaceRenderer,
     ScreenDescriptor,
@@ -45,7 +41,6 @@ impl InterfaceSystemDescriptor<'_> {
                 1,
             ),
             context: Context::default(),
-            inventory_open: false,
         }
     }
 }
@@ -56,19 +51,22 @@ pub struct InterfaceSystem {
     state: egui_winit::State,
     interface_renderer: InterfaceRenderer,
     context: Context,
-    pub inventory_open: bool,
 }
 
 impl InterfaceSystem {
-    pub fn render(&mut self, renderer: Renderer) -> Result<(), wgpu::SurfaceError> {
+    /// Call this before adding interfaces.
+    pub fn start(&mut self) {
         let input = self.state.take_egui_input(&self.window_handle.window);
-        let interface = self.context.run(input, |ctx| {
-            egui::Window::new("Inventory")
-                .open(&mut self.inventory_open)
-                .show(ctx, |ui| {
-                    ui.label("Hello World!");
-                });
-        });
+        self.context.begin_frame(input);
+    }
+
+    pub fn add_interface(&self, interface: impl FnOnce(&Context)) {
+        interface(&self.context);
+    }
+
+    /// Finishes the composition and renders the result.
+    pub fn render(&mut self, renderer: Renderer) -> Result<(), wgpu::SurfaceError> {
+        let interface = self.context.end_frame();
 
         let screen_descriptor = ScreenDescriptor {
             size_in_pixels: [
@@ -121,12 +119,12 @@ impl InterfaceSystem {
         Ok(())
     }
 
-    pub fn into_interface_state(self) -> egui_winit::State {
-        self.state
-    }
-
     pub fn window_event(&mut self, event: &WindowEvent) {
         // TODO only redraw if required
         let _ = self.state.on_event(&self.context, event);
+    }
+
+    pub fn into_interface_state(self) -> egui_winit::State {
+        self.state
     }
 }

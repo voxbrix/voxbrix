@@ -19,7 +19,7 @@ use crate::{
     Shared,
     BLOCK_CLASS_TABLE,
 };
-use ahash::AHashSet;
+use ahash::AHashMap;
 use redb::ReadableTable;
 use tokio::task;
 use voxbrix_common::{
@@ -40,14 +40,14 @@ pub enum ChunkActivationOutcome {
 }
 
 pub struct ChunkActivationSystem {
-    target: AHashSet<Chunk>,
-    missing: Vec<Chunk>,
+    target: AHashMap<Chunk, f64>,
+    missing: Vec<(Chunk, f64)>,
 }
 
 impl ChunkActivationSystem {
     pub fn new() -> Self {
         Self {
-            target: AHashSet::new(),
+            target: AHashMap::new(),
             missing: Vec::new(),
         }
     }
@@ -67,13 +67,32 @@ impl ChunkActivationSystem {
             .filter_map(|(actor, chunk_activation)| {
                 Some((position_ac.get(&actor)?.chunk, chunk_activation))
             })
-            .flat_map(|(chunk, chunk_activation)| {
+            .flat_map(|(actor_chunk, chunk_activation)| {
                 let ActorChunkActivation { radius } = chunk_activation;
-                let radius = chunk.radius(*radius);
-                radius.into_iter()
+                let chunk_radius = actor_chunk.radius(*radius);
+                chunk_radius.into_iter_simple().map(move |chunk| {
+                    let reverse_priority: f64 = actor_chunk
+                        .position
+                        .iter()
+                        .zip(chunk.position.iter())
+                        .map(|(actor_coord, chunk_coord)| {
+                            ((chunk_coord - actor_coord) as f64 + 0.5).abs().powi(2)
+                        })
+                        .sum();
+
+                    let priority = 1.0 - reverse_priority.sqrt();
+
+                    (chunk, priority)
+                })
             });
 
-        self.target.extend(iter);
+        for (chunk, priority) in iter {
+            if let Some(existing_priority) = self.target.get_mut(&chunk) {
+                *existing_priority += priority;
+            } else {
+                self.target.insert(chunk, priority);
+            }
+        }
     }
 
     pub fn apply(
@@ -88,7 +107,7 @@ impl ChunkActivationSystem {
         self.missing.extend(
             self.target
                 .iter()
-                .filter(|chunk| {
+                .filter(|(chunk, _)| {
                     let is_new = status_cc.get(chunk).is_none();
 
                     if is_new {
@@ -97,17 +116,21 @@ impl ChunkActivationSystem {
 
                     is_new
                 })
-                .copied(),
+                .map(|(chunk, priority)| (*chunk, *priority)),
         );
 
-        // TODO: sort new_chunks by the sum of distances to the actors
+        self.missing
+            .sort_unstable_by(|(_, priority1), (_, priority2)| {
+                priority2.partial_cmp(priority1).unwrap()
+            });
 
-        status_cc
-            .retain(|chunk, status| self.target.contains(chunk) || *status == ChunkStatus::Loading);
-        cache_cc.retain(|chunk, _| self.target.contains(chunk));
-        class_bc.retain(|chunk| self.target.contains(chunk));
+        status_cc.retain(|chunk, status| {
+            self.target.get(chunk).is_some() || *status == ChunkStatus::Loading
+        });
+        cache_cc.retain(|chunk, _| self.target.get(chunk).is_some());
+        class_bc.retain(|chunk| self.target.get(chunk).is_some());
 
-        for chunk in self.missing.iter().copied() {
+        for (chunk, _) in self.missing.iter().copied() {
             let send_fn = send_fn.clone();
             task::spawn_blocking(move || {
                 let mut packer = Packer::new();

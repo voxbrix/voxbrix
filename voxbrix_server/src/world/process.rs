@@ -45,7 +45,7 @@ impl World {
                     Some((player, client, prev_radius, curr_radius))
                 })
         {
-            for chunk_data in curr_radius.into_iter().filter_map(|chunk| {
+            for chunk_data in curr_radius.into_iter_expanding().filter_map(|chunk| {
                 if let Some(prev_radius) = &prev_radius {
                     if prev_radius.is_within(&chunk) {
                         return None;
@@ -130,12 +130,12 @@ impl World {
 
                 // TODO optimize?
                 let new_chunks = chunk_radius
-                    .into_iter()
+                    .into_iter_simple()
                     .filter(|c| !previous_chunk_radius.is_within(c));
 
                 // TODO optimize?
                 let intersection_chunks = chunk_radius
-                    .into_iter()
+                    .into_iter_simple()
                     .filter(|c| previous_chunk_radius.is_within(c));
 
                 self.position_ac.pack_changes(
@@ -189,7 +189,7 @@ impl World {
                 );
             } else {
                 // TODO optimize?
-                let new_chunks = chunk_radius.into_iter();
+                let new_chunks = chunk_radius.into_iter_simple();
 
                 self.position_ac
                     .pack_full(&mut self.server_state, player_actor, new_chunks);
