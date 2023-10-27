@@ -19,6 +19,7 @@ use crate::{
     entity::actor_model::ActorBodyPart,
     system::render::{
         gpu_vec::GpuVec,
+        output_thread::OutputThread,
         primitives::{
             Polygon,
             VertexDescription,
@@ -26,7 +27,6 @@ use crate::{
         RenderParameters,
         Renderer,
     },
-    RenderHandle,
 };
 use anyhow::Result;
 use nohash_hasher::IntMap;
@@ -45,16 +45,14 @@ use wgpu::util::DeviceExt;
 const POLYGON_SIZE: usize = Polygon::size() as usize;
 
 pub struct ActorRenderSystemDescriptor<'a> {
-    pub render_handle: &'static RenderHandle,
     pub render_parameters: RenderParameters<'a>,
     pub actor_texture_bind_group_layout: wgpu::BindGroupLayout,
     pub actor_texture_bind_group: wgpu::BindGroup,
 }
 
 impl<'a> ActorRenderSystemDescriptor<'a> {
-    pub async fn build(self) -> ActorRenderSystem {
+    pub async fn build(self, output_thread: &OutputThread) -> ActorRenderSystem {
         let Self {
-            render_handle,
             render_parameters:
                 RenderParameters {
                     camera_bind_group_layout,
@@ -64,16 +62,16 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
             actor_texture_bind_group,
         } = self;
 
-        let shaders = render_handle
-            .device
+        let shaders = output_thread
+            .device()
             .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("Shaders"),
                 source: wgpu::ShaderSource::Wgsl(include_str!("../shaders.wgsl").into()),
             });
 
         let render_pipeline_layout =
-            render_handle
-                .device
+            output_thread
+                .device()
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("Render Pipeline Layout"),
                     bind_group_layouts: &[
@@ -84,8 +82,8 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
                 });
 
         let render_pipeline =
-            render_handle
-                .device
+            output_thread
+                .device()
                 .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                     label: Some("Render Pipeline"),
                     layout: Some(&render_pipeline_layout),
@@ -128,8 +126,8 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
                 });
 
         let vertex_buffer =
-            render_handle
-                .device
+            output_thread
+                .device()
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("Vertex Buffer"),
                     usage: wgpu::BufferUsages::VERTEX,
@@ -143,10 +141,9 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
                     ]),
                 });
 
-        let polygon_buffer = GpuVec::new(&render_handle.device, wgpu::BufferUsages::VERTEX);
+        let polygon_buffer = GpuVec::new(output_thread.device(), wgpu::BufferUsages::VERTEX);
 
         ActorRenderSystem {
-            render_handle,
             render_pipeline,
             actor_texture_bind_group,
             body_part_buffer: IntMap::default(),
@@ -163,7 +160,6 @@ struct BodyPartInfo {
 }
 
 pub struct ActorRenderSystem {
-    render_handle: &'static RenderHandle,
     render_pipeline: wgpu::RenderPipeline,
     actor_texture_bind_group: wgpu::BindGroup,
     body_part_buffer: IntMap<ActorBodyPart, BodyPartInfo>,
@@ -307,8 +303,8 @@ impl ActorRenderSystem {
         let polygon_buffer_byte_size = (polygons_len * POLYGON_SIZE) as u64;
 
         let mut writer = self.polygon_buffer.get_writer(
-            &self.render_handle.device,
-            &self.render_handle.queue,
+            renderer.device,
+            renderer.queue,
             polygon_buffer_byte_size,
         );
 

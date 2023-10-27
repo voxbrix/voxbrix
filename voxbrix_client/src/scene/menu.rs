@@ -7,11 +7,7 @@ use crate::{
         OutputBundle,
         OutputThread,
     },
-    window::{
-        InputEvent,
-        WindowHandle,
-    },
-    RenderHandle,
+    window::InputEvent,
     CONNECTION_TIMEOUT,
 };
 use anyhow::Result;
@@ -98,16 +94,12 @@ fn set_ui_scale(scale: f32, sd: &mut ScreenDescriptor, ctx: &Context, state: &mu
 }
 
 pub struct MenuScene {
-    pub window_handle: &'static WindowHandle,
-    pub render_handle: &'static RenderHandle,
     pub parameters: MenuSceneParameters,
 }
 
 impl MenuScene {
     pub async fn run(self) -> Result<SceneSwitch> {
         let Self {
-            window_handle,
-            render_handle,
             parameters:
                 MenuSceneParameters {
                     interface_state: mut state,
@@ -120,10 +112,10 @@ impl MenuScene {
             (sc.format, sc.width, sc.height)
         };
 
-        let _ = window_handle
-            .window
+        let _ = output_thread
+            .window()
             .set_cursor_grab(winit::window::CursorGrabMode::None);
-        window_handle.window.set_cursor_visible(true);
+        output_thread.window().set_cursor_visible(true);
 
         let mut resized = false;
 
@@ -132,18 +124,19 @@ impl MenuScene {
             pixels_per_point: 1.0,
         };
 
-        let mut renderer = Renderer::new(&render_handle.device, format, None, 1);
+        let mut renderer = Renderer::new(&output_thread.device(), format, None, 1);
 
         let ctx = Context::default();
 
         set_ui_scale(2.0, &mut screen_descriptor, &ctx, &mut state);
 
-        let surface_stream = output_thread.get_surface_stream();
+        let surface_source = output_thread.get_surface_source();
+        let input_source = output_thread.get_input_source();
 
-        let mut stream = surface_stream
+        let mut stream = surface_source
             .stream()
             .map(Event::Process)
-            .or_ff(window_handle.event_rx.stream().map(Event::Input));
+            .or_ff(input_source.stream().map(Event::Input));
 
         let mut error_message = String::new();
 
@@ -168,7 +161,7 @@ impl MenuScene {
             }
             match event {
                 Event::Process(mut output_bundle) => {
-                    let input = state.take_egui_input(&window_handle.window);
+                    let input = state.take_egui_input(&output_thread.window());
                     let full_output = ctx.run(input, |ctx| {
                         CentralPanel::default().show(&ctx, |ui| {
                             ui.label("Voxbrix");
@@ -202,7 +195,7 @@ impl MenuScene {
                     });
                     let clipped_primitives = ctx.tessellate(full_output.shapes);
 
-                    let mut encoder = render_handle.device.create_command_encoder(
+                    let mut encoder = output_thread.device().create_command_encoder(
                         &wgpu::CommandEncoderDescriptor {
                             label: Some("Render Encoder"),
                         },
@@ -212,8 +205,8 @@ impl MenuScene {
                     screen_descriptor.size_in_pixels = [config.width, config.height];
 
                     renderer.update_buffers(
-                        &render_handle.device,
-                        &render_handle.queue,
+                        &output_thread.device(),
+                        &output_thread.queue(),
                         &mut encoder,
                         &clipped_primitives,
                         &screen_descriptor,
@@ -221,8 +214,8 @@ impl MenuScene {
 
                     for (id, image_delta) in &full_output.textures_delta.set {
                         renderer.update_texture(
-                            &render_handle.device,
-                            &render_handle.queue,
+                            &output_thread.device(),
+                            &output_thread.queue(),
                             *id,
                             image_delta,
                         );
@@ -258,7 +251,7 @@ impl MenuScene {
                     output_bundle.encoders().push(encoder);
 
                     if resized {
-                        let physical_size = window_handle.window.inner_size();
+                        let physical_size = output_thread.window().inner_size();
 
                         let config = output_thread.next_surface_config();
                         config.width = physical_size.width;

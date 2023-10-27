@@ -1,10 +1,6 @@
-use crate::{
-    system::render::{
-        output_thread::OutputThread,
-        Renderer,
-    },
-    RenderHandle,
-    WindowHandle,
+use crate::system::render::{
+    output_thread::OutputThread,
+    Renderer,
 };
 use anyhow::Result;
 use egui::Context;
@@ -12,11 +8,12 @@ use egui_wgpu::renderer::{
     Renderer as InterfaceRenderer,
     ScreenDescriptor,
 };
-use winit::event::WindowEvent;
+use winit::{
+    event::WindowEvent,
+    window::Window,
+};
 
 pub struct InterfaceSystemDescriptor<'a> {
-    pub render_handle: &'static RenderHandle,
-    pub window_handle: &'static WindowHandle,
     pub state: egui_winit::State,
     pub output_thread: &'a OutputThread,
 }
@@ -24,18 +21,14 @@ pub struct InterfaceSystemDescriptor<'a> {
 impl InterfaceSystemDescriptor<'_> {
     pub fn build(self) -> InterfaceSystem {
         let Self {
-            render_handle,
-            window_handle,
             state,
             output_thread,
         } = self;
 
         InterfaceSystem {
-            render_handle,
-            window_handle,
             state,
             interface_renderer: InterfaceRenderer::new(
-                &render_handle.device,
+                &output_thread.device(),
                 output_thread.current_surface_config().format,
                 None,
                 1,
@@ -46,8 +39,6 @@ impl InterfaceSystemDescriptor<'_> {
 }
 
 pub struct InterfaceSystem {
-    render_handle: &'static RenderHandle,
-    window_handle: &'static WindowHandle,
     state: egui_winit::State,
     interface_renderer: InterfaceRenderer,
     context: Context,
@@ -55,8 +46,8 @@ pub struct InterfaceSystem {
 
 impl InterfaceSystem {
     /// Call this before adding interfaces.
-    pub fn start(&mut self) {
-        let input = self.state.take_egui_input(&self.window_handle.window);
+    pub fn start(&mut self, window: &Window) {
+        let input = self.state.take_egui_input(window);
         self.context.begin_frame(input);
     }
 
@@ -82,8 +73,8 @@ impl InterfaceSystem {
         let clipped_primitives = self.context.tessellate(interface.shapes);
 
         self.interface_renderer.update_buffers(
-            &self.render_handle.device,
-            &self.render_handle.queue,
+            renderer.device,
+            renderer.queue,
             renderer.encoder,
             &clipped_primitives,
             &screen_descriptor,
@@ -91,8 +82,8 @@ impl InterfaceSystem {
 
         for (id, image_delta) in &interface.textures_delta.set {
             self.interface_renderer.update_texture(
-                &self.render_handle.device,
-                &self.render_handle.queue,
+                renderer.device,
+                renderer.queue,
                 *id,
                 image_delta,
             );

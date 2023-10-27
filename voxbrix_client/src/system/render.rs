@@ -1,16 +1,13 @@
-use crate::{
-    component::actor::{
-        orientation::OrientationActorComponent,
-        position::PositionActorComponent,
-    },
-    RenderHandle,
+use crate::component::actor::{
+    orientation::OrientationActorComponent,
+    position::PositionActorComponent,
 };
 use arrayvec::ArrayVec;
 use camera::{
     Camera,
     CameraParameters,
 };
-use flume::Receiver;
+use log::warn;
 use output_thread::{
     OutputBundle,
     OutputThread,
@@ -20,7 +17,10 @@ use std::{
     mem,
 };
 use voxbrix_common::entity::actor::Actor;
-use winit::dpi::PhysicalSize;
+use winit::{
+    dpi::PhysicalSize,
+    window::CursorGrabMode,
+};
 
 pub mod camera;
 pub mod gpu_vec;
@@ -46,7 +46,6 @@ fn build_depth_texture_view(device: &wgpu::Device, mut size: wgpu::Extent3d) -> 
 }
 
 pub struct RenderSystemDescriptor<'a> {
-    pub render_handle: &'static RenderHandle,
     pub player_actor: Actor,
     pub camera_parameters: CameraParameters,
     pub position_ac: &'a PositionActorComponent,
@@ -57,7 +56,6 @@ pub struct RenderSystemDescriptor<'a> {
 impl<'a> RenderSystemDescriptor<'a> {
     pub fn build(self) -> RenderSystem {
         let Self {
-            render_handle,
             player_actor,
             camera_parameters,
             position_ac,
@@ -68,7 +66,7 @@ impl<'a> RenderSystemDescriptor<'a> {
         let sc = output_thread.current_surface_config();
 
         let camera = Camera::new(
-            &render_handle.device,
+            &output_thread.device(),
             player_actor,
             camera_parameters,
             position_ac,
@@ -82,10 +80,9 @@ impl<'a> RenderSystemDescriptor<'a> {
         };
 
         let depth_texture_view =
-            build_depth_texture_view(&render_handle.device, depth_texture_size);
+            build_depth_texture_view(&output_thread.device(), depth_texture_size);
 
         RenderSystem {
-            render_handle,
             camera,
             texture_format: sc.format,
             depth_texture_view,
@@ -102,6 +99,8 @@ pub struct Renderer<'a> {
     pub encoder: &'a mut wgpu::CommandEncoder,
     pub view: &'a wgpu::TextureView,
     pub surface_config: &'a wgpu::SurfaceConfiguration,
+    pub device: &'a wgpu::Device,
+    pub queue: &'a wgpu::Queue,
     depth_texture_view: &'a wgpu::TextureView,
     camera_bind_group: &'a wgpu::BindGroup,
 }
@@ -113,6 +112,8 @@ impl<'a> Renderer<'a> {
             encoder,
             view,
             surface_config,
+            device,
+            queue,
             depth_texture_view,
             camera_bind_group,
         } = self;
@@ -169,7 +170,6 @@ struct RenderProcess {
 }
 
 pub struct RenderSystem {
-    render_handle: &'static RenderHandle,
     camera: Camera,
     texture_format: wgpu::TextureFormat,
     depth_texture_view: wgpu::TextureView,
@@ -194,17 +194,13 @@ impl RenderSystem {
         }
     }
 
-    pub fn get_surface_stream(&self) -> Receiver<OutputBundle> {
-        self.output_thread.get_surface_stream()
-    }
-
     pub fn update(
         &mut self,
         position_ac: &PositionActorComponent,
         orientation_ac: &OrientationActorComponent,
     ) {
         self.camera
-            .update(&self.render_handle.queue, position_ac, orientation_ac);
+            .update(&self.output_thread.queue(), position_ac, orientation_ac);
     }
 
     pub fn start_render(&mut self, bundle: OutputBundle) {
@@ -221,7 +217,7 @@ impl RenderSystem {
         if view_size != self.depth_texture_size {
             self.depth_texture_size = view_size;
             self.depth_texture_view =
-                build_depth_texture_view(&self.render_handle.device, view_size);
+                build_depth_texture_view(&self.output_thread.device(), view_size);
         }
 
         self.process = Some(RenderProcess { bundle, view });
@@ -230,6 +226,9 @@ impl RenderSystem {
     /// Returned renderer requires that the camera uniform buffer
     /// has binding group index 0 in the corresponding shaders
     pub fn get_renderers<'a, const N: usize>(&'a mut self) -> [Renderer<'a>; N] {
+        let device = self.output_thread.device();
+        let queue = self.output_thread.queue();
+
         let process = self
             .process
             .as_mut()
@@ -241,11 +240,9 @@ impl RenderSystem {
         let mut is_first_pass = encoders.is_empty();
 
         let encoders_extend = iter::repeat_with(|| {
-            self.render_handle
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Render Encoder"),
-                })
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder"),
+            })
         })
         .take(N);
 
@@ -259,6 +256,8 @@ impl RenderSystem {
                     encoder,
                     view: &process.view,
                     surface_config: self.output_thread.current_surface_config(),
+                    device,
+                    queue,
                     depth_texture_view: &self.depth_texture_view,
                     camera_bind_group: &self.camera.get_bind_group(),
                 }
@@ -277,5 +276,32 @@ impl RenderSystem {
 
     pub fn into_output(self) -> OutputThread {
         self.output_thread
+    }
+
+    pub fn cursor_visibility(&self, visible: bool) {
+        let result = if visible {
+            self.output_thread.window().set_cursor_visible(true);
+            self.output_thread
+                .window()
+                .set_cursor_grab(CursorGrabMode::None)
+        } else {
+            self.output_thread.window().set_cursor_visible(false);
+            self.output_thread
+                .window()
+                .set_cursor_grab(CursorGrabMode::Confined)
+                .or_else(|_| {
+                    self.output_thread
+                        .window()
+                        .set_cursor_grab(CursorGrabMode::Locked)
+                })
+        };
+
+        if let Err(err) = result {
+            warn!("unable to set cursor grab: {:?}", err);
+        }
+    }
+
+    pub fn output_thread(&self) -> &OutputThread {
+        &self.output_thread
     }
 }

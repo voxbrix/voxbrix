@@ -70,14 +70,9 @@ use crate::{
         },
         texture_loading::TextureLoadingSystem,
     },
-    window::{
-        InputEvent,
-        WindowHandle,
-    },
-    RenderHandle,
+    window::InputEvent,
     CONNECTION_TIMEOUT,
 };
-use ahash::AHashSet;
 use anyhow::Result;
 use futures_lite::{
     future::{
@@ -190,16 +185,12 @@ pub struct GameSceneParameters {
 }
 
 pub struct GameScene {
-    pub window_handle: &'static WindowHandle,
-    pub render_handle: &'static RenderHandle,
     pub parameters: GameSceneParameters,
 }
 
 impl GameScene {
     pub async fn run(self) -> Result<SceneSwitch> {
         let GameScene {
-            window_handle,
-            render_handle,
             parameters:
                 GameSceneParameters {
                     interface_state,
@@ -465,44 +456,41 @@ impl GameScene {
             snapshot,
         );
 
-        window_handle
-            .window
+        output_thread
+            .window()
             .set_cursor_grab(winit::window::CursorGrabMode::Confined)
             .or_else(|_| {
-                window_handle
-                    .window
+                output_thread
+                    .window()
                     .set_cursor_grab(winit::window::CursorGrabMode::Locked)
             })?;
-        window_handle.window.set_cursor_visible(false);
+        output_thread.window().set_cursor_visible(false);
 
         let texture_format = output_thread.current_surface_config().format;
 
         let (block_texture_bind_group_layout, block_texture_bind_group) =
             block_texture_loading_system.prepare_buffer(
-                &render_handle.device,
-                &render_handle.queue,
+                &output_thread.device(),
+                &output_thread.queue(),
                 &texture_format,
             );
 
         let (actor_texture_bind_group_layout, actor_texture_bind_group) =
             actor_texture_loading_system.prepare_buffer(
-                &render_handle.device,
-                &render_handle.queue,
+                &output_thread.device(),
+                &output_thread.queue(),
                 &texture_format,
             );
 
-        let surface_size = window_handle.window.inner_size();
+        let surface_size = output_thread.window().inner_size();
 
         let mut interface_system = InterfaceSystemDescriptor {
-            render_handle,
-            window_handle,
             state: interface_state,
             output_thread: &output_thread,
         }
         .build();
 
         let mut render_system = RenderSystemDescriptor {
-            render_handle,
             player_actor,
             // TODO hide?
             camera_parameters: CameraParameters {
@@ -517,27 +505,28 @@ impl GameScene {
         }
         .build();
 
+        let output_thread = render_system.output_thread();
+
         let render_parameters = render_system.get_render_parameters();
 
         let mut block_render_system = BlockRenderSystemDescriptor {
-            render_handle,
             render_parameters,
             block_texture_bind_group_layout,
             block_texture_bind_group,
         }
-        .build()
+        .build(&output_thread)
         .await;
 
         let mut actor_render_system = ActorRenderSystemDescriptor {
-            render_handle,
             render_parameters,
             actor_texture_bind_group_layout,
             actor_texture_bind_group,
         }
-        .build()
+        .build(&output_thread)
         .await;
 
-        let surface_stream = render_system.get_surface_stream();
+        let surface_source = output_thread.get_surface_source();
+        let input_source = output_thread.get_input_source();
         let mut send_state_interval = time::interval(Duration::from_millis(50));
         send_state_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
@@ -546,9 +535,9 @@ impl GameScene {
                 .poll_tick(cx)
                 .map(|_| Some(Event::SendState))
         })
-        .or_ff(window_handle.event_rx.stream().map(Event::Input))
+        .or_ff(input_source.stream().map(Event::Input))
         .or_ff(
-            surface_stream
+            surface_source
                 .stream()
                 // Timer::interval(Duration::from_millis(15))
                 .map(|surface| Event::Process(surface))
@@ -562,21 +551,10 @@ impl GameScene {
             match event {
                 Event::Process(surface) => {
                     if inventory_open && !cursor_visible {
-                        window_handle.window.set_cursor_visible(true);
-                        window_handle
-                            .window
-                            .set_cursor_grab(winit::window::CursorGrabMode::None)?;
+                        render_system.cursor_visibility(true);
                         cursor_visible = true;
                     } else if !inventory_open && cursor_visible {
-                        window_handle.window.set_cursor_visible(false);
-                        window_handle
-                            .window
-                            .set_cursor_grab(winit::window::CursorGrabMode::Confined)
-                            .or_else(|_| {
-                                window_handle
-                                    .window
-                                    .set_cursor_grab(winit::window::CursorGrabMode::Locked)
-                            })?;
+                        render_system.cursor_visibility(false);
                         cursor_visible = false;
                     }
 
@@ -663,7 +641,7 @@ impl GameScene {
 
                     block_render_system.build_target_highlight(target);
 
-                    interface_system.start();
+                    interface_system.start(render_system.output_thread().window());
 
                     interface_system.add_interface(|ctx| {
                         egui::Window::new("Inventory")

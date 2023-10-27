@@ -1,8 +1,4 @@
-use crate::{
-    system::render::output_thread::OutputThread,
-    window::WindowHandle,
-    RenderHandle,
-};
+use crate::system::render::output_thread::OutputThread;
 use anyhow::Result;
 use game::{
     GameScene,
@@ -23,8 +19,6 @@ pub enum SceneSwitch {
 }
 
 pub struct SceneManager {
-    pub window_handle: &'static WindowHandle,
-    pub render_handle: &'static RenderHandle,
     pub interface_state: egui_winit::State,
     pub output_thread: OutputThread,
 }
@@ -32,8 +26,6 @@ pub struct SceneManager {
 impl SceneManager {
     pub async fn run(self) -> Result<()> {
         let Self {
-            window_handle,
-            render_handle,
             interface_state,
             output_thread,
         } = self;
@@ -48,26 +40,10 @@ impl SceneManager {
         loop {
             match next_loop.take().unwrap_or(SceneSwitch::Exit) {
                 SceneSwitch::Menu { parameters } => {
-                    next_loop = Some(
-                        MenuScene {
-                            window_handle,
-                            render_handle,
-                            parameters,
-                        }
-                        .run()
-                        .await?,
-                    );
+                    next_loop = Some(MenuScene { parameters }.run().await?);
                 },
                 SceneSwitch::Game { parameters } => {
-                    next_loop = Some(
-                        GameScene {
-                            window_handle,
-                            render_handle,
-                            parameters,
-                        }
-                        .run()
-                        .await?,
-                    );
+                    next_loop = Some(GameScene { parameters }.run().await?);
                 },
                 SceneSwitch::Exit => return Ok(()),
             }

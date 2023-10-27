@@ -21,7 +21,7 @@ edition = "2021"
 tokio = "1"
 rayon = "1.7"
 futures-lite = { version = "1.13", default-features = false }
-flume = { version = "0.10", default-features = false, features = ["async"] }
+flume = { version = "0.11", default-features = false, features = ["async"] }
 # TODO Change to >=1.0.184 after https://github.com/ron-rs/ron/issues/508
 serde = { version = "=1.0.171", default-features = false, features = ["std", "derive"] } 
 serde-big-array = "0.5"

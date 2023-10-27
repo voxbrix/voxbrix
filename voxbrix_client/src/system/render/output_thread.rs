@@ -1,5 +1,8 @@
 use crate::{
-    window::WindowHandle,
+    window::{
+        InputEvent,
+        WindowHandle,
+    },
     RenderHandle,
 };
 use flume::{
@@ -7,12 +10,14 @@ use flume::{
     Sender,
 };
 use std::{
+    sync::Arc,
     thread,
     time::{
         Duration,
         Instant,
     },
 };
+use winit::window::Window;
 
 pub struct OutputBundle {
     encoders: Vec<wgpu::CommandEncoder>,
@@ -60,6 +65,10 @@ fn copy_surface_config(to: &mut wgpu::SurfaceConfiguration, from: &wgpu::Surface
 }
 
 pub struct OutputThread {
+    render_handle: Arc<RenderHandle>,
+    window: Window,
+    instance: wgpu::Instance,
+    input_source: Receiver<InputEvent>,
     current_surface_config: wgpu::SurfaceConfiguration,
     next_surface_config: wgpu::SurfaceConfiguration,
     frame_time: Option<Duration>,
@@ -69,28 +78,35 @@ pub struct OutputThread {
 
 impl OutputThread {
     pub fn new(
-        render_handle: &'static RenderHandle,
-        window_handle: &'static WindowHandle,
+        render_handle: RenderHandle,
+        window_handle: WindowHandle,
         surface_config: wgpu::SurfaceConfiguration,
         frame_time: Option<Duration>,
     ) -> Self {
+        let render_handle = Arc::new(render_handle);
+        let WindowHandle {
+            window,
+            instance,
+            surface,
+            event_rx: input_source,
+        } = window_handle;
+
         let (submit_tx, submit_rx) = flume::bounded::<Submission>(1);
         let (request_tx, request_rx) = flume::bounded::<OutputBundle>(1);
 
         let current_surface_config = surface_config.clone();
         let next_surface_config = surface_config.clone();
 
+        let render_handle_inner = render_handle.clone();
+
         thread::Builder::new()
             .name("output".to_owned())
             .spawn(move || {
                 let mut last_render = Instant::now();
 
-                window_handle
-                    .surface
-                    .configure(&render_handle.device, &surface_config);
+                surface.configure(&render_handle_inner.device, &surface_config);
 
-                let output = window_handle
-                    .surface
+                let output = surface
                     .get_current_texture()
                     .expect("unable to acquire next output texture");
 
@@ -112,16 +128,14 @@ impl OutputThread {
                         surface_config,
                     } = present;
 
-                    render_handle
+                    render_handle_inner
                         .queue
                         .submit(encoders.drain(..).map(|enc| enc.finish()));
 
                     output.present();
 
                     if surface_config_updated {
-                        window_handle
-                            .surface
-                            .configure(&render_handle.device, &surface_config);
+                        surface.configure(&render_handle_inner.device, &surface_config);
                     }
 
                     if let Some(frame_time) = frame_time {
@@ -136,8 +150,7 @@ impl OutputThread {
                         }
                     }
 
-                    let output = window_handle
-                        .surface
+                    let output = surface
                         .get_current_texture()
                         .expect("unable to acquire next output texture");
 
@@ -151,6 +164,10 @@ impl OutputThread {
             .expect("unable to spawn the output thread");
 
         Self {
+            render_handle,
+            window,
+            instance,
+            input_source,
             current_surface_config,
             next_surface_config,
             frame_time,
@@ -176,16 +193,32 @@ impl OutputThread {
             .expect("unable to present output");
     }
 
-    pub fn get_surface_stream(&self) -> Receiver<OutputBundle> {
-        self.request_rx.clone()
-    }
-
     pub fn current_surface_config(&self) -> &wgpu::SurfaceConfiguration {
         &self.current_surface_config
     }
 
     pub fn next_surface_config(&mut self) -> &mut wgpu::SurfaceConfiguration {
         &mut self.next_surface_config
+    }
+
+    pub fn get_surface_source(&self) -> Receiver<OutputBundle> {
+        self.request_rx.clone()
+    }
+
+    pub fn get_input_source(&self) -> Receiver<InputEvent> {
+        self.input_source.clone()
+    }
+
+    pub fn window(&self) -> &Window {
+        &self.window
+    }
+
+    pub fn device(&self) -> &wgpu::Device {
+        &self.render_handle.device
+    }
+
+    pub fn queue(&self) -> &wgpu::Queue {
+        &self.render_handle.queue
     }
 
     pub fn frame_time(&mut self) -> &mut Option<Duration> {

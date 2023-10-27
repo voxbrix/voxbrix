@@ -155,19 +155,11 @@ fn main() {
                             .await
                             .unwrap();
 
-                        let window_handle = Box::leak(Box::new(window_handle));
-
-                        let render_handle = Box::leak(Box::new(RenderHandle {
-                            adapter,
-                            device,
-                            queue,
-                        }));
-
                         let physical_size = window_handle.window.inner_size();
 
                         let capabilities = window_handle
                             .surface
-                            .get_capabilities(&render_handle.adapter);
+                            .get_capabilities(&adapter);
 
                         let format = capabilities.formats.iter()
                             .copied()
@@ -186,11 +178,18 @@ fn main() {
 
                         //let interface_state = egui_winit::State::new(&window_handle.window);
                         let interface_state = egui_winit::State::new_with_wayland_display(None);
-                        let output_thread = OutputThread::new(render_handle, window_handle, config, None);
+                        let output_thread = OutputThread::new(
+                            RenderHandle {
+                                adapter,
+                                device,
+                                queue,
+                            },
+                            window_handle,
+                            config,
+                            None,
+                        );
 
                         let scene_manager = SceneManager {
-                            window_handle,
-                            render_handle,
                             interface_state,
                             output_thread,
                         };

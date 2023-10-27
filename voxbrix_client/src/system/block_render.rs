@@ -16,6 +16,7 @@ use crate::{
     },
     system::render::{
         gpu_vec::GpuVec,
+        output_thread::OutputThread,
         primitives::{
             Polygon,
             VertexDescription,
@@ -23,7 +24,6 @@ use crate::{
         RenderParameters,
         Renderer,
     },
-    RenderHandle,
 };
 use ahash::{
     AHashMap,
@@ -123,16 +123,14 @@ fn slice_buffers<'a>(chunk_info: &mut [ChunkInfo<'a>], mut polygon_buffer: &'a m
 }
 
 pub struct BlockRenderSystemDescriptor<'a> {
-    pub render_handle: &'static RenderHandle,
     pub render_parameters: RenderParameters<'a>,
     pub block_texture_bind_group_layout: wgpu::BindGroupLayout,
     pub block_texture_bind_group: wgpu::BindGroup,
 }
 
 impl<'a> BlockRenderSystemDescriptor<'a> {
-    pub async fn build(self) -> BlockRenderSystem {
+    pub async fn build(self, output_thread: &OutputThread) -> BlockRenderSystem {
         let Self {
-            render_handle,
             render_parameters:
                 RenderParameters {
                     camera_bind_group_layout,
@@ -142,16 +140,16 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
             block_texture_bind_group,
         } = self;
 
-        let shaders = render_handle
-            .device
+        let shaders = output_thread
+            .device()
             .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("Shaders"),
                 source: wgpu::ShaderSource::Wgsl(include_str!("../shaders.wgsl").into()),
             });
 
         let render_pipeline_layout =
-            render_handle
-                .device
+            output_thread
+                .device()
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("Render Pipeline Layout"),
                     bind_group_layouts: &[
@@ -162,8 +160,8 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
                 });
 
         let render_pipeline =
-            render_handle
-                .device
+            output_thread
+                .device()
                 .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                     label: Some("Render Pipeline"),
                     layout: Some(&render_pipeline_layout),
@@ -206,8 +204,8 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
                 });
 
         let vertex_buffer =
-            render_handle
-                .device
+            output_thread
+                .device()
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("Vertex Buffer"),
                     usage: wgpu::BufferUsages::VERTEX,
@@ -221,19 +219,20 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
                     ]),
                 });
 
-        let polygon_buffer = GpuVec::new(&render_handle.device, wgpu::BufferUsages::VERTEX);
+        let polygon_buffer = GpuVec::new(output_thread.device(), wgpu::BufferUsages::VERTEX);
 
         // Target block hightlighting
         let target_highlight_polygon_buffer =
-            render_handle.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Highlight Vertex Buffer"),
-                size: Polygon::size(),
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
+            output_thread
+                .device()
+                .create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("Highlight Vertex Buffer"),
+                    size: Polygon::size(),
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
 
         BlockRenderSystem {
-            render_handle,
             render_pipeline,
             build_queue: AHashSet::new(),
             build_queue_sort_buffer: Vec::new(),
@@ -256,7 +255,6 @@ enum TargetHighlighting {
 }
 
 pub struct BlockRenderSystem {
-    render_handle: &'static RenderHandle,
     render_pipeline: wgpu::RenderPipeline,
     build_queue: AHashSet<Chunk>,
     build_queue_sort_buffer: Vec<Chunk>,
@@ -472,8 +470,8 @@ impl BlockRenderSystem {
 
             if polygons_len != 0 {
                 let mut writer = self.prepared_polygon_buffer.get_writer(
-                    &self.render_handle.device,
-                    &self.render_handle.queue,
+                    renderer.device,
+                    renderer.queue,
                     polygon_buffer_byte_size,
                 );
 
@@ -493,6 +491,8 @@ impl BlockRenderSystem {
             self.update_chunk_buffer = false;
         }
 
+        let queue = renderer.queue;
+
         let mut render_pass = renderer.with_pipeline(&mut self.render_pipeline);
 
         render_pass.set_bind_group(1, &self.block_texture_bind_group, &[]);
@@ -508,7 +508,7 @@ impl BlockRenderSystem {
 
         if !matches!(target_highlighting, TargetHighlighting::None) {
             if let TargetHighlighting::New(polygon) = target_highlighting {
-                self.render_handle.queue.write_buffer(
+                queue.write_buffer(
                     &self.target_highlight_polygon_buffer,
                     0,
                     bytemuck::cast_slice(&[polygon]),
