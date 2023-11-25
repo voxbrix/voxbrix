@@ -104,7 +104,7 @@ impl NetworkInput<'_> {
                 sd.class_bc.insert_chunk(chunk, block_classes);
                 sd.status_cc.insert(chunk, ChunkStatus::Active);
 
-                sd.render_priority_cc.chunk_added(&chunk);
+                sd.chunk_render_pipeline_system.chunk_added(chunk);
             },
             ClientAccept::AlterBlock {
                 chunk,
@@ -116,7 +116,7 @@ impl NetworkInput<'_> {
                 {
                     *block_class_ref = block_class;
 
-                    sd.render_priority_cc.chunk_updated(&chunk);
+                    sd.chunk_render_pipeline_system.chunk_updated(chunk);
                 }
             },
         }

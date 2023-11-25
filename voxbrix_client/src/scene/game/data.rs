@@ -16,13 +16,13 @@ use crate::{
             builder::BuilderBlockModelComponent,
             culling::CullingBlockModelComponent,
         },
-        chunk::render_priority::RenderPriorityChunkComponent,
     },
     scene::game::Event,
     system::{
         actor_render::ActorRenderSystem,
         block_render::BlockRenderSystem,
         chunk_presence::ChunkPresenceSystem,
+        chunk_render_pipeline::ChunkRenderPipelineSystem,
         controller::DirectControl,
         interface::InterfaceSystem,
         movement_interpolation::MovementInterpolationSystem,
@@ -122,7 +122,6 @@ pub struct GameSharedData {
     pub opacity_bcc: OpacityBlockClassComponent,
 
     pub status_cc: StatusChunkComponent,
-    pub render_priority_cc: RenderPriorityChunkComponent,
 
     pub builder_bmc: BuilderBlockModelComponent,
     pub culling_bmc: CullingBlockModelComponent,
@@ -136,6 +135,7 @@ pub struct GameSharedData {
     pub render_system: RenderSystem,
     pub actor_render_system: ActorRenderSystem,
     pub block_render_system: BlockRenderSystem,
+    pub chunk_render_pipeline_system: ChunkRenderPipelineSystem,
 
     pub block_class_label_map: LabelMap<BlockClass>,
 

@@ -1,6 +1,7 @@
 pub mod actor_render;
 pub mod block_render;
 pub mod chunk_presence;
+pub mod chunk_render_pipeline;
 pub mod controller;
 pub mod interface;
 pub mod model_loading;

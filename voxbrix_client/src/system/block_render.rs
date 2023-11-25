@@ -12,27 +12,22 @@ use crate::{
                 CullingBlockModelComponent,
             },
         },
-        chunk::render_priority::{
-            self,
-            Priority,
-            RenderPriorityChunkComponent,
+    },
+    system::{
+        chunk_render_pipeline::ComputeContext,
+        render::{
+            gpu_vec::GpuVec,
+            output_thread::OutputThread,
+            primitives::{
+                Polygon,
+                VertexDescription,
+            },
+            RenderParameters,
+            Renderer,
         },
     },
-    system::render::{
-        gpu_vec::GpuVec,
-        output_thread::OutputThread,
-        primitives::{
-            Polygon,
-            VertexDescription,
-        },
-        RenderParameters,
-        Renderer,
-    },
 };
-use ahash::{
-    AHashMap,
-    AHashSet,
-};
+use ahash::AHashMap;
 use anyhow::Result;
 use arrayvec::ArrayVec;
 use rayon::prelude::*;
@@ -237,13 +232,10 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
 
         BlockRenderSystem {
             render_pipeline,
-            build_queue: AHashSet::new(),
-            build_queue_sort_buffer: Vec::new(),
             chunk_buffer_shards: AHashMap::new(),
             update_chunk_buffer: false,
             prepared_vertex_buffer: vertex_buffer,
             prepared_polygon_buffer: polygon_buffer,
-            processed_chunks: Vec::new(),
             num_polygons: 0,
             block_texture_bind_group,
             target_highlighting: TargetHighlighting::None,
@@ -260,13 +252,10 @@ enum TargetHighlighting {
 
 pub struct BlockRenderSystem {
     render_pipeline: wgpu::RenderPipeline,
-    build_queue: AHashSet<Chunk>,
-    build_queue_sort_buffer: Vec<(Chunk, i64, Priority)>,
     chunk_buffer_shards: AHashMap<Chunk, Vec<Polygon>>,
     update_chunk_buffer: bool,
     prepared_vertex_buffer: wgpu::Buffer,
     prepared_polygon_buffer: GpuVec,
-    processed_chunks: Vec<Chunk>,
     num_polygons: u32,
     block_texture_bind_group: wgpu::BindGroup,
     target_highlighting: TargetHighlighting,
@@ -274,10 +263,6 @@ pub struct BlockRenderSystem {
 }
 
 impl BlockRenderSystem {
-    pub fn add_chunk(&mut self, chunk: Chunk) {
-        self.build_queue.insert(chunk);
-    }
-
     fn build_chunk_buffer_shard(
         chunk: &Chunk,
         class_bc: &ClassBlockComponent,
@@ -353,41 +338,21 @@ impl BlockRenderSystem {
         polygon_buffer
     }
 
-    pub fn fill_chunk_queue(
-        &mut self,
-        render_priority_cc: &RenderPriorityChunkComponent,
-        player_chunk: Chunk,
-    ) -> &Vec<(Chunk, i64, Priority)> {
-        render_priority::fill_chunk_queue(
-            self.build_queue.iter(),
-            &mut self.build_queue_sort_buffer,
-            &render_priority_cc,
-            player_chunk,
-        );
-
-        &self.build_queue_sort_buffer
+    // TODO move into component
+    pub fn remove_chunk(&mut self, chunk: &Chunk) {
+        self.chunk_buffer_shards.remove(chunk);
     }
 
-    pub fn build_next_chunk(
+    pub fn compute_chunks(
         &mut self,
+        compute_context: ComputeContext<'_>,
         class_bc: &ClassBlockComponent,
         model_bcc: &ModelBlockClassComponent,
         builder_bmc: &BuilderBlockModelComponent,
         culling_bmc: &CullingBlockModelComponent,
         sky_light_bc: &SkyLightBlockComponent,
-    ) -> Option<Chunk> {
-        let chunk = match self.build_queue_sort_buffer.first() {
-            Some(c) => c.0,
-            None => return None,
-        };
-
-        self.build_queue.remove(&chunk);
-
-        if class_bc.get_chunk(&chunk).is_none() {
-            self.chunk_buffer_shards.remove(&chunk);
-        }
-
-        self.processed_chunks.clear();
+    ) {
+        let chunk = compute_context.queue.next().unwrap();
 
         let par_iter = [
             [0, 0, 0],
@@ -404,9 +369,6 @@ impl BlockRenderSystem {
             class_bc.get_chunk(&chunk)?;
             sky_light_bc.get_chunk(&chunk)?;
             Some(chunk)
-        })
-        .inspect(|chunk| {
-            self.processed_chunks.push(*chunk);
         })
         .par_bridge()
         .map(|chunk| {
@@ -425,8 +387,6 @@ impl BlockRenderSystem {
         self.chunk_buffer_shards.par_extend(par_iter);
 
         self.update_chunk_buffer = true;
-
-        Some(chunk)
     }
 
     pub fn build_target_highlight(&mut self, target: Option<(Chunk, Block, usize)>) {

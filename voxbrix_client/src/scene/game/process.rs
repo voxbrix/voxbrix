@@ -1,10 +1,12 @@
 use super::Transition;
 use crate::{
-    component::chunk::render_priority::Action,
     scene::game::data::GameSharedData,
-    system::render::{
-        output_thread::OutputBundle,
-        Renderer,
+    system::{
+        chunk_render_pipeline::Procedure,
+        render::{
+            output_thread::OutputBundle,
+            Renderer,
+        },
     },
 };
 use rayon::prelude::*;
@@ -48,78 +50,35 @@ impl Process<'_> {
             |chunk| {
                 sd.class_bc.remove_chunk(&chunk);
                 sd.sky_light_bc.remove_chunk(&chunk);
-                sd.render_priority_cc.chunk_removed(&chunk);
+                sd.block_render_system.remove_chunk(&chunk);
+                sd.chunk_render_pipeline_system
+                    .chunk_removed(chunk, |chunk| sd.class_bc.get_chunk(chunk).is_some());
             },
         );
 
-        for (chunk, action) in sd.render_priority_cc.drain_queue() {
-            match action {
-                Action::Add | Action::Update => {
-                    sd.sky_light_system.add_chunk(chunk);
-                },
-                Action::Remove => {
-                    sd.block_render_system.add_chunk(chunk);
-                },
-            }
-        }
-
-        let build_chunk_queue = sd
-            .block_render_system
-            .fill_chunk_queue(&sd.render_priority_cc, player_chunk);
-        let sky_light_queue = sd
-            .sky_light_system
-            .fill_chunk_queue(&sd.render_priority_cc, player_chunk);
-
-        enum Procedure {
-            None,
-            BuildChunk,
-            ComputeSkyLight,
-        }
-
-        let action = match (build_chunk_queue.first(), sky_light_queue.first()) {
-            (None, None) => Procedure::None,
-            (Some(_), None) => Procedure::BuildChunk,
-            (None, Some(_)) => Procedure::ComputeSkyLight,
-            (Some((_, player_dist_1, priority_1)), Some((_, player_dist_2, priority_2))) => {
-                let ordering = priority_1
-                    .cmp(priority_2)
-                    .reverse()
-                    .then(player_dist_1.cmp(player_dist_2));
-                // Ones not already calculated go first
-                // Less player distance is the priority otherwise
-                if ordering.is_le() {
-                    Procedure::BuildChunk
-                } else {
-                    Procedure::ComputeSkyLight
+        sd.chunk_render_pipeline_system
+            .compute_next(player_chunk, |context| {
+                match context.procedure {
+                    Procedure::ComputeSkyLight => {
+                        sd.sky_light_system.compute_chunks(
+                            context,
+                            &sd.class_bc,
+                            &sd.opacity_bcc,
+                            &mut sd.sky_light_bc,
+                        );
+                    },
+                    Procedure::BuildPolygons => {
+                        sd.block_render_system.compute_chunks(
+                            context,
+                            &sd.class_bc,
+                            &sd.model_bcc,
+                            &sd.builder_bmc,
+                            &sd.culling_bmc,
+                            &sd.sky_light_bc,
+                        )
+                    },
                 }
-            },
-        };
-
-        match action {
-            Procedure::None => {},
-            Procedure::BuildChunk => {
-                let chunk_opt = sd.block_render_system.build_next_chunk(
-                    &sd.class_bc,
-                    &sd.model_bcc,
-                    &sd.builder_bmc,
-                    &sd.culling_bmc,
-                    &sd.sky_light_bc,
-                );
-
-                sd.render_priority_cc.finish_chunks(chunk_opt.into_iter())
-            },
-            Procedure::ComputeSkyLight => {
-                sd.sky_light_system.compute_queued(
-                    &sd.class_bc,
-                    &sd.opacity_bcc,
-                    &mut sd.sky_light_bc,
-                );
-
-                for chunk in sd.sky_light_system.drain_processed_chunks() {
-                    sd.block_render_system.add_chunk(chunk);
-                }
-            },
-        }
+            });
 
         sd.player_position_system.process(
             elapsed,

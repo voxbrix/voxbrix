@@ -1,19 +1,7 @@
-use crate::component::chunk::render_priority::{
-    self,
-    Priority,
-    RenderPriorityChunkComponent,
-};
-use ahash::AHashSet;
+use crate::system::chunk_render_pipeline::ComputeContext;
 use arrayvec::ArrayVec;
-use rayon::iter::{
-    ParallelDrainRange,
-    ParallelExtend,
-    ParallelIterator,
-};
-use std::{
-    iter,
-    mem,
-};
+use rayon::prelude::*;
+use std::mem;
 use voxbrix_common::{
     component::{
         block::{
@@ -31,9 +19,6 @@ use voxbrix_common::{
 };
 
 pub struct SkyLightSystem {
-    processed_chunks: AHashSet<Chunk>,
-    chunks_to_compute: AHashSet<Chunk>,
-    queue_buffer: Vec<(Chunk, i64, Priority)>,
     pre_compute_buffer: Vec<(Chunk, Option<BlocksVec<SkyLight>>)>,
     post_compute_buffer: Vec<(Chunk, BlocksVec<SkyLight>, ArrayVec<Chunk, 6>)>,
 }
@@ -41,33 +26,14 @@ pub struct SkyLightSystem {
 impl SkyLightSystem {
     pub fn new() -> Self {
         Self {
-            processed_chunks: AHashSet::new(),
-            chunks_to_compute: AHashSet::new(),
-            queue_buffer: Vec::new(),
             pre_compute_buffer: Vec::new(),
             post_compute_buffer: Vec::new(),
         }
     }
 
-    pub fn fill_chunk_queue(
+    pub fn compute_chunks(
         &mut self,
-        render_priority_cc: &RenderPriorityChunkComponent,
-        player_chunk: Chunk,
-    ) -> &Vec<(Chunk, i64, Priority)> {
-        render_priority::fill_chunk_queue(
-            self.chunks_to_compute.iter(),
-            &mut self.queue_buffer,
-            &render_priority_cc,
-            player_chunk,
-        );
-
-        &self.queue_buffer
-    }
-
-    /// Computes light for the chunk and adds changed neighbors to the queue
-    /// to be recalculated.
-    pub fn compute_queued(
-        &mut self,
+        mut compute_context: ComputeContext<'_>,
         class_bc: &ClassBlockComponent,
         opacity_bcc: &OpacityBlockClassComponent,
         sky_light_bc: &mut SkyLightBlockComponent,
@@ -75,16 +41,9 @@ impl SkyLightSystem {
         let mut pre_compute_buffer = mem::take(&mut self.pre_compute_buffer);
         let mut post_compute_buffer = mem::take(&mut self.post_compute_buffer);
 
-        let mut chunks_iter = self.queue_buffer.iter();
-
-        let expansion = iter::from_fn(|| {
-            let next = chunks_iter.next()?.0;
-            self.chunks_to_compute.remove(&next);
-            Some(next)
-        })
-        .filter(|chunk| class_bc.get_chunk(chunk).is_some())
-        .map(|chunk| (chunk, sky_light_bc.remove_chunk(&chunk)))
-        .take(rayon::current_num_threads());
+        let expansion = compute_context
+            .queue
+            .map(|chunk| (chunk, sky_light_bc.remove_chunk(&chunk)));
 
         pre_compute_buffer.clear();
         pre_compute_buffer.extend(expansion);
@@ -111,21 +70,13 @@ impl SkyLightSystem {
                 .drain(..)
                 .flat_map(|(chunk, light_component, chunks_to_recalc)| {
                     sky_light_bc.insert_chunk(chunk, light_component);
-                    self.processed_chunks.insert(chunk);
                     chunks_to_recalc.into_iter()
                 });
 
-        self.chunks_to_compute.extend(expansion);
+        for chunk in expansion {
+            compute_context.light_changed(chunk);
+        }
 
-        self.pre_compute_buffer = pre_compute_buffer;
         self.post_compute_buffer = post_compute_buffer;
-    }
-
-    pub fn add_chunk(&mut self, chunk: Chunk) {
-        self.chunks_to_compute.insert(chunk);
-    }
-
-    pub fn drain_processed_chunks<'a>(&'a mut self) -> impl Iterator<Item = Chunk> + 'a {
-        self.processed_chunks.drain()
     }
 }

@@ -38,7 +38,6 @@ use crate::{
                 CullingBlockModelComponent,
             },
         },
-        chunk::render_priority::RenderPriorityChunkComponent,
     },
     entity::{
         actor_model::{
@@ -55,6 +54,7 @@ use crate::{
         actor_render::ActorRenderSystemDescriptor,
         block_render::BlockRenderSystemDescriptor,
         chunk_presence::ChunkPresenceSystem,
+        chunk_render_pipeline::ChunkRenderPipelineSystem,
         controller::DirectControl,
         interface::InterfaceSystemDescriptor,
         model_loading::ModelLoadingSystem,
@@ -556,7 +556,6 @@ impl GameScene {
             opacity_bcc,
 
             status_cc,
-            render_priority_cc: RenderPriorityChunkComponent::new(),
 
             builder_bmc,
             culling_bmc,
@@ -570,6 +569,7 @@ impl GameScene {
             render_system,
             actor_render_system,
             block_render_system,
+            chunk_render_pipeline_system: ChunkRenderPipelineSystem::new(),
 
             block_class_label_map,
 
