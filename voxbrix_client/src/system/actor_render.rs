@@ -226,7 +226,7 @@ impl ActorRenderSystem {
                 .is_some()
             {
                 if model_builder.has_animation(&walking_animation) {
-                    let state = match animation_state_ac.get(actor, walking_animation) {
+                    let state = match animation_state_ac.get(&actor, &walking_animation) {
                         Some(s) => s,
                         None => {
                             // TODO have common Instant::now()
@@ -237,7 +237,7 @@ impl ActorRenderSystem {
                                     start: Instant::now(),
                                 },
                             );
-                            animation_state_ac.get(actor, walking_animation).unwrap()
+                            animation_state_ac.get(&actor, &walking_animation).unwrap()
                         },
                     };
 
@@ -267,7 +267,7 @@ impl ActorRenderSystem {
                     }
                 }
             } else {
-                animation_state_ac.remove(actor, walking_animation);
+                animation_state_ac.remove(&actor, &walking_animation);
             }
 
             for body_part in model_builder.list_body_parts() {

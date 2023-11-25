@@ -314,13 +314,13 @@ where
         self.data.insert((actor, key), new)
     }
 
-    pub fn get(&self, actor: Actor, key: K) -> Option<&T> {
-        self.data.get(&(actor, key))
+    pub fn get(&self, actor: &Actor, key: &K) -> Option<&T> {
+        self.data.get(&(*actor, *key))
     }
 
-    pub fn get_actor(&self, actor: Actor) -> impl DoubleEndedIterator<Item = (Actor, K, &T)> {
+    pub fn get_actor(&self, actor: &Actor) -> impl DoubleEndedIterator<Item = (Actor, K, &T)> {
         self.data
-            .range((actor, K::MIN) .. (actor, K::MAX))
+            .range((*actor, K::MIN) .. (*actor, K::MAX))
             .map(|(&(m, k), t)| (m, k, t))
     }
 
@@ -328,8 +328,18 @@ where
         self.data.extend(iter.map(|(m, k, t)| ((m, k), t)))
     }
 
-    pub fn remove(&mut self, actor: Actor, key: K) -> Option<T> {
-        self.data.remove(&(actor, key))
+    pub fn remove(&mut self, actor: &Actor, key: &K) -> Option<T> {
+        self.data.remove(&(*actor, *key))
+    }
+
+    pub fn remove_actor(&mut self, actor: &Actor) -> BTreeMap<(Actor, K), T> {
+        let mut removed = self.data.split_off(&(*actor, K::MIN));
+
+        let mut right_part = removed.split_off(&(*actor, K::MAX));
+
+        self.data.append(&mut right_part);
+
+        removed
     }
 }
 

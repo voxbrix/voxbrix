@@ -4,12 +4,13 @@ use crate::{
         IntoData,
         IntoDataSized,
     },
-    Shared,
     BLOCK_CLASS_TABLE,
 };
 use flume::Sender;
+use redb::Database;
 use std::{
     mem,
+    sync::Arc,
     thread,
 };
 use voxbrix_common::{
@@ -48,7 +49,7 @@ struct GenerationData {
 
 impl ChunkGenerationSystem {
     pub fn new(
-        shared: &'static Shared,
+        database: Arc<Database>,
         block_class_label_map: LabelMap<BlockClass>,
         send_chunk_data: impl Fn(Chunk, BlocksVec<BlockClass>, &mut Packer) + Send + 'static,
     ) -> Self {
@@ -136,7 +137,7 @@ impl ChunkGenerationSystem {
                     Vec::with_capacity(BLOCKS_IN_CHUNK_USIZE),
                 ));
 
-                let db_write = shared.database.begin_write().unwrap();
+                let db_write = database.begin_write().unwrap();
                 {
                     let mut table = db_write.open_table(BLOCK_CLASS_TABLE).unwrap();
                     table

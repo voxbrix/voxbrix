@@ -58,9 +58,9 @@ pub extern "C" fn generate_chunk(seed: u64, chunk_x: i32, chunk_y: i32, chunk_z:
                     [block_x, block_y],
                 );
 
-                let ground_block_z = 31;
+                let ground_block_z = blocks_in_chunk_edge - 1;
 
-                if chunk_z % 8 == 0 && (0 ..= ground_block_z).contains(&block_z) {
+                if chunk_z % 32 == 0 && (0 ..= ground_block_z).contains(&block_z) {
                     let width_coef = block_z as f64 / ground_block_z as f64;
 
                     let block_value = (1.0 - block_value.abs()) * (0.8 + 0.2 * width_coef);

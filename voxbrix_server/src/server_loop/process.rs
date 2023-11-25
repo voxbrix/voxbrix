@@ -3,15 +3,18 @@ use crate::{
         ClientEvent,
         SendData,
     },
-    server::{
-        SendRc,
+    server_loop::{
+        data::SharedData,
         SharedEvent,
     },
     system::chunk_activation::ChunkActivationOutcome,
-    world::World,
     BASE_CHANNEL,
 };
-use std::time::Instant;
+use std::{
+    sync::Arc,
+    time::Instant,
+};
+use tokio::runtime::Handle;
 use voxbrix_common::{
     entity::{
         chunk::Chunk,
@@ -24,21 +27,31 @@ use voxbrix_common::{
     ChunkData,
 };
 
-impl World {
-    pub fn process(mut self) -> World {
+pub struct Process<'a> {
+    pub shared_data: &'a mut SharedData,
+    pub rt_handle: Handle,
+}
+
+impl Process<'_> {
+    pub fn run(self) {
+        let Self {
+            shared_data: sd,
+            rt_handle,
+        } = self;
+
         let now = Instant::now();
-        let elapsed = now.saturating_duration_since(self.last_process_time);
-        self.last_process_time = now;
+        let elapsed = now.saturating_duration_since(sd.last_process_time);
+        sd.last_process_time = now;
 
         // Sending chunks to players
         for (player, client, prev_radius, curr_radius) in
-            self.chunk_update_pc
+            sd.chunk_update_pc
                 .drain()
                 .filter_map(|(player, prev_view)| {
-                    let actor = self.actor_pc.get(&player)?;
-                    let client = self.client_pc.get(&player)?;
-                    let position = self.position_ac.get(&actor)?;
-                    let curr_view = self.chunk_view_pc.get(&player)?;
+                    let actor = sd.actor_pc.get(&player)?;
+                    let client = sd.client_pc.get(&player)?;
+                    let position = sd.position_ac.get(&actor)?;
+                    let curr_view = sd.chunk_view_pc.get(&player)?;
                     let curr_radius = position.chunk.radius(curr_view.radius);
                     let prev_radius = prev_view.previous_view.map(|v| v.chunk.radius(v.radius));
 
@@ -52,39 +65,38 @@ impl World {
                     }
                 }
 
-                self.cache_cc.get(&chunk)
+                sd.cache_cc.get(&chunk)
             }) {
                 if client
                     .tx
                     .send(ClientEvent::SendDataReliable {
                         channel: BASE_CHANNEL,
-                        data: SendData::Ref(chunk_data.clone()),
+                        data: SendData::Arc(chunk_data.clone().into_inner()),
                     })
                     .is_err()
                 {
-                    self.remove_queue.remove_player(&player);
+                    sd.remove_queue.remove_player(&player);
                 }
             }
         }
 
-        self.chunk_activation_system.clear();
-        self.chunk_activation_system
-            .actor_activations(&self.chunk_activation_ac, &self.position_ac);
+        sd.chunk_activation_system.clear();
+        sd.chunk_activation_system
+            .actor_activations(&sd.chunk_activation_ac, &sd.position_ac);
 
-        self.position_system.process(
+        sd.position_system.process(
             elapsed,
-            &self.class_bc,
-            &self.collision_bcc,
-            &mut self.position_ac,
-            &self.velocity_ac,
-            &self.player_ac,
-            self.snapshot,
+            &sd.class_bc,
+            &sd.collision_bcc,
+            &mut sd.position_ac,
+            &sd.velocity_ac,
+            &sd.player_ac,
+            sd.snapshot,
         );
 
-        for (player, player_actor, client) in self
-            .actor_pc
+        for (player, player_actor, client) in sd.actor_pc
             .iter()
-            .filter_map(|(player, actor)| Some((player, actor, self.client_pc.get(player)?)))
+            .filter_map(|(player, actor)| Some((player, actor, sd.client_pc.get(player)?)))
         {
             // Disconnect player if his last snapshot is too low
             /*if snapshot.0 - client.last_server_snapshot.0 > MAX_SNAPSHOT_DIFF
@@ -97,12 +109,12 @@ impl World {
                 continue;
             }*/
 
-            let position_chunk = match self.position_ac.get(&player_actor) {
+            let position_chunk = match sd.position_ac.get(&player_actor) {
                 Some(v) => v.chunk,
                 None => continue,
             };
 
-            let chunk_view_radius = match self.chunk_view_pc.get(&player) {
+            let chunk_view_radius = match sd.chunk_view_pc.get(&player) {
                 Some(v) => v.radius,
                 None => continue,
             };
@@ -110,7 +122,7 @@ impl World {
             let chunk_radius = position_chunk.radius(chunk_view_radius);
 
             let client_is_outdated = client.last_server_snapshot == Snapshot(0)
-                || self.snapshot.0 - client.last_server_snapshot.0 > MAX_SNAPSHOT_DIFF;
+                || sd.snapshot.0 - client.last_server_snapshot.0 > MAX_SNAPSHOT_DIFF;
 
             if let Some(previous_chunk_radius) = client
                 .last_confirmed_chunk
@@ -138,9 +150,9 @@ impl World {
                     .into_iter_simple()
                     .filter(|c| previous_chunk_radius.is_within(c));
 
-                self.position_ac.pack_changes(
-                    &mut self.server_state,
-                    self.snapshot,
+                sd.position_ac.pack_changes(
+                    &mut sd.server_state,
+                    sd.snapshot,
                     client.last_server_snapshot,
                     player_actor,
                     chunk_within_intersection,
@@ -150,84 +162,84 @@ impl World {
 
                 // Server-controlled components, we pass `None` instead of `player_actor`.
                 // These components will not filter out player's own components.
-                self.class_ac.pack_changes(
-                    &mut self.server_state,
-                    self.snapshot,
+                sd.class_ac.pack_changes(
+                    &mut sd.server_state,
+                    sd.snapshot,
                     client.last_server_snapshot,
                     None,
-                    self.position_ac.actors_full_update(),
-                    self.position_ac.actors_partial_update(),
+                    sd.position_ac.actors_full_update(),
+                    sd.position_ac.actors_partial_update(),
                 );
 
-                self.model_acc.pack_changes(
-                    &mut self.server_state,
-                    self.snapshot,
+                sd.model_acc.pack_changes(
+                    &mut sd.server_state,
+                    sd.snapshot,
                     client.last_server_snapshot,
                     Some(player_actor),
-                    self.position_ac.actors_full_update(),
-                    self.position_ac.actors_partial_update(),
+                    sd.position_ac.actors_full_update(),
+                    sd.position_ac.actors_partial_update(),
                 );
 
                 // Client-conrolled components, we pass `Some(player_actor)`.
                 // These components will filter out player's own components.
-                self.velocity_ac.pack_changes(
-                    &mut self.server_state,
-                    self.snapshot,
+                sd.velocity_ac.pack_changes(
+                    &mut sd.server_state,
+                    sd.snapshot,
                     client.last_server_snapshot,
                     Some(player_actor),
-                    self.position_ac.actors_full_update(),
-                    self.position_ac.actors_partial_update(),
+                    sd.position_ac.actors_full_update(),
+                    sd.position_ac.actors_partial_update(),
                 );
 
-                self.orientation_ac.pack_changes(
-                    &mut self.server_state,
-                    self.snapshot,
+                sd.orientation_ac.pack_changes(
+                    &mut sd.server_state,
+                    sd.snapshot,
                     client.last_server_snapshot,
                     Some(player_actor),
-                    self.position_ac.actors_full_update(),
-                    self.position_ac.actors_partial_update(),
+                    sd.position_ac.actors_full_update(),
+                    sd.position_ac.actors_partial_update(),
                 );
             } else {
                 // TODO optimize?
                 let new_chunks = chunk_radius.into_iter_simple();
 
-                self.position_ac
-                    .pack_full(&mut self.server_state, player_actor, new_chunks);
+                sd.position_ac
+                    .pack_full(&mut sd.server_state, player_actor, new_chunks);
 
                 // Server-controlled components, we pass `None` instead of `player_actor`.
                 // These components will not filter out player's own components.
-                self.class_ac.pack_full(
-                    &mut self.server_state,
+                sd.class_ac.pack_full(
+                    &mut sd.server_state,
                     None,
-                    self.position_ac.actors_full_update(),
+                    sd.position_ac.actors_full_update(),
                 );
 
-                self.model_acc.pack_full(
-                    &mut self.server_state,
+                sd.model_acc.pack_full(
+                    &mut sd.server_state,
                     None,
-                    self.position_ac.actors_full_update(),
+                    sd.position_ac.actors_full_update(),
                 );
 
                 // Client-conrolled components, we pass `Some(player_actor)`.
                 // These components will filter out player's own components.
-                self.velocity_ac.pack_full(
-                    &mut self.server_state,
+                sd.velocity_ac.pack_full(
+                    &mut sd.server_state,
                     Some(player_actor),
-                    self.position_ac.actors_full_update(),
+                    sd.position_ac.actors_full_update(),
                 );
 
-                self.orientation_ac.pack_full(
-                    &mut self.server_state,
+                sd.orientation_ac.pack_full(
+                    &mut sd.server_state,
                     Some(player_actor),
-                    self.position_ac.actors_full_update(),
+                    sd.position_ac.actors_full_update(),
                 );
             }
 
             let data = ClientAccept::pack_state(
-                self.snapshot,
+                sd.snapshot,
                 client.last_client_snapshot,
-                &mut self.server_state,
-                &mut self.packer,
+                &mut sd.server_state,
+                &mut sd.packer,
             );
 
             if client
@@ -238,15 +250,17 @@ impl World {
                 })
                 .is_err()
             {
-                self.remove_queue.remove_player(player);
+                sd.remove_queue.remove_player(player);
             }
         }
 
-        self.chunk_activation_system.apply(
-            self.shared,
-            &mut self.status_cc,
-            &mut self.class_bc,
-            &mut self.cache_cc,
+        let shared_event_tx = sd.shared_event_tx.clone();
+
+        sd.chunk_activation_system.apply(
+            &mut sd.database,
+            &mut sd.status_cc,
+            &mut sd.class_bc,
+            &mut sd.cache_cc,
             move |chunk, activation_outcome, packer| {
                 match activation_outcome {
                     ChunkActivationOutcome::ChunkActivated(block_classes) => {
@@ -256,25 +270,19 @@ impl World {
                         };
 
                         let data_encoded =
-                            SendRc::new(packer.pack_to_vec(&ClientAccept::ChunkData(data.clone())));
+                            Arc::new(packer.pack_to_vec(&ClientAccept::ChunkData(data.clone())));
 
-                        let _ = self
-                            .shared
-                            .event_tx
-                            .send(SharedEvent::ChunkLoaded { data, data_encoded });
+                        let _ =
+                            shared_event_tx.send(SharedEvent::ChunkLoaded { data, data_encoded });
                     },
                     ChunkActivationOutcome::ChunkNeedsGeneration => {
-                        let _ = self
-                            .shared
-                            .event_tx
-                            .send(SharedEvent::ChunkGeneration(chunk));
+                        let _ = shared_event_tx.send(SharedEvent::ChunkGeneration(chunk));
                     },
                 }
             },
+            &rt_handle,
         );
 
-        self.snapshot = self.snapshot.next();
-
-        self
+        sd.snapshot = sd.snapshot.next();
     }
 }

@@ -7,8 +7,7 @@ use crate::{
     },
 };
 use anyhow::Result;
-use flume::Sender as SharedSender;
-use local_channel::mpsc::Sender;
+use client_loop::ClientLoop;
 use log::{
     error,
     warn,
@@ -17,12 +16,13 @@ use redb::{
     Database,
     TableDefinition,
 };
-use server::{
+use server_loop::{
     ServerEvent,
-    SharedEvent,
+    ServerLoop,
 };
 use std::{
     env,
+    sync::Arc,
     time::Duration,
 };
 use tokio::{
@@ -45,7 +45,7 @@ use voxbrix_protocol::{
 };
 
 const BASE_CHANNEL: Channel = 0;
-const PLAYER_CHUNK_VIEW_RADIUS: i32 = 4;
+const PLAYER_CHUNK_VIEW_RADIUS: i32 = 8;
 const PROCESS_INTERVAL: Duration = Duration::from_millis(50);
 const CLIENT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 const BLOCK_CLASS_TABLE: TableDefinition<DataSized<Chunk>, Data<BlocksVec<BlockClass>>> =
@@ -55,26 +55,16 @@ const PLAYER_TABLE: TableDefinition<DataSized<Player>, Data<PlayerProfile>> =
 const USERNAME_TABLE: TableDefinition<&str, DataSized<Player>> = TableDefinition::new("username");
 
 mod assets;
-mod client;
+mod client_loop;
 mod component;
 mod entity;
-mod server;
+mod server_loop;
 mod storage;
 mod system;
-mod world;
-
-pub struct Local {
-    pub event_tx: Sender<ServerEvent>,
-}
-
-pub struct Shared {
-    pub database: Database,
-    pub event_tx: SharedSender<SharedEvent>,
-}
 
 fn main() -> Result<()> {
     env_logger::init();
-    let database = Database::create("/tmp/voxbrix.db")?;
+    let database = Arc::new(Database::create("/tmp/voxbrix.db")?);
 
     let write_tx = database.begin_write()?;
     {
@@ -84,14 +74,6 @@ fn main() -> Result<()> {
         write_tx.open_table(BLOCK_CLASS_TABLE)?;
     }
     write_tx.commit()?;
-
-    let (event_tx, event_shared_rx) = flume::unbounded();
-
-    let shared = Box::leak(Box::new(Shared { database, event_tx }));
-
-    let (event_tx, event_rx) = local_channel::mpsc::channel();
-
-    let local = Box::leak(Box::new(Local { event_tx }));
 
     let port = env::var("VOXBRIX_PORT")
         .ok()
@@ -104,37 +86,55 @@ fn main() -> Result<()> {
         .build()
         .expect("unable to build runtime");
 
-    rt.block_on(LocalSet::new().run_until(async {
-        let server = ServerParameters::default()
-            .bind(([0, 0, 0, 0], port))
-            .await?;
+    rt.block_on(LocalSet::new().run_until(async move {
+        let (event_tx, event_rx) = local_channel::mpsc::channel();
 
-        task::spawn_local(async {
-            let mut server = server;
-            loop {
-                match server.accept().await {
-                    Ok(connection) => {
-                        task::spawn_local(async {
-                            match client::run(local, shared, connection).await {
-                                Ok(_) => {
-                                    warn!("client loop exited");
-                                },
-                                Err(err) => {
-                                    warn!("client loop exited: {:?}", err);
-                                },
-                            }
-                            // TODO send disconnect
-                        });
-                    },
-                    Err(err) => {
-                        error!("main: server.accept() error: {:?}", err);
-                        let _ = local.event_tx.send(ServerEvent::ServerConnectionClosed);
-                    },
+        {
+            let server = ServerParameters::default()
+                .bind(([0, 0, 0, 0], port))
+                .await?;
+
+            let database = database.clone();
+            let event_tx = event_tx.clone();
+
+            task::spawn_local(async move {
+                let mut server = server;
+                loop {
+                    match server.accept().await {
+                        Ok(connection) => {
+                            let database = database.clone();
+                            let event_tx = event_tx.clone();
+
+                            task::spawn_local(async move {
+                                let result = ClientLoop {
+                                    database,
+                                    event_tx,
+                                    connection,
+                                }
+                                .run()
+                                .await;
+
+                                match result {
+                                    Ok(_) => {
+                                        warn!("client loop exited");
+                                    },
+                                    Err(err) => {
+                                        warn!("client loop exited: {:?}", err);
+                                    },
+                                }
+                                // TODO send disconnect
+                            });
+                        },
+                        Err(err) => {
+                            error!("main: server.accept() error: {:?}", err);
+                            let _ = event_tx.send(ServerEvent::ServerConnectionClosed);
+                        },
+                    }
                 }
-            }
-        });
+            });
+        }
 
-        server::run(local, shared, event_rx, event_shared_rx).await;
+        ServerLoop { database, event_rx }.run().await;
 
         Ok(())
     }))

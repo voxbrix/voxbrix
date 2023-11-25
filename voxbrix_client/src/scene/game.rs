@@ -19,7 +19,6 @@ use crate::{
             target_orientation::TargetOrientationActorComponent,
             target_position::TargetPositionActorComponent,
             velocity::VelocityActorComponent,
-            TargetQueue,
         },
         actor_class::model::ModelActorClassComponent,
         actor_model::builder::{
@@ -39,6 +38,7 @@ use crate::{
                 CullingBlockModelComponent,
             },
         },
+        chunk::render_priority::RenderPriorityChunkComponent,
     },
     entity::{
         actor_model::{
@@ -68,12 +68,17 @@ use crate::{
             },
             RenderSystemDescriptor,
         },
+        sky_light::SkyLightSystem,
         texture_loading::TextureLoadingSystem,
     },
     window::InputEvent,
     CONNECTION_TIMEOUT,
 };
 use anyhow::Result;
+use data::{
+    EntityRemoveQueue,
+    GameSharedData,
+};
 use futures_lite::{
     future::{
         self,
@@ -84,7 +89,10 @@ use futures_lite::{
         StreamExt,
     },
 };
-use log::error;
+use local_input::LocalInput;
+use network_input::NetworkInput;
+use process::Process;
+use send_state::SendState;
 use std::{
     io::ErrorKind as StdIoErrorKind,
     time::{
@@ -125,15 +133,12 @@ use voxbrix_common::{
                 OpacityBlockClassComponent,
             },
         },
-        chunk::status::{
-            ChunkStatus,
-            StatusChunkComponent,
-        },
+        chunk::status::StatusChunkComponent,
     },
+    compute,
     entity::{
         actor::Actor,
         actor_model::ActorModel,
-        block::Block,
         chunk::{
             Chunk,
             Dimension,
@@ -142,38 +147,38 @@ use voxbrix_common::{
         state_component::StateComponent,
     },
     math::Vec3F32,
-    messages::{
-        client::ClientAccept,
-        server::ServerAccept,
-        StatePacker,
-    },
+    messages::StatePacker,
     pack::Packer,
     system::{
         actor_class_loading::ActorClassLoadingSystem,
         block_class_loading::BlockClassLoadingSystem,
         list_loading::List,
-        sky_light::SkyLightSystem,
     },
-    unblock,
-    ChunkData,
 };
 use voxbrix_protocol::client::{
     Error as ClientError,
     Receiver,
     Sender,
 };
-use winit::event::{
-    DeviceEvent,
-    ElementState,
-    MouseButton,
-    WindowEvent,
-};
 
-pub enum Event {
+mod data;
+mod local_input;
+mod network_input;
+mod process;
+mod send_state;
+
+enum Event {
     Process(OutputBundle),
     SendState,
-    Input(InputEvent),
+    LocalInput(InputEvent),
     NetworkInput(Result<Vec<u8>, ClientError>),
+}
+
+#[must_use = "must be handled"]
+enum Transition {
+    None,
+    Exit,
+    Menu,
 }
 
 pub struct GameSceneParameters {
@@ -201,25 +206,25 @@ impl GameScene {
                 },
         } = self;
 
-        let (reliable_tx, mut reliable_rx) = local_channel::mpsc::channel::<Vec<u8>>();
-        let (unreliable_tx, mut unreliable_rx) = local_channel::mpsc::channel::<Vec<u8>>();
-        let (event_tx, event_rx) = local_channel::mpsc::channel::<Event>();
+        let (reliable_tx, reliable_rx) = flume::unbounded::<Vec<u8>>();
+        let (unreliable_tx, unreliable_rx) = flume::unbounded::<Vec<u8>>();
+        let (event_tx, event_rx) = flume::unbounded::<Event>();
 
-        let mut client_state = StatePacker::new();
+        let client_state = StatePacker::new();
 
-        let mut snapshot = Snapshot(1);
+        let snapshot = Snapshot(1);
         // Last client's snapshot received by the server
-        let mut last_client_snapshot = Snapshot(0);
-        let mut last_server_snapshot = Snapshot(0);
+        let last_client_snapshot = Snapshot(0);
+        let last_server_snapshot = Snapshot(0);
 
-        let mut packer = Packer::new();
+        let packer = Packer::new();
 
         let (tx, mut rx) = connection;
 
         let (mut unreliable, mut reliable) = tx.split();
 
         let _send_unrel_task = async_ext::spawn_scoped(async move {
-            while let Some(msg) = unreliable_rx.recv().await {
+            while let Ok(msg) = unreliable_rx.recv_async().await {
                 unreliable
                     .send_unreliable(0, &msg)
                     .await
@@ -230,8 +235,8 @@ impl GameScene {
         let event_tx_network = event_tx.clone();
 
         let _send_rel_task = async_ext::spawn_scoped(async move {
-            while let Some(msg) = reliable_rx
-                .recv()
+            while let Ok(msg) = reliable_rx
+                .recv_async()
                 .or(async {
                     let _ = future::zip(reliable.wait_complete(), future::pending::<()>()).await;
                     unreachable!();
@@ -305,10 +310,10 @@ impl GameScene {
             |value: Culling| Ok(value),
         )?;
 
-        let mut status_cc = StatusChunkComponent::new();
+        let status_cc = StatusChunkComponent::new();
 
-        let mut class_bc = ClassBlockComponent::new();
-        let mut sky_light_bc = SkyLightBlockComponent::new();
+        let class_bc = ClassBlockComponent::new();
+        let sky_light_bc = SkyLightBlockComponent::new();
 
         let mut model_bcc = ModelBlockClassComponent::new();
         let mut collision_bcc = CollisionBlockClassComponent::new();
@@ -342,15 +347,15 @@ impl GameScene {
             |desc: Opacity| Ok(desc),
         )?;
 
-        let block_class_map = block_class_loading_system.into_label_map();
+        let block_class_label_map = block_class_loading_system.into_label_map();
 
-        let mut last_render_time = Instant::now();
+        let last_process_time = Instant::now();
 
-        let mut player_position_system = PlayerPositionSystem::new(player_actor);
-        let mut movement_interpolation_system = MovementInterpolationSystem::new();
-        let mut direct_control_system = DirectControl::new(player_actor, 10.0, 0.4);
+        let player_position_system = PlayerPositionSystem::new(player_actor);
+        let movement_interpolation_system = MovementInterpolationSystem::new();
+        let direct_control_system = DirectControl::new(player_actor, 10.0, 0.4);
         let chunk_presence_system = ChunkPresenceSystem::new();
-        let mut sky_light_system = SkyLightSystem::new();
+        let sky_light_system = SkyLightSystem::new();
         let actor_texture_loading_system =
             TextureLoadingSystem::load_data(ACTOR_TEXTURE_LIST_PATH, ACTOR_TEXTURE_PATH_PREFIX)
                 .await?;
@@ -359,7 +364,7 @@ impl GameScene {
             .await?
             .into_label_map(StateComponent::from_usize);
 
-        let mut class_ac = ClassActorComponent::new(
+        let class_ac = ClassActorComponent::new(
             state_components_label_map.get("actor_class").unwrap(),
             player_actor,
             false,
@@ -379,11 +384,11 @@ impl GameScene {
             player_actor,
             true,
         );
-        let mut animation_state_ac = AnimationStateActorComponent::new();
-        let mut target_orientation_ac = TargetOrientationActorComponent::new(
+        let animation_state_ac = AnimationStateActorComponent::new();
+        let target_orientation_ac = TargetOrientationActorComponent::new(
             state_components_label_map.get("actor_orientation").unwrap(),
         );
-        let mut target_position_ac = TargetPositionActorComponent::new(
+        let target_position_ac = TargetPositionActorComponent::new(
             state_components_label_map.get("actor_position").unwrap(),
         );
 
@@ -430,7 +435,7 @@ impl GameScene {
             },
         )?;
 
-        let actor_class_map = actor_class_loading_system.into_label_map();
+        let _actor_class_map = actor_class_loading_system.into_label_map();
 
         position_ac.insert(
             player_actor,
@@ -484,13 +489,13 @@ impl GameScene {
 
         let surface_size = output_thread.window().inner_size();
 
-        let mut interface_system = InterfaceSystemDescriptor {
+        let interface_system = InterfaceSystemDescriptor {
             state: interface_state,
             output_thread: &output_thread,
         }
         .build();
 
-        let mut render_system = RenderSystemDescriptor {
+        let render_system = RenderSystemDescriptor {
             player_actor,
             // TODO hide?
             camera_parameters: CameraParameters {
@@ -509,7 +514,7 @@ impl GameScene {
 
         let render_parameters = render_system.get_render_parameters();
 
-        let mut block_render_system = BlockRenderSystemDescriptor {
+        let block_render_system = BlockRenderSystemDescriptor {
             render_parameters,
             block_texture_bind_group_layout,
             block_texture_bind_group,
@@ -517,7 +522,7 @@ impl GameScene {
         .build(&output_thread)
         .await;
 
-        let mut actor_render_system = ActorRenderSystemDescriptor {
+        let actor_render_system = ActorRenderSystemDescriptor {
             render_parameters,
             actor_texture_bind_group_layout,
             actor_texture_bind_group,
@@ -527,6 +532,68 @@ impl GameScene {
 
         let surface_source = output_thread.get_surface_source();
         let input_source = output_thread.get_input_source();
+
+        let mut shared_data = GameSharedData {
+            packer,
+
+            class_ac,
+            position_ac,
+            velocity_ac,
+            orientation_ac,
+            animation_state_ac,
+            target_position_ac,
+            target_orientation_ac,
+
+            builder_amc,
+
+            model_acc,
+
+            class_bc,
+            sky_light_bc,
+
+            collision_bcc,
+            model_bcc,
+            opacity_bcc,
+
+            status_cc,
+            render_priority_cc: RenderPriorityChunkComponent::new(),
+
+            builder_bmc,
+            culling_bmc,
+
+            player_position_system,
+            movement_interpolation_system,
+            direct_control_system,
+            chunk_presence_system,
+            sky_light_system,
+            interface_system,
+            render_system,
+            actor_render_system,
+            block_render_system,
+
+            block_class_label_map,
+
+            player_actor,
+            player_chunk_view_radius,
+
+            snapshot,
+            last_client_snapshot,
+            last_server_snapshot,
+
+            unreliable_tx,
+            reliable_tx,
+            event_tx,
+
+            client_state,
+
+            last_process_time,
+
+            remove_queue: EntityRemoveQueue::new(),
+
+            inventory_open: false,
+            cursor_visible: false,
+        };
+
         let mut send_state_interval = time::interval(Duration::from_millis(50));
         send_state_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
@@ -535,412 +602,64 @@ impl GameScene {
                 .poll_tick(cx)
                 .map(|_| Some(Event::SendState))
         })
-        .or_ff(input_source.stream().map(Event::Input))
+        .or_ff(input_source.stream().map(Event::LocalInput))
         .or_ff(
             surface_source
                 .stream()
-                // Timer::interval(Duration::from_millis(15))
                 .map(|surface| Event::Process(surface))
-                .rr_ff(event_rx),
+                .rr_ff(event_rx.stream()),
         );
 
-        let mut cursor_visible = false;
-        let mut inventory_open = false;
-
         while let Some(event) = stream.next().await {
-            match event {
-                Event::Process(surface) => {
-                    if inventory_open && !cursor_visible {
-                        render_system.cursor_visibility(true);
-                        cursor_visible = true;
-                    } else if !inventory_open && cursor_visible {
-                        render_system.cursor_visibility(false);
-                        cursor_visible = false;
-                    }
-
-                    let now = Instant::now();
-                    let elapsed = now.saturating_duration_since(last_render_time);
-                    last_render_time = now;
-
-                    // TODO: automatically scale by detecting how long it takes
-                    // and how much time do we have between frames
-                    let chunk_built = block_render_system.build_next_chunk(
-                        &class_bc,
-                        &model_bcc,
-                        &builder_bmc,
-                        &culling_bmc,
-                        &sky_light_bc,
-                        &position_ac,
-                        &player_actor,
-                    );
-
-                    if !chunk_built {
-                        let player_chunk = position_ac
-                            .get(&player_actor)
-                            .expect("player Actor must exist")
-                            .chunk;
-
-                        sky_light_system.compute_queued(
-                            &class_bc,
-                            &opacity_bcc,
-                            &mut sky_light_bc,
-                            Some(player_chunk),
-                        );
-
-                        for chunk in sky_light_system.drain_processed_chunks() {
-                            block_render_system.add_chunk(chunk);
-                        }
-                    }
-
-                    player_position_system.process(
-                        elapsed,
-                        &class_bc,
-                        &collision_bcc,
-                        &mut position_ac,
-                        &velocity_ac,
-                        snapshot,
-                    );
-                    chunk_presence_system.process(
-                        player_chunk_view_radius,
-                        &player_actor,
-                        &position_ac,
-                        &mut class_bc,
-                        &mut status_cc,
-                        |chunk| {
-                            block_render_system.add_chunk(chunk);
-                        },
-                    );
-                    direct_control_system.process(
-                        elapsed,
-                        &mut velocity_ac,
-                        &mut orientation_ac,
-                        snapshot,
-                    );
-                    movement_interpolation_system.process(
-                        &mut target_position_ac,
-                        &mut target_orientation_ac,
-                        &mut position_ac,
-                        &mut orientation_ac,
-                        snapshot,
-                    );
-
-                    let target = player_position_system.get_target_block(
-                        &position_ac,
-                        &orientation_ac,
-                        |chunk, block| {
-                            // TODO: better targeting collision?
-                            class_bc
-                                .get_chunk(&chunk)
-                                .map(|blocks| {
-                                    let class = blocks.get(block);
-                                    collision_bcc.get(class).is_some()
-                                })
-                                .unwrap_or(false)
-                        },
-                    );
-
-                    block_render_system.build_target_highlight(target);
-
-                    interface_system.start(render_system.output_thread().window());
-
-                    interface_system.add_interface(|ctx| {
-                        egui::Window::new("Inventory")
-                            .open(&mut inventory_open)
-                            .show(ctx, |ui| {
-                                ui.label("Hello World!");
-                            });
-                    });
-
-                    render_system.update(&position_ac, &orientation_ac);
-                    actor_render_system.update(
-                        player_actor,
-                        &class_ac,
-                        &position_ac,
-                        &velocity_ac,
-                        &orientation_ac,
-                        &model_acc,
-                        &builder_amc,
-                        &mut animation_state_ac,
-                    );
-
-                    unblock!((
-                        render_system,
-                        block_render_system,
-                        interface_system,
-                        actor_render_system,
-                        inventory_open
-                    ) {
-                        render_system.start_render(surface);
-
-                        let mut renderers = render_system.get_renderers::<3>().into_iter();
-
-                        block_render_system.render(renderers.next().unwrap())
-                            .expect("block render");
-
-                        actor_render_system.render(renderers.next().unwrap())
-                            .expect("actor render");
-
-                        interface_system.render(renderers.next().unwrap())
-                            .expect("interface render");
-
-                        drop(renderers);
-
-                        render_system.finish_render();
-                    });
+            let transition = match event {
+                Event::Process(output_bundle) => {
+                    compute!((shared_data) Process {
+                    shared_data: &mut shared_data,
+                    output_bundle,
+                }.run())
                 },
                 Event::SendState => {
-                    position_ac.pack_player(&mut client_state, last_client_snapshot);
-                    velocity_ac.pack_player(&mut client_state, last_client_snapshot);
-                    orientation_ac.pack_player(&mut client_state, last_client_snapshot);
-
-                    let packed = ServerAccept::pack_state(
-                        snapshot,
-                        last_server_snapshot,
-                        &mut client_state,
-                        &mut packer,
-                    );
-
-                    let _ = unreliable_tx.send(packed);
-
-                    snapshot = snapshot.next();
-                },
-                Event::Input(event) => {
-                    match event {
-                        InputEvent::DeviceEvent {
-                            device_id: _,
-                            event,
-                        } => {
-                            if !inventory_open {
-                                match event {
-                                    DeviceEvent::MouseMotion {
-                                        delta: (horizontal, vertical),
-                                    } => {
-                                        direct_control_system
-                                            .process_mouse(horizontal as f32, vertical as f32);
-                                    },
-                                    _ => {},
-                                }
-                            }
-                        },
-                        InputEvent::WindowEvent { event } => {
-                            if inventory_open {
-                                interface_system.window_event(&event);
-                            }
-                            match event {
-                                WindowEvent::Resized(size) => {
-                                    render_system.resize(size);
-                                },
-                                WindowEvent::CloseRequested | WindowEvent::Destroyed => {
-                                    return Ok(SceneSwitch::Exit);
-                                },
-                                WindowEvent::KeyboardInput {
-                                    device_id: _,
-                                    input,
-                                    is_synthetic: _,
-                                } => {
-                                    if let Some(button) = input.virtual_keycode {
-                                        if matches!(
-                                            input.state,
-                                            winit::event::ElementState::Pressed
-                                        ) {
-                                            match button {
-                                                winit::event::VirtualKeyCode::Escape => break,
-                                                winit::event::VirtualKeyCode::I => {
-                                                    inventory_open = !inventory_open;
-                                                },
-                                                _ => {},
-                                            }
-                                        }
-                                    }
-                                    direct_control_system.process_keyboard(&input);
-                                },
-                                WindowEvent::MouseInput { state, button, .. } => {
-                                    if state == ElementState::Pressed {
-                                        match button {
-                                            MouseButton::Left => {
-                                                if let Some((chunk, block, _side)) =
-                                                    player_position_system.get_target_block(
-                                                        &position_ac,
-                                                        &orientation_ac,
-                                                        |chunk, block| {
-                                                            class_bc
-                                                                .get_chunk(&chunk)
-                                                                .map(|blocks| {
-                                                                    let class = blocks.get(block);
-                                                                    collision_bcc
-                                                                        .get(class)
-                                                                        .is_some()
-                                                                })
-                                                                .unwrap_or(false)
-                                                        },
-                                                    )
-                                                {
-                                                    let _ = reliable_tx.send(packer.pack_to_vec(
-                                                        &ServerAccept::AlterBlock {
-                                                            chunk,
-                                                            block,
-                                                            block_class:
-                                                                block_class_map.get("air").unwrap(),
-                                                        },
-                                                    ));
-                                                }
-                                            },
-                                            MouseButton::Right => {
-                                                if let Some((chunk, block, side)) =
-                                                    player_position_system.get_target_block(
-                                                        &position_ac,
-                                                        &orientation_ac,
-                                                        |chunk, block| {
-                                                            class_bc
-                                                                .get_chunk(&chunk)
-                                                                .map(|blocks| {
-                                                                    let class = blocks.get(block);
-                                                                    collision_bcc
-                                                                        .get(class)
-                                                                        .is_some()
-                                                                })
-                                                                .unwrap_or(false)
-                                                        },
-                                                    )
-                                                {
-                                                    let axis = side / 2;
-                                                    let direction = match side % 2 {
-                                                        0 => -1,
-                                                        1 => 1,
-                                                        _ => panic!("incorrect side index"),
-                                                    };
-                                                    let mut block =
-                                                        block.to_coords().map(|u| u as i32);
-                                                    block[axis] += direction;
-                                                    if let Some((chunk, block)) =
-                                                        Block::from_chunk_offset(chunk, block)
-                                                    {
-                                                        let _ = reliable_tx.send(
-                                                            packer.pack_to_vec(
-                                                                &ServerAccept::AlterBlock {
-                                                                    chunk,
-                                                                    block,
-                                                                    block_class: block_class_map
-                                                                        .get("grass")
-                                                                        .unwrap(),
-                                                                },
-                                                            ),
-                                                        );
-                                                    }
-                                                }
-                                            },
-                                            _ => {},
-                                        }
-                                    }
-                                },
-                                _ => {},
-                            }
-                        },
+                    SendState {
+                        shared_data: &mut shared_data,
                     }
+                    .run()
                 },
-                Event::NetworkInput(result) => {
-                    let message = match result {
-                        Ok(m) => m,
-                        Err(err) => {
-                            // TODO handle properly, pass error to menu to display there
-                            error!("game::run: connection error: {:?}", err);
-                            return Ok(SceneSwitch::Menu {
-                                parameters: MenuSceneParameters {
-                                    interface_state: interface_system.into_interface_state(),
-                                    output_thread: render_system.into_output(),
-                                },
-                            });
-                        },
-                    };
-
-                    let message = match packer.unpack::<ClientAccept>(&message) {
-                        Ok(m) => m,
-                        Err(_) => continue,
-                    };
-
-                    match message {
-                        ClientAccept::State {
-                            snapshot: new_lss,
-                            last_client_snapshot: new_lcs,
-                            state,
-                        } => {
-                            let current_time = Instant::now();
-                            class_ac.unpack_state(&state);
-                            model_acc.unpack_state(&state);
-                            velocity_ac.unpack_state(&state);
-                            target_orientation_ac.unpack_state_convert(
-                                &state,
-                                |actor, previous, orientation: Orientation| {
-                                    let current_value = if let Some(p) = orientation_ac.get(&actor)
-                                    {
-                                        *p
-                                    } else {
-                                        orientation_ac.insert(actor, orientation, snapshot);
-                                        orientation
-                                    };
-
-                                    TargetQueue::from_previous(
-                                        previous,
-                                        current_value,
-                                        orientation,
-                                        current_time,
-                                        new_lss,
-                                    )
-                                },
-                            );
-                            target_position_ac.unpack_state_convert(
-                                &state,
-                                |actor, previous, position: Position| {
-                                    let current_value = if let Some(p) = position_ac.get(&actor) {
-                                        *p
-                                    } else {
-                                        position_ac.insert(actor, position, snapshot);
-                                        position
-                                    };
-
-                                    TargetQueue::from_previous(
-                                        previous,
-                                        current_value,
-                                        position,
-                                        current_time,
-                                        new_lss,
-                                    )
-                                },
-                            );
-                            last_client_snapshot = new_lcs;
-                            last_server_snapshot = new_lss;
-                        },
-                        ClientAccept::ChunkData(ChunkData {
-                            chunk,
-                            block_classes,
-                        }) => {
-                            class_bc.insert_chunk(chunk, block_classes);
-                            status_cc.insert(chunk, ChunkStatus::Active);
-
-                            sky_light_system.add_chunk(chunk);
-                        },
-                        ClientAccept::AlterBlock {
-                            chunk,
-                            block,
-                            block_class,
-                        } => {
-                            if let Some(block_class_ref) =
-                                class_bc.get_mut_chunk(&chunk).map(|c| c.get_mut(block))
-                            {
-                                *block_class_ref = block_class;
-
-                                sky_light_system.add_chunk(chunk);
-                            }
-                        },
+                Event::LocalInput(event) => {
+                    LocalInput {
+                        shared_data: &mut shared_data,
+                        event,
                     }
+                    .run()
+                },
+                Event::NetworkInput(event) => {
+                    NetworkInput {
+                        shared_data: &mut shared_data,
+                        event,
+                    }
+                    .run()
+                },
+            };
+
+            match transition {
+                Transition::None => {},
+                Transition::Exit => {
+                    return Ok(SceneSwitch::Exit);
+                },
+                Transition::Menu => {
+                    return Ok(SceneSwitch::Menu {
+                        parameters: MenuSceneParameters {
+                            interface_state: shared_data.interface_system.into_interface_state(),
+                            output_thread: shared_data.render_system.into_output(),
+                        },
+                    });
                 },
             }
         }
 
         Ok(SceneSwitch::Menu {
             parameters: MenuSceneParameters {
-                interface_state: interface_system.into_interface_state(),
-                output_thread: render_system.into_output(),
+                interface_state: shared_data.interface_system.into_interface_state(),
+                output_thread: shared_data.render_system.into_output(),
             },
         })
     }

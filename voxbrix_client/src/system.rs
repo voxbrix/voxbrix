@@ -7,5 +7,6 @@ pub mod model_loading;
 pub mod movement_interpolation;
 pub mod player_position;
 pub mod render;
+pub mod sky_light;
 pub mod texture_loading;
 pub mod velocity;

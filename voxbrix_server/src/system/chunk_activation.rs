@@ -16,12 +16,15 @@ use crate::{
         },
     },
     storage::IntoDataSized,
-    Shared,
     BLOCK_CLASS_TABLE,
 };
 use ahash::AHashMap;
-use redb::ReadableTable;
-use tokio::task;
+use redb::{
+    Database,
+    ReadableTable,
+};
+use std::sync::Arc;
+use tokio::runtime::Handle;
 use voxbrix_common::{
     component::block::{
         class::ClassBlockComponent,
@@ -97,11 +100,12 @@ impl ChunkActivationSystem {
 
     pub fn apply(
         &mut self,
-        shared: &'static Shared,
+        database: &Arc<Database>,
         status_cc: &mut StatusChunkComponent,
         class_bc: &mut ClassBlockComponent,
         cache_cc: &mut CacheChunkComponent,
         send_fn: impl Fn(Chunk, ChunkActivationOutcome, &mut Packer) + Clone + Send + 'static,
+        rt_handle: &Handle,
     ) {
         self.missing.clear();
         self.missing.extend(
@@ -132,10 +136,11 @@ impl ChunkActivationSystem {
 
         for (chunk, _) in self.missing.iter().copied() {
             let send_fn = send_fn.clone();
-            task::spawn_blocking(move || {
+            let database = database.clone();
+            rt_handle.spawn_blocking(move || {
                 let mut packer = Packer::new();
 
-                let db_read = shared.database.begin_read().unwrap();
+                let db_read = database.begin_read().unwrap();
                 let table = db_read
                     .open_table(BLOCK_CLASS_TABLE)
                     .expect("server_loop: database read");

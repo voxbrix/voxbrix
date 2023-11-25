@@ -27,8 +27,10 @@ use std::{
     path::Path,
 };
 
+/// Moves the block with the data in the brackets into the rayon threadpool and awaits for the data
+/// to be returned.
 #[macro_export]
-macro_rules! unblock {
+macro_rules! compute {
     (($($a:ident),+)$e:expr) => {
         {
             let (task_output_tx, task_output_rx) = flume::bounded(1);

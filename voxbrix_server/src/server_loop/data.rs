@@ -38,21 +38,23 @@ use crate::{
         actor::ActorRegistry,
         player::Player,
     },
-    server::SendRc,
+    server_loop::SharedEvent,
     storage::StorageThread,
     system::{
         chunk_activation::ChunkActivationSystem,
         chunk_generation::ChunkGenerationSystem,
         position::PositionSystem,
     },
-    Local,
-    Shared,
     BASE_CHANNEL,
     PLAYER_CHUNK_VIEW_RADIUS,
 };
-use local_channel::mpsc::Sender;
+use flume::Sender;
 use nohash_hasher::IntSet;
-use std::time::Instant;
+use redb::Database;
+use std::{
+    sync::Arc,
+    time::Instant,
+};
 use voxbrix_common::{
     component::{
         block::class::ClassBlockComponent,
@@ -69,9 +71,6 @@ use voxbrix_common::{
     ChunkData,
     LabelMap,
 };
-
-mod player_event;
-mod process;
 
 pub struct EntityRemoveQueue(Option<EntityRemoveQueueInner>);
 
@@ -130,10 +129,9 @@ impl EntityRemoveQueue {
 }
 
 /// All components and systems the loop has.
-pub struct World {
-    pub local: &'static Local,
-    pub shared: &'static Shared,
-
+pub struct SharedData {
+    pub database: Arc<Database>,
+    pub shared_event_tx: Sender<SharedEvent>,
     pub packer: Packer,
     pub actor_registry: ActorRegistry,
 
@@ -175,7 +173,7 @@ pub struct World {
     pub remove_queue: EntityRemoveQueue,
 }
 
-impl World {
+impl SharedData {
     pub fn remove_entities(&mut self) {
         let mut remove_queue = self.remove_queue.take();
 
@@ -254,8 +252,7 @@ impl World {
         }
     }
 
-    pub fn chunk_loaded(&mut self, chunk_data: ChunkData, data_encoded: SendRc<Vec<u8>>) {
-        let chunk_data_buf = data_encoded.extract();
+    pub fn chunk_loaded(&mut self, chunk_data: ChunkData, data_encoded: Arc<Vec<u8>>) {
         match self.status_cc.get_mut(&chunk_data.chunk) {
             Some(status) if *status == ChunkStatus::Loading => {
                 *status = ChunkStatus::Active;
@@ -266,7 +263,7 @@ impl World {
         self.class_bc
             .insert_chunk(chunk_data.chunk, chunk_data.block_classes);
         self.cache_cc
-            .insert(chunk_data.chunk, chunk_data_buf.clone());
+            .insert(chunk_data.chunk, data_encoded.clone().into());
 
         let chunk = chunk_data.chunk;
 
@@ -284,7 +281,7 @@ impl World {
                 .tx
                 .send(ClientEvent::SendDataReliable {
                     channel: BASE_CHANNEL,
-                    data: SendData::Ref(chunk_data_buf.clone()),
+                    data: SendData::Arc(data_encoded.clone()),
                 })
                 .is_err()
             {

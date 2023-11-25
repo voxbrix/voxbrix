@@ -23,9 +23,8 @@ impl ChunkPresenceSystem {
         radius: i32,
         player: &Actor,
         gpc: &PositionActorComponent,
-        class_bc: &mut ClassBlockComponent,
         status_cc: &mut StatusChunkComponent,
-        mut redraw_chunk: impl FnMut(Chunk),
+        mut delete: impl FnMut(Chunk),
     ) {
         let Position {
             chunk: player_chunk,
@@ -36,8 +35,7 @@ impl ChunkPresenceSystem {
         status_cc.retain(|chunk, _| {
             let retain = radius.is_within(chunk);
             if !retain {
-                class_bc.remove_chunk(chunk);
-                redraw_chunk(*chunk);
+                delete(*chunk);
             }
             retain
         });
