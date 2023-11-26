@@ -1,6 +1,9 @@
-use crate::system::render::{
-    output_thread::OutputThread,
-    Renderer,
+use crate::{
+    system::render::{
+        output_thread::OutputThread,
+        Renderer,
+    },
+    InterfaceData,
 };
 use anyhow::Result;
 use egui::Context;
@@ -14,19 +17,19 @@ use winit::{
 };
 
 pub struct InterfaceSystemDescriptor<'a> {
-    pub state: egui_winit::State,
+    pub interface_data: InterfaceData,
     pub output_thread: &'a OutputThread,
 }
 
 impl InterfaceSystemDescriptor<'_> {
     pub fn build(self) -> InterfaceSystem {
         let Self {
-            state,
+            interface_data,
             output_thread,
         } = self;
 
         InterfaceSystem {
-            state,
+            interface_data,
             interface_renderer: InterfaceRenderer::new(
                 &output_thread.device(),
                 output_thread.current_surface_config().format,
@@ -39,7 +42,7 @@ impl InterfaceSystemDescriptor<'_> {
 }
 
 pub struct InterfaceSystem {
-    state: egui_winit::State,
+    interface_data: InterfaceData,
     interface_renderer: InterfaceRenderer,
     context: Context,
 }
@@ -47,7 +50,7 @@ pub struct InterfaceSystem {
 impl InterfaceSystem {
     /// Call this before adding interfaces.
     pub fn start(&mut self, window: &Window) {
-        let input = self.state.take_egui_input(window);
+        let input = self.interface_data.state.take_egui_input(window);
         self.context.begin_frame(input);
     }
 
@@ -68,9 +71,8 @@ impl InterfaceSystem {
         };
 
         self.context.set_pixels_per_point(2.0);
-        self.state.set_pixels_per_point(2.0);
 
-        let clipped_primitives = self.context.tessellate(interface.shapes);
+        let clipped_primitives = self.context.tessellate(interface.shapes, 2.0);
 
         self.interface_renderer.update_buffers(
             renderer.device,
@@ -98,10 +100,12 @@ impl InterfaceSystem {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
-                        store: true,
+                        store: wgpu::StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
             });
 
         self.interface_renderer
@@ -112,10 +116,13 @@ impl InterfaceSystem {
 
     pub fn window_event(&mut self, event: &WindowEvent) {
         // TODO only redraw if required
-        let _ = self.state.on_event(&self.context, event);
+        let _ = self
+            .interface_data
+            .state
+            .on_window_event(&self.context, event);
     }
 
-    pub fn into_interface_state(self) -> egui_winit::State {
-        self.state
+    pub fn into_interface_data(self) -> InterfaceData {
+        self.interface_data
     }
 }

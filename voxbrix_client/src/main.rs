@@ -39,6 +39,11 @@ pub struct RenderHandle {
     pub queue: wgpu::Queue,
 }
 
+pub struct InterfaceData {
+    pub context: egui::Context,
+    pub state: egui_winit::State,
+}
+
 struct PanicLogEntry<'a> {
     panic_info: &'a PanicInfo<'a>,
     thread: &'a Thread,
@@ -176,8 +181,15 @@ fn main() {
                             view_formats: vec![format],
                         };
 
+                        let context = egui::Context::default();
+
                         //let interface_state = egui_winit::State::new(&window_handle.window);
-                        let interface_state = egui_winit::State::new_with_wayland_display(None);
+                        let interface_state = egui_winit::State::new(
+                            context.viewport_id(),
+                            &window_handle.window,
+                            Some(2.0),
+                            None,
+                        );
                         let output_thread = OutputThread::new(
                             RenderHandle {
                                 adapter,
@@ -190,7 +202,10 @@ fn main() {
                         );
 
                         let scene_manager = SceneManager {
-                            interface_state,
+                            interface_data: InterfaceData {
+                                context,
+                                state: interface_state,
+                            },
                             output_thread,
                         };
 

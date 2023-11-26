@@ -302,7 +302,8 @@ impl ClientLoop {
                             .iter()
                             .expect("database read")
                             .next_back()
-                            // TODO wrapping?
+                            .transpose()
+                            .expect("database iteration")
                             .map(|(data, _)| {
                                 let player = data.value().into_inner();
                                 // TODO: some kind of wrapping?

@@ -52,7 +52,9 @@ pub fn create_window(handle_tx: Sender<WindowHandle>) -> Result<()> {
     // https://github.com/gfx-rs/wgpu/issues/2128
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends: wgpu::Backends::all(),
+        flags: wgpu::InstanceFlags::default(),
         dx12_shader_compiler: wgpu::Dx12Compiler::default(),
+        gles_minor_version: wgpu::Gles3MinorVersion::Automatic,
     });
 
     let window = WindowBuilder::new().build(&event_loop)?;

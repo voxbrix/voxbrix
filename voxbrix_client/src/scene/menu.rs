@@ -8,6 +8,7 @@ use crate::{
         OutputThread,
     },
     window::InputEvent,
+    InterfaceData,
     CONNECTION_TIMEOUT,
 };
 use anyhow::Result;
@@ -72,7 +73,7 @@ use voxbrix_protocol::client::{
 use winit::event::WindowEvent;
 
 pub struct MenuSceneParameters {
-    pub interface_state: egui_winit::State,
+    pub interface_data: InterfaceData,
     pub output_thread: OutputThread,
 }
 
@@ -90,7 +91,6 @@ enum Event {
 fn set_ui_scale(scale: f32, sd: &mut ScreenDescriptor, ctx: &Context, state: &mut State) {
     sd.pixels_per_point = scale;
     ctx.set_pixels_per_point(scale);
-    state.set_pixels_per_point(scale);
 }
 
 pub struct MenuScene {
@@ -102,7 +102,7 @@ impl MenuScene {
         let Self {
             parameters:
                 MenuSceneParameters {
-                    interface_state: mut state,
+                    interface_data: InterfaceData { context, mut state },
                     mut output_thread,
                 },
         } = self;
@@ -126,9 +126,7 @@ impl MenuScene {
 
         let mut renderer = Renderer::new(&output_thread.device(), format, None, 1);
 
-        let ctx = Context::default();
-
-        set_ui_scale(2.0, &mut screen_descriptor, &ctx, &mut state);
+        set_ui_scale(2.0, &mut screen_descriptor, &context, &mut state);
 
         let surface_source = output_thread.get_surface_source();
         let input_source = output_thread.get_input_source();
@@ -162,7 +160,7 @@ impl MenuScene {
             match event {
                 Event::Process(mut output_bundle) => {
                     let input = state.take_egui_input(&output_thread.window());
-                    let full_output = ctx.run(input, |ctx| {
+                    let full_output = context.run(input, |ctx| {
                         CentralPanel::default().show(&ctx, |ui| {
                             ui.label("Voxbrix");
                             ui.label(&error_message);
@@ -193,7 +191,7 @@ impl MenuScene {
                             ui.checkbox(&mut is_registration, "Registration");
                         });
                     });
-                    let clipped_primitives = ctx.tessellate(full_output.shapes);
+                    let clipped_primitives = context.tessellate(full_output.shapes, 2.0);
 
                     let mut encoder = output_thread.device().create_command_encoder(
                         &wgpu::CommandEncoderDescriptor {
@@ -238,10 +236,12 @@ impl MenuScene {
                                     b: 0.1,
                                     a: 0.0,
                                 }),
-                                store: true,
+                                store: wgpu::StoreOp::Store,
                             },
                         })],
                         depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
                     });
 
                     renderer.render(&mut render_pass, &clipped_primitives, &screen_descriptor);
@@ -273,7 +273,7 @@ impl MenuScene {
 
                                     return Ok(SceneSwitch::Game {
                                         parameters: GameSceneParameters {
-                                            interface_state: state,
+                                            interface_data: InterfaceData { context, state },
                                             output_thread,
                                             connection: (tx, rx),
                                             player_actor: actor,
@@ -298,7 +298,7 @@ impl MenuScene {
                                 return Ok(SceneSwitch::Exit);
                             },
                             _ => {
-                                let _ = state.on_event(&ctx, &event);
+                                let _ = state.on_window_event(&context, &event);
                             },
                         }
                     }

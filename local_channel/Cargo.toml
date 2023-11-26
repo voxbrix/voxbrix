@@ -9,4 +9,4 @@ edition = "2021"
 futures-core = { version = "0.3", default-features = false }
 
 [dev-dependencies]
-futures-lite = "1.12"
+futures-lite = "2"

@@ -19,14 +19,14 @@ edition = "2021"
 
 [workspace.dependencies]
 tokio = "1"
-rayon = "1.7"
-futures-lite = { version = "1.13", default-features = false }
+rayon = "1.8"
+futures-lite = { version = "2", default-features = false }
 flume = { version = "0.11", default-features = false, features = ["async"] }
 # TODO Change to >=1.0.184 after https://github.com/ron-rs/ron/issues/508
 serde = { version = "=1.0.171", default-features = false, features = ["std", "derive"] } 
 serde-big-array = "0.5"
-k256 = { version = "0.13.0", features = ["ecdsa"] }
-lz4_flex = { version = "0.10", default-features = false, features = ["checked-decode"] }
+k256 = { version = "0.13.2", features = ["ecdsa"] }
+lz4_flex = "0.11"
 bincode = "1.3"
 arrayvec = { version = "0.7", default-features = false }
 ron = "0.8"

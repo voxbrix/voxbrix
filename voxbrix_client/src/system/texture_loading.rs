@@ -119,8 +119,8 @@ impl TextureLoadingSystem {
                     &texture_bytes,
                     wgpu::ImageDataLayout {
                         offset: 0,
-                        bytes_per_row: NonZeroU32::new(4 * texture_size.0),
-                        rows_per_image: NonZeroU32::new(texture_size.1),
+                        bytes_per_row: Some(4 * texture_size.0),
+                        rows_per_image: Some(texture_size.1),
                     },
                     extent,
                 );
