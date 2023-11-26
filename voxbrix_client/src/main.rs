@@ -39,11 +39,6 @@ pub struct RenderHandle {
     pub queue: wgpu::Queue,
 }
 
-pub struct InterfaceData {
-    pub context: egui::Context,
-    pub state: egui_winit::State,
-}
-
 struct PanicLogEntry<'a> {
     panic_info: &'a PanicInfo<'a>,
     thread: &'a Thread,
@@ -185,7 +180,7 @@ fn main() {
 
                         //let interface_state = egui_winit::State::new(&window_handle.window);
                         let interface_state = egui_winit::State::new(
-                            context.viewport_id(),
+                            egui::ViewportId::ROOT,
                             &window_handle.window,
                             Some(2.0),
                             None,
@@ -202,10 +197,7 @@ fn main() {
                         );
 
                         let scene_manager = SceneManager {
-                            interface_data: InterfaceData {
-                                context,
-                                state: interface_state,
-                            },
+                            interface_state,
                             output_thread,
                         };
 

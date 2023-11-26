@@ -1,9 +1,6 @@
-use crate::{
-    system::render::{
-        output_thread::OutputThread,
-        Renderer,
-    },
-    InterfaceData,
+use crate::system::render::{
+    output_thread::OutputThread,
+    Renderer,
 };
 use anyhow::Result;
 use egui::Context;
@@ -17,19 +14,19 @@ use winit::{
 };
 
 pub struct InterfaceSystemDescriptor<'a> {
-    pub interface_data: InterfaceData,
+    pub interface_state: egui_winit::State,
     pub output_thread: &'a OutputThread,
 }
 
 impl InterfaceSystemDescriptor<'_> {
     pub fn build(self) -> InterfaceSystem {
         let Self {
-            interface_data,
+            interface_state,
             output_thread,
         } = self;
 
         InterfaceSystem {
-            interface_data,
+            interface_state,
             interface_renderer: InterfaceRenderer::new(
                 &output_thread.device(),
                 output_thread.current_surface_config().format,
@@ -42,7 +39,7 @@ impl InterfaceSystemDescriptor<'_> {
 }
 
 pub struct InterfaceSystem {
-    interface_data: InterfaceData,
+    interface_state: egui_winit::State,
     interface_renderer: InterfaceRenderer,
     context: Context,
 }
@@ -50,7 +47,7 @@ pub struct InterfaceSystem {
 impl InterfaceSystem {
     /// Call this before adding interfaces.
     pub fn start(&mut self, window: &Window) {
-        let input = self.interface_data.state.take_egui_input(window);
+        let input = self.interface_state.take_egui_input(window);
         self.context.begin_frame(input);
     }
 
@@ -116,13 +113,10 @@ impl InterfaceSystem {
 
     pub fn window_event(&mut self, event: &WindowEvent) {
         // TODO only redraw if required
-        let _ = self
-            .interface_data
-            .state
-            .on_window_event(&self.context, event);
+        let _ = self.interface_state.on_window_event(&self.context, event);
     }
 
-    pub fn into_interface_data(self) -> InterfaceData {
-        self.interface_data
+    pub fn into_interface_state(self) -> egui_winit::State {
+        self.interface_state
     }
 }

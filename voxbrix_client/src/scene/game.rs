@@ -72,7 +72,6 @@ use crate::{
         texture_loading::TextureLoadingSystem,
     },
     window::InputEvent,
-    InterfaceData,
     CONNECTION_TIMEOUT,
 };
 use anyhow::Result;
@@ -183,7 +182,7 @@ enum Transition {
 }
 
 pub struct GameSceneParameters {
-    pub interface_data: InterfaceData,
+    pub interface_state: egui_winit::State,
     pub output_thread: OutputThread,
     pub connection: (Sender, Receiver),
     pub player_actor: Actor,
@@ -199,7 +198,7 @@ impl GameScene {
         let GameScene {
             parameters:
                 GameSceneParameters {
-                    interface_data,
+                    interface_state,
                     output_thread,
                     connection,
                     player_actor,
@@ -491,7 +490,7 @@ impl GameScene {
         let surface_size = output_thread.window().inner_size();
 
         let interface_system = InterfaceSystemDescriptor {
-            interface_data,
+            interface_state,
             output_thread: &output_thread,
         }
         .build();
@@ -649,7 +648,7 @@ impl GameScene {
                 Transition::Menu => {
                     return Ok(SceneSwitch::Menu {
                         parameters: MenuSceneParameters {
-                            interface_data: shared_data.interface_system.into_interface_data(),
+                            interface_state: shared_data.interface_system.into_interface_state(),
                             output_thread: shared_data.render_system.into_output(),
                         },
                     });
@@ -659,7 +658,7 @@ impl GameScene {
 
         Ok(SceneSwitch::Menu {
             parameters: MenuSceneParameters {
-                interface_data: shared_data.interface_system.into_interface_data(),
+                interface_state: shared_data.interface_system.into_interface_state(),
                 output_thread: shared_data.render_system.into_output(),
             },
         })

@@ -8,7 +8,6 @@ use crate::{
         OutputThread,
     },
     window::InputEvent,
-    InterfaceData,
     CONNECTION_TIMEOUT,
 };
 use anyhow::Result;
@@ -73,7 +72,7 @@ use voxbrix_protocol::client::{
 use winit::event::WindowEvent;
 
 pub struct MenuSceneParameters {
-    pub interface_data: InterfaceData,
+    pub interface_state: egui_winit::State,
     pub output_thread: OutputThread,
 }
 
@@ -102,10 +101,12 @@ impl MenuScene {
         let Self {
             parameters:
                 MenuSceneParameters {
-                    interface_data: InterfaceData { context, mut state },
+                    interface_state: mut state,
                     mut output_thread,
                 },
         } = self;
+
+        let context = Context::default();
 
         let (format, width, height) = {
             let sc = output_thread.current_surface_config();
@@ -273,7 +274,7 @@ impl MenuScene {
 
                                     return Ok(SceneSwitch::Game {
                                         parameters: GameSceneParameters {
-                                            interface_data: InterfaceData { context, state },
+                                            interface_state: state,
                                             output_thread,
                                             connection: (tx, rx),
                                             player_actor: actor,
