@@ -38,13 +38,12 @@ const GROUND_SIDE: usize = 4;
 /// the returned light block component should be inserted instead.
 pub fn calc_chunk(
     chunk: Chunk,
+    queue: &mut VecDeque<(Block, BlockCoords)>,
     old_chunk_light: Option<BlocksVec<SkyLight>>,
     class_bc: &ClassBlockComponent,
     opacity_bcc: &OpacityBlockClassComponent,
     sky_light_bc: &SkyLightBlockComponent,
 ) -> (BlocksVec<SkyLight>, ArrayVec<Chunk, 6>) {
-    let mut queue = VecDeque::new();
-
     let chunk_class = class_bc
         .get_chunk(&chunk)
         .expect("calculating light for existing chunk");
@@ -123,11 +122,10 @@ pub fn calc_chunk(
                     LightDispersion {
                         block,
                         block_coords,
-                        block_light: *block_light,
                         chunk_class,
                         opacity_bcc,
                         chunk_light: &mut chunk_light,
-                        queue: &mut queue,
+                        queue,
                     }
                     .disperse();
                 }
@@ -136,16 +134,13 @@ pub fn calc_chunk(
     }
 
     while let Some((block, block_coords)) = queue.pop_front() {
-        let block_light = chunk_light.get_mut(block);
-
         LightDispersion {
             block,
             block_coords,
-            block_light: *block_light,
             chunk_class,
             opacity_bcc,
             chunk_light: &mut chunk_light,
-            queue: &mut queue,
+            queue,
         }
         .disperse();
     }
@@ -169,7 +164,6 @@ pub fn calc_chunk(
 struct LightDispersion<'a> {
     block: Block,
     block_coords: BlockCoords,
-    block_light: SkyLight,
     chunk_class: &'a BlocksVec<BlockClass>,
     opacity_bcc: &'a OpacityBlockClassComponent,
     chunk_light: &'a mut BlocksVec<SkyLight>,
@@ -183,12 +177,13 @@ impl LightDispersion<'_> {
         let LightDispersion {
             block,
             block_coords,
-            block_light,
             chunk_class,
             opacity_bcc,
             chunk_light,
             queue,
         } = self;
+
+        let block_light = *chunk_light.get(block);
 
         let neighbors = block.same_chunk_neighbors(block_coords);
 
