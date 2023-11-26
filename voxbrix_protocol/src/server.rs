@@ -75,11 +75,6 @@ use crate::{
     SERVER_ID,
     UNRELIABLE_BUFFERS,
 };
-#[cfg(feature = "multi")]
-use async_oneshot::{
-    oneshot as new_oneshot,
-    Sender as OneshotTx,
-};
 use chacha20poly1305::{
     aead::KeyInit,
     ChaCha20Poly1305,
@@ -101,16 +96,10 @@ use k256::{
     PublicKey,
 };
 #[cfg(feature = "single")]
-use local_channel::{
-    mpsc::{
-        channel as new_channel,
-        Receiver as ChannelRx,
-        Sender as ChannelTx,
-    },
-    oneshot::{
-        oneshot as new_oneshot,
-        Sender as OneshotTx,
-    },
+use local_channel::mpsc::{
+    channel as new_channel,
+    Receiver as ChannelRx,
+    Sender as ChannelTx,
 };
 use log::warn;
 use rand_core::OsRng;
@@ -266,7 +255,7 @@ enum Out {
     Buffer {
         peer: Id,
         buffer: ReadBuffer,
-        result_tx: OneshotTx<Result<(), Error>>,
+        result_tx: FeedbackSender,
     },
     DropClient {
         peer: Id,
@@ -274,7 +263,77 @@ enum Out {
     },
 }
 
-async fn stream_send_ack(shared: &Shared, sequence: Sequence) -> Result<(), Error> {
+struct FeedbackSender {
+    seq: u8,
+    tx: ChannelTx<(u8, Result<(), Error>)>,
+}
+
+impl FeedbackSender {
+    fn send(self, msg: Result<(), Error>) -> Result<(), ()> {
+        let Self { seq, tx } = self;
+
+        #[cfg(feature = "single")]
+        tx.send((seq, msg)).map_err(|_| ())?;
+        #[cfg(feature = "multi")]
+        tx.try_send((seq, msg)).map_err(|_| ())?;
+
+        Ok(())
+    }
+}
+
+struct Feedback {
+    seq: u8,
+    tx: ChannelTx<(u8, Result<(), Error>)>,
+    rx: ChannelRx<(u8, Result<(), Error>)>,
+}
+
+impl Feedback {
+    fn new() -> Self {
+        let (tx, rx) = new_channel();
+
+        Self { seq: 0, tx, rx }
+    }
+
+    fn new_sender(&mut self) -> FeedbackSender {
+        let seq = self.seq;
+        self.seq = self.seq.wrapping_add(1);
+
+        FeedbackSender {
+            seq,
+            tx: self.tx.clone(),
+        }
+    }
+
+    async fn receive(&mut self) -> Result<(), Error> {
+        let expect_seq = self.seq.wrapping_sub(1);
+
+        loop {
+            let (seq, msg) = {
+                #[cfg(feature = "single")]
+                {
+                    self.rx.recv().await.ok_or(Error::ServerWasDropped)?
+                }
+                #[cfg(feature = "multi")]
+                {
+                    self.rx
+                        .recv_async()
+                        .await
+                        .map_err(|_| Error::ServerWasDropped)?
+                }
+            };
+
+            if seq == expect_seq {
+                break msg;
+            }
+        }
+    }
+}
+
+async fn stream_send_ack(
+    shared: &Shared,
+    feedback: &mut Feedback,
+    sequence: Sequence,
+) -> Result<(), Error> {
     let mut buffer = WriteBuffer::new();
 
     let (tag_start, stop) =
@@ -284,21 +343,16 @@ async fn stream_send_ack(shared: &Shared, sequence: Sequence) -> Result<(), Erro
 
     crate::encode_in_buffer(buffer.as_mut(), &shared.cipher, tag_start, stop);
 
-    let (result_tx, result_rx) = new_oneshot();
-
     shared
         .transport_sender
         .send(Out::Buffer {
             peer: shared.peer,
             buffer: buffer.finish(0, stop),
-            result_tx,
+            result_tx: feedback.new_sender(),
         })
         .map_err(|_| Error::ServerWasDropped)?;
 
-    #[cfg(feature = "single")]
-    result_rx.await.ok_or(Error::ServerWasDropped)??;
-    #[cfg(feature = "multi")]
-    result_rx.await.map_err(|_| Error::ServerWasDropped)??;
+    feedback.receive().await?;
 
     Ok(())
 }
@@ -360,11 +414,12 @@ impl StreamSender {
 pub struct StreamUnreliableSender {
     shared: Rc<Shared>,
     unreliable_split_id: u16,
+    feedback: Feedback,
 }
 
 impl StreamUnreliableSender {
     async fn send_unreliable_one(
-        &self,
+        &mut self,
         channel: Channel,
         data: &[u8],
         packet_type: u8,
@@ -384,21 +439,16 @@ impl StreamUnreliableSender {
 
         crate::encode_in_buffer(buffer.as_mut(), &self.shared.cipher, tag_start, stop);
 
-        let (result_tx, result_rx) = new_oneshot();
-
         self.shared
             .transport_sender
             .send(Out::Buffer {
                 peer: self.shared.peer,
                 buffer: buffer.finish(0, stop),
-                result_tx,
+                result_tx: self.feedback.new_sender(),
             })
             .map_err(|_| Error::ServerWasDropped)?;
 
-        #[cfg(feature = "single")]
-        result_rx.await.ok_or(Error::ServerWasDropped)??;
-        #[cfg(feature = "multi")]
-        result_rx.await.map_err(|_| Error::ServerWasDropped)??;
+        self.feedback.receive().await?;
 
         Ok(())
     }
@@ -451,25 +501,21 @@ pub struct StreamReliableSender {
     queue_front_sequence: Sequence,
     queue: VecDeque<PacketState>,
     ack_receiver: ChannelRx<InBuffer>,
+    feedback: Feedback,
 }
 
 impl StreamReliableSender {
-    async fn send_buffer(&self, buffer: ReadBuffer) -> Result<(), Error> {
-        let (result_tx, result_rx) = new_oneshot();
-
+    async fn send_buffer(&mut self, buffer: ReadBuffer) -> Result<(), Error> {
         self.shared
             .transport_sender
             .send(Out::Buffer {
                 peer: self.shared.peer,
                 buffer,
-                result_tx,
+                result_tx: self.feedback.new_sender(),
             })
             .map_err(|_| Error::ServerWasDropped)?;
 
-        #[cfg(feature = "single")]
-        result_rx.await.ok_or(Error::ServerWasDropped)??;
-        #[cfg(feature = "multi")]
-        result_rx.await.map_err(|_| Error::ServerWasDropped)??;
+        self.feedback.receive().await?;
 
         Ok(())
     }
@@ -665,6 +711,7 @@ pub struct StreamReceiver {
     reliable_split_channel: Option<Channel>,
     unreliable_split_buffers: VecDeque<UnreliableBuffer>,
     transport_receiver: ChannelRx<InBuffer>,
+    feedback: Feedback,
 }
 
 impl StreamReceiver {
@@ -881,7 +928,7 @@ impl StreamReceiver {
                     let sequence: Sequence = seek_read!(read_cursor.read_varint(), "sequence");
 
                     // TODO: do not answer if the sequence is not previous, but random?
-                    stream_send_ack(&self.shared, sequence).await?;
+                    stream_send_ack(&self.shared, &mut self.feedback, sequence).await?;
 
                     // TODO verify correctness
                     let index = sequence.wrapping_sub(self.sequence);
@@ -1142,12 +1189,14 @@ impl Server {
                                     unreliable: StreamUnreliableSender {
                                         shared: shared.clone(),
                                         unreliable_split_id: 0,
+                                        feedback: Feedback::new(),
                                     },
                                     reliable: StreamReliableSender {
                                         shared: shared.clone(),
                                         queue_front_sequence: 0,
                                         queue: VecDeque::new(),
                                         ack_receiver,
+                                        feedback: Feedback::new(),
                                     },
                                 },
                                 receiver: StreamReceiver {
@@ -1161,6 +1210,7 @@ impl Server {
                                         UNRELIABLE_BUFFERS,
                                     ),
                                     transport_receiver: in_queue_rx,
+                                    feedback: Feedback::new(),
                                 },
                             });
                         },
