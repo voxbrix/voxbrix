@@ -347,4 +347,51 @@ mod hash {
             self.0 as u64
         }
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        pub fn test_endianness() {
+            //  Even though the WASM is little-endian only, the hasher could later
+            //  be a separate crate, so endianness-independency is worth checking.
+            //
+            //  Test big-endian:
+            //  cargo +nightly miri test --target s390x-unknown-linux-gnu
+            //
+            //  Test 32-bit:
+            //  cargo +nightly miri test --target i686-unknown-linux-gnu
+
+            let mut hash = Hasher64::new(5);
+
+            hash.write(b"test_string");
+
+            assert_eq!(hash.finish(), 3138908053291983918);
+
+            let mut hash = Hasher64::new(3957196563549288);
+
+            let mut string = "test_string".to_owned();
+            string.push_str("_very_very_very_very_very_very_very_very");
+            string.push_str("_very_very_very_very_very_very_very_very");
+            string.push_str("_very_very_very_very_very_very_very_very");
+            string.push_str("_very_very_very_very_very_very_very_very");
+            string.push_str("_very_very_very_very_very_very_very_very");
+            string.push_str("_very_very_very_very_very_very_very_very");
+            string.push_str("_very_very_very_very_very_very_very_very");
+            string.push_str("_very_very_very_very_very_very_very_very");
+            string.push_str("_very_very_very_very_very_very_very_very");
+            string.push_str("_very_very_very_very_very_very_very_very");
+            string.push_str("_very_very_very_very_very_very_very_very");
+            string.push_str("_very_very_very_very_very_very_very_very");
+            string.push_str("_very_very_very_very_very_very_very_very");
+            string.push_str("_very_very_very_very_very_very_very_very");
+            string.push_str("_very_very_very_very_very_very_very_very");
+            string.push_str("_very_very_very_very_very_very_very_long");
+
+            hash.write(string.as_bytes());
+
+            assert_eq!(hash.finish(), 9946340679755297201);
+        }
+    }
 }
