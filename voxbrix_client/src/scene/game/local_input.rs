@@ -127,7 +127,7 @@ impl LocalInput<'_> {
                                             1 => 1,
                                             _ => panic!("incorrect side index"),
                                         };
-                                        let mut block = block.to_coords().map(|u| u as i32);
+                                        let mut block = block.into_coords().map(|u| u as i32);
                                         block[axis] += direction;
                                         if let Some((chunk, block)) =
                                             Block::from_chunk_offset(chunk, block)

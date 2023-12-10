@@ -18,27 +18,20 @@ use voxbrix_common::{
         block_class::opacity::OpacityBlockClassComponent,
     },
     entity::{
-        block::{
-            Block,
-            BlockCoords,
-        },
+        block::Block,
         chunk::Chunk,
     },
     system::sky_light,
 };
 
 pub struct SkyLightSystem {
-    block_queue_buffers: Vec<VecDeque<(Block, BlockCoords)>>,
-    pre_compute_buffer: Vec<(
-        Chunk,
-        Option<BlocksVec<SkyLight>>,
-        VecDeque<(Block, BlockCoords)>,
-    )>,
+    block_queue_buffers: Vec<VecDeque<Block>>,
+    pre_compute_buffer: Vec<(Chunk, Option<BlocksVec<SkyLight>>, VecDeque<Block>)>,
     post_compute_buffer: Vec<(
         Chunk,
         BlocksVec<SkyLight>,
         ArrayVec<Chunk, 6>,
-        VecDeque<(Block, BlockCoords)>,
+        VecDeque<Block>,
     )>,
 }
 

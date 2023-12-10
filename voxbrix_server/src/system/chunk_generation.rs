@@ -17,8 +17,8 @@ use voxbrix_common::{
     component::block::BlocksVec,
     entity::{
         block::{
+            BLOCKS_IN_CHUNK,
             BLOCKS_IN_CHUNK_EDGE,
-            BLOCKS_IN_CHUNK_USIZE,
         },
         block_class::BlockClass,
         chunk::{
@@ -72,7 +72,7 @@ impl ChunkGenerationSystem {
                 &engine,
                 GenerationData {
                     block_class_label_map,
-                    block_classes: Vec::with_capacity(BLOCKS_IN_CHUNK_USIZE),
+                    block_classes: Vec::with_capacity(BLOCKS_IN_CHUNK),
                 },
             );
 
@@ -130,11 +130,17 @@ impl ChunkGenerationSystem {
                     dimension: Dimension { index: _ },
                 } = chunk;
 
-                generate_fn.call(&mut store, (seed, position[0], position[1], position[2]));
+                generate_fn
+                    .call(&mut store, (seed, position[0], position[1], position[2]))
+                    .expect("generate_fn call error");
+
+                if store.data_mut().block_classes.len() != BLOCKS_IN_CHUNK {
+                    panic!("chunk generation is incomplete");
+                }
 
                 let block_classes = BlocksVec::new(mem::replace(
                     &mut store.data_mut().block_classes,
-                    Vec::with_capacity(BLOCKS_IN_CHUNK_USIZE),
+                    Vec::with_capacity(BLOCKS_IN_CHUNK),
                 ));
 
                 let db_write = database.begin_write().unwrap();

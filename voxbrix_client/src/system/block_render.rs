@@ -45,7 +45,7 @@ use voxbrix_common::{
         block::{
             Block,
             Neighbor,
-            BLOCKS_IN_CHUNK_USIZE,
+            BLOCKS_IN_CHUNK,
         },
         block_class::BlockClass,
         chunk::Chunk,
@@ -56,7 +56,7 @@ use wgpu::util::DeviceExt;
 // const VERTEX_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK * 6 /*sides*/ * 4 /*vertices*/;
 // const INDEX_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK * 6 /*sides*/ * 2 /*polygons*/ * 3 /*vertices*/;
 const POLYGON_SIZE: usize = Polygon::size() as usize;
-const POLYGON_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK_USIZE * 6 /*sides*/;
+const POLYGON_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK * 6 /*sides*/;
 
 fn neighbors_to_cull_flags(
     neighbors: &[Neighbor; 6],
@@ -298,10 +298,10 @@ impl BlockRenderSystem {
             Some(block_light)
         });
 
-        for (block, block_coords, block_class) in this_chunk_class.iter_with_coords() {
+        for (block, block_class) in this_chunk_class.iter() {
             if let Some(model_builder) = model_bcc.get(block_class).and_then(|m| builder_bmc.get(m))
             {
-                let neighbors = block.neighbors_in_coords(block_coords);
+                let neighbors = block.neighbors();
 
                 let cull_flags = neighbors_to_cull_flags(
                     &neighbors,
@@ -328,7 +328,7 @@ impl BlockRenderSystem {
                 model_builder.build(
                     &mut polygon_buffer,
                     chunk,
-                    block_coords,
+                    block,
                     cull_flags,
                     sky_light_levels,
                 );
@@ -391,11 +391,8 @@ impl BlockRenderSystem {
 
     pub fn build_target_highlight(&mut self, target: Option<(Chunk, Block, usize)>) {
         if let Some((chunk, block, side)) = target {
-            self.target_highlighting = TargetHighlighting::New(builder::side_highlighting(
-                chunk.position,
-                block.to_coords(),
-                side,
-            ));
+            self.target_highlighting =
+                TargetHighlighting::New(builder::side_highlighting(chunk.position, block, side));
         } else {
             self.target_highlighting = TargetHighlighting::None;
         }

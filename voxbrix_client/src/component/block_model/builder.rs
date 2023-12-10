@@ -10,7 +10,7 @@ use bitflags::bitflags;
 use serde::Deserialize;
 use voxbrix_common::{
     entity::{
-        block::BlockCoords,
+        block::Block,
         chunk::Chunk,
     },
     ArrayExt,
@@ -33,7 +33,7 @@ enum CullingNeighbor {
 
 #[derive(Deserialize, Debug)]
 struct BlockModelDescriptorVertex {
-    position: BlockCoords,
+    position: [usize; 3],
     texture_position: [usize; 2],
 }
 
@@ -50,7 +50,7 @@ pub struct BlockModelContext<'a> {
 
 #[derive(Deserialize, Debug)]
 pub struct BlockModelBuilderDescriptor {
-    grid_size: BlockCoords,
+    grid_size: [usize; 3],
     texture_grid_size: [usize; 2],
     polygons: Vec<BlockModelDescriptorPolygon>,
 }
@@ -146,10 +146,12 @@ impl BlockModelBuilder {
         &self,
         polygons: &mut Vec<Polygon>,
         chunk: &Chunk,
-        block: BlockCoords,
+        block: Block,
         cull_mask: CullFlags,
         sky_light_level: [u8; 6],
     ) {
+        let block = block.into_coords();
+
         let extension = self
             .polygons
             .iter()
@@ -207,11 +209,11 @@ impl BlockModelBuilder {
     }
 }
 
-pub fn side_highlighting(chunk: [i32; 3], block_coords: BlockCoords, side: usize) -> Polygon {
+pub fn side_highlighting(chunk: [i32; 3], block: Block, side: usize) -> Polygon {
     const ELEVATION: f32 = 0.01;
     const TEXTURE_INDEX: u32 = 0;
 
-    let [x, y, z] = block_coords;
+    let [x, y, z] = block.into_coords();
 
     let positions = match side {
         0 => [[x, y, z + 1], [x, y + 1, z + 1], [x, y + 1, z], [x, y, z]],

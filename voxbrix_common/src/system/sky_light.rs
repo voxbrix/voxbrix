@@ -16,9 +16,8 @@ use crate::{
     entity::{
         block::{
             Block,
-            BlockCoords,
+            BLOCKS_IN_CHUNK,
             BLOCKS_IN_CHUNK_EDGE,
-            BLOCKS_IN_CHUNK_USIZE,
         },
         block_class::BlockClass,
         chunk::Chunk,
@@ -38,7 +37,7 @@ const GROUND_SIDE: usize = 4;
 /// the returned light block component should be inserted instead.
 pub fn calc_chunk(
     chunk: Chunk,
-    queue: &mut VecDeque<(Block, BlockCoords)>,
+    queue: &mut VecDeque<Block>,
     old_chunk_light: Option<BlocksVec<SkyLight>>,
     class_bc: &ClassBlockComponent,
     opacity_bcc: &OpacityBlockClassComponent,
@@ -48,7 +47,7 @@ pub fn calc_chunk(
         .get_chunk(&chunk)
         .expect("calculating light for existing chunk");
 
-    let mut chunk_light = BlocksVec::new(vec![SkyLight::MIN; BLOCKS_IN_CHUNK_USIZE]);
+    let mut chunk_light = BlocksVec::new(vec![SkyLight::MIN; BLOCKS_IN_CHUNK]);
 
     let neighbor_chunk_ids = [
         [-1, 0, 0],
@@ -121,7 +120,6 @@ pub fn calc_chunk(
                 if *block_light > SkyLight::MIN {
                     LightDispersion {
                         block,
-                        block_coords,
                         chunk_class,
                         opacity_bcc,
                         chunk_light: &mut chunk_light,
@@ -133,10 +131,9 @@ pub fn calc_chunk(
         }
     }
 
-    while let Some((block, block_coords)) = queue.pop_front() {
+    while let Some(block) = queue.pop_front() {
         LightDispersion {
             block,
-            block_coords,
             chunk_class,
             opacity_bcc,
             chunk_light: &mut chunk_light,
@@ -163,11 +160,10 @@ pub fn calc_chunk(
 
 struct LightDispersion<'a> {
     block: Block,
-    block_coords: BlockCoords,
     chunk_class: &'a BlocksVec<BlockClass>,
     opacity_bcc: &'a OpacityBlockClassComponent,
     chunk_light: &'a mut BlocksVec<SkyLight>,
-    queue: &'a mut VecDeque<(Block, BlockCoords)>,
+    queue: &'a mut VecDeque<Block>,
 }
 
 // Assigns light to the neighbor blocks within the chunk
@@ -176,7 +172,6 @@ impl LightDispersion<'_> {
     fn disperse(self) {
         let LightDispersion {
             block,
-            block_coords,
             chunk_class,
             opacity_bcc,
             chunk_light,
@@ -185,10 +180,10 @@ impl LightDispersion<'_> {
 
         let block_light = *chunk_light.get(block);
 
-        let neighbors = block.same_chunk_neighbors(block_coords);
+        let neighbors = block.same_chunk_neighbors();
 
         for (side, neighbor) in neighbors.iter().enumerate() {
-            if let Some((neighbor_block, neighbor_coords)) = neighbor {
+            if let Some(neighbor_block) = neighbor {
                 let neighbor_class = chunk_class.get(*neighbor_block);
                 let neighbor_light = chunk_light.get_mut(*neighbor_block);
 
@@ -199,14 +194,14 @@ impl LightDispersion<'_> {
                             // Side index 4 is z_m (block below)
                             // we want max-level light to spread below indefinitely
                             *neighbor_light = SkyLight::MAX;
-                            queue.push_back((*neighbor_block, *neighbor_coords));
+                            queue.push_back(*neighbor_block);
                         } else {
                             let new_light = block_light.fade();
 
                             if new_light > SkyLight::MIN && new_light > *neighbor_light {
                                 *neighbor_light = new_light;
 
-                                queue.push_back((*neighbor_block, *neighbor_coords));
+                                queue.push_back(*neighbor_block);
                             }
                         }
                     },

@@ -1,46 +1,55 @@
 use crate::entity::chunk::Chunk;
 use serde::{
+    de::Deserializer,
+    ser::Serializer,
     Deserialize,
     Serialize,
 };
 
-pub const BLOCKS_IN_CHUNK_EDGE: u16 = 16;
-pub const BLOCKS_IN_CHUNK_LAYER: u16 = BLOCKS_IN_CHUNK_EDGE * BLOCKS_IN_CHUNK_EDGE;
-pub const BLOCKS_IN_CHUNK: u16 = BLOCKS_IN_CHUNK_EDGE * BLOCKS_IN_CHUNK_EDGE * BLOCKS_IN_CHUNK_EDGE;
-
-pub const BLOCKS_IN_CHUNK_EDGE_USIZE: usize = BLOCKS_IN_CHUNK_EDGE as usize;
-pub const BLOCKS_IN_CHUNK_LAYER_USIZE: usize = BLOCKS_IN_CHUNK_LAYER as usize;
-pub const BLOCKS_IN_CHUNK_USIZE: usize = BLOCKS_IN_CHUNK as usize;
+pub const BLOCKS_IN_CHUNK_EDGE: usize = 16;
+pub const BLOCKS_IN_CHUNK_LAYER: usize = BLOCKS_IN_CHUNK_EDGE * BLOCKS_IN_CHUNK_EDGE;
+pub const BLOCKS_IN_CHUNK: usize =
+    BLOCKS_IN_CHUNK_EDGE * BLOCKS_IN_CHUNK_EDGE * BLOCKS_IN_CHUNK_EDGE;
 
 pub const BLOCKS_IN_CHUNK_EDGE_F32: f32 = BLOCKS_IN_CHUNK_EDGE as f32;
 
 pub const BLOCKS_IN_CHUNK_EDGE_I32: i32 = BLOCKS_IN_CHUNK_EDGE as i32;
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
-pub struct Block(pub u16);
+#[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
+pub struct Block(pub usize);
 
-pub type BlockCoords = [u16; 3];
+pub type BlockCoords = [usize; 3];
 
 impl std::hash::Hash for Block {
     fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
-        hasher.write_u16(self.0)
+        hasher.write_u16(self.0 as u16)
     }
 }
 
 impl nohash_hasher::IsEnabled for Block {}
 
-impl Block {
-    pub fn from_usize(value: usize) -> Self {
-        Self(value.try_into().expect("value is out of bounds"))
-    }
+impl<'de> Deserialize<'de> for Block {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let block = u16::deserialize(deserializer)?;
 
-    pub fn into_usize(self) -> usize {
-        self.0.try_into().expect("value is out of bounds")
+        Ok(Block(block as usize))
+    }
+}
+
+impl Serialize for Block {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        (self.0 as u16).serialize(serializer)
     }
 }
 
 impl Block {
-    pub fn to_coords(&self) -> BlockCoords {
+    pub fn into_coords(self) -> BlockCoords {
         let z = self.0 / BLOCKS_IN_CHUNK_LAYER;
         let x_y = self.0 % BLOCKS_IN_CHUNK_LAYER;
         let y = x_y / BLOCKS_IN_CHUNK_EDGE;
@@ -53,10 +62,9 @@ impl Block {
         Self(z * BLOCKS_IN_CHUNK_LAYER + y * BLOCKS_IN_CHUNK_EDGE + x)
     }
 
-    /// Must provide correct block coords,
-    /// you have to make `Block` from coords with `.from_coords()` or
-    /// extract coords from the `Block` with `.to_coords()`
-    pub fn neighbors_in_coords(&self, [x, y, z]: BlockCoords) -> [Neighbor; 6] {
+    pub fn neighbors(&self) -> [Neighbor; 6] {
+        let [x, y, z] = self.into_coords();
+
         let x_m = if x == 0 {
             Neighbor::OtherChunk(Block(self.0 + BLOCKS_IN_CHUNK_EDGE - 1))
         } else {
@@ -99,18 +107,16 @@ impl Block {
     /// Must provide correct block coords,
     /// you have to make `Block` from coords with `.from_coords()` or
     /// extract coords from the `Block` with `.to_coords()`
-    pub fn same_chunk_neighbors(
-        &self,
-        [x, y, z]: BlockCoords,
-    ) -> [Option<(Block, BlockCoords)>; 6] {
+    pub fn same_chunk_neighbors(&self) -> [Option<Block>; 6] {
+        let [x, y, z] = self.into_coords();
         let x_m = if x == 0 {
             None
         } else {
-            Some((Block(self.0 - 1), [x - 1, y, z]))
+            Some(Block(self.0 - 1))
         };
 
         let x_p = if x + 1 < BLOCKS_IN_CHUNK_EDGE {
-            Some((Block(self.0 + 1), [x + 1, y, z]))
+            Some(Block(self.0 + 1))
         } else {
             None
         };
@@ -118,11 +124,11 @@ impl Block {
         let y_m = if y == 0 {
             None
         } else {
-            Some((Block(self.0 - BLOCKS_IN_CHUNK_EDGE), [x, y - 1, z]))
+            Some(Block(self.0 - BLOCKS_IN_CHUNK_EDGE))
         };
 
         let y_p = if y + 1 < BLOCKS_IN_CHUNK_EDGE {
-            Some((Block(self.0 + BLOCKS_IN_CHUNK_EDGE), [x, y + 1, z]))
+            Some(Block(self.0 + BLOCKS_IN_CHUNK_EDGE))
         } else {
             None
         };
@@ -130,11 +136,11 @@ impl Block {
         let z_m = if z == 0 {
             None
         } else {
-            Some((Block(self.0 - BLOCKS_IN_CHUNK_LAYER), [x, y, z - 1]))
+            Some(Block(self.0 - BLOCKS_IN_CHUNK_LAYER))
         };
 
         let z_p = if z + 1 < BLOCKS_IN_CHUNK_EDGE {
-            Some((Block(self.0 + BLOCKS_IN_CHUNK_LAYER), [x, y, z + 1]))
+            Some(Block(self.0 + BLOCKS_IN_CHUNK_LAYER))
         } else {
             None
         };
@@ -142,85 +148,58 @@ impl Block {
         [x_m, x_p, y_m, y_p, z_m, z_p]
     }
 
-    /// Must provide correct block coords,
-    /// you have to make `Block` from coords with `.from_coords()` or
-    /// extract coords from the `Block` with `.to_coords()`
-    pub fn neighbor_with_coords_side(
-        &self,
-        side: u16,
-        [x, y, z]: BlockCoords,
-    ) -> NeighborWithCoords {
+    pub fn neighbor_on_side(&self, side: u16) -> NeighborWithCoords {
+        let [x, y, z] = self.into_coords();
+
         match side {
             0 => {
                 if x == 0 {
-                    NeighborWithCoords::OtherChunk(
-                        Block(self.0 + BLOCKS_IN_CHUNK_EDGE - 1),
-                        [BLOCKS_IN_CHUNK_EDGE - 1, y, z],
-                    )
+                    NeighborWithCoords::OtherChunk(Block(self.0 + BLOCKS_IN_CHUNK_EDGE - 1))
                 } else {
-                    NeighborWithCoords::ThisChunk(Block(self.0 - 1), [x - 1, y, z])
+                    NeighborWithCoords::ThisChunk(Block(self.0 - 1))
                 }
             },
             1 => {
                 if x + 1 < BLOCKS_IN_CHUNK_EDGE {
-                    NeighborWithCoords::ThisChunk(Block(self.0 + 1), [x + 1, y, z])
+                    NeighborWithCoords::ThisChunk(Block(self.0 + 1))
                 } else {
-                    NeighborWithCoords::OtherChunk(
-                        Block(self.0 + 1 - BLOCKS_IN_CHUNK_EDGE),
-                        [0, y, z],
-                    )
+                    NeighborWithCoords::OtherChunk(Block(self.0 + 1 - BLOCKS_IN_CHUNK_EDGE))
                 }
             },
             2 => {
                 if y == 0 {
-                    NeighborWithCoords::OtherChunk(
-                        Block(self.0 + BLOCKS_IN_CHUNK_LAYER - BLOCKS_IN_CHUNK_EDGE),
-                        [x, BLOCKS_IN_CHUNK_EDGE - 1, z],
-                    )
+                    NeighborWithCoords::OtherChunk(Block(
+                        self.0 + BLOCKS_IN_CHUNK_LAYER - BLOCKS_IN_CHUNK_EDGE,
+                    ))
                 } else {
-                    NeighborWithCoords::ThisChunk(
-                        Block(self.0 - BLOCKS_IN_CHUNK_EDGE),
-                        [x, y - 1, z],
-                    )
+                    NeighborWithCoords::ThisChunk(Block(self.0 - BLOCKS_IN_CHUNK_EDGE))
                 }
             },
             3 => {
                 if y + 1 < BLOCKS_IN_CHUNK_EDGE {
-                    NeighborWithCoords::ThisChunk(
-                        Block(self.0 + BLOCKS_IN_CHUNK_EDGE),
-                        [x, y + 1, z],
-                    )
+                    NeighborWithCoords::ThisChunk(Block(self.0 + BLOCKS_IN_CHUNK_EDGE))
                 } else {
-                    NeighborWithCoords::OtherChunk(
-                        Block(self.0 + BLOCKS_IN_CHUNK_EDGE - BLOCKS_IN_CHUNK_LAYER),
-                        [x, 0, z],
-                    )
+                    NeighborWithCoords::OtherChunk(Block(
+                        self.0 + BLOCKS_IN_CHUNK_EDGE - BLOCKS_IN_CHUNK_LAYER,
+                    ))
                 }
             },
             4 => {
                 if z == 0 {
-                    NeighborWithCoords::OtherChunk(
-                        Block(self.0 + BLOCKS_IN_CHUNK - BLOCKS_IN_CHUNK_LAYER),
-                        [x, y, BLOCKS_IN_CHUNK_EDGE - 1],
-                    )
+                    NeighborWithCoords::OtherChunk(Block(
+                        self.0 + BLOCKS_IN_CHUNK - BLOCKS_IN_CHUNK_LAYER,
+                    ))
                 } else {
-                    NeighborWithCoords::ThisChunk(
-                        Block(self.0 - BLOCKS_IN_CHUNK_LAYER),
-                        [x, y, z - 1],
-                    )
+                    NeighborWithCoords::ThisChunk(Block(self.0 - BLOCKS_IN_CHUNK_LAYER))
                 }
             },
             5 => {
                 if z + 1 < BLOCKS_IN_CHUNK_EDGE {
-                    NeighborWithCoords::ThisChunk(
-                        Block(self.0 + BLOCKS_IN_CHUNK_LAYER),
-                        [x, y, z + 1],
-                    )
+                    NeighborWithCoords::ThisChunk(Block(self.0 + BLOCKS_IN_CHUNK_LAYER))
                 } else {
-                    NeighborWithCoords::OtherChunk(
-                        Block(self.0 + BLOCKS_IN_CHUNK_LAYER - BLOCKS_IN_CHUNK),
-                        [x, y, 0],
-                    )
+                    NeighborWithCoords::OtherChunk(Block(
+                        self.0 + BLOCKS_IN_CHUNK_LAYER - BLOCKS_IN_CHUNK,
+                    ))
                 }
             },
             i => panic!("incorrect side index: {}", i),
@@ -250,9 +229,9 @@ impl Block {
         };
 
         let block = Self::from_coords([
-            chunks_blocks[0].1 as u16,
-            chunks_blocks[1].1 as u16,
-            chunks_blocks[2].1 as u16,
+            chunks_blocks[0].1 as usize,
+            chunks_blocks[1].1 as usize,
+            chunks_blocks[2].1 as usize,
         ]);
 
         Some((actual_chunk, block))
@@ -265,6 +244,6 @@ pub enum Neighbor {
 }
 
 pub enum NeighborWithCoords {
-    ThisChunk(Block, BlockCoords),
-    OtherChunk(Block, BlockCoords),
+    ThisChunk(Block),
+    OtherChunk(Block),
 }
