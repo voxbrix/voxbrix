@@ -47,7 +47,8 @@ impl LocalInput<'_> {
             },
             InputEvent::WindowEvent { event } => {
                 if sd.inventory_open {
-                    sd.interface_system.window_event(&event);
+                    sd.interface_system
+                        .window_event(sd.render_system.output_thread().window(), &event);
                 }
                 match event {
                     WindowEvent::Resized(size) => {
@@ -58,23 +59,23 @@ impl LocalInput<'_> {
                     },
                     WindowEvent::KeyboardInput {
                         device_id: _,
-                        input,
+                        event,
                         is_synthetic: _,
                     } => {
-                        if let Some(button) = input.virtual_keycode {
-                            if matches!(input.state, winit::event::ElementState::Pressed) {
+                        if let winit::keyboard::PhysicalKey::Code(button) = event.physical_key {
+                            if matches!(event.state, winit::event::ElementState::Pressed) {
                                 match button {
-                                    winit::event::VirtualKeyCode::Escape => {
+                                    winit::keyboard::KeyCode::Escape => {
                                         return Transition::Menu;
                                     },
-                                    winit::event::VirtualKeyCode::I => {
+                                    winit::keyboard::KeyCode::KeyI => {
                                         sd.inventory_open = !sd.inventory_open;
                                     },
                                     _ => {},
                                 }
                             }
                         }
-                        sd.direct_control_system.process_keyboard(&input);
+                        sd.direct_control_system.process_keyboard(&event);
                     },
                     WindowEvent::MouseInput { state, button, .. } => {
                         if state == ElementState::Pressed {

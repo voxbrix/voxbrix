@@ -14,10 +14,7 @@ use winit::{
         Event,
         WindowEvent,
     },
-    event_loop::{
-        ControlFlow,
-        EventLoop,
-    },
+    event_loop::EventLoop,
     window::{
         Fullscreen,
         Window,
@@ -32,19 +29,19 @@ pub enum InputEvent {
         event: DeviceEvent,
     },
     WindowEvent {
-        event: WindowEvent<'static>,
+        event: WindowEvent,
     },
 }
 
 pub struct WindowHandle {
-    pub window: Window,
+    pub window: &'static Window,
     pub instance: wgpu::Instance,
-    pub surface: wgpu::Surface,
+    pub surface: wgpu::Surface<'static>,
     pub event_rx: Receiver<InputEvent>,
 }
 
 pub fn create_window(handle_tx: Sender<WindowHandle>) -> Result<()> {
-    let event_loop = EventLoop::new();
+    let event_loop = EventLoop::new()?;
 
     // Mailbox (Fast Vsync) and Immediate (No Vsync) work best with
     // the current rendering approrientation_ach
@@ -57,9 +54,9 @@ pub fn create_window(handle_tx: Sender<WindowHandle>) -> Result<()> {
         gles_minor_version: wgpu::Gles3MinorVersion::Automatic,
     });
 
-    let window = WindowBuilder::new().build(&event_loop)?;
+    let window: &'static _ = Box::leak(Box::new(WindowBuilder::new().build(&event_loop)?));
 
-    let surface = unsafe { instance.create_surface(&window) }.unwrap();
+    let surface = instance.create_surface(window).unwrap();
 
     window.set_fullscreen(Some(Fullscreen::Borderless(None)));
 
@@ -74,8 +71,7 @@ pub fn create_window(handle_tx: Sender<WindowHandle>) -> Result<()> {
         })
         .map_err(|_| Error::msg("surface channel is closed"))?;
 
-    event_loop.run(move |event, _, flow| {
-        *flow = ControlFlow::Wait;
+    event_loop.run(move |event, _| {
         let send = match event {
             Event::DeviceEvent { device_id, event } => {
                 Some(InputEvent::DeviceEvent { device_id, event })
@@ -83,20 +79,17 @@ pub fn create_window(handle_tx: Sender<WindowHandle>) -> Result<()> {
             Event::WindowEvent {
                 window_id: _,
                 event,
-            } => {
-                event
-                    .to_static()
-                    .map(|event| InputEvent::WindowEvent { event })
-            },
+            } => Some(InputEvent::WindowEvent { event }),
             _ => None,
         };
 
         if let Some(event) = send {
             if let Err(_) = event_tx.send(event) {
-                *flow = ControlFlow::Exit;
                 info!("event channel closed, exiting window loop");
                 return;
             }
         }
-    });
+    })?;
+
+    Ok(())
 }

@@ -24,12 +24,12 @@ backtrace = { workspace = true }
 voxbrix_protocol = { path = "../voxbrix_protocol", features = ["single", "client"] }
 voxbrix_common = { path = "../voxbrix_common" }
 local_channel = { path = "../local_channel" }
-winit = "0.28"
-wgpu = "0.18"
-egui = "0.24"
-egui-winit = { version = "0.24", default-features = false, features = ["clipboard", "wayland"] }
-egui-wgpu = "0.24"
+winit = "0.29"
+wgpu = "0.19"
+egui = "0.26"
+egui-winit = { version = "0.26", default-features = false, features = ["clipboard", "wayland"] }
+egui-wgpu = "0.26"
 bytemuck = { version = "1", features = ["derive"] }
 image = { version = "0.24", default-features = false, features = ["png"] }
 bitflags = "2"
-argon2 = { version = "0.5.2", default-features = false, features = ["alloc"] }
+argon2 = { version = "0.5.3", default-features = false, features = ["alloc"] }

@@ -16,7 +16,7 @@ use egui::{
     CentralPanel,
     Context,
 };
-use egui_wgpu::renderer::{
+use egui_wgpu::{
     Renderer,
     ScreenDescriptor,
 };
@@ -299,7 +299,7 @@ impl MenuScene {
                                 return Ok(SceneSwitch::Exit);
                             },
                             _ => {
-                                let _ = state.on_window_event(&context, &event);
+                                let _ = state.on_window_event(output_thread.window(), &event);
                             },
                         }
                     }

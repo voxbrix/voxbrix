@@ -23,10 +23,15 @@ use voxbrix_common::{
         Vec3F32,
     },
 };
-use winit::event::{
-    ElementState,
-    KeyboardInput,
-    VirtualKeyCode,
+use winit::{
+    event::{
+        ElementState,
+        KeyEvent,
+    },
+    keyboard::{
+        KeyCode,
+        PhysicalKey,
+    },
 };
 
 const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
@@ -67,45 +72,46 @@ impl DirectControl {
         }
     }
 
-    pub fn process_keyboard(&mut self, input: &KeyboardInput) -> bool {
+    pub fn process_keyboard(&mut self, input: &KeyEvent) -> bool {
         // TODO use scancodes?
-        let KeyboardInput {
+        let KeyEvent {
             state,
-            virtual_keycode,
+            physical_key,
             ..
         } = input;
-        let key = if let Some(vc) = virtual_keycode {
-            vc
-        } else {
-            return false;
+        let key = match physical_key {
+            PhysicalKey::Code(c) => c,
+            PhysicalKey::Unidentified(_) => return false,
         };
+
         let amount = if *state == ElementState::Pressed {
             1.0
         } else {
             0.0
         };
+
         match key {
-            VirtualKeyCode::W | VirtualKeyCode::Up => {
+            KeyCode::KeyW | KeyCode::ArrowUp => {
                 self.move_forward = amount;
                 true
             },
-            VirtualKeyCode::S | VirtualKeyCode::Down => {
+            KeyCode::KeyS | KeyCode::ArrowDown => {
                 self.move_backward = amount;
                 true
             },
-            VirtualKeyCode::A | VirtualKeyCode::Left => {
+            KeyCode::KeyA | KeyCode::ArrowLeft => {
                 self.move_left = amount;
                 true
             },
-            VirtualKeyCode::D | VirtualKeyCode::Right => {
+            KeyCode::KeyD | KeyCode::ArrowRight => {
                 self.move_right = amount;
                 true
             },
-            VirtualKeyCode::Space => {
+            KeyCode::Space => {
                 self.move_up = amount;
                 true
             },
-            VirtualKeyCode::LShift => {
+            KeyCode::ShiftLeft => {
                 self.move_down = amount;
                 true
             },

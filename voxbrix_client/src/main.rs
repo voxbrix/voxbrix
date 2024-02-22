@@ -136,6 +136,7 @@ fn main() {
                         let adapter = window_handle
                             .instance
                             .enumerate_adapters(wgpu::Backends::VULKAN)
+                            .into_iter()
                             .find(|adapter| {
                                 adapter.is_surface_supported(&window_handle.surface)
                                     && adapter.get_info().device_type != wgpu::DeviceType::DiscreteGpu
@@ -145,9 +146,9 @@ fn main() {
                         let (device, queue) = adapter
                             .request_device(
                                 &wgpu::DeviceDescriptor {
-                                    features: wgpu::Features::TEXTURE_BINDING_ARRAY
+                                    required_features: wgpu::Features::TEXTURE_BINDING_ARRAY
                                         | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
-                                    limits: wgpu::Limits::default(),
+                                    required_limits: wgpu::Limits::default(),
                                     label: None,
                                 },
                                 None,
@@ -172,6 +173,7 @@ fn main() {
                             width: physical_size.width,
                             height: physical_size.height,
                             present_mode: wgpu::PresentMode::Fifo,
+                            desired_maximum_frame_latency: 2,
                             alpha_mode: wgpu::CompositeAlphaMode::Auto,
                             view_formats: vec![format],
                         };
@@ -180,6 +182,7 @@ fn main() {
 
                         //let interface_state = egui_winit::State::new(&window_handle.window);
                         let interface_state = egui_winit::State::new(
+                            context,
                             egui::ViewportId::ROOT,
                             &window_handle.window,
                             Some(2.0),

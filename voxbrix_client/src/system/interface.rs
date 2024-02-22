@@ -4,7 +4,7 @@ use crate::system::render::{
 };
 use anyhow::Result;
 use egui::Context;
-use egui_wgpu::renderer::{
+use egui_wgpu::{
     Renderer as InterfaceRenderer,
     ScreenDescriptor,
 };
@@ -111,9 +111,9 @@ impl InterfaceSystem {
         Ok(())
     }
 
-    pub fn window_event(&mut self, event: &WindowEvent) {
+    pub fn window_event(&mut self, window: &Window, event: &WindowEvent) {
         // TODO only redraw if required
-        let _ = self.interface_state.on_window_event(&self.context, event);
+        let _ = self.interface_state.on_window_event(window, event);
     }
 
     pub fn into_interface_state(self) -> egui_winit::State {

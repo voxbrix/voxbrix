@@ -52,6 +52,7 @@ fn copy_surface_config(to: &mut wgpu::SurfaceConfiguration, from: &wgpu::Surface
         width,
         height,
         present_mode,
+        desired_maximum_frame_latency,
         alpha_mode,
         view_formats: _,
     } = to;
@@ -61,12 +62,13 @@ fn copy_surface_config(to: &mut wgpu::SurfaceConfiguration, from: &wgpu::Surface
     *width = from.width;
     *height = from.height;
     *present_mode = from.present_mode;
+    *desired_maximum_frame_latency = from.desired_maximum_frame_latency;
     *alpha_mode = from.alpha_mode;
 }
 
 pub struct OutputThread {
     render_handle: Arc<RenderHandle>,
-    window: Window,
+    window: &'static Window,
     instance: wgpu::Instance,
     input_source: Receiver<InputEvent>,
     current_surface_config: wgpu::SurfaceConfiguration,
