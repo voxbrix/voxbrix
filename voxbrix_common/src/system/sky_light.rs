@@ -72,26 +72,16 @@ pub fn calc_chunk(
         .into_inner()
         .unwrap_or_else(|_| unreachable!());
 
-    // If the new lighting in the 1-block layers stays the same don't
-    // recalculate inner blocks because sky light always comes externally
-    let mut recalc_inner_blocks = false;
-
     // Fill 1-block layers on the sides with external light
     for side in 0 .. 6 {
         AddSide {
             side,
-            old_chunk_light: old_chunk_light.as_ref(),
             chunk_class,
             opacity_bcc,
             chunk_light: &mut chunk_light,
             neighbor_chunks,
-            recalc_inner_blocks: &mut recalc_inner_blocks,
         }
         .run();
-    }
-
-    if !recalc_inner_blocks && old_chunk_light.is_some() {
-        return (old_chunk_light.unwrap(), ArrayVec::new());
     }
 
     for side in 0 .. 6 {
@@ -193,12 +183,14 @@ impl LightDispersion<'_> {
                         if side == 4 && block_light == SkyLight::MAX {
                             // Side index 4 is z_m (block below)
                             // we want max-level light to spread below indefinitely
-                            *neighbor_light = SkyLight::MAX;
-                            queue.push_back(*neighbor_block);
+                            if *neighbor_light != SkyLight::MAX {
+                                *neighbor_light = SkyLight::MAX;
+                                queue.push_back(*neighbor_block);
+                            }
                         } else {
                             let new_light = block_light.fade();
 
-                            if new_light > SkyLight::MIN && new_light > *neighbor_light {
+                            if new_light > *neighbor_light {
                                 *neighbor_light = new_light;
 
                                 queue.push_back(*neighbor_block);
@@ -216,24 +208,20 @@ impl LightDispersion<'_> {
 // is intended to be filled with SkyLight::MIN.
 struct AddSide<'a> {
     side: usize,
-    old_chunk_light: Option<&'a BlocksVec<SkyLight>>,
     chunk_class: &'a BlocksVec<BlockClass>,
     opacity_bcc: &'a OpacityBlockClassComponent,
     chunk_light: &'a mut BlocksVec<SkyLight>,
     neighbor_chunks: [Option<(Chunk, &'a BlocksVec<BlockClass>, &'a BlocksVec<SkyLight>)>; 6],
-    recalc_inner_blocks: &'a mut bool,
 }
 
 impl AddSide<'_> {
     fn run(self) {
         let Self {
             side,
-            old_chunk_light,
             chunk_class,
             opacity_bcc,
             chunk_light,
             neighbor_chunks,
-            recalc_inner_blocks,
         } = self;
 
         let (axis0, axis1, fixed_axis, fixed_axis_value, neighbor_fixed_axis_value) = match side {
@@ -259,15 +247,9 @@ impl AddSide<'_> {
                 let block_class = chunk_class.get(block);
                 let block_light = chunk_light.get_mut(block);
 
-                let old_block_light = old_chunk_light.as_ref().map(|c| *c.get(block));
-
                 // TODO block transparency analysis
                 if let Some(Opacity::Full) = opacity_bcc.get(block_class) {
                     *block_light = SkyLight::MIN;
-
-                    if old_block_light != Some(*block_light) {
-                        *recalc_inner_blocks = true;
-                    }
 
                     continue;
                 }
@@ -299,10 +281,6 @@ impl AddSide<'_> {
 
                 // Corners of the chunk should inherit the light from the brighter side
                 *block_light = new_block_light.max(*block_light);
-
-                if old_block_light != Some(*block_light) {
-                    *recalc_inner_blocks = true;
-                }
             }
         }
     }
