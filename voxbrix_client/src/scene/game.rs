@@ -183,6 +183,7 @@ enum Transition {
 
 pub struct GameSceneParameters {
     pub interface_state: egui_winit::State,
+    pub interface_renderer: egui_wgpu::Renderer,
     pub output_thread: OutputThread,
     pub connection: (Sender, Receiver),
     pub player_actor: Actor,
@@ -199,6 +200,7 @@ impl GameScene {
             parameters:
                 GameSceneParameters {
                     interface_state,
+                    interface_renderer,
                     output_thread,
                     connection,
                     player_actor,
@@ -491,6 +493,7 @@ impl GameScene {
 
         let interface_system = InterfaceSystemDescriptor {
             interface_state,
+            interface_renderer,
             output_thread: &output_thread,
         }
         .build();
@@ -646,9 +649,12 @@ impl GameScene {
                     return Ok(SceneSwitch::Exit);
                 },
                 Transition::Menu => {
+                    let (interface_state, interface_renderer) =
+                        shared_data.interface_system.destruct();
                     return Ok(SceneSwitch::Menu {
                         parameters: MenuSceneParameters {
-                            interface_state: shared_data.interface_system.into_interface_state(),
+                            interface_state,
+                            interface_renderer,
                             output_thread: shared_data.render_system.into_output(),
                         },
                     });
@@ -656,9 +662,12 @@ impl GameScene {
             }
         }
 
+        let (interface_state, interface_renderer) = shared_data.interface_system.destruct();
+
         Ok(SceneSwitch::Menu {
             parameters: MenuSceneParameters {
-                interface_state: shared_data.interface_system.into_interface_state(),
+                interface_state,
+                interface_renderer,
                 output_thread: shared_data.render_system.into_output(),
             },
         })

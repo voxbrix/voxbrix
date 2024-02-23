@@ -4,10 +4,7 @@ use crate::system::render::{
 };
 use anyhow::Result;
 use egui::Context;
-use egui_wgpu::{
-    Renderer as InterfaceRenderer,
-    ScreenDescriptor,
-};
+use egui_wgpu::ScreenDescriptor;
 use winit::{
     event::WindowEvent,
     window::Window,
@@ -15,6 +12,7 @@ use winit::{
 
 pub struct InterfaceSystemDescriptor<'a> {
     pub interface_state: egui_winit::State,
+    pub interface_renderer: egui_wgpu::Renderer,
     pub output_thread: &'a OutputThread,
 }
 
@@ -22,42 +20,36 @@ impl InterfaceSystemDescriptor<'_> {
     pub fn build(self) -> InterfaceSystem {
         let Self {
             interface_state,
+            interface_renderer,
             output_thread,
         } = self;
 
         InterfaceSystem {
             interface_state,
-            interface_renderer: InterfaceRenderer::new(
-                &output_thread.device(),
-                output_thread.current_surface_config().format,
-                None,
-                1,
-            ),
-            context: Context::default(),
+            interface_renderer,
         }
     }
 }
 
 pub struct InterfaceSystem {
     interface_state: egui_winit::State,
-    interface_renderer: InterfaceRenderer,
-    context: Context,
+    interface_renderer: egui_wgpu::Renderer,
 }
 
 impl InterfaceSystem {
     /// Call this before adding interfaces.
     pub fn start(&mut self, window: &Window) {
         let input = self.interface_state.take_egui_input(window);
-        self.context.begin_frame(input);
+        self.interface_state.egui_ctx().begin_frame(input);
     }
 
     pub fn add_interface(&self, interface: impl FnOnce(&Context)) {
-        interface(&self.context);
+        interface(self.interface_state.egui_ctx());
     }
 
     /// Finishes the composition and renders the result.
     pub fn render(&mut self, renderer: Renderer) -> Result<(), wgpu::SurfaceError> {
-        let interface = self.context.end_frame();
+        let interface = self.interface_state.egui_ctx().end_frame();
 
         let screen_descriptor = ScreenDescriptor {
             size_in_pixels: [
@@ -67,9 +59,12 @@ impl InterfaceSystem {
             pixels_per_point: 2.0,
         };
 
-        self.context.set_pixels_per_point(2.0);
+        self.interface_state.egui_ctx().set_pixels_per_point(2.0);
 
-        let clipped_primitives = self.context.tessellate(interface.shapes, 2.0);
+        let clipped_primitives = self
+            .interface_state
+            .egui_ctx()
+            .tessellate(interface.shapes, 2.0);
 
         self.interface_renderer.update_buffers(
             renderer.device,
@@ -116,7 +111,7 @@ impl InterfaceSystem {
         let _ = self.interface_state.on_window_event(window, event);
     }
 
-    pub fn into_interface_state(self) -> egui_winit::State {
-        self.interface_state
+    pub fn destruct(self) -> (egui_winit::State, egui_wgpu::Renderer) {
+        (self.interface_state, self.interface_renderer)
     }
 }

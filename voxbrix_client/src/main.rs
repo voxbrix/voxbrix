@@ -180,7 +180,6 @@ fn main() {
 
                         let context = egui::Context::default();
 
-                        //let interface_state = egui_winit::State::new(&window_handle.window);
                         let interface_state = egui_winit::State::new(
                             context,
                             egui::ViewportId::ROOT,
@@ -188,6 +187,7 @@ fn main() {
                             Some(2.0),
                             None,
                         );
+
                         let output_thread = OutputThread::new(
                             RenderHandle {
                                 adapter,
@@ -199,8 +199,16 @@ fn main() {
                             None,
                         );
 
+                        let interface_renderer = egui_wgpu::Renderer::new(
+                            &output_thread.device(),
+                            output_thread.current_surface_config().format,
+                            None,
+                            1,
+                        );
+
                         let scene_manager = SceneManager {
                             interface_state,
+                            interface_renderer,
                             output_thread,
                         };
 
