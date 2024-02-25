@@ -494,7 +494,6 @@ impl GameScene {
         let interface_system = InterfaceSystemDescriptor {
             interface_state,
             interface_renderer,
-            output_thread: &output_thread,
         }
         .build();
 

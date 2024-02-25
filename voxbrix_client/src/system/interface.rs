@@ -1,7 +1,4 @@
-use crate::system::render::{
-    output_thread::OutputThread,
-    Renderer,
-};
+use crate::system::render::Renderer;
 use anyhow::Result;
 use egui::Context;
 use egui_wgpu::ScreenDescriptor;
@@ -10,18 +7,16 @@ use winit::{
     window::Window,
 };
 
-pub struct InterfaceSystemDescriptor<'a> {
+pub struct InterfaceSystemDescriptor {
     pub interface_state: egui_winit::State,
     pub interface_renderer: egui_wgpu::Renderer,
-    pub output_thread: &'a OutputThread,
 }
 
-impl InterfaceSystemDescriptor<'_> {
+impl InterfaceSystemDescriptor {
     pub fn build(self) -> InterfaceSystem {
         let Self {
             interface_state,
             interface_renderer,
-            output_thread,
         } = self;
 
         InterfaceSystem {
@@ -51,20 +46,20 @@ impl InterfaceSystem {
     pub fn render(&mut self, renderer: Renderer) -> Result<(), wgpu::SurfaceError> {
         let interface = self.interface_state.egui_ctx().end_frame();
 
+        let pixels_per_point = self.interface_state.egui_ctx().pixels_per_point();
+
         let screen_descriptor = ScreenDescriptor {
             size_in_pixels: [
                 renderer.surface_config.width,
                 renderer.surface_config.height,
             ],
-            pixels_per_point: 2.0,
+            pixels_per_point,
         };
-
-        self.interface_state.egui_ctx().set_pixels_per_point(2.0);
 
         let clipped_primitives = self
             .interface_state
             .egui_ctx()
-            .tessellate(interface.shapes, 2.0);
+            .tessellate(interface.shapes, pixels_per_point);
 
         self.interface_renderer.update_buffers(
             renderer.device,

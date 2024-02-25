@@ -180,11 +180,15 @@ fn main() {
 
                         let context = egui::Context::default();
 
+                        context.set_pixels_per_point(2.0);
+
+                        let viewport_id = context.viewport_id();
+
                         let interface_state = egui_winit::State::new(
                             context,
-                            egui::ViewportId::ROOT,
+                            viewport_id,
                             &window_handle.window,
-                            Some(2.0),
+                            None,
                             None,
                         );
 

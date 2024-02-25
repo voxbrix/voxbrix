@@ -14,7 +14,6 @@ use anyhow::Result;
 use argon2::Argon2;
 use egui::CentralPanel;
 use egui_wgpu::ScreenDescriptor;
-use egui_winit::State;
 use futures_lite::{
     future,
     StreamExt as _,
@@ -82,11 +81,6 @@ enum Event {
     Input(InputEvent),
 }
 
-fn set_ui_scale(scale: f32, sd: &mut ScreenDescriptor, state: &mut State) {
-    sd.pixels_per_point = scale;
-    state.egui_ctx().set_pixels_per_point(scale);
-}
-
 pub struct MenuScene {
     pub parameters: MenuSceneParameters,
 }
@@ -102,24 +96,12 @@ impl MenuScene {
                 },
         } = self;
 
-        let (_, width, height) = {
-            let sc = output_thread.current_surface_config();
-            (sc.format, sc.width, sc.height)
-        };
-
         let _ = output_thread
             .window()
             .set_cursor_grab(winit::window::CursorGrabMode::None);
         output_thread.window().set_cursor_visible(true);
 
         let mut resized = false;
-
-        let mut screen_descriptor = ScreenDescriptor {
-            size_in_pixels: [width, height],
-            pixels_per_point: 1.0,
-        };
-
-        set_ui_scale(2.0, &mut screen_descriptor, &mut state);
 
         let surface_source = output_thread.get_surface_source();
         let input_source = output_thread.get_input_source();
@@ -184,7 +166,12 @@ impl MenuScene {
                             ui.checkbox(&mut is_registration, "Registration");
                         });
                     });
-                    let clipped_primitives = state.egui_ctx().tessellate(full_output.shapes, 2.0);
+
+                    let pixels_per_point = state.egui_ctx().pixels_per_point();
+
+                    let clipped_primitives = state
+                        .egui_ctx()
+                        .tessellate(full_output.shapes, pixels_per_point);
 
                     let mut encoder = output_thread.device().create_command_encoder(
                         &wgpu::CommandEncoderDescriptor {
@@ -193,7 +180,10 @@ impl MenuScene {
                     );
 
                     let config = output_thread.current_surface_config();
-                    screen_descriptor.size_in_pixels = [config.width, config.height];
+                    let screen_descriptor = ScreenDescriptor {
+                        size_in_pixels: [config.width, config.height],
+                        pixels_per_point,
+                    };
 
                     renderer.update_buffers(
                         &output_thread.device(),
