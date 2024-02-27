@@ -65,9 +65,12 @@ use crate::{
     Sequence,
     Type,
     UnreliableBuffer,
+    UnreliableBufferShard,
     KEY_BUFFER,
     MAX_DATA_SIZE,
     MAX_PACKET_SIZE,
+    MAX_SPLIT_DATA_SIZE,
+    MAX_SPLIT_PACKETS,
     NEW_CONNECTION_ID,
     RELIABLE_QUEUE_LENGTH,
     RELIABLE_RESEND_AFTER,
@@ -101,18 +104,14 @@ use local_channel::mpsc::{
     Receiver as ChannelRx,
     Sender as ChannelTx,
 };
-use log::warn;
+use log::debug;
 use rand_core::OsRng;
 #[cfg(feature = "single")]
 use std::rc::Rc;
 #[cfg(feature = "multi")]
 use std::sync::Arc as Rc;
 use std::{
-    collections::{
-        BTreeMap,
-        BTreeSet,
-        VecDeque,
-    },
+    collections::VecDeque,
     fmt,
     io::{
         Cursor,
@@ -193,6 +192,8 @@ pub enum Error {
     InvalidConnection,
     /// Currently internal variant, should not be returned.
     Timeout,
+    /// Peer sent message that is too large.
+    PeerMessageTooLarge,
 }
 
 impl fmt::Display for Error {
@@ -744,9 +745,15 @@ impl StreamReceiver {
                         self.reliable_split_buffer.clear();
                     } else if let Some(reliable_split_channel) = self.reliable_split_channel {
                         if reliable_split_channel != channel {
-                            warn!("skipping mishappened packet with channel {}", channel);
+                            debug!("skipping mishappened packet with channel {}", channel);
                             continue;
                         }
+                    }
+
+                    if self.reliable_split_buffer.len() + queue_buffer.as_ref().len()
+                        > MAX_SPLIT_DATA_SIZE
+                    {
+                        return Err(Error::PeerMessageTooLarge);
                     }
 
                     self.reliable_split_buffer
@@ -757,6 +764,12 @@ impl StreamReceiver {
                     let buf = if let Some(reliable_split_channel) = self.reliable_split_channel {
                         // Split just completed, extending and returning
                         if reliable_split_channel == channel {
+                            if self.reliable_split_buffer.len() + queue_buffer.as_ref().len()
+                                > MAX_SPLIT_DATA_SIZE
+                            {
+                                return Err(Error::PeerMessageTooLarge);
+                            }
+
                             self.reliable_split_buffer
                                 .extend_from_slice(queue_buffer.as_ref());
 
@@ -824,47 +837,55 @@ impl StreamReceiver {
                 Type::UNRELIABLE_SPLIT_START => {
                     let channel: Channel = seek_read!(read_cursor.read_varint(), "channel");
                     let split_id: u16 = seek_read!(read_cursor.read_varint(), "split_id");
-                    let expected_length: usize = seek_read!(read_cursor.read_varint(), "length");
+                    let expected_packets: usize =
+                        seek_read!(read_cursor.read_varint(), "expected_packets");
+
+                    if expected_packets > MAX_SPLIT_PACKETS {
+                        log::debug!(
+                            "dropping packet with packet length {} more than maximum {}",
+                            expected_packets,
+                            MAX_SPLIT_PACKETS,
+                        );
+                        continue;
+                    }
 
                     let mut split_buffer = if self.unreliable_split_buffers.len()
                         == UNRELIABLE_BUFFERS
                         || self.unreliable_split_buffers.back().is_some()
-                            && self.unreliable_split_buffers.back().unwrap().complete
+                            && self.unreliable_split_buffers.back().unwrap().is_complete()
                     {
                         let mut b = self.unreliable_split_buffers.pop_back().unwrap();
-                        b.split_id = split_id;
-                        b.channel = channel;
-                        b.expected_length = expected_length;
-                        b.existing_pieces.clear();
-                        b.complete = false;
+                        let UnreliableBuffer {
+                            split_id: b_split_id,
+                            channel: b_channel,
+                            complete_shards: b_complete_shards,
+                            shards: b_shards,
+                        } = &mut b;
+                        *b_split_id = split_id;
+                        *b_channel = channel;
+                        *b_complete_shards = 0;
+                        b_shards.clear();
+                        b_shards.resize(expected_packets, UnreliableBufferShard::new());
                         b
                     } else {
                         UnreliableBuffer {
                             split_id,
                             channel,
-                            expected_length,
-                            existing_pieces: BTreeSet::new(),
-                            buffer: BTreeMap::new(),
-                            complete: false,
+                            complete_shards: 0,
+                            shards: vec![UnreliableBufferShard::new(); expected_packets],
                         }
                     };
 
                     in_buffer.start += read_cursor.position() as usize;
                     let in_buffer: &[u8] = in_buffer.as_ref();
 
-                    match split_buffer.buffer.get_mut(&0) {
-                        Some((current_length, shard)) => {
-                            shard[.. in_buffer.len()].copy_from_slice(in_buffer);
-                            *current_length = in_buffer.len();
-                        },
-                        None => {
-                            let mut new_shard = [0u8; MAX_DATA_SIZE];
-                            new_shard[.. in_buffer.len()].copy_from_slice(in_buffer);
-                            split_buffer.buffer.insert(0, (in_buffer.len(), new_shard));
-                        },
-                    }
+                    let shard = split_buffer.shards.get_mut(0).unwrap();
 
-                    split_buffer.existing_pieces.insert(0);
+                    shard.buffer[.. in_buffer.len()].copy_from_slice(in_buffer);
+                    shard.length = in_buffer.len();
+                    shard.written = true;
+
+                    split_buffer.complete_shards += 1;
                     self.unreliable_split_buffers.push_front(split_buffer);
                 },
                 Type::UNRELIABLE_SPLIT => {
@@ -875,50 +896,43 @@ impl StreamReceiver {
                     in_buffer.start += read_cursor.position() as usize;
                     let in_buffer: &[u8] = in_buffer.as_ref();
 
-                    let split_buffer = match self
-                        .unreliable_split_buffers
-                        .iter_mut()
-                        .find(|b| b.split_id == split_id && b.channel == channel && !b.complete)
-                    {
+                    let split_buffer = match self.unreliable_split_buffers.iter_mut().find(|b| {
+                        b.split_id == split_id && b.channel == channel && !b.is_complete()
+                    }) {
                         Some(b) => b,
                         None => continue,
                     };
 
-                    match split_buffer.buffer.get_mut(&count) {
-                        Some((current_length, shard)) => {
-                            shard[.. in_buffer.len()].copy_from_slice(in_buffer);
-                            *current_length = in_buffer.len();
-                        },
+                    let shard = match split_buffer.shards.get_mut(count) {
+                        Some(s) => s,
                         None => {
-                            let mut new_shard = [0u8; MAX_DATA_SIZE];
-                            new_shard[.. in_buffer.len()].copy_from_slice(in_buffer);
-                            split_buffer
-                                .buffer
-                                .insert(count, (in_buffer.len(), new_shard));
+                            debug!("shard not found for count {}", count);
+                            continue;
                         },
+                    };
+
+                    if shard.written {
+                        debug!("shard is already written for count {}", count);
+                        continue;
                     }
 
-                    split_buffer.existing_pieces.insert(count);
+                    let shard = split_buffer.shards.get_mut(count).unwrap();
 
-                    if split_buffer
-                        .existing_pieces
-                        .range(0 .. split_buffer.expected_length)
-                        .count()
-                        == split_buffer.expected_length
-                    {
-                        let mut buf =
-                            Vec::with_capacity(MAX_DATA_SIZE * split_buffer.expected_length);
+                    shard.buffer[.. in_buffer.len()].copy_from_slice(in_buffer);
+                    shard.length = in_buffer.len();
+                    shard.written = true;
 
-                        for (_, (len, data)) in
-                            split_buffer.buffer.range(0 .. split_buffer.expected_length)
-                        {
-                            buf.extend_from_slice(&data[.. *len]);
+                    split_buffer.complete_shards += 1;
+
+                    if split_buffer.is_complete() {
+                        let mut buf = Vec::with_capacity(MAX_DATA_SIZE * split_buffer.shards.len());
+
+                        for shard in split_buffer.shards.iter() {
+                            buf.extend_from_slice(&shard.buffer[.. shard.length]);
                         }
 
                         // TODO: also check CRC and if it's incorrect restore buf length to
                         // MAX_PACKET_SIZE before continuing
-
-                        split_buffer.complete = true;
 
                         return Ok((channel, buf.into()));
                     }
@@ -959,7 +973,7 @@ struct Client {
 
 struct Clients {
     clients: Vec<Option<Client>>,
-    free_indices: VecDeque<Id>,
+    free_indices: Vec<Id>,
 }
 
 impl Clients {
@@ -969,7 +983,7 @@ impl Clients {
     fn new(max_clients: usize) -> Self {
         Self {
             clients: (0 .. max_clients).map(|_| None).collect(),
-            free_indices: (0 .. max_clients).collect(),
+            free_indices: (0 .. max_clients).rev().collect(),
         }
     }
 
@@ -988,7 +1002,7 @@ impl Clients {
     }
 
     fn push(&mut self, client: Client) -> Option<usize> {
-        self.free_indices.pop_front().map(|idx| {
+        self.free_indices.pop().map(|idx| {
             *self.clients.get_mut(idx).unwrap() = Some(client);
             idx + Self::ID_OFFSET
         })
@@ -1003,7 +1017,7 @@ impl Clients {
         let res = mem::replace(self.clients.get_mut(idx)?, None);
 
         if res.is_some() {
-            self.free_indices.push_front(idx);
+            self.free_indices.push(idx);
         }
 
         res
@@ -1114,6 +1128,7 @@ impl Server {
                     match packet_type {
                         Type::CONNECT => {
                             if sender != NEW_CONNECTION_ID {
+                                debug!("received non-connection message");
                                 continue;
                             }
 

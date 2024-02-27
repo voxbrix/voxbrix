@@ -27,10 +27,6 @@ use chacha20poly1305::{
 };
 use integer_encoding::VarIntWriter;
 use std::{
-    collections::{
-        BTreeMap,
-        BTreeSet,
-    },
     io::{
         Cursor,
         Read,
@@ -58,12 +54,15 @@ const MAX_HEADER_SIZE: usize = mem::size_of::<Id>() // sender
 /// Maximum amount of data bytes that fits into one packet.
 /// Unreliable messages sent are recommended to be smaller that this.
 pub const MAX_DATA_SIZE: usize = MAX_PACKET_SIZE - MAX_HEADER_SIZE;
+/// Maximum amount of data per message.
+pub const MAX_SPLIT_DATA_SIZE: usize = MAX_SPLIT_PACKETS * MAX_DATA_SIZE;
 
 const SERVER_ID: usize = 0;
 const NEW_CONNECTION_ID: usize = 1;
 const UNRELIABLE_BUFFERS: usize = 8;
 const RELIABLE_QUEUE_LENGTH: u16 = 256;
 const RELIABLE_RESEND_AFTER: Duration = Duration::from_millis(1000);
+const MAX_SPLIT_PACKETS: usize = 2000;
 
 trait AsSlice<T> {
     fn slice(&self) -> &[T];
@@ -92,13 +91,34 @@ impl<T> AsMutSlice<T> for Cursor<&mut [T]> {
     }
 }
 
+#[derive(Clone, Copy)]
+struct UnreliableBufferShard {
+    written: bool,
+    length: usize,
+    buffer: [u8; MAX_DATA_SIZE],
+}
+
+impl UnreliableBufferShard {
+    fn new() -> Self {
+        Self {
+            written: false,
+            length: 0,
+            buffer: [0u8; MAX_DATA_SIZE],
+        }
+    }
+}
+
 struct UnreliableBuffer {
     split_id: u16,
     channel: Channel,
-    expected_length: usize,
-    existing_pieces: BTreeSet<usize>,
-    buffer: BTreeMap<usize, (usize, [u8; MAX_DATA_SIZE])>,
-    complete: bool,
+    complete_shards: usize,
+    shards: Vec<UnreliableBufferShard>,
+}
+
+impl UnreliableBuffer {
+    fn is_complete(&self) -> bool {
+        self.complete_shards == self.shards.len()
+    }
 }
 
 #[macro_export]
@@ -107,7 +127,7 @@ macro_rules! seek_read {
         match $e {
             Ok(r) => r,
             Err(_) => {
-                log::warn!("read {} error", $c);
+                log::debug!("read {} error", $c);
                 continue;
             },
         }
@@ -119,7 +139,7 @@ macro_rules! seek_read_return {
         match $e {
             Ok(r) => r,
             Err(_) => {
-                log::warn!("read {} error", $c);
+                log::debug!("read {} error", $c);
                 return Err(());
             },
         }
@@ -132,7 +152,7 @@ macro_rules! seek_write {
         match $e {
             Ok(r) => r,
             Err(_) => {
-                log::warn!("write {} error", $c);
+                log::debug!("write {} error", $c);
                 continue;
             },
         }
@@ -391,6 +411,8 @@ mod tests {
 
     #[tokio::test]
     async fn unreliable_test_0() {
+        let _ = env_logger::try_init();
+
         let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
 
         let client_port = 30000 + test_num * 10 + 1;
@@ -456,6 +478,8 @@ mod tests {
 
     #[tokio::test]
     async fn unreliable_test_1() {
+        let _ = env_logger::try_init();
+
         let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
 
         let client_port = 30000 + test_num * 10 + 1;
@@ -512,6 +536,8 @@ mod tests {
 
     #[tokio::test]
     async fn unreliable_test_2() {
+        let _ = env_logger::try_init();
+
         let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
 
         let client_port = 30000 + test_num * 10 + 1;
@@ -570,6 +596,8 @@ mod tests {
 
     #[tokio::test]
     async fn unreliable_test_3() {
+        let _ = env_logger::try_init();
+
         let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
 
         let client_port = 30000 + test_num * 10 + 1;
@@ -649,6 +677,8 @@ mod tests {
 
     #[tokio::test]
     async fn unreliable_test_4() {
+        let _ = env_logger::try_init();
+
         let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
 
         let client_port = 30000 + test_num * 10 + 1;
@@ -819,6 +849,8 @@ mod tests {
 
     #[tokio::test]
     async fn reliable_test_0() {
+        let _ = env_logger::try_init();
+
         let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
 
         let client_port = 30000 + test_num * 10 + 1;
@@ -874,6 +906,8 @@ mod tests {
 
     #[tokio::test]
     async fn reliable_test_1() {
+        let _ = env_logger::try_init();
+
         let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
 
         let client_port = 30000 + test_num * 10 + 1;
@@ -924,6 +958,8 @@ mod tests {
 
     #[tokio::test]
     async fn reliable_test_2() {
+        let _ = env_logger::try_init();
+
         let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
 
         let client_port = 30000 + test_num * 10 + 1;
@@ -977,6 +1013,8 @@ mod tests {
 
     #[tokio::test]
     async fn reliable_test_3() {
+        let _ = env_logger::try_init();
+
         let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
 
         let client_port = 30000 + test_num * 10 + 1;
@@ -1051,6 +1089,8 @@ mod tests {
 
     #[tokio::test]
     async fn reliable_test_4() {
+        let _ = env_logger::try_init();
+
         let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
 
         let client_port = 30000 + test_num * 10 + 1;
@@ -1125,6 +1165,8 @@ mod tests {
 
     #[tokio::test]
     async fn reliable_test_5() {
+        let _ = env_logger::try_init();
+
         let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
 
         let client_port = 30000 + test_num * 10 + 1;
@@ -1237,6 +1279,8 @@ mod tests {
 
     #[tokio::test]
     async fn reliable_test_reliability() {
+        let _ = env_logger::try_init();
+
         let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
 
         let amount = 1000;
@@ -1340,6 +1384,8 @@ mod tests {
 
     #[tokio::test]
     async fn reliable_test_redundancy() {
+        let _ = env_logger::try_init();
+
         let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
 
         // Should resend only the packages that were not delivered
@@ -1444,6 +1490,8 @@ mod tests {
 
     #[tokio::test]
     async fn reliable_test_wait_complete() {
+        let _ = env_logger::try_init();
+
         let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
 
         let amount = 1000;
@@ -1534,6 +1582,8 @@ mod tests {
     #[test]
     #[cfg(not(debug_assertions))]
     fn reliable_test_load() {
+        let _ = env_logger::try_init();
+
         use tokio::runtime::Builder as RTBuilder;
 
         let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
