@@ -198,6 +198,7 @@ impl SharedData {
         self.orientation_ac.remove(actor, self.snapshot);
         self.player_ac.remove(actor);
         self.chunk_activation_ac.remove(actor);
+        self.actor_registry.remove(actor);
     }
 
     pub fn remove_player(&mut self, player: &Player) {
