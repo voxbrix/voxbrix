@@ -147,7 +147,11 @@ use voxbrix_common::{
         state_component::StateComponent,
     },
     math::Vec3F32,
-    messages::StatePacker,
+    messages::{
+        ActionsPacker,
+        StatePacker,
+        StateUnpacker,
+    },
     pack::Packer,
     system::{
         actor_class_loading::ActorClassLoadingSystem,
@@ -212,7 +216,7 @@ impl GameScene {
         let (unreliable_tx, unreliable_rx) = flume::unbounded::<Vec<u8>>();
         let (event_tx, event_rx) = flume::unbounded::<Event>();
 
-        let client_state = StatePacker::new();
+        let state_packer = StatePacker::new();
 
         let snapshot = Snapshot(1);
         // Last client's snapshot received by the server
@@ -586,7 +590,9 @@ impl GameScene {
             reliable_tx,
             event_tx,
 
-            client_state,
+            state_packer,
+            state_unpacker: StateUnpacker::new(),
+            actions_packer: ActionsPacker::new(),
 
             last_process_time,
 

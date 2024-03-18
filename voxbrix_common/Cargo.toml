@@ -17,6 +17,7 @@ arrayvec = { workspace = true }
 ron = { workspace = true }
 nohash-hasher = { workspace = true }
 ahash = { workspace = true }
+wasmtime = { workspace = true }
 anyhow = { workspace = true }
 glam = { version = "0.25", features = ["serde"] }
 futures-core = { version = "0.3", default-features = false }

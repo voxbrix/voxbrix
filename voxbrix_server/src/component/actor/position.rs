@@ -23,8 +23,8 @@ use voxbrix_common::{
     },
     math::MinMax,
     messages::{
-        State,
         StatePacker,
+        StateUnpacked,
     },
     pack,
 };
@@ -109,7 +109,7 @@ impl PositionActorComponent {
     pub fn unpack_player_with<U>(
         &mut self,
         player_actor: &Actor,
-        state: &State,
+        state: &StateUnpacked,
         snapshot: Snapshot,
         mut func: impl FnMut(Option<&Position>, Option<&Position>) -> U,
     ) -> U {

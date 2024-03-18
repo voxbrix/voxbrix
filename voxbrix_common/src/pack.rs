@@ -10,7 +10,7 @@ const COMPRESS_LENGTH: usize = 100;
 // TODO have this separate for client and server:
 const MAX_UNCOMPRESSED_BYTES: usize = 100_000_000;
 
-fn packer() -> impl Options {
+pub fn packer() -> impl Options {
     bincode::options()
 }
 

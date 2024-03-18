@@ -1,35 +1,19 @@
 use crate::{
-    component::{
-        chunk::cache::ChunkCache,
-        player::{
-            chunk_update::{
-                ChunkUpdate,
-                FullChunkView,
-            },
-            client::{
-                ClientEvent,
-                SendData,
-            },
-        },
+    component::player::chunk_update::{
+        ChunkUpdate,
+        FullChunkView,
     },
     entity::player::Player,
-    server_loop::data::SharedData,
-    storage::{
-        IntoData,
-        IntoDataSized,
+    server_loop::data::{
+        ScriptSharedData,
+        SharedData,
     },
-    BASE_CHANNEL,
-    BLOCK_CLASS_TABLE,
 };
+use bincode::Options;
 use log::debug;
-use std::sync::Arc;
 use voxbrix_common::{
-    messages::{
-        client::ClientAccept,
-        server::ServerAccept,
-    },
-    pack::Packer,
-    ChunkData,
+    messages::server::ServerAccept,
+    pack,
 };
 use voxbrix_protocol::server::Packet;
 
@@ -63,7 +47,18 @@ impl PlayerEvent<'_> {
                 snapshot: last_client_snapshot,
                 last_server_snapshot,
                 state,
+                actions,
             } => {
+                let state = match sd.state_unpacker.unpack_state(state) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        debug!("skipping corrupted state");
+                        return;
+                    },
+                };
+
+                // TODO: there could be sequential messaged on the wire that have the same state
+                // changes duplicated. Make sure that those do not duplicate in the components.
                 let actor = match sd.actor_pc.get(&player) {
                     Some(a) => a,
                     None => return,
@@ -77,6 +72,8 @@ impl PlayerEvent<'_> {
                 if client.last_client_snapshot >= last_client_snapshot {
                     return;
                 }
+
+                let previous_last_client_snapshot = client.last_client_snapshot;
 
                 client.last_server_snapshot = last_server_snapshot;
                 client.last_client_snapshot = last_client_snapshot;
@@ -120,8 +117,74 @@ impl PlayerEvent<'_> {
                         }
                     },
                 );
+
+                let actions = match sd.actions_unpacker.unpack_actions(actions) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        debug!("unable to unpack actions");
+                        return;
+                    }
+                };
+
+                let place_block_action = sd.action_label_map.get("place_block").unwrap();
+
+                // Filtering out already handled actions
+                for (action, _, data) in actions.data().iter()
+                    .filter(|(_, snapshot, _)| *snapshot > previous_last_client_snapshot)
+                {
+                    // TODO read action <-> script from file
+                    if *action == place_block_action {
+                        let script = sd.script_registry
+                            .get_script_by_label("place_block")
+                            .unwrap();
+
+
+                            let script_data = ScriptSharedData {
+                                block_class_label_map: &sd.block_class_label_map,
+                                class_bc: &mut sd.class_bc,
+                            };
+
+                        sd.script_registry.access_instance(&script, script_data, |instance| {
+                            let mut store = &mut instance.store;
+                            let buffer = &mut instance.buffer;
+                            let instance = instance.instance;
+
+                            let data = (player, data);
+
+                            pack::packer()
+                                .serialize_into(&mut *buffer, &data)
+                                .expect("serialization should not fail");
+
+                            let input_len = buffer.len() as u32;
+
+                            let get_write_buffer = instance
+                                .get_typed_func::<u32, u32>(&mut store, "write_buffer")
+                                .unwrap();
+
+                            let ptr = get_write_buffer
+                                .call(&mut store, input_len)
+                                .expect("unable to get script input buffer");
+
+                            let memory = instance.get_memory(&mut store, "memory").unwrap();
+
+                            let start = ptr as usize;
+                            let end = start + input_len as usize;
+
+                            (&mut memory.data_mut(&mut store)[start .. end])
+                                .copy_from_slice(buffer.as_slice());
+
+                            let run = instance
+                                .get_typed_func::<u32, ()>(&mut store, "run")
+                                .unwrap();
+
+                            run.call(&mut store, input_len)
+                                .expect("unable to run script");
+                        });
+                    }
+                }
+
             },
-            ServerAccept::AlterBlock {
+            /*ServerAccept::AlterBlock {
                 chunk,
                 block,
                 block_class,
@@ -200,7 +263,7 @@ impl PlayerEvent<'_> {
                         db_write.commit().unwrap();
                     });
                 }
-            },
+            },*/
         }
     }
 }

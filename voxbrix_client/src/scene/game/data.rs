@@ -47,11 +47,16 @@ use voxbrix_common::{
         chunk::status::StatusChunkComponent,
     },
     entity::{
+        action::Action,
         actor::Actor,
         block_class::BlockClass,
         snapshot::Snapshot,
     },
-    messages::StatePacker,
+    messages::{
+        ActionsPacker,
+        StatePacker,
+        StateUnpacker,
+    },
     pack::Packer,
     LabelMap,
 };
@@ -139,6 +144,7 @@ pub struct GameSharedData {
 
     pub block_class_label_map: LabelMap<BlockClass>,
 
+    // pub action_label_map: LabelMap<Action>,
     pub player_actor: Actor,
     pub player_chunk_view_radius: i32,
 
@@ -150,7 +156,9 @@ pub struct GameSharedData {
     pub reliable_tx: Sender<Vec<u8>>,
     pub event_tx: Sender<Event>,
 
-    pub client_state: StatePacker,
+    pub state_packer: StatePacker,
+    pub state_unpacker: StateUnpacker,
+    pub actions_packer: ActionsPacker,
 
     pub last_process_time: Instant,
 

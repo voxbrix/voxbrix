@@ -21,8 +21,8 @@ use voxbrix_common::{
     },
     messages::{
         ActorStatePack,
-        State,
         StatePacker,
+        StateUnpacked,
     },
     pack,
 };
@@ -162,7 +162,12 @@ impl<T> ActorComponentPackable<T>
 where
     T: 'static + DeserializeOwned + PartialEq,
 {
-    pub fn unpack_player(&mut self, player_actor: &Actor, state: &State, snapshot: Snapshot) {
+    pub fn unpack_player(
+        &mut self,
+        player_actor: &Actor,
+        state: &StateUnpacked,
+        snapshot: Snapshot,
+    ) {
         if let Some(change) = state
             .get_component(&self.state_component)
             .and_then(|buf| pack::deserialize_from::<Option<T>>(buf))
@@ -173,8 +178,7 @@ where
                 self.storage.insert(*player_actor, new_value);
                 updated
             } else {
-                self.storage.remove(player_actor);
-                true
+                self.storage.remove(player_actor).is_some()
             };
 
             if updated {

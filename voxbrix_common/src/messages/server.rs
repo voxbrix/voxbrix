@@ -1,18 +1,10 @@
 use crate::{
-    entity::{
-        block::Block,
-        block_class::BlockClass,
-        chunk::Chunk,
-        snapshot::Snapshot,
-    },
+    entity::snapshot::Snapshot,
     messages::{
-        State,
-        StatePacker,
+        ActionsPacked,
+        StatePacked,
     },
-    pack::{
-        Pack,
-        Packer,
-    },
+    pack::Pack,
 };
 use serde::{
     Deserialize,
@@ -27,41 +19,10 @@ pub enum ServerAccept<'a> {
         // last server's snapshot received by this client
         last_server_snapshot: Snapshot,
         #[serde(borrow)]
-        state: State<'a>,
+        state: StatePacked<'a>,
+        #[serde(borrow)]
+        actions: ActionsPacked<'a>,
     },
-    AlterBlock {
-        chunk: Chunk,
-        block: Block,
-        block_class: BlockClass,
-    },
-}
-
-impl<'a> ServerAccept<'a> {
-    pub fn pack_state(
-        snapshot: Snapshot,
-        last_server_snapshot: Snapshot,
-        state: &mut StatePacker,
-        packer: &mut Packer,
-    ) -> Vec<u8> {
-        let mut packed = Vec::new();
-
-        state.pack_state(|state| {
-            let msg = ServerAccept::State {
-                snapshot,
-                last_server_snapshot,
-                state,
-            };
-
-            packer.pack(&msg, &mut packed);
-
-            match msg {
-                ServerAccept::State { state, .. } => state,
-                _ => panic!(),
-            }
-        });
-
-        packed
-    }
 }
 
 impl Pack for ServerAccept<'_> {

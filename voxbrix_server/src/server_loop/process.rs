@@ -151,7 +151,7 @@ impl Process<'_> {
                     .filter(|c| previous_chunk_radius.is_within(c));
 
                 sd.position_ac.pack_changes(
-                    &mut sd.server_state,
+                    &mut sd.state_packer,
                     sd.snapshot,
                     client.last_server_snapshot,
                     player_actor,
@@ -163,7 +163,7 @@ impl Process<'_> {
                 // Server-controlled components, we pass `None` instead of `player_actor`.
                 // These components will not filter out player's own components.
                 sd.class_ac.pack_changes(
-                    &mut sd.server_state,
+                    &mut sd.state_packer,
                     sd.snapshot,
                     client.last_server_snapshot,
                     None,
@@ -172,7 +172,7 @@ impl Process<'_> {
                 );
 
                 sd.model_acc.pack_changes(
-                    &mut sd.server_state,
+                    &mut sd.state_packer,
                     sd.snapshot,
                     client.last_server_snapshot,
                     Some(player_actor),
@@ -183,7 +183,7 @@ impl Process<'_> {
                 // Client-conrolled components, we pass `Some(player_actor)`.
                 // These components will filter out player's own components.
                 sd.velocity_ac.pack_changes(
-                    &mut sd.server_state,
+                    &mut sd.state_packer,
                     sd.snapshot,
                     client.last_server_snapshot,
                     Some(player_actor),
@@ -192,7 +192,7 @@ impl Process<'_> {
                 );
 
                 sd.orientation_ac.pack_changes(
-                    &mut sd.server_state,
+                    &mut sd.state_packer,
                     sd.snapshot,
                     client.last_server_snapshot,
                     Some(player_actor),
@@ -204,18 +204,18 @@ impl Process<'_> {
                 let new_chunks = chunk_radius.into_iter_simple();
 
                 sd.position_ac
-                    .pack_full(&mut sd.server_state, player_actor, new_chunks);
+                    .pack_full(&mut sd.state_packer, player_actor, new_chunks);
 
                 // Server-controlled components, we pass `None` instead of `player_actor`.
                 // These components will not filter out player's own components.
                 sd.class_ac.pack_full(
-                    &mut sd.server_state,
+                    &mut sd.state_packer,
                     None,
                     sd.position_ac.actors_full_update(),
                 );
 
                 sd.model_acc.pack_full(
-                    &mut sd.server_state,
+                    &mut sd.state_packer,
                     None,
                     sd.position_ac.actors_full_update(),
                 );
@@ -223,24 +223,25 @@ impl Process<'_> {
                 // Client-conrolled components, we pass `Some(player_actor)`.
                 // These components will filter out player's own components.
                 sd.velocity_ac.pack_full(
-                    &mut sd.server_state,
+                    &mut sd.state_packer,
                     Some(player_actor),
                     sd.position_ac.actors_full_update(),
                 );
 
                 sd.orientation_ac.pack_full(
-                    &mut sd.server_state,
+                    &mut sd.state_packer,
                     Some(player_actor),
                     sd.position_ac.actors_full_update(),
                 );
             }
 
-            let data = ClientAccept::pack_state(
-                sd.snapshot,
-                client.last_client_snapshot,
-                &mut sd.server_state,
-                &mut sd.packer,
-            );
+            let state = sd.state_packer.pack_state();
+
+            let data = sd.packer.pack_to_vec(&ClientAccept::State {
+                snapshot: sd.snapshot,
+                last_client_snapshot: client.last_client_snapshot,
+                state,
+            });
 
             if client
                 .tx

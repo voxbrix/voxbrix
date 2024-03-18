@@ -8,7 +8,7 @@ use voxbrix_common::{
     },
     messages::{
         ActorStateUnpack,
-        State,
+        StateUnpacked,
     },
     pack,
     system::actor_class_loading::LoadActorClassComponent,
@@ -57,7 +57,7 @@ impl<'a, T> OverridableActorClassComponent<T>
 where
     T: Deserialize<'a>,
 {
-    pub fn unpack_state(&mut self, state: &State<'a>) {
+    pub fn unpack_state(&mut self, state: &StateUnpacked<'a>) {
         if let Some(changes) = state
             .get_component(&self.state_component)
             .and_then(|buffer| pack::deserialize_from::<ActorStateUnpack<T>>(buffer))

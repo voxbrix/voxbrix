@@ -19,8 +19,8 @@ use voxbrix_common::{
     math::MinMax,
     messages::{
         ActorStateUnpack,
-        State,
         StatePacker,
+        StateUnpacked,
     },
     pack,
 };
@@ -147,7 +147,7 @@ impl<'a, T> ActorComponentPackable<T>
 where
     T: Deserialize<'a>,
 {
-    pub fn unpack_state(&mut self, state: &State<'a>) {
+    pub fn unpack_state(&mut self, state: &StateUnpacked<'a>) {
         if let Some(changes) = state
             .get_component(&self.state_component)
             .and_then(|buffer| pack::deserialize_from::<ActorStateUnpack<T>>(buffer))
@@ -258,7 +258,7 @@ impl<T> ActorComponentUnpackable<T> {
 impl<T> ActorComponentUnpackable<T> {
     pub fn unpack_state_convert<'a, U>(
         &mut self,
-        state: &State<'a>,
+        state: &StateUnpacked<'a>,
         mut convert: impl FnMut(Actor, Option<T>, U) -> T,
     ) where
         U: Deserialize<'a>,

@@ -96,14 +96,11 @@ impl LocalInput<'_> {
                                             },
                                         )
                                     {
-                                        let _ = sd.reliable_tx.send(sd.packer.pack_to_vec(
-                                            &ServerAccept::AlterBlock {
-                                                chunk,
-                                                block,
-                                                block_class:
-                                                    sd.block_class_label_map.get("air").unwrap(),
-                                            },
-                                        ));
+                                        sd.actions_packer.add_action(
+                                            voxbrix_common::entity::action::Action(0),
+                                            sd.snapshot,
+                                            "action0",
+                                        );
                                     }
                                 },
                                 MouseButton::Right => {
@@ -133,15 +130,10 @@ impl LocalInput<'_> {
                                         if let Some((chunk, block)) =
                                             Block::from_chunk_offset(chunk, block)
                                         {
-                                            let _ = sd.reliable_tx.send(
-                                                sd.packer.pack_to_vec(&ServerAccept::AlterBlock {
-                                                    chunk,
-                                                    block,
-                                                    block_class: sd
-                                                        .block_class_label_map
-                                                        .get("grass")
-                                                        .unwrap(),
-                                                }),
+                                            sd.actions_packer.add_action(
+                                                voxbrix_common::entity::action::Action(0),
+                                                sd.snapshot,
+                                                "action1",
                                             );
                                         }
                                     }

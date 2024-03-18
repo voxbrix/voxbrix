@@ -53,6 +53,11 @@ impl NetworkInput<'_> {
                 state,
             } => {
                 let current_time = Instant::now();
+
+                let Ok(state) = sd.state_unpacker.unpack_state(state) else {
+                    return Transition::None;
+                };
+
                 sd.class_ac.unpack_state(&state);
                 sd.model_acc.unpack_state(&state);
                 sd.velocity_ac.unpack_state(&state);

@@ -13,18 +13,18 @@ impl SendState<'_> {
         let SendState { shared_data: sd } = self;
 
         sd.position_ac
-            .pack_player(&mut sd.client_state, sd.last_client_snapshot);
+            .pack_player(&mut sd.state_packer, sd.last_client_snapshot);
         sd.velocity_ac
-            .pack_player(&mut sd.client_state, sd.last_client_snapshot);
+            .pack_player(&mut sd.state_packer, sd.last_client_snapshot);
         sd.orientation_ac
-            .pack_player(&mut sd.client_state, sd.last_client_snapshot);
+            .pack_player(&mut sd.state_packer, sd.last_client_snapshot);
 
-        let packed = ServerAccept::pack_state(
-            sd.snapshot,
-            sd.last_server_snapshot,
-            &mut sd.client_state,
-            &mut sd.packer,
-        );
+        let packed = sd.packer.pack_to_vec(&ServerAccept::State {
+            snapshot: sd.snapshot,
+            last_server_snapshot: sd.last_server_snapshot,
+            state: sd.state_packer.pack_state(),
+            actions: sd.actions_packer.pack_actions(),
+        });
 
         let _ = sd.unreliable_tx.send(packed);
 

@@ -6,14 +6,10 @@ use crate::{
         chunk::Chunk,
         snapshot::Snapshot,
     },
-    messages::{
-        State,
-        StatePacker,
-    },
+    messages::StatePacked,
     pack::{
         self,
         Pack,
-        Packer,
         UnpackError,
     },
     ChunkData,
@@ -87,7 +83,7 @@ pub enum ClientAccept<'a> {
         // last client's snapshot received by the server
         last_client_snapshot: Snapshot,
         #[serde(borrow)]
-        state: State<'a>,
+        state: StatePacked<'a>,
     },
     ChunkData(ChunkData),
     AlterBlock {
@@ -99,34 +95,6 @@ pub enum ClientAccept<'a> {
 
 impl Pack for ClientAccept<'_> {
     const DEFAULT_COMPRESSED: bool = true;
-}
-
-impl<'a> ClientAccept<'a> {
-    pub fn pack_state(
-        snapshot: Snapshot,
-        last_client_snapshot: Snapshot,
-        state: &mut StatePacker,
-        packer: &mut Packer,
-    ) -> Vec<u8> {
-        let mut packed = Vec::new();
-
-        state.pack_state(|state| {
-            let msg = ClientAccept::State {
-                snapshot,
-                last_client_snapshot,
-                state,
-            };
-
-            packer.pack(&msg, &mut packed);
-
-            match msg {
-                ClientAccept::State { state, .. } => state,
-                _ => panic!(),
-            }
-        });
-
-        packed
-    }
 }
 
 pub struct ServerActorComponentUnpacker<T> {

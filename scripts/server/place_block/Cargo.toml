@@ -1,0 +1,19 @@
+[package]
+name = "place_block"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[workspace]
+
+[profile.release]
+lto = true
+strip = true
+opt-level = 's'
+codegen-units = 1
+
+[dependencies]
+paste = "1.0"
+bincode = { version = "2.0.0-rc.3", default-features = false, features = ["alloc", "derive"] }

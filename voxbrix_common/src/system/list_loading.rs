@@ -13,7 +13,7 @@ use std::{
 };
 use tokio::task;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct List {
     pub list: Vec<String>,
 }

@@ -52,6 +52,7 @@ use flume::Sender;
 use nohash_hasher::IntSet;
 use redb::Database;
 use std::{
+    mem,
     sync::Arc,
     time::Instant,
 };
@@ -61,13 +62,19 @@ use voxbrix_common::{
         block_class::collision::CollisionBlockClassComponent,
     },
     entity::{
+        action::Action,
         actor::Actor,
         actor_class::ActorClass,
         block_class::BlockClass,
         snapshot::Snapshot,
     },
-    messages::StatePacker,
+    messages::{
+        ActionsUnpacker,
+        StatePacker,
+        StateUnpacker,
+    },
     pack::Packer,
+    script_registry::ScriptRegistry,
     ChunkData,
     LabelMap,
 };
@@ -128,6 +135,15 @@ impl EntityRemoveQueue {
     }
 }
 
+pub struct ScriptSharedData<'a> {
+    pub block_class_label_map: &'a LabelMap<BlockClass>,
+    pub class_bc: &'a mut ClassBlockComponent,
+}
+
+unsafe impl voxbrix_common::script_registry::NonStatic for ScriptSharedData<'_> {
+    type Static = ScriptSharedData<'static>;
+}
+
 /// All components and systems the loop has.
 pub struct SharedData {
     pub database: Arc<Database>,
@@ -157,16 +173,21 @@ pub struct SharedData {
 
     pub actor_class_label_map: LabelMap<ActorClass>,
     pub block_class_label_map: LabelMap<BlockClass>,
+    pub action_label_map: LabelMap<Action>,
 
     pub position_system: PositionSystem,
     pub chunk_activation_system: ChunkActivationSystem,
     pub chunk_generation_system: ChunkGenerationSystem,
 
+    pub script_registry: ScriptRegistry<ScriptSharedData<'static>>,
+
     pub storage: StorageThread,
 
     pub snapshot: Snapshot,
 
-    pub server_state: StatePacker,
+    pub state_packer: StatePacker,
+    pub state_unpacker: StateUnpacker,
+    pub actions_unpacker: ActionsUnpacker,
 
     pub last_process_time: Instant,
 

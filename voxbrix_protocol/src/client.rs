@@ -137,7 +137,7 @@ fn allocate_buffer() -> BoxBuffer {
     // https://doc.rust-lang.org/std/boxed/index.html#memory-layout
     unsafe {
         let layout = Layout::new::<Buffer>();
-        let ptr = alloc::alloc_zeroed(layout);
+        let ptr = alloc::alloc(layout);
         if ptr.is_null() {
             alloc::handle_alloc_error(layout);
         }
