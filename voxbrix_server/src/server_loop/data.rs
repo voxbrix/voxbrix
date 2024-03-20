@@ -1,5 +1,6 @@
 use crate::{
     component::{
+        action::script::ScriptActionComponent,
         actor::{
             chunk_activation::{
                 ActorChunkActivation,
@@ -74,10 +75,14 @@ use voxbrix_common::{
         StateUnpacker,
     },
     pack::Packer,
-    script_registry::ScriptRegistry,
+    script_registry::{
+        ScriptData,
+        ScriptRegistry,
+    },
     ChunkData,
     LabelMap,
 };
+use wasmtime::Caller;
 
 pub struct EntityRemoveQueue(Option<EntityRemoveQueueInner>);
 
@@ -140,6 +145,34 @@ pub struct ScriptSharedData<'a> {
     pub class_bc: &'a mut ClassBlockComponent,
 }
 
+pub fn setup_script_registry(registry: &mut ScriptRegistry<ScriptSharedData>) {
+    fn handle_panic(mut caller: Caller<ScriptData<ScriptSharedData>>, msg_ptr: u32, msg_len: u32) {
+        let ptr = msg_ptr as usize;
+        let len = msg_len as usize;
+        let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
+        let msg = std::str::from_utf8(&memory.data(&caller)[ptr .. ptr + len]).unwrap();
+
+        panic!("script ended with panic: {}", msg);
+    }
+
+    unsafe {
+        registry.func_wrap("env", "handle_panic", handle_panic);
+    }
+
+    fn log_message(mut caller: Caller<ScriptData<ScriptSharedData>>, msg_ptr: u32, msg_len: u32) {
+        let ptr = msg_ptr as usize;
+        let len = msg_len as usize;
+        let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
+        let msg = std::str::from_utf8(&memory.data(&caller)[ptr .. ptr + len]).unwrap();
+
+        log::error!("{}", msg);
+    }
+
+    unsafe {
+        registry.func_wrap("env", "log_message", log_message);
+    }
+}
+
 unsafe impl voxbrix_common::script_registry::NonStatic for ScriptSharedData<'_> {
     type Static = ScriptSharedData<'static>;
 }
@@ -180,6 +213,8 @@ pub struct SharedData {
     pub chunk_generation_system: ChunkGenerationSystem,
 
     pub script_registry: ScriptRegistry<ScriptSharedData<'static>>,
+
+    pub script_action_component: ScriptActionComponent,
 
     pub storage: StorageThread,
 

@@ -1,5 +1,6 @@
 use crate::{
     entity::script::Script,
+    pack,
     read_ron_file,
     system::list_loading::List,
     LabelMap,
@@ -8,7 +9,9 @@ use anyhow::{
     Context,
     Error,
 };
+use bincode::Options;
 use nohash_hasher::IntMap;
+use serde::Serialize;
 use std::{
     fmt::Debug,
     mem,
@@ -68,7 +71,13 @@ impl<T> ScriptRegistry<T> {
         self.label_map.get(label)
     }
 
-    /// Safety: make sure you provide anonymous lifetime as
+    pub fn script_label_map(&self) -> &LabelMap<Script> {
+        &self.label_map
+    }
+
+    /// Safety: For non-static T, the references inside
+    /// will only be valid within the scope of the `func`.
+    /// Make sure you provide anonymous lifetime as
     /// lifetime of `T` while wrapping host functions for non-static `T`.
     /// For example:
     /// `ScriptData<ScriptSharedData<'_>>`.
@@ -135,6 +144,45 @@ impl<T> ScriptRegistry<T> {
         self.buffer = buffer;
 
         self.cache.insert(*script, cache);
+    }
+
+    pub fn run_script<U, I>(&mut self, script: &Script, data: U, input: I)
+    where
+        U: NonStatic<Static = T>,
+        I: Serialize,
+    {
+        self.access_instance(script, data, |ins| {
+            pack::packer()
+                .serialize_into(&mut ins.buffer, &input)
+                .expect("serialization should not fail");
+
+            let input_len = ins.buffer.len() as u32;
+
+            let get_write_buffer = ins
+                .instance
+                .get_typed_func::<u32, u32>(&mut ins.store, "get_buffer")
+                .unwrap();
+
+            let ptr = get_write_buffer
+                .call(&mut ins.store, input_len)
+                .expect("unable to get script input buffer");
+
+            let memory = ins.instance.get_memory(&mut ins.store, "memory").unwrap();
+
+            let start = ptr as usize;
+            let end = start + input_len as usize;
+
+            (&mut memory.data_mut(&mut ins.store)[start .. end])
+                .copy_from_slice(ins.buffer.as_slice());
+
+            let run = ins
+                .instance
+                .get_typed_func::<u32, ()>(&mut ins.store, "run")
+                .unwrap();
+
+            run.call(&mut ins.store, input_len)
+                .expect("unable to run script");
+        });
     }
 
     pub fn engine(&self) -> &Engine {

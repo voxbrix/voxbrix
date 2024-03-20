@@ -68,7 +68,7 @@ fn prepare_shared_buffer(len: usize) -> &'static mut [u8] {
 
 // TODO: must not accept 0 length
 #[no_mangle]
-pub extern "C" fn write_buffer(len: u32) -> *mut u8 {
+pub extern "C" fn get_buffer(len: u32) -> *mut u8 {
     prepare_shared_buffer(len as usize).as_mut_ptr()
 }
 

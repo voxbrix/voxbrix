@@ -1,10 +1,12 @@
 use crate::{
     assets::{
         ACTION_LIST_PATH,
+        ACTION_SCRIPT_MAP_PATH,
         SCRIPTS_DIR,
         SCRIPT_LIST_PATH,
     },
     component::{
+        action::script::ScriptActionComponent,
         actor::{
             chunk_activation::ChunkActivationActorComponent,
             class::ClassActorComponent,
@@ -36,6 +38,7 @@ use crate::{
     system::{
         chunk_activation::ChunkActivationSystem,
         chunk_generation::ChunkGenerationSystem,
+        map_loading::Map,
         position::PositionSystem,
     },
     BASE_CHANNEL,
@@ -43,6 +46,7 @@ use crate::{
 };
 use data::{
     EntityRemoveQueue,
+    ScriptSharedData,
     SharedData,
 };
 use flume::Sender as SharedSender;
@@ -92,7 +96,10 @@ use voxbrix_common::{
         StateUnpacker,
     },
     pack::Packer,
-    script_registry::ScriptRegistry,
+    script_registry::{
+        ScriptData,
+        ScriptRegistry,
+    },
     system::{
         actor_class_loading::ActorClassLoadingSystem,
         block_class_loading::BlockClassLoadingSystem,
@@ -224,90 +231,18 @@ impl ServerLoop {
             .await
             .expect("failed to load scripts");
 
-        unsafe {
-            script_registry.func_wrap(
-                "env",
-                "handle_panic",
-                |mut caller: wasmtime::Caller<'_, _>, msg_ptr: u32, msg_len: u32| {
-                    let ptr = msg_ptr as usize;
-                    let len = msg_len as usize;
-                    let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
-                    let msg = std::str::from_utf8(&memory.data(&caller)[ptr .. ptr + len]).unwrap();
+        data::setup_script_registry(&mut script_registry);
 
-                    panic!("script ended with panic: {}", msg);
-                },
-            );
-        }
+        let action_script_map = Map::load(ACTION_SCRIPT_MAP_PATH)
+            .await
+            .expect("failed to load action-script map");
 
-        unsafe {
-            script_registry.func_wrap(
-                "env",
-                "log_message",
-                |mut caller: wasmtime::Caller<
-                    '_,
-                    voxbrix_common::script_registry::ScriptData<data::ScriptSharedData<'_>>,
-                >,
-                 msg_ptr: u32,
-                 msg_len: u32| {
-                    let ptr = msg_ptr as usize;
-                    let len = msg_len as usize;
-                    let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
-                    let msg = std::str::from_utf8(&memory.data(&caller)[ptr .. ptr + len]).unwrap();
-
-                    log::error!("{}", msg);
-                },
-            );
-        }
-
-        // script_registry
-        // .linker()
-        // .func_wrap(
-        // "env",
-        // "get_block_class_by_label",
-        // move |mut caller: wasmtime::Caller<'_, Option<data::ScriptSharedData<'_>>>, ptr: u32, len: u32| -> u64 {
-        // let ptr = ptr as usize;
-        // let len = len as usize;
-        // let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
-        // let label =
-        // std::str::from_utf8(&memory.data(&caller)[ptr .. ptr + len]).unwrap();
-        //
-        // let data = caller.data().as_ref()
-        // .expect("store data is not injected");
-        //
-        // data.block_class_label_map.get(label).unwrap().0
-        // },
-        // )
-        // .unwrap();
-        //
-        // script_registry
-        // .linker()
-        // .func_wrap(
-        // "env",
-        // "get_class_of_block",
-        // |mut caller: wasmtime::Caller<'_, Option<data::ScriptSharedData<'_>>>, block_class: u64| {
-        // let data = caller.data().as_ref()
-        // .expect("store data is not injected");
-        //
-        // data.class_bc.get_chunk()
-        //
-        // data.class_bc.get_mut_chunk
-        // },
-        // )
-        // .unwrap();
-        //
-        // script_registry
-        // .linker()
-        // .func_wrap(
-        // "env",
-        // "",
-        // |mut caller: wasmtime::Caller<'_, Option<data::ScriptSharedData<'_>>>, block_class: u64| {
-        // let data = caller.data_mut().as_mut()
-        // .expect("store data is not injected");
-        //
-        // data.class_bc.get_mut_chunk
-        // },
-        // )
-        // .unwrap();
+        let script_action_component = ScriptActionComponent::new(
+            action_script_map.iter(),
+            &action_label_map,
+            script_registry.script_label_map(),
+        )
+        .expect("failed to map actions to scripts");
 
         let shared_event_tx_clone = shared_event_tx.clone();
         let chunk_generation_system = ChunkGenerationSystem::new(
@@ -375,6 +310,8 @@ impl ServerLoop {
             chunk_generation_system,
 
             script_registry,
+
+            script_action_component,
 
             storage,
 
