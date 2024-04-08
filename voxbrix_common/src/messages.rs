@@ -11,28 +11,15 @@ use crate::{
     },
 };
 use bincode::{
-    de::Deserializer,
-    Options,
-    Serializer,
+    BorrowDecode,
+    Encode,
 };
-use nohash_hasher::IntMap;
-use serde::{
-    de::{
-        Deserializer as _,
-        SeqAccess,
-        Visitor,
-    },
-    ser::{
-        SerializeSeq,
-        Serializer as _,
-    },
-    Deserialize,
-    Serialize,
+use nohash_hasher::{
+    IntMap,
+    IntSet,
 };
 use std::{
     collections::VecDeque,
-    fmt,
-    io::Write,
     mem,
 };
 
@@ -42,8 +29,8 @@ pub mod server;
 /// State container.
 /// The components supposed to be transfered in delta manner,
 /// meaining that only changed components are in the map.
-#[derive(Serialize, Deserialize)]
-pub struct StatePacked<'a>(#[serde(borrow)] &'a [u8]);
+#[derive(Encode, BorrowDecode)]
+pub struct StatePacked<'a>(&'a [u8]);
 
 pub struct StateUnpacked<'a> {
     origin: &'a mut StateUnpacker,
@@ -85,48 +72,41 @@ impl StateUnpacker {
     }
 }
 
-impl<'a> Visitor<'a> for &mut StateUnpacked<'a> {
-    type Value = ();
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "an array of integers")
-    }
-
-    fn visit_seq<A>(self, mut seq: A) -> Result<(), A::Error>
-    where
-        A: SeqAccess<'a>,
-    {
-        // Visit each element in the inner array and push it onto
-        // the existing vector.
-        while let Some((component, data)) = seq.next_element::<(StateComponent, &'a [u8])>()? {
-            self.components.insert(component, data);
-        }
-        Ok(())
-    }
-}
-
 impl StateUnpacker {
     pub fn unpack_state<'a>(
         &'a mut self,
         state: StatePacked<'a>,
     ) -> Result<StateUnpacked<'a>, UnpackError> {
-        let buffer = mem::take(&mut self.buffer);
+        let mut buffer = mem::take(&mut self.buffer);
 
-        let mut unpacked = StateUnpacked {
+        let (size, mut offset) = pack::decode_from_slice::<u64>(state.0).ok_or(UnpackError)?;
+
+        let size: usize = size.try_into().map_err(|_| UnpackError)?;
+
+        buffer.reserve(size);
+
+        for _ in 0 .. size {
+            let ((key, value), new_offset) =
+                pack::decode_from_slice::<(StateComponent, &[u8])>(&state.0[offset ..])
+                    .ok_or(UnpackError)?;
+
+            offset += new_offset;
+
+            buffer.insert(key, value);
+        }
+
+        let unpacked = StateUnpacked {
             origin: self,
             components: buffer,
         };
-
-        Deserializer::from_slice(state.0, pack::packer())
-            .deserialize_seq(&mut unpacked)
-            .map_err(|_| UnpackError)?;
 
         Ok(unpacked)
     }
 }
 
 pub struct StatePacker {
-    components: IntMap<StateComponent, (bool, Vec<u8>)>,
+    packed_components: IntSet<StateComponent>,
+    components: IntMap<StateComponent, Vec<u8>>,
     to_be_cleared: bool,
     buffer: Vec<u8>,
 }
@@ -134,6 +114,7 @@ pub struct StatePacker {
 impl StatePacker {
     pub fn new() -> Self {
         Self {
+            packed_components: IntSet::default(),
             components: IntMap::default(),
             to_be_cleared: false,
             buffer: Vec::new(),
@@ -144,47 +125,37 @@ impl StatePacker {
         if self.to_be_cleared {
             self.to_be_cleared = false;
 
-            for (_, (is_packed, buffer)) in self.components.iter_mut() {
-                *is_packed = false;
-                buffer.clear();
+            for component in self.packed_components.drain() {
+                self.components.get_mut(&component).unwrap().clear();
             }
         }
 
         if self.components.get(&component).is_none() {
-            self.components.insert(component, (false, Vec::new()));
+            self.components.insert(component, Vec::new());
         }
 
-        let (is_packed, buffer) = self.components.get_mut(&component).unwrap();
+        let buffer = self.components.get_mut(&component).unwrap();
 
-        *is_packed = true;
+        self.packed_components.insert(component);
 
         buffer
     }
 
     pub fn pack_state<'a>(&'a mut self) -> StatePacked<'a> {
         let extend_iter = self
-            .components
+            .packed_components
             .iter()
-            .filter_map(|(component, (is_packed, buffer))| {
-                is_packed.then_some((*component, buffer.as_slice()))
-            });
+            .map(|comp| self.components.get_key_value(comp).unwrap());
 
-        let components_count = extend_iter.clone().count();
+        let components_count = self.packed_components.len();
 
         self.buffer.clear();
 
-        let mut serializer = Serializer::new(&mut self.buffer, pack::packer());
+        pack::encode_write(&(components_count as u64), &mut self.buffer);
 
-        let mut seq = serializer
-            .serialize_seq(Some(components_count))
-            .expect("serialization should not fail");
-
-        for element in extend_iter {
-            seq.serialize_element(&element)
-                .expect("serialization should not fail");
+        for component in extend_iter {
+            pack::encode_write(&component, &mut self.buffer);
         }
-
-        seq.end().expect("serialization should not fail");
 
         self.to_be_cleared = true;
 
@@ -192,56 +163,20 @@ impl StatePacker {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(BorrowDecode)]
 pub enum ActorStateUnpack<T> {
     Full(Vec<(Actor, T)>),
     Change(Vec<(Actor, Option<T>)>),
 }
 
-#[derive(Serialize)]
+#[derive(Encode)]
 pub enum ActorStatePack<'a, T> {
     Full(&'a [(Actor, &'a T)]),
     Change(&'a [(Actor, Option<&'a T>)]),
 }
 
-struct WriteCount<T> {
-    written: usize,
-    write_to: T,
-}
-
-impl<T> WriteCount<T>
-where
-    T: Write,
-{
-    fn new(write_to: T) -> Self {
-        Self {
-            written: 0,
-            write_to,
-        }
-    }
-
-    fn written(&self) -> usize {
-        self.written
-    }
-}
-
-impl<T> Write for WriteCount<T>
-where
-    T: Write,
-{
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let written = self.write_to.write(buf)?;
-        self.written += written;
-        Ok(written)
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        self.write_to.flush()
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct ActionsPacked<'a>(#[serde(borrow)] &'a [u8]);
+#[derive(Encode, BorrowDecode)]
+pub struct ActionsPacked<'a>(&'a [u8]);
 
 pub struct ActionsUnpacked<'a> {
     origin: &'a mut ActionsUnpacker,
@@ -282,42 +217,33 @@ impl ActionsUnpacker {
     }
 }
 
-impl<'a> Visitor<'a> for &mut ActionsUnpacked<'a> {
-    type Value = ();
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "an array of integers")
-    }
-
-    fn visit_seq<A>(self, mut seq: A) -> Result<(), A::Error>
-    where
-        A: SeqAccess<'a>,
-    {
-        // Visit each element in the inner array and push it onto
-        // the existing vector.
-        while let Some(next) = seq.next_element::<(Action, Snapshot, &'a [u8])>()? {
-            self.data.push(next);
-        }
-
-        Ok(())
-    }
-}
-
 impl ActionsUnpacker {
     pub fn unpack_actions<'a>(
         &'a mut self,
         actions: ActionsPacked<'a>,
     ) -> Result<ActionsUnpacked<'a>, UnpackError> {
-        let buffer = mem::take(&mut self.buffer);
+        let mut buffer = mem::take(&mut self.buffer);
 
-        let mut unpacked = ActionsUnpacked {
+        let (size, mut offset) = pack::decode_from_slice::<u64>(actions.0).ok_or(UnpackError)?;
+
+        let size: usize = size.try_into().map_err(|_| UnpackError)?;
+
+        buffer.reserve(size);
+
+        for _ in 0 .. size {
+            let ((action, snapshot, data), new_offset) =
+                pack::decode_from_slice::<(Action, Snapshot, &[u8])>(&actions.0[offset ..])
+                    .ok_or(UnpackError)?;
+
+            offset += new_offset;
+
+            buffer.push((action, snapshot, data));
+        }
+
+        let unpacked = ActionsUnpacked {
             origin: self,
             data: buffer,
         };
-
-        Deserializer::from_slice(actions.0, pack::packer())
-            .deserialize_seq(&mut unpacked)
-            .map_err(|_| UnpackError)?;
 
         Ok(unpacked)
     }
@@ -338,16 +264,10 @@ impl ActionsPacker {
         }
     }
 
-    pub fn add_action(&mut self, action: Action, snapshot: Snapshot, data: impl Serialize) {
-        let mut write_count = WriteCount::new(&mut self.data);
+    pub fn add_action(&mut self, action: Action, snapshot: Snapshot, data: impl Encode) {
+        let size = pack::encode_write(&data, &mut self.data);
 
-        pack::packer()
-            .serialize_into(&mut write_count, &data)
-            .unwrap();
-
-        let written = write_count.written();
-
-        self.actions.push_back((snapshot, action, written));
+        self.actions.push_back((snapshot, action, size));
     }
 
     fn remove_action(&mut self) {
@@ -386,18 +306,11 @@ impl ActionsPacker {
 
         self.buffer.clear();
 
-        let mut serializer = Serializer::new(&mut self.buffer, pack::packer());
-
-        let mut seq = serializer
-            .serialize_seq(Some(components_count))
-            .expect("serialization should not fail");
+        pack::encode_write(&(components_count as u64), &mut self.buffer);
 
         for element in extend_iter {
-            seq.serialize_element(&element)
-                .expect("serialization should not fail");
+            pack::encode_write(&element, &mut self.buffer);
         }
-
-        seq.end().expect("serialization should not fail");
 
         ActionsPacked(self.buffer.as_slice())
     }
@@ -406,19 +319,14 @@ impl ActionsPacker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bincode::Options;
-
-    fn sd_opts() -> impl Options {
-        bincode::DefaultOptions::default()
-    }
+    use crate::pack;
 
     #[test]
     fn test_actor_state_serde() {
         let initial = ActorStatePack::Full(&[(Actor(3), &"Actor3")]);
-        let buffer = sd_opts().serialize(&initial).unwrap();
-        let control = sd_opts()
-            .deserialize::<ActorStateUnpack<String>>(&buffer)
-            .unwrap();
+        let mut buffer = Vec::new();
+        pack::encode_write(&initial, &mut buffer);
+        let (control, _) = pack::decode_from_slice::<ActorStateUnpack<String>>(&buffer).unwrap();
 
         match (initial, control) {
             (ActorStatePack::Full(initial), ActorStateUnpack::Full(control)) => {
@@ -433,10 +341,9 @@ mod tests {
             (Actor(1), &"Actor1"),
             (Actor(13), &"Actor13"),
         ]);
-        let buffer = sd_opts().serialize(&initial).unwrap();
-        let control = sd_opts()
-            .deserialize::<ActorStateUnpack<String>>(&buffer)
-            .unwrap();
+        let mut buffer = Vec::new();
+        pack::encode_write(&initial, &mut buffer);
+        let (control, _) = pack::decode_from_slice::<ActorStateUnpack<String>>(&buffer).unwrap();
 
         match (initial, control) {
             (ActorStatePack::Full(initial), ActorStateUnpack::Full(control)) => {
@@ -448,22 +355,4 @@ mod tests {
             _ => unreachable!(),
         }
     }
-}
-
-// TODO try implement as scripts
-use crate::entity::{
-    block::Block,
-    chunk::Chunk,
-};
-
-#[derive(Serialize, Deserialize)]
-pub struct PlaceBlockAction {
-    chunk: Chunk,
-    block: Block,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct RemoveBlockAction {
-    chunk: Chunk,
-    block: Block,
 }

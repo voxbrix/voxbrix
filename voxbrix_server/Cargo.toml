@@ -11,11 +11,10 @@ tokio = { workspace = true, features = ["rt", "time"] }
 rayon = { workspace = true }
 futures-lite = { workspace = true }
 flume = { workspace = true }
+bincode = { workspace = true } 
 serde = { workspace = true } 
-serde-big-array = { workspace = true } 
 k256 = { workspace = true } 
 lz4_flex = { workspace = true } 
-bincode = { workspace = true } 
 nohash-hasher = { workspace = true }
 ahash = { workspace = true }
 wasmtime = { workspace = true }
@@ -23,6 +22,7 @@ anyhow = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
 voxbrix_protocol = { path = "../voxbrix_protocol", features = ["single", "server"] }
-voxbrix_common = { path = "../voxbrix_common" }
+voxbrix_common = { path = "../voxbrix_common", features = ["server"] }
 local_channel = { path = "../local_channel" }
+server_loop_api = { path = "../scripts/server/server_loop_api", default-features = false, features = ["host"] }
 redb = "1.5"

@@ -11,7 +11,6 @@ tokio = { workspace = true, features = ["rt"] }
 rayon = { workspace = true }
 bincode = { workspace = true }
 serde = { workspace = true }
-serde-big-array = { workspace = true }
 lz4_flex = { workspace = true }
 arrayvec = { workspace = true }
 ron = { workspace = true }
@@ -19,6 +18,11 @@ nohash-hasher = { workspace = true }
 ahash = { workspace = true }
 wasmtime = { workspace = true }
 anyhow = { workspace = true }
+server_loop_api = { path = "../scripts/server/server_loop_api", default-features = false, features = ["host"], optional = true }
 glam = { version = "0.25", features = ["serde"] }
 futures-core = { version = "0.3", default-features = false }
 pin-project-lite = "0.2"
+
+[features]
+default = []
+server = ["server_loop_api"]

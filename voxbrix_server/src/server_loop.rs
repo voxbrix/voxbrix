@@ -1,9 +1,9 @@
 use crate::{
     assets::{
-        ACTION_LIST_PATH,
-        ACTION_SCRIPT_MAP_PATH,
-        SCRIPTS_DIR,
-        SCRIPT_LIST_PATH,
+        ACTION_LIST,
+        ACTION_SCRIPT_MAP,
+        SERVER_LOOP_SCRIPT_DIR,
+        SERVER_LOOP_SCRIPT_LIST,
     },
     component::{
         action::script::ScriptActionComponent,
@@ -16,6 +16,7 @@ use crate::{
             velocity::VelocityActorComponent,
         },
         actor_class::model::ModelActorClassComponent,
+        block::class_change::ClassChangeBlockComponent,
         chunk::{
             cache::CacheChunkComponent,
             status::StatusChunkComponent,
@@ -46,7 +47,6 @@ use crate::{
 };
 use data::{
     EntityRemoveQueue,
-    ScriptSharedData,
     SharedData,
 };
 use flume::Sender as SharedSender;
@@ -96,10 +96,7 @@ use voxbrix_common::{
         StateUnpacker,
     },
     pack::Packer,
-    script_registry::{
-        ScriptData,
-        ScriptRegistry,
-    },
+    script_registry::ScriptRegistry,
     system::{
         actor_class_loading::ActorClassLoadingSystem,
         block_class_loading::BlockClassLoadingSystem,
@@ -201,7 +198,7 @@ impl ServerLoop {
                     anyhow::Error::msg(format!("model \"{}\" not found in the model list", desc))
                 })
             })
-            .expect("unable to load collision block class component");
+            .expect("unable to load model actor class component");
 
         let actor_class_label_map = actor_class_loading_system.into_label_map();
 
@@ -212,7 +209,7 @@ impl ServerLoop {
         let block_class_label_map = block_class_loading_system.into_label_map();
 
         // TODO
-        let action_label_map = List::load(ACTION_LIST_PATH)
+        let action_label_map = List::load(ACTION_LIST)
             .await
             .expect("loading actor model label map")
             .into_label_map(|i| Action(i as u64));
@@ -227,13 +224,14 @@ impl ServerLoop {
 
         let engine = wasmtime::Engine::new(&engine_config).expect("wasm engine failed to start");
 
-        let mut script_registry = ScriptRegistry::load(engine, SCRIPT_LIST_PATH, SCRIPTS_DIR)
-            .await
-            .expect("failed to load scripts");
+        let mut script_registry =
+            ScriptRegistry::load(engine, SERVER_LOOP_SCRIPT_LIST, SERVER_LOOP_SCRIPT_DIR)
+                .await
+                .expect("failed to load scripts");
 
         data::setup_script_registry(&mut script_registry);
 
-        let action_script_map = Map::load(ACTION_SCRIPT_MAP_PATH)
+        let action_script_map = Map::load(ACTION_SCRIPT_MAP)
             .await
             .expect("failed to load action-script map");
 
@@ -295,6 +293,7 @@ impl ServerLoop {
             model_acc,
 
             class_bc,
+            class_change_bc: ClassChangeBlockComponent::new(),
 
             collision_bcc,
 

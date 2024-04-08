@@ -1,7 +1,6 @@
 use crate::{
     component::{
         actor::{
-            orientation::Orientation,
             position::Position,
             velocity::Velocity,
         },
@@ -273,11 +272,9 @@ pub fn process_actor(
 
 pub fn get_target_block(
     position: &Position,
-    orientation: &Orientation,
+    direction: Vec3F32,
     mut targeting: impl FnMut(Chunk, Block) -> bool,
 ) -> Option<(Chunk, Block, usize)> {
-    let forward = orientation.forward();
-
     let mut time_block = None;
 
     for (axis_0, axis_1, axis_2) in [(0, 1, 2), (1, 2, 0), (2, 0, 1)] {
@@ -293,7 +290,7 @@ pub fn get_target_block(
             //     the back side of the block, which is the same as it's coordinate
             // side_index is a index of side/neighbor in [x_m, x_p, y_m, y_p, z_m, z_p]
             let (axis_offset, wall_offset, block_coord_offset, side_index) =
-                match forward[axis_0].total_cmp(&0.0) {
+                match direction[axis_0].total_cmp(&0.0) {
                     Ordering::Less => (-axis_offset, 0, -1, axis_0 * 2 + 1),
                     Ordering::Greater => (axis_offset, 1, 0, axis_0 * 2),
                     _ => continue,
@@ -303,9 +300,9 @@ pub fn get_target_block(
             let block_side_axis_0 =
                 position.offset[axis_0].round_down() + axis_offset + wall_offset;
 
-            let time = (block_side_axis_0 as f32 - position.offset[axis_0]) / forward[axis_0];
+            let time = (block_side_axis_0 as f32 - position.offset[axis_0]) / direction[axis_0];
 
-            if time * forward.length() > MAX_BLOCK_TARGET_DISTANCE as f32 {
+            if time * direction.length() > MAX_BLOCK_TARGET_DISTANCE as f32 {
                 break;
             }
 
@@ -319,9 +316,11 @@ pub fn get_target_block(
             };
 
             if is_record {
-                let block_axis_1 = (position.offset[axis_1] + time * forward[axis_1]).round_down();
+                let block_axis_1 =
+                    (position.offset[axis_1] + time * direction[axis_1]).round_down();
 
-                let block_axis_2 = (position.offset[axis_2] + time * forward[axis_2]).round_down();
+                let block_axis_2 =
+                    (position.offset[axis_2] + time * direction[axis_2]).round_down();
 
                 let mut block_offset = [0; 3];
 

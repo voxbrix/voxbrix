@@ -13,6 +13,7 @@ use crate::{
             velocity::VelocityActorComponent,
         },
         actor_class::model::ModelActorClassComponent,
+        block::class_change::ClassChangeBlockComponent,
         chunk::{
             cache::CacheChunkComponent,
             status::{
@@ -50,15 +51,21 @@ use crate::{
     PLAYER_CHUNK_VIEW_RADIUS,
 };
 use flume::Sender;
+use log::debug;
 use nohash_hasher::IntSet;
 use redb::Database;
+use server_loop_api::{
+    GetTargetBlockRequest,
+    GetTargetBlockResponse,
+    SetClassOfBlockRequest,
+};
 use std::{
-    mem,
     sync::Arc,
     time::Instant,
 };
 use voxbrix_common::{
     component::{
+        actor::position::Position,
         block::class::ClassBlockComponent,
         block_class::collision::CollisionBlockClassComponent,
     },
@@ -66,7 +73,9 @@ use voxbrix_common::{
         action::Action,
         actor::Actor,
         actor_class::ActorClass,
+        block::BLOCKS_IN_CHUNK_EDGE,
         block_class::BlockClass,
+        chunk::Chunk,
         snapshot::Snapshot,
     },
     messages::{
@@ -74,11 +83,17 @@ use voxbrix_common::{
         StatePacker,
         StateUnpacker,
     },
-    pack::Packer,
+    pack::{
+        self,
+        Packer,
+    },
     script_registry::{
+        self,
+        NonStatic,
         ScriptData,
         ScriptRegistry,
     },
+    system::position,
     ChunkData,
     LabelMap,
 };
@@ -142,14 +157,16 @@ impl EntityRemoveQueue {
 
 pub struct ScriptSharedData<'a> {
     pub block_class_label_map: &'a LabelMap<BlockClass>,
-    pub class_bc: &'a mut ClassBlockComponent,
+    pub class_bc: &'a ClassBlockComponent,
+    pub collision_bcc: &'a CollisionBlockClassComponent,
+    pub class_change_bc: &'a mut ClassChangeBlockComponent,
 }
 
 pub fn setup_script_registry(registry: &mut ScriptRegistry<ScriptSharedData>) {
-    fn handle_panic(mut caller: Caller<ScriptData<ScriptSharedData>>, msg_ptr: u32, msg_len: u32) {
+    fn handle_panic(caller: Caller<ScriptData<ScriptSharedData>>, msg_ptr: u32, msg_len: u32) {
         let ptr = msg_ptr as usize;
         let len = msg_len as usize;
-        let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
+        let memory = caller.data().as_full().memory.clone();
         let msg = std::str::from_utf8(&memory.data(&caller)[ptr .. ptr + len]).unwrap();
 
         panic!("script ended with panic: {}", msg);
@@ -159,10 +176,10 @@ pub fn setup_script_registry(registry: &mut ScriptRegistry<ScriptSharedData>) {
         registry.func_wrap("env", "handle_panic", handle_panic);
     }
 
-    fn log_message(mut caller: Caller<ScriptData<ScriptSharedData>>, msg_ptr: u32, msg_len: u32) {
+    fn log_message(caller: Caller<ScriptData<ScriptSharedData>>, msg_ptr: u32, msg_len: u32) {
         let ptr = msg_ptr as usize;
         let len = msg_len as usize;
-        let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
+        let memory = caller.data().as_full().memory.clone();
         let msg = std::str::from_utf8(&memory.data(&caller)[ptr .. ptr + len]).unwrap();
 
         log::error!("{}", msg);
@@ -171,9 +188,113 @@ pub fn setup_script_registry(registry: &mut ScriptRegistry<ScriptSharedData>) {
     unsafe {
         registry.func_wrap("env", "log_message", log_message);
     }
+
+    fn get_blocks_in_chunk_edge(_: Caller<ScriptData<ScriptSharedData>>) -> u32 {
+        BLOCKS_IN_CHUNK_EDGE as u32
+    }
+
+    unsafe {
+        registry.func_wrap("env", "get_blocks_in_chunk_edge", get_blocks_in_chunk_edge);
+    }
+
+    fn get_target_block(
+        mut caller: Caller<ScriptData<ScriptSharedData>>,
+        buf_ptr: u32,
+        buf_len: u32,
+    ) -> u32 {
+        let ptr = buf_ptr as usize;
+        let len = buf_len as usize;
+        let memory = caller.data().as_full().memory.clone();
+        let bytes = &memory.data(&caller)[ptr .. ptr + len];
+
+        let (command, _) =
+            pack::decode_from_slice::<GetTargetBlockRequest>(bytes).expect("invalid argument");
+
+        let sd = &caller.data().as_full().data;
+
+        let response = position::get_target_block(
+            &Position {
+                chunk: command.chunk.into(),
+                offset: command.offset.into(),
+            },
+            command.direction.into(),
+            |chunk, block| {
+                sd.class_bc
+                    .get_chunk(&chunk)
+                    .map(|blocks| {
+                        let class = blocks.get(block);
+                        sd.collision_bcc.get(class).is_some()
+                    })
+                    .unwrap_or(false)
+            },
+        )
+        .map(|(chunk, block, side)| {
+            GetTargetBlockResponse {
+                chunk: chunk.into(),
+                block: block.into(),
+                side: side as u8,
+            }
+        });
+
+        script_registry::write_script_buffer(&mut caller, response)
+    }
+
+    unsafe {
+        registry.func_wrap("env", "get_target_block", get_target_block);
+    }
+
+    fn set_class_of_block(
+        mut caller: Caller<ScriptData<ScriptSharedData>>,
+        buf_ptr: u32,
+        buf_len: u32,
+    ) {
+        let ptr = buf_ptr as usize;
+        let len = buf_len as usize;
+        let memory = caller.data().as_full().memory.clone();
+        let bytes = &memory.data(&caller)[ptr .. ptr + len];
+
+        let (command, _) =
+            pack::decode_from_slice::<SetClassOfBlockRequest>(bytes).expect("invalid argument");
+
+        let sd = &mut caller.data_mut().as_full_mut().data;
+
+        let Some(mut classes) = sd.class_change_bc.get_mut_chunk(&command.chunk.into()) else {
+            debug!("changing non-existant chunk");
+            return;
+        };
+
+        classes.change(command.block.into(), command.block_class.into());
+    }
+
+    unsafe {
+        registry.func_wrap("env", "set_class_of_block", set_class_of_block);
+    }
+
+    fn get_block_class_by_label(
+        mut caller: Caller<ScriptData<ScriptSharedData>>,
+        buf_ptr: u32,
+        buf_len: u32,
+    ) -> u32 {
+        let ptr = buf_ptr as usize;
+        let len = buf_len as usize;
+        let memory = caller.data().as_full().memory.clone();
+        let bytes = &memory.data(&caller)[ptr .. ptr + len];
+
+        let (label, _) = pack::decode_from_slice::<&str>(bytes).expect("invalid argument");
+
+        let sd = &caller.data().as_full().data;
+
+        let response = sd.block_class_label_map.get(label);
+
+        script_registry::write_script_buffer(&mut caller, response)
+    }
+
+    unsafe {
+        registry.func_wrap("env", "get_block_class_by_label", get_block_class_by_label);
+    }
 }
 
-unsafe impl voxbrix_common::script_registry::NonStatic for ScriptSharedData<'_> {
+unsafe impl NonStatic for ScriptSharedData<'_> {
     type Static = ScriptSharedData<'static>;
 }
 
@@ -199,6 +320,7 @@ pub struct SharedData {
     pub model_acc: ModelActorClassComponent,
 
     pub class_bc: ClassBlockComponent,
+    pub class_change_bc: ClassChangeBlockComponent,
     pub collision_bcc: CollisionBlockClassComponent,
 
     pub status_cc: StatusChunkComponent,
@@ -255,6 +377,22 @@ impl SharedData {
         self.player_ac.remove(actor);
         self.chunk_activation_ac.remove(actor);
         self.actor_registry.remove(actor);
+    }
+
+    pub fn prune_chunks(&mut self) {
+        let retain = |chunk: &Chunk| self.chunk_activation_system.is_active(chunk);
+
+        self.status_cc.retain(|chunk, status| {
+            let retain = retain(chunk) || *status == ChunkStatus::Loading;
+
+            if !retain {
+                self.cache_cc.remove(chunk);
+                self.class_bc.remove_chunk(chunk);
+                self.class_change_bc.remove_chunk(chunk);
+            }
+
+            retain
+        });
     }
 
     pub fn remove_player(&mut self, player: &Player) {
@@ -319,6 +457,7 @@ impl SharedData {
 
         self.class_bc
             .insert_chunk(chunk_data.chunk, chunk_data.block_classes);
+        self.class_change_bc.insert_chunk(chunk_data.chunk);
         self.cache_cc
             .insert(chunk_data.chunk, data_encoded.clone().into());
 

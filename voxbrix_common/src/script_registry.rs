@@ -9,9 +9,8 @@ use anyhow::{
     Context,
     Error,
 };
-use bincode::Options;
+use bincode::Encode;
 use nohash_hasher::IntMap;
-use serde::Serialize;
 use std::{
     fmt::Debug,
     mem,
@@ -19,35 +18,86 @@ use std::{
 };
 use tokio::task;
 use wasmtime::{
+    AsContextMut,
     Engine,
     Instance,
     IntoFunc,
     Linker,
+    Memory,
     Module,
     Store,
+    TypedFunc,
 };
 
-pub struct ScriptInstance<T> {
+pub struct ScriptCache<T> {
     pub store: Store<ScriptData<T>>,
     pub instance: Instance,
-    /// Empty buffer, use for input serialization, etc.
-    pub buffer: Vec<u8>,
 }
 
-struct ScriptCache<T> {
-    store: Store<ScriptData<T>>,
-    instance: Instance,
+pub struct ScriptDataFull<T> {
+    pub data: T,
+    /// Complete memory of the store.
+    pub memory: Memory,
+    buffer: Vec<u8>,
+    get_buffer_func: TypedFunc<u32, u32>,
+}
+
+/// Calls `get_buffer(len: 32) -> *const u8` in the script and
+/// writes at the pointer the whatever you put in the buffer.
+/// Returns written length.
+pub fn write_script_buffer<T>(
+    mut store: impl AsContextMut<Data = ScriptData<T>>,
+    value: impl Encode,
+) -> u32 {
+    let mut store_data = store.as_context_mut();
+    let store_data = store_data.data_mut().as_full_mut();
+    let mut buffer = mem::take(&mut store_data.buffer);
+
+    let get_buffer_func = store_data.get_buffer_func.clone();
+    let memory = store_data.memory.clone();
+
+    buffer.clear();
+    pack::encode_into(&value, &mut buffer);
+
+    let input_len = buffer.len() as u32;
+
+    let ptr = get_buffer_func
+        .call(&mut store, input_len)
+        .expect("unable to get script input buffer");
+
+    let start = ptr as usize;
+    let end = start + input_len as usize;
+
+    (&mut memory.data_mut(&mut store)[start .. end]).copy_from_slice(buffer.as_slice());
+
+    store.as_context_mut().data_mut().as_full_mut().buffer = buffer;
+
+    input_len
 }
 
 pub enum ScriptData<T> {
-    Full(T),
+    Full(ScriptDataFull<T>),
     Empty,
 }
 
 impl<T> ScriptData<T> {
-    pub fn into_ref(&self) -> &T {
+    pub fn into_full(self) -> ScriptDataFull<T> {
         match self {
-            ScriptData::Full(v) => &v,
+            ScriptData::Full(v) => v,
+            ScriptData::Empty => panic!("script data is empty"),
+        }
+    }
+
+    pub fn as_full_mut(&mut self) -> &mut ScriptDataFull<T> {
+        match self {
+            ScriptData::Full(v) => v,
+            ScriptData::Empty => panic!("script data is empty"),
+        }
+    }
+
+    pub fn as_full(&self) -> &ScriptDataFull<T> {
+        match self {
+            ScriptData::Full(v) => v,
             ScriptData::Empty => panic!("script data is empty"),
         }
     }
@@ -90,11 +140,11 @@ impl<T> ScriptRegistry<T> {
         self.linker.func_wrap(module, name, func).unwrap();
     }
 
-    pub fn access_instance<U>(
+    pub fn access_script<U>(
         &mut self,
         script: &Script,
         data: U,
-        mut access: impl FnMut(&mut ScriptInstance<U>),
+        mut access: impl FnMut(&mut ScriptCache<U>),
     ) where
         U: NonStatic<Static = T>,
     {
@@ -114,34 +164,34 @@ impl<T> ScriptRegistry<T> {
 
         self.buffer.clear();
 
-        let instance = {
-            let ScriptCache { store, instance } = self.cache.remove(script).unwrap();
+        let cache = self.cache.remove(script).unwrap();
 
-            ScriptInstance {
-                store,
-                instance,
-                buffer: mem::take(&mut self.buffer),
-            }
-        };
+        let mut cache = unsafe { mem::transmute::<ScriptCache<T>, ScriptCache<U>>(cache) };
 
-        let mut instance =
-            unsafe { mem::transmute::<ScriptInstance<T>, ScriptInstance<U>>(instance) };
+        let get_buffer_func = cache
+            .instance
+            .get_typed_func::<u32, u32>(&mut cache.store, "get_buffer")
+            .unwrap();
 
-        *instance.store.data_mut() = ScriptData::Full(data);
+        let memory = cache
+            .instance
+            .get_memory(&mut cache.store, "memory")
+            .unwrap();
 
-        access(&mut instance);
+        *cache.store.data_mut() = ScriptData::Full(ScriptDataFull {
+            data,
+            get_buffer_func,
+            memory,
+            buffer: mem::take(&mut self.buffer),
+        });
 
-        *instance.store.data_mut() = ScriptData::Empty;
+        access(&mut cache);
 
-        let ScriptInstance {
-            store,
-            instance,
-            buffer,
-        } = unsafe { mem::transmute::<ScriptInstance<U>, ScriptInstance<T>>(instance) };
+        let full = mem::replace(cache.store.data_mut(), ScriptData::Empty);
 
-        let cache = ScriptCache { store, instance };
+        self.buffer = full.into_full().buffer;
 
-        self.buffer = buffer;
+        let cache = unsafe { mem::transmute::<ScriptCache<U>, ScriptCache<T>>(cache) };
 
         self.cache.insert(*script, cache);
     }
@@ -149,38 +199,17 @@ impl<T> ScriptRegistry<T> {
     pub fn run_script<U, I>(&mut self, script: &Script, data: U, input: I)
     where
         U: NonStatic<Static = T>,
-        I: Serialize,
+        I: Encode,
     {
-        self.access_instance(script, data, |ins| {
-            pack::packer()
-                .serialize_into(&mut ins.buffer, &input)
-                .expect("serialization should not fail");
+        self.access_script(script, data, |bundle| {
+            let input_len = write_script_buffer(&mut bundle.store, &input);
 
-            let input_len = ins.buffer.len() as u32;
-
-            let get_write_buffer = ins
+            let run = bundle
                 .instance
-                .get_typed_func::<u32, u32>(&mut ins.store, "get_buffer")
+                .get_typed_func::<u32, ()>(&mut bundle.store, "run")
                 .unwrap();
 
-            let ptr = get_write_buffer
-                .call(&mut ins.store, input_len)
-                .expect("unable to get script input buffer");
-
-            let memory = ins.instance.get_memory(&mut ins.store, "memory").unwrap();
-
-            let start = ptr as usize;
-            let end = start + input_len as usize;
-
-            (&mut memory.data_mut(&mut ins.store)[start .. end])
-                .copy_from_slice(ins.buffer.as_slice());
-
-            let run = ins
-                .instance
-                .get_typed_func::<u32, ()>(&mut ins.store, "run")
-                .unwrap();
-
-            run.call(&mut ins.store, input_len)
+            run.call(&mut bundle.store, input_len)
                 .expect("unable to run script");
         });
     }

@@ -117,7 +117,8 @@ impl PositionActorComponent {
 
         if let Some(change) = state
             .get_component(&self.state_component)
-            .and_then(|buf| pack::deserialize_from::<Option<Position>>(buf))
+            .and_then(|buf| pack::decode_from_slice::<Option<Position>>(buf))
+            .map(|tup| tup.0)
         {
             let result = func(prev_value, change.as_ref());
 

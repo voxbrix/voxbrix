@@ -1,10 +1,10 @@
 use crate::math::MinMax;
-use serde::{
-    Deserialize,
-    Serialize,
+use bincode::{
+    Decode,
+    Encode,
 };
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Copy, Clone, Debug)]
+#[derive(Encode, Decode, PartialEq, Eq, PartialOrd, Ord, Hash, Copy, Clone, Debug)]
 pub struct Actor(pub u64);
 
 impl nohash_hasher::IsEnabled for Actor {}

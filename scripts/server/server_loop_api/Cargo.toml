@@ -1,0 +1,12 @@
+[package]
+name = "server_loop_api"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bincode = { git = "https://github.com/bincode-org/bincode.git", rev = "8f65c60" }
+
+[features]
+default = ["script"]
+host = []
+script = []

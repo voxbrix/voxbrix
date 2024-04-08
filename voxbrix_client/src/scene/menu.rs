@@ -12,6 +12,7 @@ use crate::{
 };
 use anyhow::Result;
 use argon2::Argon2;
+use bincode::BorrowDecode;
 use egui::CentralPanel;
 use egui_wgpu::ScreenDescriptor;
 use futures_lite::{
@@ -28,7 +29,6 @@ use k256::ecdsa::{
     VerifyingKey,
 };
 use log::warn;
-use serde::de::DeserializeOwned;
 use tokio::{
     task::{
         self,
@@ -301,7 +301,7 @@ pub async fn send_recv<R>(
     packer: &mut Packer,
 ) -> Result<R, &'static str>
 where
-    R: Pack + DeserializeOwned,
+    for<'a> R: Pack + BorrowDecode<'a>,
 {
     let (send_res, recv_res) = time::timeout(CONNECTION_TIMEOUT, async {
         future::zip(

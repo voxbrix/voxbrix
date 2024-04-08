@@ -134,12 +134,19 @@ impl PlayerEvent<'_> {
                         continue;
                     };
 
-                    let script_data = ScriptSharedData {
-                        block_class_label_map: &sd.block_class_label_map,
-                        class_bc: &mut sd.class_bc,
+                    let Some(actor) = sd.actor_pc.get(&player) else {
+                        warn!("actor for player {:?} not found", player);
+                        continue;
                     };
 
-                    sd.script_registry.run_script(&script, script_data, (player, data));
+                    let script_data = ScriptSharedData {
+                        block_class_label_map: &sd.block_class_label_map,
+                        class_bc: &sd.class_bc,
+                        class_change_bc: &mut sd.class_change_bc,
+                        collision_bcc: &sd.collision_bcc,
+                    };
+
+                    sd.script_registry.run_script(&script, script_data, (Some(actor), data));
                 }
 
             },

@@ -5,22 +5,23 @@ pub mod entity;
 pub mod math;
 pub mod messages;
 pub mod pack;
+pub mod script_convert;
 pub mod script_registry;
 pub mod sparse_vec;
 pub mod system;
 
 use anyhow::Context;
 use arrayvec::ArrayVec;
+use bincode::{
+    Decode,
+    Encode,
+};
 use component::block::BlocksVec;
 use entity::{
     block_class::BlockClass,
     chunk::Chunk,
 };
-use serde::{
-    de::DeserializeOwned,
-    Deserialize,
-    Serialize,
-};
+use serde::de::DeserializeOwned;
 use std::{
     collections::BTreeMap,
     fs,
@@ -88,7 +89,7 @@ impl<A> FromIterator<(String, A)> for LabelMap<A> {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Encode, Decode, Clone)]
 pub struct ChunkData {
     pub chunk: Chunk,
     pub block_classes: BlocksVec<BlockClass>,

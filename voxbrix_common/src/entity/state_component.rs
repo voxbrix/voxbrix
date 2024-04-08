@@ -1,10 +1,10 @@
-use serde::{
-    Deserialize,
-    Serialize,
+use bincode::{
+    Decode,
+    Encode,
 };
 
 /// Network-shared state component
-#[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
+#[derive(Encode, Decode, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
 pub struct StateComponent(pub u64);
 
 impl std::hash::Hash for StateComponent {

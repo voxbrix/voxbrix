@@ -1,9 +1,13 @@
 use crate::entity::chunk::Chunk;
-use serde::{
-    de::Deserializer,
-    ser::Serializer,
-    Deserialize,
-    Serialize,
+use bincode::{
+    de::Decoder,
+    enc::Encoder,
+    error::{
+        DecodeError,
+        EncodeError,
+    },
+    Decode,
+    Encode,
 };
 
 pub const BLOCKS_IN_CHUNK_EDGE: usize = 16;
@@ -22,29 +26,36 @@ pub type BlockCoords = [usize; 3];
 
 impl std::hash::Hash for Block {
     fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
-        hasher.write_u16(self.0 as u16)
+        hasher.write_u16(self.0.try_into().unwrap())
     }
 }
 
 impl nohash_hasher::IsEnabled for Block {}
 
-impl<'de> Deserialize<'de> for Block {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+impl Decode for Block {
+    fn decode<D>(decoder: &mut D) -> Result<Self, DecodeError>
     where
-        D: Deserializer<'de>,
+        D: Decoder,
     {
-        let block = u16::deserialize(deserializer)?;
+        let block: usize = u16::decode(decoder)?.try_into().unwrap();
 
-        Ok(Block(block as usize))
+        if block > BLOCKS_IN_CHUNK {
+            return Err(DecodeError::LimitExceeded);
+        }
+
+        Ok(Block(block))
     }
 }
 
-impl Serialize for Block {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+bincode::impl_borrow_decode!(Block);
+
+impl Encode for Block {
+    fn encode<E>(&self, encoder: &mut E) -> Result<(), EncodeError>
     where
-        S: Serializer,
+        E: Encoder,
     {
-        (self.0 as u16).serialize(serializer)
+        let value: u16 = self.0.try_into().unwrap();
+        value.encode(encoder)
     }
 }
 

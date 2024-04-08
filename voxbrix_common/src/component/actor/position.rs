@@ -2,17 +2,42 @@ use crate::{
     entity::chunk::Chunk,
     math::Vec3F32,
 };
-use serde::{
-    Deserialize,
-    Serialize,
+use bincode::{
+    de::Decoder,
+    enc::Encoder,
+    error::{
+        DecodeError,
+        EncodeError,
+    },
+    Decode,
+    Encode,
 };
 use std::ops::Add;
 
-#[derive(Serialize, Deserialize, PartialEq, Clone, Copy, Debug)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 pub struct Position {
     pub chunk: Chunk,
     pub offset: Vec3F32,
 }
+
+impl Encode for Position {
+    fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
+        Encode::encode(&self.chunk, encoder)?;
+        Encode::encode(&self.offset.to_array(), encoder)?;
+        Ok(())
+    }
+}
+
+impl Decode for Position {
+    fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
+        Ok(Self {
+            chunk: Decode::decode(decoder)?,
+            offset: Vec3F32::from_array(Decode::decode(decoder)?),
+        })
+    }
+}
+
+bincode::impl_borrow_decode!(Position);
 
 #[derive(Clone, Debug)]
 pub struct LocalPosition {

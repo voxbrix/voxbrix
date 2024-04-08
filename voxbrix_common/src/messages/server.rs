@@ -6,21 +6,18 @@ use crate::{
     },
     pack::Pack,
 };
-use serde::{
-    Deserialize,
-    Serialize,
+use bincode::{
+    BorrowDecode,
+    Encode,
 };
-use serde_big_array::BigArray;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Encode, BorrowDecode)]
 pub enum ServerAccept<'a> {
     State {
         snapshot: Snapshot,
         // last server's snapshot received by this client
         last_server_snapshot: Snapshot,
-        #[serde(borrow)]
         state: StatePacked<'a>,
-        #[serde(borrow)]
         actions: ActionsPacked<'a>,
     },
 }
@@ -29,7 +26,7 @@ impl Pack for ServerAccept<'_> {
     const DEFAULT_COMPRESSED: bool = true;
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Encode, BorrowDecode)]
 pub enum InitRequest {
     Login,
     Register,
@@ -39,10 +36,9 @@ impl Pack for InitRequest {
     const DEFAULT_COMPRESSED: bool = false;
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Encode, BorrowDecode)]
 pub struct LoginRequest {
     pub username: String,
-    #[serde(with = "BigArray")]
     pub key_signature: [u8; 64],
 }
 
@@ -50,10 +46,9 @@ impl Pack for LoginRequest {
     const DEFAULT_COMPRESSED: bool = false;
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Encode, BorrowDecode)]
 pub struct RegisterRequest {
     pub username: String,
-    #[serde(with = "BigArray")]
     pub public_key: [u8; 33],
 }
 

@@ -1,5 +1,5 @@
 [package]
-name = "place_block"
+name = "remove_block"
 version = "0.1.0"
 edition = "2021"
 
@@ -16,4 +16,5 @@ codegen-units = 1
 
 [dependencies]
 paste = "1.0"
-bincode = { version = "2.0.0-rc.3", default-features = false, features = ["alloc", "derive"] }
+bincode = { git = "https://github.com/bincode-org/bincode.git", rev = "8f65c60" }
+server_loop_api = { path = "../../server_loop_api" }

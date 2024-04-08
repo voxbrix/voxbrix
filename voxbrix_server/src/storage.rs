@@ -1,11 +1,11 @@
+use bincode::{
+    BorrowDecode,
+    Encode,
+};
 use flume::Sender;
 use redb::{
     RedbKey,
     RedbValue,
-};
-use serde::{
-    Deserialize,
-    Serialize,
 };
 use std::{
     cmp::Ordering,
@@ -187,7 +187,7 @@ impl<T> Data<'static, T> {
 
 impl<'a, T> Data<'a, T>
 where
-    T: Pack + Deserialize<'a>,
+    T: Pack + BorrowDecode<'a>,
 {
     pub fn into_inner(&'a self, packer: &'a mut Packer) -> T {
         packer.unpack(self.data.as_ref()).unwrap()
@@ -196,7 +196,7 @@ where
 
 impl<T> Data<'static, T>
 where
-    T: Pack + Serialize,
+    T: Pack + Encode,
 {
     pub fn from_inner(value: &T, packer: &mut Packer) -> Self {
         Self::new_owned(packer.pack_to_vec(value))
@@ -206,13 +206,13 @@ where
 pub trait IntoData {
     fn into_data(&self, packer: &mut Packer) -> Data<'static, Self>
     where
-        Self: Pack + Serialize + Sized,
+        Self: Pack + Encode + Sized,
     {
         Data::from_inner(self, packer)
     }
 }
 
-impl<T> IntoData for T where T: Pack + Serialize {}
+impl<T> IntoData for T where T: Pack + Encode {}
 
 impl<T> RedbValue for Data<'_, T>
 where
@@ -250,17 +250,15 @@ where
 
 pub mod player {
     use crate::storage::TypeName;
-    use serde::{
-        Deserialize,
-        Serialize,
+    use bincode::{
+        Decode,
+        Encode,
     };
-    use serde_big_array::BigArray;
     use voxbrix_common::pack::Pack;
 
-    #[derive(Serialize, Deserialize, Debug)]
+    #[derive(Encode, Decode, Debug)]
     pub struct PlayerProfile {
         pub username: String,
-        #[serde(with = "BigArray")]
         pub public_key: [u8; 33],
     }
 

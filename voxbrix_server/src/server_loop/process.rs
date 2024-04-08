@@ -1,14 +1,22 @@
 use crate::{
-    component::player::client::{
-        ClientEvent,
-        SendData,
+    component::{
+        chunk::cache::ChunkCache,
+        player::client::{
+            ClientEvent,
+            SendData,
+        },
     },
     server_loop::{
         data::SharedData,
         SharedEvent,
     },
+    storage::{
+        IntoData,
+        IntoDataSized,
+    },
     system::chunk_activation::ChunkActivationOutcome,
     BASE_CHANNEL,
+    BLOCK_CLASS_TABLE,
 };
 use std::{
     sync::Arc,
@@ -23,7 +31,11 @@ use voxbrix_common::{
             MAX_SNAPSHOT_DIFF,
         },
     },
-    messages::client::ClientAccept,
+    messages::client::{
+        ChunkChanges,
+        ClientAccept,
+    },
+    pack::Packer,
     ChunkData,
 };
 
@@ -79,6 +91,97 @@ impl Process<'_> {
                 }
             }
         }
+
+        for chunk_changes in sd.class_change_bc.changed_chunks() {
+            let classes = sd.class_bc.get_mut_chunk(chunk_changes.chunk).unwrap();
+
+            for (block, block_class) in chunk_changes.changes() {
+                *classes.get_mut(block) = block_class;
+            }
+
+            let blocks_cache = sd.class_bc.get_chunk(chunk_changes.chunk).unwrap().clone();
+
+            let cache_data = ClientAccept::ChunkData(ChunkData {
+                chunk: *chunk_changes.chunk,
+                block_classes: blocks_cache,
+            });
+
+            sd.cache_cc.insert(
+                *chunk_changes.chunk,
+                ChunkCache::new(sd.packer.pack_to_vec(&cache_data)),
+            );
+
+            let blocks_cache = match cache_data {
+                ClientAccept::ChunkData(b) => b.block_classes,
+                _ => panic!(),
+            };
+
+            let database = sd.database.clone();
+
+            let chunk_db = *chunk_changes.chunk;
+
+            sd.storage.execute(move || {
+                let chunk_db = chunk_db.into_data_sized();
+                let mut packer = Packer::new();
+                let db_write = database.begin_write().unwrap();
+                {
+                    let mut table = db_write.open_table(BLOCK_CLASS_TABLE).unwrap();
+
+                    table
+                        .insert(chunk_db, blocks_cache.into_data(&mut packer))
+                        .expect("server_loop: database write");
+                }
+                db_write.commit().unwrap();
+            });
+        }
+
+        let mut change_buffer = Vec::new();
+
+        // Sending block class changes to players
+        for (player, client, curr_radius) in sd.actor_pc.iter().filter_map(|(player, actor)| {
+            let client = sd.client_pc.get(&player)?;
+            let position = sd.position_ac.get(&actor)?;
+            let curr_view = sd.chunk_view_pc.get(&player)?;
+            let curr_radius = position.chunk.radius(curr_view.radius);
+
+            Some((player, client, curr_radius))
+        }) {
+            let chunk_iter = sd
+                .class_change_bc
+                .changed_chunks()
+                .filter(|change| curr_radius.is_within(change.chunk));
+
+            let chunk_amount = chunk_iter.clone().count();
+
+            let mut change_encoder = ChunkChanges::encode_chunks(chunk_amount, &mut change_buffer);
+
+            for chunk_change in chunk_iter {
+                let mut block_encoder =
+                    change_encoder.start_chunk(chunk_change.chunk, chunk_change.changes().len());
+
+                for (block, block_class) in chunk_change.changes() {
+                    block_encoder.add_change(block, block_class);
+                }
+
+                change_encoder = block_encoder.finish_chunk();
+            }
+
+            let changes = change_encoder.finish();
+
+            let data = ClientAccept::ChunkChanges(changes);
+            if client
+                .tx
+                .send(ClientEvent::SendDataReliable {
+                    channel: BASE_CHANNEL,
+                    data: SendData::Owned(sd.packer.pack_to_vec(&data)),
+                })
+                .is_err()
+            {
+                sd.remove_queue.remove_player(&player);
+            }
+        }
+
+        sd.class_change_bc.clear();
 
         sd.chunk_activation_system.clear();
         sd.chunk_activation_system
@@ -257,11 +360,9 @@ impl Process<'_> {
 
         let shared_event_tx = sd.shared_event_tx.clone();
 
-        sd.chunk_activation_system.apply(
+        sd.chunk_activation_system.activate(
             &mut sd.database,
             &mut sd.status_cc,
-            &mut sd.class_bc,
-            &mut sd.cache_cc,
             move |chunk, activation_outcome, packer| {
                 match activation_outcome {
                     ChunkActivationOutcome::ChunkActivated(block_classes) => {
@@ -283,6 +384,8 @@ impl Process<'_> {
             },
             &rt_handle,
         );
+
+        sd.prune_chunks();
 
         sd.snapshot = sd.snapshot.next();
     }

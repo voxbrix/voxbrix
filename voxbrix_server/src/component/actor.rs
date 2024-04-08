@@ -1,10 +1,10 @@
+use bincode::{
+    BorrowDecode,
+    Encode,
+};
 use nohash_hasher::{
     IntMap,
     IntSet,
-};
-use serde::{
-    de::DeserializeOwned,
-    Serialize,
 };
 use std::{
     mem,
@@ -48,7 +48,7 @@ struct ActorComponentPacker<'a, T> {
 
 impl<T> ActorComponentPacker<'static, T>
 where
-    T: Serialize,
+    T: Encode,
 {
     fn new() -> Self {
         Self {
@@ -81,17 +81,17 @@ where
 
 impl<'a, T> ActorComponentPacker<'a, T>
 where
-    T: Serialize,
+    T: Encode,
 {
     fn pack(mut self, buffer: &mut Vec<u8>) -> ActorComponentPacker<'static, T> {
         match self.loaded_data {
             LoadedData::Changes => {
                 let msg = ActorStatePack::Change(&self.data_changes);
-                pack::serialize_into(&msg, buffer);
+                pack::encode_into(&msg, buffer);
             },
             LoadedData::Full => {
                 let msg = ActorStatePack::Full(&self.data_full);
-                pack::serialize_into(&msg, buffer);
+                pack::encode_into(&msg, buffer);
             },
             LoadedData::None => {
                 panic!("no changes loaded");
@@ -158,19 +158,19 @@ where
     storage: IntMap<Actor, T>,
 }
 
-impl<T> ActorComponentPackable<T>
+impl<'a, T> ActorComponentPackable<T>
 where
-    T: 'static + DeserializeOwned + PartialEq,
+    T: 'a + BorrowDecode<'a> + PartialEq,
 {
     pub fn unpack_player(
         &mut self,
         player_actor: &Actor,
-        state: &StateUnpacked,
+        state: &StateUnpacked<'a>,
         snapshot: Snapshot,
     ) {
-        if let Some(change) = state
+        if let Some((change, _)) = state
             .get_component(&self.state_component)
-            .and_then(|buf| pack::deserialize_from::<Option<T>>(buf))
+            .and_then(|buf| pack::decode_from_slice::<Option<T>>(buf))
         {
             let updated = if let Some(new_value) = change {
                 let old_value = self.storage.get(player_actor);
@@ -190,7 +190,7 @@ where
 
 impl<T> ActorComponentPackable<T>
 where
-    T: 'static + Serialize + PartialEq,
+    T: 'static + Encode + PartialEq,
 {
     pub fn new(state_component: StateComponent) -> Self {
         Self {

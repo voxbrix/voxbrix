@@ -7,12 +7,9 @@ use crate::{
             },
             position::PositionActorComponent,
         },
-        chunk::{
-            cache::CacheChunkComponent,
-            status::{
-                ChunkStatus,
-                StatusChunkComponent,
-            },
+        chunk::status::{
+            ChunkStatus,
+            StatusChunkComponent,
         },
     },
     storage::IntoDataSized,
@@ -26,10 +23,7 @@ use redb::{
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use voxbrix_common::{
-    component::block::{
-        class::ClassBlockComponent,
-        BlocksVec,
-    },
+    component::block::BlocksVec,
     entity::{
         block_class::BlockClass,
         chunk::Chunk,
@@ -98,12 +92,10 @@ impl ChunkActivationSystem {
         }
     }
 
-    pub fn apply(
+    pub fn activate(
         &mut self,
         database: &Arc<Database>,
         status_cc: &mut StatusChunkComponent,
-        class_bc: &mut ClassBlockComponent,
-        cache_cc: &mut CacheChunkComponent,
         send_fn: impl Fn(Chunk, ChunkActivationOutcome, &mut Packer) + Clone + Send + 'static,
         rt_handle: &Handle,
     ) {
@@ -127,12 +119,6 @@ impl ChunkActivationSystem {
             .sort_unstable_by(|(_, priority1), (_, priority2)| {
                 priority2.partial_cmp(priority1).unwrap()
             });
-
-        status_cc.retain(|chunk, status| {
-            self.target.get(chunk).is_some() || *status == ChunkStatus::Loading
-        });
-        cache_cc.retain(|chunk, _| self.target.get(chunk).is_some());
-        class_bc.retain(|chunk| self.target.get(chunk).is_some());
 
         for (chunk, _) in self.missing.iter().copied() {
             let send_fn = send_fn.clone();
@@ -165,5 +151,9 @@ impl ChunkActivationSystem {
                 }
             });
         }
+    }
+
+    pub fn is_active(&self, chunk: &Chunk) -> bool {
+        self.target.contains_key(chunk)
     }
 }

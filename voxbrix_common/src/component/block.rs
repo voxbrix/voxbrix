@@ -5,17 +5,17 @@ use crate::{
     },
     pack::Pack,
 };
-use nohash_hasher::IntMap;
-use serde::{
-    Deserialize,
-    Serialize,
+use bincode::{
+    Decode,
+    Encode,
 };
+use nohash_hasher::IntMap;
 use std::collections::HashMap;
 
 pub mod class;
 pub mod sky_light;
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Encode, Decode, Clone, Debug)]
 pub struct BlocksVec<T> {
     blocks: Vec<T>,
 }
@@ -42,7 +42,7 @@ impl<T> Pack for BlocksVec<T> {
     const DEFAULT_COMPRESSED: bool = true;
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Encode, Decode, Clone, Debug)]
 pub struct BlocksMap<T> {
     blocks: IntMap<Block, T>,
 }

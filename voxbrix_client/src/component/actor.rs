@@ -1,10 +1,10 @@
 use crate::system::movement_interpolation::TARGET_QUEUE_LENGTH;
 use arrayvec::ArrayVec;
-use nohash_hasher::IntMap;
-use serde::{
-    Deserialize,
-    Serialize,
+use bincode::{
+    BorrowDecode,
+    Encode,
 };
+use nohash_hasher::IntMap;
 use std::{
     collections::BTreeMap,
     ops::Deref,
@@ -130,7 +130,7 @@ where
 
 impl<T> ActorComponentPackable<T>
 where
-    T: 'static + Serialize,
+    T: 'static + Encode,
 {
     pub fn pack_player(&mut self, state: &mut StatePacker, last_client_snapshot: Snapshot) {
         if last_client_snapshot < self.last_change_snapshot {
@@ -138,19 +138,19 @@ where
 
             let buffer = state.get_component_buffer(self.state_component);
 
-            pack::serialize_into(&change, buffer);
+            pack::encode_into(&change, buffer);
         }
     }
 }
 
 impl<'a, T> ActorComponentPackable<T>
 where
-    T: Deserialize<'a>,
+    T: BorrowDecode<'a>,
 {
     pub fn unpack_state(&mut self, state: &StateUnpacked<'a>) {
-        if let Some(changes) = state
+        if let Some((changes, _)) = state
             .get_component(&self.state_component)
-            .and_then(|buffer| pack::deserialize_from::<ActorStateUnpack<T>>(buffer))
+            .and_then(|buffer| pack::decode_from_slice::<ActorStateUnpack<T>>(buffer))
         {
             match changes {
                 ActorStateUnpack::Change(changes) => {
@@ -261,11 +261,11 @@ impl<T> ActorComponentUnpackable<T> {
         state: &StateUnpacked<'a>,
         mut convert: impl FnMut(Actor, Option<T>, U) -> T,
     ) where
-        U: Deserialize<'a>,
+        U: BorrowDecode<'a>,
     {
-        if let Some(changes) = state
+        if let Some((changes, _)) = state
             .get_component(&self.state_component)
-            .and_then(|buffer| pack::deserialize_from::<ActorStateUnpack<U>>(buffer))
+            .and_then(|buffer| pack::decode_from_slice::<ActorStateUnpack<U>>(buffer))
         {
             match changes {
                 ActorStateUnpack::Change(changes) => {

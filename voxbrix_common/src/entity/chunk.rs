@@ -1,3 +1,7 @@
+use bincode::{
+    Decode,
+    Encode,
+};
 use serde::{
     Deserialize,
     Serialize,
@@ -7,7 +11,9 @@ use std::{
     mem,
 };
 
-#[derive(Serialize, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
+#[derive(
+    Encode, Decode, Serialize, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug,
+)]
 pub struct Dimension {
     pub index: u32,
 }
@@ -24,7 +30,7 @@ impl Dimension {
     }
 }
 
-#[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Copy, Clone, Debug)]
+#[derive(Encode, Decode, Serialize, Deserialize, Hash, PartialEq, Eq, Copy, Clone, Debug)]
 pub struct Chunk {
     pub position: [i32; 3],
     pub dimension: Dimension,

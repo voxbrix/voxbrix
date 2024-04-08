@@ -5,10 +5,7 @@ use crate::{
     },
     window::InputEvent,
 };
-use voxbrix_common::{
-    entity::block::Block,
-    messages::server::ServerAccept,
-};
+use voxbrix_common::entity::block::Block;
 use winit::event::{
     DeviceEvent,
     ElementState,
@@ -81,8 +78,9 @@ impl LocalInput<'_> {
                         if state == ElementState::Pressed {
                             match button {
                                 MouseButton::Left => {
-                                    if let Some((chunk, block, _side)) =
-                                        sd.player_position_system.get_target_block(
+                                    if sd
+                                        .player_position_system
+                                        .get_target_block(
                                             &sd.position_ac,
                                             &sd.orientation_ac,
                                             |chunk, block| {
@@ -95,11 +93,39 @@ impl LocalInput<'_> {
                                                     .unwrap_or(false)
                                             },
                                         )
+                                        .is_some()
                                     {
+                                        // TODO Handle with script
+                                        use bincode::{
+                                            Decode,
+                                            Encode,
+                                        };
+                                        use voxbrix_common::entity::{
+                                            action::Action,
+                                            chunk::Chunk,
+                                        };
+
+                                        let (position, direction) =
+                                            sd.player_position_system.position_direction(
+                                                &sd.position_ac,
+                                                &sd.orientation_ac,
+                                            );
+
+                                        #[derive(Encode, Decode)]
+                                        pub struct RemoveBlock {
+                                            chunk: Chunk,
+                                            offset: [f32; 3],
+                                            direction: [f32; 3],
+                                        }
+
                                         sd.actions_packer.add_action(
-                                            voxbrix_common::entity::action::Action(0),
+                                            Action(0),
                                             sd.snapshot,
-                                            "action0",
+                                            RemoveBlock {
+                                                chunk: position.chunk,
+                                                offset: position.offset.into(),
+                                                direction: direction.into(),
+                                            },
                                         );
                                     }
                                 },
@@ -127,13 +153,45 @@ impl LocalInput<'_> {
                                         };
                                         let mut block = block.into_coords().map(|u| u as i32);
                                         block[axis] += direction;
-                                        if let Some((chunk, block)) =
-                                            Block::from_chunk_offset(chunk, block)
-                                        {
+
+                                        if Block::from_chunk_offset(chunk, block).is_some() {
+                                            // TODO Handle with script
+                                            use bincode::{
+                                                Decode,
+                                                Encode,
+                                            };
+                                            use voxbrix_common::entity::{
+                                                action::Action,
+                                                block_class::BlockClass,
+                                                chunk::Chunk,
+                                            };
+
+                                            let (position, direction) =
+                                                sd.player_position_system.position_direction(
+                                                    &sd.position_ac,
+                                                    &sd.orientation_ac,
+                                                );
+
+                                            #[derive(Encode, Decode)]
+                                            pub struct PlaceBlock {
+                                                chunk: Chunk,
+                                                offset: [f32; 3],
+                                                direction: [f32; 3],
+                                                block_class: BlockClass,
+                                            }
+
                                             sd.actions_packer.add_action(
-                                                voxbrix_common::entity::action::Action(0),
+                                                Action(1),
                                                 sd.snapshot,
-                                                "action1",
+                                                PlaceBlock {
+                                                    chunk: position.chunk,
+                                                    offset: position.offset.into(),
+                                                    direction: direction.into(),
+                                                    block_class: sd
+                                                        .block_class_label_map
+                                                        .get("grass")
+                                                        .unwrap(),
+                                                },
                                             );
                                         }
                                     }

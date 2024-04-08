@@ -6,6 +6,7 @@ use crate::component::actor::{
 use std::time::Duration;
 use voxbrix_common::{
     component::{
+        actor::position::Position,
         block::class::ClassBlockComponent,
         block_class::collision::CollisionBlockClassComponent,
     },
@@ -15,6 +16,7 @@ use voxbrix_common::{
         chunk::Chunk,
         snapshot::Snapshot,
     },
+    math::Vec3F32,
     system::position,
 };
 
@@ -68,7 +70,23 @@ impl PlayerPositionSystem {
             .get(&self.player_actor)
             .zip(orientation_ac.get(&self.player_actor))
             .and_then(|(position, orientation)| {
-                position::get_target_block(position, orientation, targeting)
+                position::get_target_block(position, orientation.forward(), targeting)
             })
+    }
+
+    pub fn position_direction(
+        &self,
+        position_ac: &PositionActorComponent,
+        orientation_ac: &OrientationActorComponent,
+    ) -> (Position, Vec3F32) {
+        position_ac
+            .get(&self.player_actor)
+            .copied()
+            .zip(
+                orientation_ac
+                    .get(&self.player_actor)
+                    .map(|ori| ori.forward()),
+            )
+            .expect("unable to get player orientation")
     }
 }

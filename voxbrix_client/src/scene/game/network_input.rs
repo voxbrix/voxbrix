@@ -5,7 +5,10 @@ use crate::{
         Transition,
     },
 };
-use log::error;
+use log::{
+    error,
+    info,
+};
 use std::time::Instant;
 use voxbrix_common::{
     component::{
@@ -111,17 +114,36 @@ impl NetworkInput<'_> {
 
                 sd.chunk_render_pipeline_system.chunk_added(chunk);
             },
-            ClientAccept::AlterBlock {
-                chunk,
-                block,
-                block_class,
-            } => {
-                if let Some(block_class_ref) =
-                    sd.class_bc.get_mut_chunk(&chunk).map(|c| c.get_mut(block))
-                {
-                    *block_class_ref = block_class;
+            ClientAccept::ChunkChanges(changes) => {
+                let Ok(mut chunk_decoder) = changes.decode_chunks() else {
+                    error!("unable to decode chunk changes");
+                    return Transition::Menu;
+                };
+
+                while let Some(chunk_change) = chunk_decoder.decode_chunk() {
+                    let Ok(mut chunk_change) = chunk_change else {
+                        error!("unable to decode chunk change");
+                        return Transition::Menu;
+                    };
+
+                    let chunk = chunk_change.chunk();
+
+                    let mut chunk_classes = sd.class_bc.get_mut_chunk(&chunk);
+
+                    while let Some(block_change) = chunk_change.decode_block() {
+                        let Ok((block, block_class)) = block_change else {
+                            error!("unable to decode block changes");
+                            return Transition::Menu;
+                        };
+
+                        if let Some(ref mut chunk_classes) = chunk_classes {
+                            *chunk_classes.get_mut(block) = block_class;
+                        }
+                    }
 
                     sd.chunk_render_pipeline_system.chunk_updated(chunk);
+
+                    chunk_decoder = chunk_change.into_chunk_decoder();
                 }
             },
         }

@@ -180,7 +180,7 @@ impl LightDispersion<'_> {
                 match opacity_bcc.get(neighbor_class) {
                     Some(Opacity::Full) => {},
                     None => {
-                        if side == 4 && block_light == SkyLight::MAX {
+                        if side == GROUND_SIDE && block_light == SkyLight::MAX {
                             // Side index 4 is z_m (block below)
                             // we want max-level light to spread below indefinitely
                             if *neighbor_light != SkyLight::MAX {

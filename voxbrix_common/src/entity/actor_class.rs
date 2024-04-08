@@ -1,9 +1,9 @@
-use serde::{
-    Deserialize,
-    Serialize,
+use bincode::{
+    Decode,
+    Encode,
 };
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Copy, Clone, Debug)]
+#[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
 pub struct ActorClass(pub u64);
 
 impl ActorClass {
