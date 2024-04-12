@@ -102,14 +102,14 @@ impl<'a> ChunkChanges<'a> {
     }
 }
 
-pub struct ChunkChangesBlockDecoder<'a> {
-    origin: ChunkChangesChunkDecoder<'a>,
+pub struct ChunkChangesBlockDecoder<'origin, 'data> {
+    origin: &'origin mut ChunkChangesChunkDecoder<'data>,
     chunk: Chunk,
     length: usize,
     position: usize,
 }
 
-impl<'a> ChunkChangesBlockDecoder<'a> {
+impl ChunkChangesBlockDecoder<'_, '_> {
     pub fn chunk(&self) -> Chunk {
         self.chunk
     }
@@ -131,10 +131,6 @@ impl<'a> ChunkChangesBlockDecoder<'a> {
 
         Some(Ok(value))
     }
-
-    pub fn into_chunk_decoder(self) -> ChunkChangesChunkDecoder<'a> {
-        self.origin
-    }
 }
 
 pub struct ChunkChangesChunkDecoder<'a> {
@@ -144,7 +140,9 @@ pub struct ChunkChangesChunkDecoder<'a> {
 }
 
 impl<'a> ChunkChangesChunkDecoder<'a> {
-    pub fn decode_chunk(mut self) -> Option<Result<ChunkChangesBlockDecoder<'a>, UnpackError>> {
+    pub fn decode_chunk<'b>(
+        &'b mut self,
+    ) -> Option<Result<ChunkChangesBlockDecoder<'b, 'a>, UnpackError>> {
         if self.position >= self.length {
             return None;
         }

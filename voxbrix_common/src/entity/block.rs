@@ -20,7 +20,21 @@ pub const BLOCKS_IN_CHUNK_EDGE_F32: f32 = BLOCKS_IN_CHUNK_EDGE as f32;
 pub const BLOCKS_IN_CHUNK_EDGE_I32: i32 = BLOCKS_IN_CHUNK_EDGE as i32;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
-pub struct Block(pub usize);
+pub struct Block(usize);
+
+impl Block {
+    pub fn from_usize(value: usize) -> Option<Self> {
+        if value >= BLOCKS_IN_CHUNK {
+            return None;
+        }
+
+        Some(Self(value))
+    }
+
+    pub fn as_usize(&self) -> usize {
+        self.0
+    }
+}
 
 pub type BlockCoords = [usize; 3];
 

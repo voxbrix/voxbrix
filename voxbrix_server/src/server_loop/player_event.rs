@@ -122,11 +122,13 @@ impl PlayerEvent<'_> {
                     Err(_) => {
                         debug!("unable to unpack actions");
                         return;
-                    }
+                    },
                 };
 
                 // Filtering out already handled actions
-                for (action, _, data) in actions.data().iter()
+                for (action, _, data) in actions
+                    .data()
+                    .iter()
                     .filter(|(_, snapshot, _)| *snapshot > previous_last_client_snapshot)
                 {
                     let Some(script) = sd.script_action_component.get(action) else {
@@ -134,102 +136,18 @@ impl PlayerEvent<'_> {
                         continue;
                     };
 
-                    let Some(actor) = sd.actor_pc.get(&player) else {
-                        warn!("actor for player {:?} not found", player);
-                        continue;
-                    };
+                    let actor_opt = sd.actor_pc.get(&player);
 
                     let script_data = ScriptSharedData {
                         block_class_label_map: &sd.block_class_label_map,
-                        class_bc: &sd.class_bc,
-                        class_change_bc: &mut sd.class_change_bc,
+                        class_bc: &mut sd.class_bc,
                         collision_bcc: &sd.collision_bcc,
                     };
 
-                    sd.script_registry.run_script(&script, script_data, (Some(actor), data));
+                    sd.script_registry
+                        .run_script(&script, script_data, (actor_opt, data));
                 }
-
             },
-            /*ServerAccept::AlterBlock {
-                chunk,
-                block,
-                block_class,
-            } => {
-                if let Some(block_class_ref) = sd
-                    .class_bc
-                    .get_mut_chunk(&chunk)
-                    .map(|blocks| blocks.get_mut(block))
-                {
-                    *block_class_ref = block_class;
-
-                    let data_buf = Arc::new(sd.packer.pack_to_vec(&ClientAccept::AlterBlock {
-                        chunk,
-                        block,
-                        block_class,
-                    }));
-
-                    for (player, client) in sd.actor_pc.iter().filter_map(|(player, actor)| {
-                        let view = sd.chunk_view_pc.get(player)?;
-                        let position = sd.position_ac.get(actor)?;
-
-                        position
-                            .chunk
-                            .radius(view.radius)
-                            .is_within(&chunk)
-                            .then_some(())?;
-                        let client = sd.client_pc.get(player)?;
-                        Some((player, client))
-                    }) {
-                        if client
-                            .tx
-                            .send(ClientEvent::SendDataReliable {
-                                channel: BASE_CHANNEL,
-                                data: SendData::Arc(data_buf.clone()),
-                            })
-                            .is_err()
-                        {
-                            sd.remove_queue.remove_player(player);
-                        }
-                    }
-
-                    // TODO unify block alterations in Process tick
-                    // and update cache there
-                    // possibly also unblock/rayon, this takes around 1ms for existence_ach
-                    // chunk
-                    let blocks_cache = sd.class_bc.get_chunk(&chunk).unwrap().clone();
-
-                    let cache_data = ClientAccept::ChunkData(ChunkData {
-                        chunk,
-                        block_classes: blocks_cache,
-                    });
-
-                    sd.cache_cc
-                        .insert(chunk, ChunkCache::new(sd.packer.pack_to_vec(&cache_data)));
-
-                    let blocks_cache = match cache_data {
-                        ClientAccept::ChunkData(b) => b.block_classes,
-                        _ => panic!(),
-                    };
-
-                    let database = sd.database.clone();
-
-                    sd.storage.execute(move || {
-                        let mut packer = Packer::new();
-                        let db_write = database.begin_write().unwrap();
-                        {
-                            let mut table = db_write.open_table(BLOCK_CLASS_TABLE).unwrap();
-
-                            table
-                                .insert(
-                                    chunk.into_data_sized(),
-                                    blocks_cache.into_data(&mut packer),
-                                )
-                                .expect("server_loop: database write");
-                        }
-                        db_write.commit().unwrap();
-                    });
-                }
-            },*/
         }
     }
 }

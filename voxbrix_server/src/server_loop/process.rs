@@ -92,13 +92,7 @@ impl Process<'_> {
             }
         }
 
-        for chunk_changes in sd.class_change_bc.changed_chunks() {
-            let classes = sd.class_bc.get_mut_chunk(chunk_changes.chunk).unwrap();
-
-            for (block, block_class) in chunk_changes.changes() {
-                *classes.get_mut(block) = block_class;
-            }
-
+        for chunk_changes in sd.class_bc.changed_chunks() {
             let blocks_cache = sd.class_bc.get_chunk(chunk_changes.chunk).unwrap().clone();
 
             let cache_data = ClientAccept::ChunkData(ChunkData {
@@ -147,7 +141,7 @@ impl Process<'_> {
             Some((player, client, curr_radius))
         }) {
             let chunk_iter = sd
-                .class_change_bc
+                .class_bc
                 .changed_chunks()
                 .filter(|change| curr_radius.is_within(change.chunk));
 
@@ -160,7 +154,7 @@ impl Process<'_> {
                     change_encoder.start_chunk(chunk_change.chunk, chunk_change.changes().len());
 
                 for (block, block_class) in chunk_change.changes() {
-                    block_encoder.add_change(block, block_class);
+                    block_encoder.add_change(*block, *block_class);
                 }
 
                 change_encoder = block_encoder.finish_chunk();
@@ -181,7 +175,7 @@ impl Process<'_> {
             }
         }
 
-        sd.class_change_bc.clear();
+        sd.class_bc.clear_changes();
 
         sd.chunk_activation_system.clear();
         sd.chunk_activation_system

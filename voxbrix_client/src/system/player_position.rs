@@ -1,13 +1,15 @@
-use crate::component::actor::{
-    orientation::OrientationActorComponent,
-    position::PositionActorComponent,
-    velocity::VelocityActorComponent,
+use crate::component::{
+    actor::{
+        orientation::OrientationActorComponent,
+        position::PositionActorComponent,
+        velocity::VelocityActorComponent,
+    },
+    block::class::ClassBlockComponent,
 };
 use std::time::Duration;
 use voxbrix_common::{
     component::{
         actor::position::Position,
-        block::class::ClassBlockComponent,
         block_class::collision::CollisionBlockClassComponent,
     },
     entity::{

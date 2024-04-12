@@ -17,10 +17,6 @@ impl<T> PlayerComponent<T> {
         }
     }
 
-    pub fn len(&self) -> usize {
-        self.data.len()
-    }
-
     pub fn get(&self, player: &Player) -> Option<&T> {
         self.data.get(player)
     }

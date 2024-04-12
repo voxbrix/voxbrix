@@ -11,6 +11,7 @@ use crate::{
         },
         actor_class::model::ModelActorClassComponent,
         actor_model::builder::BuilderActorModelComponent,
+        block::class::ClassBlockComponent,
         block_class::model::ModelBlockClassComponent,
         block_model::{
             builder::BuilderBlockModelComponent,
@@ -32,14 +33,10 @@ use crate::{
     },
 };
 use flume::Sender;
-use nohash_hasher::IntSet;
 use std::time::Instant;
 use voxbrix_common::{
     component::{
-        block::{
-            class::ClassBlockComponent,
-            sky_light::SkyLightBlockComponent,
-        },
+        block::sky_light::SkyLightBlockComponent,
         block_class::{
             collision::CollisionBlockClassComponent,
             opacity::OpacityBlockClassComponent,
@@ -47,7 +44,6 @@ use voxbrix_common::{
         chunk::status::StatusChunkComponent,
     },
     entity::{
-        action::Action,
         actor::Actor,
         block_class::BlockClass,
         snapshot::Snapshot,
@@ -60,48 +56,6 @@ use voxbrix_common::{
     pack::Packer,
     LabelMap,
 };
-
-pub struct EntityRemoveQueue(Option<EntityRemoveQueueInner>);
-
-struct EntityRemoveQueueInner {
-    is_not_empty: bool,
-    actors: IntSet<Actor>,
-}
-
-impl EntityRemoveQueueInner {
-    fn new() -> Option<Self> {
-        Some(Self {
-            is_not_empty: false,
-            actors: IntSet::default(),
-        })
-    }
-
-    fn remove_actor(&mut self, actor: &Actor) {
-        self.actors.insert(*actor);
-        self.is_not_empty = true;
-    }
-}
-
-impl EntityRemoveQueue {
-    pub fn new() -> Self {
-        Self(EntityRemoveQueueInner::new())
-    }
-
-    pub fn remove_actor(&mut self, actor: &Actor) {
-        self.0
-            .as_mut()
-            .expect("EntityRemoveQueue is taken")
-            .remove_actor(actor)
-    }
-
-    fn take(&mut self) -> EntityRemoveQueueInner {
-        self.0.take().expect("EntityRemoveQueue is taken")
-    }
-
-    fn return_taken(&mut self, taken: EntityRemoveQueueInner) {
-        self.0 = Some(taken);
-    }
-}
 
 /// All components and systems the loop has.
 pub struct GameSharedData {
@@ -162,34 +116,6 @@ pub struct GameSharedData {
 
     pub last_process_time: Instant,
 
-    pub remove_queue: EntityRemoveQueue,
-
     pub inventory_open: bool,
     pub cursor_visible: bool,
-}
-
-impl GameSharedData {
-    pub fn remove_entities(&mut self) {
-        let mut remove_queue = self.remove_queue.take();
-
-        if remove_queue.is_not_empty {
-            for actor in remove_queue.actors.drain() {
-                self.remove_actor(&actor);
-            }
-
-            remove_queue.is_not_empty = false;
-        }
-
-        self.remove_queue.return_taken(remove_queue);
-    }
-
-    pub fn remove_actor(&mut self, actor: &Actor) {
-        self.class_ac.remove(actor, self.snapshot);
-        self.position_ac.remove(actor, self.snapshot);
-        self.velocity_ac.remove(actor, self.snapshot);
-        self.orientation_ac.remove(actor, self.snapshot);
-        self.animation_state_ac.remove_actor(actor);
-        self.target_position_ac.remove(actor);
-        self.target_orientation_ac.remove(actor);
-    }
 }

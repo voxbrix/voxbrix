@@ -1,11 +1,12 @@
 use crate::{
     component::{
         block::{
-            class::ClassBlockComponent,
             sky_light::{
                 SkyLight,
                 SkyLightBlockComponent,
             },
+            BlockComponent,
+            Blocks,
             BlocksVec,
         },
         block_class::opacity::{
@@ -16,7 +17,6 @@ use crate::{
     entity::{
         block::{
             Block,
-            BLOCKS_IN_CHUNK,
             BLOCKS_IN_CHUNK_EDGE,
         },
         block_class::BlockClass,
@@ -35,19 +35,22 @@ const GROUND_SIDE: usize = 4;
 /// If the old light block component for the target chunk exists, it should be removed from
 /// the SkyLightBlockComponent structure and provided as argument to the function,
 /// the returned light block component should be inserted instead.
-pub fn calc_chunk(
+pub fn calc_chunk<C>(
     chunk: Chunk,
     queue: &mut VecDeque<Block>,
     old_chunk_light: Option<BlocksVec<SkyLight>>,
-    class_bc: &ClassBlockComponent,
+    class_bc: &C,
     opacity_bcc: &OpacityBlockClassComponent,
     sky_light_bc: &SkyLightBlockComponent,
-) -> (BlocksVec<SkyLight>, ArrayVec<Chunk, 6>) {
+) -> (BlocksVec<SkyLight>, ArrayVec<Chunk, 6>)
+where
+    C: BlockComponent<BlockClass>,
+{
     let chunk_class = class_bc
         .get_chunk(&chunk)
         .expect("calculating light for existing chunk");
 
-    let mut chunk_light = BlocksVec::new(vec![SkyLight::MIN; BLOCKS_IN_CHUNK]);
+    let mut chunk_light = BlocksVec::new_cloned(SkyLight::MIN);
 
     let neighbor_chunk_ids = [
         [-1, 0, 0],
@@ -148,9 +151,9 @@ pub fn calc_chunk(
     (chunk_light, chunks_to_recalc)
 }
 
-struct LightDispersion<'a> {
+struct LightDispersion<'a, C> {
     block: Block,
-    chunk_class: &'a BlocksVec<BlockClass>,
+    chunk_class: &'a C,
     opacity_bcc: &'a OpacityBlockClassComponent,
     chunk_light: &'a mut BlocksVec<SkyLight>,
     queue: &'a mut VecDeque<Block>,
@@ -158,7 +161,10 @@ struct LightDispersion<'a> {
 
 // Assigns light to the neighbor blocks within the chunk
 // Fills the queue with the neighbor blocks that will disperse light themselves next
-impl LightDispersion<'_> {
+impl<C> LightDispersion<'_, C>
+where
+    C: Blocks<BlockClass>,
+{
     fn disperse(self) {
         let LightDispersion {
             block,
@@ -206,15 +212,18 @@ impl LightDispersion<'_> {
 // Fills 1-block layers on each side with light from the neighbor chunks.
 // As this is prerequisite process to light spill, chunk_light
 // is intended to be filled with SkyLight::MIN.
-struct AddSide<'a> {
+struct AddSide<'a, C> {
     side: usize,
-    chunk_class: &'a BlocksVec<BlockClass>,
+    chunk_class: &'a C,
     opacity_bcc: &'a OpacityBlockClassComponent,
     chunk_light: &'a mut BlocksVec<SkyLight>,
-    neighbor_chunks: [Option<(Chunk, &'a BlocksVec<BlockClass>, &'a BlocksVec<SkyLight>)>; 6],
+    neighbor_chunks: [Option<(Chunk, &'a C, &'a BlocksVec<SkyLight>)>; 6],
 }
 
-impl AddSide<'_> {
+impl<C> AddSide<'_, C>
+where
+    C: Blocks<BlockClass>,
+{
     fn run(self) {
         let Self {
             side,
@@ -288,15 +297,18 @@ impl AddSide<'_> {
 
 // Checks if light in 1-block layers on the side changed and returns
 // if neighbor chunk needs to be recalculated
-struct CheckSide<'a> {
+struct CheckSide<'a, C> {
     side: usize,
     old_chunk_light: Option<&'a BlocksVec<SkyLight>>,
     chunk_light: &'a BlocksVec<SkyLight>,
-    neighbor_chunks: [Option<(Chunk, &'a BlocksVec<BlockClass>, &'a BlocksVec<SkyLight>)>; 6],
+    neighbor_chunks: [Option<(Chunk, &'a C, &'a BlocksVec<SkyLight>)>; 6],
     opacity_bcc: &'a OpacityBlockClassComponent,
 }
 
-impl CheckSide<'_> {
+impl<C> CheckSide<'_, C>
+where
+    C: Blocks<BlockClass>,
+{
     fn needs_recalculation(self) -> Option<Chunk> {
         let Self {
             side,

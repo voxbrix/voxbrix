@@ -2,7 +2,6 @@ use crate::component::actor::position::PositionActorComponent;
 use voxbrix_common::{
     component::{
         actor::position::Position,
-        block::class::ClassBlockComponent,
         chunk::status::StatusChunkComponent,
     },
     entity::{

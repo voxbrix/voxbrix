@@ -1,5 +1,6 @@
 use crate::{
     component::{
+        block::class::ClassBlockComponent,
         block_class::model::ModelBlockClassComponent,
         block_model::{
             builder::{
@@ -34,7 +35,6 @@ use rayon::prelude::*;
 use std::mem;
 use voxbrix_common::{
     component::block::{
-        class::ClassBlockComponent,
         sky_light::{
             SkyLight,
             SkyLightBlockComponent,

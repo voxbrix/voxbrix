@@ -9,15 +9,15 @@ use crate::entity::{
 
 impl From<server_loop_api::Block> for Block {
     fn from(value: server_loop_api::Block) -> Self {
-        Self(value.0.into())
+        Self::from_usize(value.as_usize().into()).expect("incorrect block passed from script")
     }
 }
 
 impl From<Block> for server_loop_api::Block {
     fn from(value: Block) -> Self {
-        Self(
+        Self::from_usize(
             value
-                .0
+                .as_usize()
                 .try_into()
                 .expect("block index must not exceed u16::MAX"),
         )

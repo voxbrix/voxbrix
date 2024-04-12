@@ -111,9 +111,9 @@ impl<'a> Renderer<'a> {
             is_first_pass,
             encoder,
             view,
-            surface_config,
-            device,
-            queue,
+            surface_config: _,
+            device: _,
+            queue: _,
             depth_texture_view,
             camera_bind_group,
         } = self;

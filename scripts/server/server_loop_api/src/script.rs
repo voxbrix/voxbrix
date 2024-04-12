@@ -87,10 +87,11 @@ where
     }
 }
 
-static mut BLOCKS_IN_CHUNK_EDGE: u16 = 0;
-static mut BLOCKS_IN_CHUNK_LAYER: u16 = 0;
+static mut BLOCKS_IN_CHUNK_EDGE: usize = 0;
+static mut BLOCKS_IN_CHUNK_LAYER: usize = 0;
+static mut BLOCKS_IN_CHUNK: usize = 0;
 
-pub fn blocks_in_chunk_edge() -> u16 {
+pub fn blocks_in_chunk_edge() -> usize {
     unsafe {
         if BLOCKS_IN_CHUNK_EDGE == 0 {
             BLOCKS_IN_CHUNK_EDGE = export::get_blocks_in_chunk_edge()
@@ -102,7 +103,17 @@ pub fn blocks_in_chunk_edge() -> u16 {
     }
 }
 
-pub fn blocks_in_chunk_layer() -> u16 {
+pub fn blocks_in_chunk_layer() -> usize {
+    unsafe {
+        if BLOCKS_IN_CHUNK_LAYER == 0 {
+            BLOCKS_IN_CHUNK_LAYER = blocks_in_chunk_edge().pow(2);
+        }
+
+        BLOCKS_IN_CHUNK_LAYER
+    }
+}
+
+pub fn blocks_in_chunk() -> usize {
     unsafe {
         if BLOCKS_IN_CHUNK_LAYER == 0 {
             BLOCKS_IN_CHUNK_LAYER = blocks_in_chunk_edge().pow(2);
@@ -113,17 +124,17 @@ pub fn blocks_in_chunk_layer() -> u16 {
 }
 
 impl Block {
-    pub fn into_coords(self) -> [u16; 3] {
-        let z = self.0 / blocks_in_chunk_layer();
-        let x_y = self.0 % blocks_in_chunk_layer();
+    pub fn into_coords(self) -> [usize; 3] {
+        let z = self.as_usize() / blocks_in_chunk_layer();
+        let x_y = self.as_usize() % blocks_in_chunk_layer();
         let y = x_y / blocks_in_chunk_edge();
         let x = x_y % blocks_in_chunk_edge();
 
         [x, y, z]
     }
 
-    pub fn from_coords([x, y, z]: [u16; 3]) -> Self {
-        Self(z * blocks_in_chunk_layer() + y * blocks_in_chunk_edge() + x)
+    pub fn from_coords([x, y, z]: [usize; 3]) -> Self {
+        Self::from_usize(z * blocks_in_chunk_layer() + y * blocks_in_chunk_edge() + x).unwrap()
     }
 
     pub fn from_chunk_offset(chunk: Chunk, offset: [i32; 3]) -> Option<(Chunk, Block)> {
@@ -150,11 +161,7 @@ impl Block {
             dimension: chunk.dimension,
         };
 
-        let block = Self::from_coords([
-            chunks_blocks[0].1 as u16,
-            chunks_blocks[1].1 as u16,
-            chunks_blocks[2].1 as u16,
-        ]);
+        let block = Self::from_coords([chunks_blocks[0].1, chunks_blocks[1].1, chunks_blocks[2].1]);
 
         Some((actual_chunk, block))
     }

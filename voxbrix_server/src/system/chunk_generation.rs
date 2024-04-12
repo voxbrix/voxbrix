@@ -14,12 +14,12 @@ use std::{
     thread,
 };
 use voxbrix_common::{
-    component::block::BlocksVec,
+    component::block::{
+        BlocksVec,
+        BlocksVecBuilder,
+    },
     entity::{
-        block::{
-            BLOCKS_IN_CHUNK,
-            BLOCKS_IN_CHUNK_EDGE,
-        },
+        block::BLOCKS_IN_CHUNK_EDGE,
         block_class::BlockClass,
         chunk::{
             Chunk,
@@ -44,7 +44,7 @@ pub struct ChunkGenerationSystem {
 
 struct GenerationData {
     block_class_label_map: LabelMap<BlockClass>,
-    block_classes: Vec<BlockClass>,
+    block_classes: BlocksVecBuilder<BlockClass>,
 }
 
 impl ChunkGenerationSystem {
@@ -72,7 +72,7 @@ impl ChunkGenerationSystem {
                 &engine,
                 GenerationData {
                     block_class_label_map,
-                    block_classes: Vec::with_capacity(BLOCKS_IN_CHUNK),
+                    block_classes: BlocksVecBuilder::new(),
                 },
             );
 
@@ -134,14 +134,9 @@ impl ChunkGenerationSystem {
                     .call(&mut store, (seed, position[0], position[1], position[2]))
                     .expect("generate_fn call error");
 
-                if store.data_mut().block_classes.len() != BLOCKS_IN_CHUNK {
-                    panic!("chunk generation is incomplete");
-                }
-
-                let block_classes = BlocksVec::new(mem::replace(
-                    &mut store.data_mut().block_classes,
-                    Vec::with_capacity(BLOCKS_IN_CHUNK),
-                ));
+                let block_classes =
+                    mem::replace(&mut store.data_mut().block_classes, BlocksVecBuilder::new())
+                        .build();
 
                 let db_write = database.begin_write().unwrap();
                 {

@@ -13,7 +13,7 @@ use crate::{
             velocity::VelocityActorComponent,
         },
         actor_class::model::ModelActorClassComponent,
-        block::class_change::ClassChangeBlockComponent,
+        block::class::ClassBlockComponent,
         chunk::{
             cache::CacheChunkComponent,
             status::{
@@ -66,7 +66,6 @@ use std::{
 use voxbrix_common::{
     component::{
         actor::position::Position,
-        block::class::ClassBlockComponent,
         block_class::collision::CollisionBlockClassComponent,
     },
     entity::{
@@ -157,9 +156,8 @@ impl EntityRemoveQueue {
 
 pub struct ScriptSharedData<'a> {
     pub block_class_label_map: &'a LabelMap<BlockClass>,
-    pub class_bc: &'a ClassBlockComponent,
+    pub class_bc: &'a mut ClassBlockComponent,
     pub collision_bcc: &'a CollisionBlockClassComponent,
-    pub class_change_bc: &'a mut ClassChangeBlockComponent,
 }
 
 pub fn setup_script_registry(registry: &mut ScriptRegistry<ScriptSharedData>) {
@@ -258,12 +256,12 @@ pub fn setup_script_registry(registry: &mut ScriptRegistry<ScriptSharedData>) {
 
         let sd = &mut caller.data_mut().as_full_mut().data;
 
-        let Some(mut classes) = sd.class_change_bc.get_mut_chunk(&command.chunk.into()) else {
+        let Some(mut classes) = sd.class_bc.get_mut_chunk(&command.chunk.into()) else {
             debug!("changing non-existant chunk");
             return;
         };
 
-        classes.change(command.block.into(), command.block_class.into());
+        classes.set(command.block.into(), command.block_class.into());
     }
 
     unsafe {
@@ -320,7 +318,6 @@ pub struct SharedData {
     pub model_acc: ModelActorClassComponent,
 
     pub class_bc: ClassBlockComponent,
-    pub class_change_bc: ClassChangeBlockComponent,
     pub collision_bcc: CollisionBlockClassComponent,
 
     pub status_cc: StatusChunkComponent,
@@ -388,7 +385,6 @@ impl SharedData {
             if !retain {
                 self.cache_cc.remove(chunk);
                 self.class_bc.remove_chunk(chunk);
-                self.class_change_bc.remove_chunk(chunk);
             }
 
             retain
@@ -457,7 +453,6 @@ impl SharedData {
 
         self.class_bc
             .insert_chunk(chunk_data.chunk, chunk_data.block_classes);
-        self.class_change_bc.insert_chunk(chunk_data.chunk);
         self.cache_cc
             .insert(chunk_data.chunk, data_encoded.clone().into());
 

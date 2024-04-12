@@ -5,10 +5,7 @@ use crate::{
         Transition,
     },
 };
-use log::{
-    error,
-    info,
-};
+use log::error;
 use std::time::Instant;
 use voxbrix_common::{
     component::{
@@ -142,8 +139,6 @@ impl NetworkInput<'_> {
                     }
 
                     sd.chunk_render_pipeline_system.chunk_updated(chunk);
-
-                    chunk_decoder = chunk_change.into_chunk_decoder();
                 }
             },
         }

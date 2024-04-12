@@ -4,7 +4,10 @@ use crate::{
             position::Position,
             velocity::Velocity,
         },
-        block::class::ClassBlockComponent,
+        block::{
+            BlockComponent,
+            Blocks,
+        },
         block_class::collision::{
             Collision,
             CollisionBlockClassComponent,
@@ -16,6 +19,7 @@ use crate::{
             BLOCKS_IN_CHUNK_EDGE_F32,
             BLOCKS_IN_CHUNK_EDGE_I32,
         },
+        block_class::BlockClass,
         chunk::{
             Chunk,
             ChunkPositionOperations,
@@ -69,14 +73,17 @@ where
     }
 }
 
-pub fn process_actor(
+pub fn process_actor<C>(
     dt: Duration,
-    class_bc: &ClassBlockComponent,
+    class_bc: &C,
     collision_bcc: &CollisionBlockClassComponent,
     position: &Position,
     velocity: &Velocity,
     radius: &[f32; 3],
-) -> Position {
+) -> Position
+where
+    C: BlockComponent<BlockClass>,
+{
     let Position {
         chunk: mut center_chunk,
         offset: mut start_position,

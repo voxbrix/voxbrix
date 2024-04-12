@@ -1,4 +1,7 @@
-use crate::system::chunk_render_pipeline::ComputeContext;
+use crate::{
+    component::block::class::ClassBlockComponent,
+    system::chunk_render_pipeline::ComputeContext,
+};
 use arrayvec::ArrayVec;
 use rayon::prelude::*;
 use std::{
@@ -8,7 +11,6 @@ use std::{
 use voxbrix_common::{
     component::{
         block::{
-            class::ClassBlockComponent,
             sky_light::{
                 SkyLight,
                 SkyLightBlockComponent,
@@ -71,7 +73,7 @@ impl SkyLightSystem {
                     chunk,
                     &mut block_queue_buffer,
                     old_light_component,
-                    &class_bc,
+                    class_bc,
                     &opacity_bcc,
                     &sky_light_bc,
                 );

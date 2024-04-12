@@ -26,6 +26,7 @@ use crate::{
             ActorModelBuilderDescriptor,
             BuilderActorModelComponent,
         },
+        block::class::ClassBlockComponent,
         block_class::model::ModelBlockClassComponent,
         block_model::{
             builder::{
@@ -75,10 +76,7 @@ use crate::{
     CONNECTION_TIMEOUT,
 };
 use anyhow::Result;
-use data::{
-    EntityRemoveQueue,
-    GameSharedData,
-};
+use data::GameSharedData;
 use futures_lite::{
     future::{
         self,
@@ -119,10 +117,7 @@ use voxbrix_common::{
             position::Position,
             velocity::Velocity,
         },
-        block::{
-            class::ClassBlockComponent,
-            sky_light::SkyLightBlockComponent,
-        },
+        block::sky_light::SkyLightBlockComponent,
         block_class::{
             collision::{
                 Collision,
@@ -595,8 +590,6 @@ impl GameScene {
             actions_packer: ActionsPacker::new(),
 
             last_process_time,
-
-            remove_queue: EntityRemoveQueue::new(),
 
             inventory_open: false,
             cursor_visible: false,

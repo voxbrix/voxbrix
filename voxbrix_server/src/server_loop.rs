@@ -16,7 +16,7 @@ use crate::{
             velocity::VelocityActorComponent,
         },
         actor_class::model::ModelActorClassComponent,
-        block::class_change::ClassChangeBlockComponent,
+        block::class::ClassBlockComponent,
         chunk::{
             cache::CacheChunkComponent,
             status::StatusChunkComponent,
@@ -74,12 +74,9 @@ use voxbrix_common::{
         ACTOR_MODEL_LIST_PATH,
         STATE_COMPONENTS_PATH,
     },
-    component::{
-        block::class::ClassBlockComponent,
-        block_class::collision::{
-            Collision,
-            CollisionBlockClassComponent,
-        },
+    component::block_class::collision::{
+        Collision,
+        CollisionBlockClassComponent,
     },
     compute,
     entity::{
@@ -293,7 +290,6 @@ impl ServerLoop {
             model_acc,
 
             class_bc,
-            class_change_bc: ClassChangeBlockComponent::new(),
 
             collision_bcc,
 

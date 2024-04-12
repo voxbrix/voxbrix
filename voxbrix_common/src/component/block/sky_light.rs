@@ -1,5 +1,5 @@
 use crate::component::block::{
-    BlockComponent,
+    BlockComponentSimple,
     BlocksVec,
 };
 
@@ -21,4 +21,4 @@ impl SkyLight {
     }
 }
 
-pub type SkyLightBlockComponent = BlockComponent<BlocksVec<SkyLight>>;
+pub type SkyLightBlockComponent = BlockComponentSimple<BlocksVec<SkyLight>>;
