@@ -60,7 +60,6 @@ impl ChunkGenerationSystem {
 
             engine_config
                 .wasm_threads(false)
-                .wasm_reference_types(false)
                 .wasm_multi_value(false)
                 .wasm_multi_memory(false);
 

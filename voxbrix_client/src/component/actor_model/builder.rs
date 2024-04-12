@@ -395,7 +395,6 @@ pub struct ActorAnimationDescriptor {
 }
 
 #[derive(Deserialize, Debug)]
-#[serde(tag = "type", content = "value")]
 pub enum Operation {
     Scale(Vec3F32),
     Rotate { axis: Vec3F32, angle_degrees: f32 },

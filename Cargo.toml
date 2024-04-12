@@ -23,15 +23,14 @@ rayon = "1.8"
 futures-lite = { version = "2", default-features = false }
 flume = { version = "0.11", default-features = false, features = ["async"] }
 bincode = { git = "https://github.com/bincode-org/bincode.git", rev = "8f65c60" }
-# TODO Change to >=1.0.184 after https://github.com/ron-rs/ron/issues/508
-serde = { version = "=1.0.171", default-features = false, features = ["std", "derive"] } 
+serde = { version = ">=1.0.184", default-features = false, features = ["std", "derive"] } 
 k256 = { version = "0.13.3", features = ["ecdsa"] }
 lz4_flex = "0.11"
 arrayvec = { version = "0.7", default-features = false }
-ron = "0.8"
+ron = "0.9.0-alpha.0"
 nohash-hasher = "0.2"
 ahash = "0.8"
-wasmtime = { version = "12.0", default-features = false, features = ["cranelift", "parallel-compilation"] }
+wasmtime = { version = "19.0", default-features = false, features = ["runtime", "cranelift", "parallel-compilation"] }
 anyhow = "1.0"
 log = "0.4"
 env_logger = "0.11"

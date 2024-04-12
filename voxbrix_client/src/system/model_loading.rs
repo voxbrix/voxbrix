@@ -2,7 +2,7 @@ use anyhow::{
     Context,
     Error,
 };
-use ron::Value;
+use ron::value::RawValue;
 use serde::{
     de::DeserializeOwned,
     Deserialize,
@@ -25,12 +25,12 @@ pub trait LoadableComponent<C> {
 #[derive(Deserialize, Debug)]
 struct ModelDescriptior {
     label: String,
-    components: BTreeMap<String, Value>,
+    components: BTreeMap<String, Box<RawValue>>,
 }
 
 pub struct ModelLoadingSystem {
     model_list: Vec<String>,
-    components: BTreeMap<String, Vec<Option<Value>>>,
+    components: BTreeMap<String, Vec<Option<Box<RawValue>>>>,
 }
 
 impl ModelLoadingSystem {

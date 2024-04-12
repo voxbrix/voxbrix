@@ -4,6 +4,7 @@ use bincode::{
     Decode,
     Encode,
 };
+use std::ptr;
 
 static CODE_CONFIG: Configuration = bincode::config::standard();
 
@@ -81,7 +82,8 @@ where
     unsafe {
         SHARED_BUFFER.clear();
 
-        bincode::encode_into_std_write(value, &mut SHARED_BUFFER, CODE_CONFIG).unwrap();
+        bincode::encode_into_std_write(value, &mut *ptr::addr_of_mut!(SHARED_BUFFER), CODE_CONFIG)
+            .unwrap();
 
         SHARED_BUFFER.as_slice()
     }
@@ -115,11 +117,11 @@ pub fn blocks_in_chunk_layer() -> usize {
 
 pub fn blocks_in_chunk() -> usize {
     unsafe {
-        if BLOCKS_IN_CHUNK_LAYER == 0 {
-            BLOCKS_IN_CHUNK_LAYER = blocks_in_chunk_edge().pow(2);
+        if BLOCKS_IN_CHUNK == 0 {
+            BLOCKS_IN_CHUNK = blocks_in_chunk_edge().pow(3);
         }
 
-        BLOCKS_IN_CHUNK_LAYER
+        BLOCKS_IN_CHUNK
     }
 }
 
@@ -149,7 +151,7 @@ impl Block {
                 block += blocks_in_chunk_edge_i32;
             }
 
-            (chunk_offset, block)
+            (chunk_offset, block.try_into().unwrap())
         });
 
         let actual_chunk = Chunk {

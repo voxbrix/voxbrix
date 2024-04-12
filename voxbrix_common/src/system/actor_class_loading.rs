@@ -4,7 +4,7 @@ use crate::{
     LabelMap,
 };
 use anyhow::Error;
-use ron::Value;
+use ron::value::RawValue;
 use serde::{
     de::DeserializeOwned,
     Deserialize,
@@ -30,12 +30,12 @@ struct ActorClassList {
 #[derive(Deserialize, Debug)]
 struct ActorClassDescriptior {
     label: String,
-    components: BTreeMap<String, Value>,
+    components: BTreeMap<String, Box<RawValue>>,
 }
 
 pub struct ActorClassLoadingSystem {
     actor_class_list: Vec<String>,
-    components: BTreeMap<String, Vec<Option<Value>>>,
+    components: BTreeMap<String, Vec<Option<Box<RawValue>>>>,
 }
 
 impl ActorClassLoadingSystem {

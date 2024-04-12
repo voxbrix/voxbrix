@@ -5,7 +5,7 @@ use crate::{
     LabelMap,
 };
 use anyhow::Error;
-use ron::Value;
+use ron::value::RawValue;
 use serde::{
     de::DeserializeOwned,
     Deserialize,
@@ -27,12 +27,12 @@ struct BlockClassList {
 #[derive(Deserialize, Debug)]
 struct BlockClassDescriptior {
     label: String,
-    components: BTreeMap<String, Value>,
+    components: BTreeMap<String, Box<RawValue>>,
 }
 
 pub struct BlockClassLoadingSystem {
     block_class_list: Vec<String>,
-    components: BTreeMap<String, Vec<Option<Value>>>,
+    components: BTreeMap<String, Vec<Option<Box<RawValue>>>>,
 }
 
 impl BlockClassLoadingSystem {

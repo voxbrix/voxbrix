@@ -2,7 +2,7 @@ use crate::{
     entity::block_model::BlockModel,
     system::model_loading::LoadableComponent,
 };
-use ron::Value;
+use ron::value::RawValue;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -32,5 +32,5 @@ impl<T> LoadableComponent<T> for BlockModelComponent<T> {
 #[derive(Deserialize, Debug)]
 pub struct BlockModelDescriptor {
     label: String,
-    components: BTreeMap<String, Value>,
+    components: BTreeMap<String, Box<RawValue>>,
 }

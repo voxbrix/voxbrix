@@ -742,48 +742,42 @@
                             time: 0,
                             body_part: "left_leg",
                             operations: [
-                                ( type: "Translate", value: (-5.0, -12.0, -24.0), ),
-                                ( type: "Scale", value: (1.0, 1.0, 0.8), ),
-                                ( type: "Translate", value: (5.0, 12.0, 24.0), ),
+                                Translate((-5.0, -12.0, -24.0)),
+                                Scale((1.0, 1.0, 0.8)),
+                                Translate((5.0, 12.0, 24.0)),
                             ],
                         ),
                         (
                             time: 1,
                             body_part: "right_leg",
                             operations: [
-                                ( type: "Translate", value: (-5.0, -20.0, -24.0), ),
-                                (
-                                    type: "Rotate",
-                                    value: (
-                                        axis: (0.0, 1.0, 0.0),
-                                        angle_degrees: 45.0,
-                                    ),
+                                Translate((-5.0, -20.0, -24.0)),
+                                Rotate(
+                                    axis: (0.0, 1.0, 0.0),
+                                    angle_degrees: 45.0,
                                 ),
-                                ( type: "Translate", value: (5.0, 20.0, 24.0), ),
+                                Translate((5.0, 20.0, 24.0)),
                             ],
                         ),
                         (
                             time: 1,
                             body_part: "left_leg",
                             operations: [
-                                ( type: "Translate", value: (-5.0, -12.0, -24.0), ),
-                                (
-                                    type: "Rotate",
-                                    value: (
-                                        axis: (0.0, 1.0, 0.0),
-                                        angle_degrees: -45.0,
-                                    ),
+                                Translate((-5.0, -12.0, -24.0)),
+                                Rotate(
+                                    axis: (0.0, 1.0, 0.0),
+                                    angle_degrees: -45.0,
                                 ),
-                                ( type: "Translate", value: (5.0, 12.0, 24.0), ),
+                                Translate((5.0, 12.0, 24.0)),
                             ],
                         ),
                         (
                             time: 2,
                             body_part: "right_leg",
                             operations: [
-                                ( type: "Translate", value: (-5.0, -20.0, -24.0), ),
-                                ( type: "Scale", value: (1.0, 1.0, 0.8), ),
-                                ( type: "Translate", value: (5.0, 20.0, 24.0), ),
+                                Translate((-5.0, -20.0, -24.0)),
+                                Scale((1.0, 1.0, 0.8)),
+                                Translate((5.0, 20.0, 24.0)),
                             ],
                         ),
                         (
@@ -795,30 +789,24 @@
                             time: 3,
                             body_part: "right_leg",
                             operations: [
-                                ( type: "Translate", value: (-5.0, -20.0, -24.0), ),
-                                (
-                                    type: "Rotate",
-                                    value: (
-                                        axis: (0.0, 1.0, 0.0),
-                                        angle_degrees: -45.0,
-                                    ),
+                                Translate((-5.0, -20.0, -24.0)),
+                                Rotate(
+                                    axis: (0.0, 1.0, 0.0),
+                                    angle_degrees: -45.0,
                                 ),
-                                ( type: "Translate", value: (5.0, 20.0, 24.0), ),
+                                Translate((5.0, 20.0, 24.0)),
                             ],
                         ),
                         (
                             time: 3,
                             body_part: "left_leg",
                             operations: [
-                                ( type: "Translate", value: (-5.0, -12.0, -24.0), ),
-                                (
-                                    type: "Rotate",
-                                    value: (
-                                        axis: (0.0, 1.0, 0.0),
-                                        angle_degrees: 45.0,
-                                    ),
+                                Translate((-5.0, -12.0, -24.0)),
+                                Rotate(
+                                    axis: (0.0, 1.0, 0.0),
+                                    angle_degrees: 45.0,
                                 ),
-                                ( type: "Translate", value: (5.0, 12.0, 24.0), ),
+                                Translate((5.0, 12.0, 24.0)),
                             ],
                         ),
                         (
@@ -830,9 +818,9 @@
                             time: 4,
                             body_part: "left_leg",
                             operations: [
-                                ( type: "Translate", value: (-5.0, -12.0, -24.0), ),
-                                ( type: "Scale", value: (1.0, 1.0, 0.8), ),
-                                ( type: "Translate", value: (5.0, 12.0, 24.0), ),
+                                Translate((-5.0, -12.0, -24.0)),
+                                Scale((1.0, 1.0, 0.8)),
+                                Translate((5.0, 12.0, 24.0)),
                             ],
                         ),
                     ],
