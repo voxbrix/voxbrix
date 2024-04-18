@@ -25,4 +25,4 @@ voxbrix_protocol = { path = "../voxbrix_protocol", features = ["single", "server
 voxbrix_common = { path = "../voxbrix_common", features = ["server"] }
 local_channel = { path = "../local_channel" }
 server_loop_api = { path = "../scripts/server/server_loop_api", default-features = false, features = ["host"] }
-redb = "1.5"
+redb = "2.0"

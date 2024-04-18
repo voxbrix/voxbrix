@@ -4,8 +4,8 @@ use bincode::{
 };
 use flume::Sender;
 use redb::{
-    RedbKey,
-    RedbValue,
+    Key,
+    Value,
 };
 use std::{
     cmp::Ordering,
@@ -94,7 +94,7 @@ pub trait IntoDataSized: TypeName {
     }
 }
 
-impl<T> RedbValue for DataSized<T>
+impl<T> Value for DataSized<T>
 where
     T: IntoDataSized + Debug,
 {
@@ -128,7 +128,7 @@ where
     }
 }
 
-impl<T> RedbKey for DataSized<T>
+impl<T> Key for DataSized<T>
 where
     T: Ord + IntoDataSized + Debug,
 {
@@ -214,7 +214,7 @@ pub trait IntoData {
 
 impl<T> IntoData for T where T: Pack + Encode {}
 
-impl<T> RedbValue for Data<'_, T>
+impl<T> Value for Data<'_, T>
 where
     T: TypeName + Debug,
 {
