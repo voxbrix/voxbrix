@@ -16,10 +16,7 @@ use crate::{
     BLOCK_CLASS_TABLE,
 };
 use ahash::AHashMap;
-use redb::{
-    Database,
-    ReadableTable,
-};
+use redb::Database;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use voxbrix_common::{

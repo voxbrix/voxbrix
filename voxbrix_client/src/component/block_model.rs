@@ -5,6 +5,7 @@ use crate::{
 use ron::value::RawValue;
 use serde::Deserialize;
 use std::collections::BTreeMap;
+use voxbrix_common::AsFromUsize;
 
 pub mod builder;
 pub mod culling;
@@ -19,7 +20,7 @@ impl<T> BlockModelComponent<T> {
     }
 
     pub fn get(&self, block_model: &BlockModel) -> Option<&T> {
-        self.data.get(block_model.into_usize())?.as_ref()
+        self.data.get(block_model.as_usize())?.as_ref()
     }
 }
 

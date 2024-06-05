@@ -1,4 +1,7 @@
-use crate::entity::block_class::BlockClass;
+use crate::{
+    entity::block_class::BlockClass,
+    AsFromUsize,
+};
 
 pub mod collision;
 pub mod opacity;
@@ -15,7 +18,7 @@ impl<T> BlockClassComponent<T> {
     }
 
     pub fn get(&self, block_class: &BlockClass) -> Option<&T> {
-        self.classes.get(block_class.into_usize())?.as_ref()
+        self.classes.get(block_class.as_usize())?.as_ref()
     }
 
     pub fn reload(&mut self, data: Vec<Option<T>>) {

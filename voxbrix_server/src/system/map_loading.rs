@@ -31,4 +31,8 @@ impl Map {
     pub fn iter<'a>(&'a self) -> impl ExactSizeIterator<Item = (&'a str, &'a str)> {
         self.map.iter().map(|(a, s)| (a.as_str(), s.as_str()))
     }
+
+    pub fn get(&self, key: &str) -> Option<&str> {
+        self.map.get(key).map(|s| s.as_str())
+    }
 }

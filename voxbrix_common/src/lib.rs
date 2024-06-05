@@ -23,10 +23,10 @@ use entity::{
 };
 use serde::de::DeserializeOwned;
 use std::{
-    collections::BTreeMap,
+    collections::HashMap,
     fs,
-    iter::FromIterator,
     path::Path,
+    sync::Arc,
 };
 
 /// Moves the block with the data in the brackets into the rayon threadpool and awaits for the data
@@ -62,30 +62,70 @@ where
     Ok(data)
 }
 
+pub trait AsFromUsize {
+    fn as_usize(&self) -> usize;
+    fn from_usize(i: usize) -> Self;
+}
+
+impl AsFromUsize for u32 {
+    fn as_usize(&self) -> usize {
+        (*self).try_into().unwrap()
+    }
+
+    fn from_usize(i: usize) -> Self {
+        i.try_into().unwrap()
+    }
+}
+
+#[derive(Debug)]
+struct LabelMapInner<T> {
+    labels: Vec<Arc<str>>,
+    entities: HashMap<Arc<str>, T>,
+}
+
 #[derive(Clone, Debug)]
-pub struct LabelMap<T>(BTreeMap<String, T>);
+pub struct LabelMap<T>(Arc<LabelMapInner<T>>);
+
+impl<T> LabelMap<T>
+where
+    T: AsFromUsize,
+{
+    pub fn get_label(&self, entity: &T) -> Option<&str> {
+        self.0.labels.get(entity.as_usize()).map(|l| l.as_ref())
+    }
+}
 
 impl<T> LabelMap<T>
 where
     T: Copy,
 {
     pub fn get(&self, label: &str) -> Option<T> {
-        self.0.get(label).copied()
+        self.0.entities.get(label).copied()
     }
 }
 
-impl<T> From<BTreeMap<String, T>> for LabelMap<T> {
-    fn from(value: BTreeMap<String, T>) -> Self {
-        Self(value)
-    }
-}
+impl<T> LabelMap<T>
+where
+    T: AsFromUsize,
+{
+    pub fn from_list(list: &[String]) -> Self {
+        let labels: Vec<Arc<str>> = list.iter().map(|s| s.as_str().into()).collect();
+        let entities = labels
+            .iter()
+            .cloned()
+            .enumerate()
+            .map(|(i, l)| (l, T::from_usize(i)))
+            .collect();
 
-impl<A> FromIterator<(String, A)> for LabelMap<A> {
-    fn from_iter<T>(iter: T) -> Self
-    where
-        T: IntoIterator<Item = (String, A)>,
-    {
-        LabelMap(BTreeMap::from_iter(iter))
+        Self(Arc::new(LabelMapInner { labels, entities }))
+    }
+
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = (T, &str)> {
+        self.0
+            .labels
+            .iter()
+            .enumerate()
+            .map(|(i, l)| (T::from_usize(i), l.as_ref()))
     }
 }
 

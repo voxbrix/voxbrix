@@ -4,6 +4,7 @@ use crate::entity::{
     chunk::{
         Chunk,
         Dimension,
+        DimensionKind,
     },
 };
 
@@ -24,15 +25,33 @@ impl From<Block> for server_loop_api::Block {
     }
 }
 
+impl From<server_loop_api::DimensionKind> for DimensionKind {
+    fn from(value: server_loop_api::DimensionKind) -> Self {
+        Self(value.0)
+    }
+}
+
+impl From<DimensionKind> for server_loop_api::DimensionKind {
+    fn from(value: DimensionKind) -> Self {
+        Self(value.0)
+    }
+}
+
 impl From<server_loop_api::Dimension> for Dimension {
     fn from(value: server_loop_api::Dimension) -> Self {
-        Self { index: value.index }
+        Self {
+            kind: value.kind.into(),
+            phase: value.phase,
+        }
     }
 }
 
 impl From<Dimension> for server_loop_api::Dimension {
     fn from(value: Dimension) -> Self {
-        Self { index: value.index }
+        Self {
+            kind: value.kind.into(),
+            phase: value.phase,
+        }
     }
 }
 

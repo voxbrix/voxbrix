@@ -1,5 +1,6 @@
 use crate::{
     read_ron_file,
+    AsFromUsize,
     LabelMap,
 };
 use anyhow::{
@@ -30,11 +31,10 @@ impl List {
             .with_context(|| format!("unable to load list \"{:?}\"", path))
     }
 
-    pub fn into_label_map<E>(self, f: impl Fn(usize) -> E) -> LabelMap<E> {
-        self.list
-            .into_iter()
-            .enumerate()
-            .map(|(i, label)| (label, f(i)))
-            .collect()
+    pub fn into_label_map<T>(&self) -> LabelMap<T>
+    where
+        T: AsFromUsize,
+    {
+        LabelMap::from_list(&self.list)
     }
 }

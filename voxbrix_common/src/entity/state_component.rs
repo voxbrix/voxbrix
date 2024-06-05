@@ -1,3 +1,4 @@
+use crate::AsFromUsize;
 use bincode::{
     Decode,
     Encode,
@@ -15,12 +16,12 @@ impl std::hash::Hash for StateComponent {
 
 impl nohash_hasher::IsEnabled for StateComponent {}
 
-impl StateComponent {
-    pub fn from_usize(value: usize) -> Self {
-        Self(value.try_into().expect("value is out of bounds"))
+impl AsFromUsize for StateComponent {
+    fn as_usize(&self) -> usize {
+        self.0.try_into().unwrap()
     }
 
-    pub fn into_usize(self) -> usize {
-        self.0.try_into().expect("value is out of bounds")
+    fn from_usize(i: usize) -> Self {
+        Self(i.try_into().unwrap())
     }
 }

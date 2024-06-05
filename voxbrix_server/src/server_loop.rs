@@ -2,6 +2,7 @@ use crate::{
     assets::{
         ACTION_LIST,
         ACTION_SCRIPT_MAP,
+        DIMENSION_KIND_LIST,
         SERVER_LOOP_SCRIPT_DIR,
         SERVER_LOOP_SCRIPT_LIST,
     },
@@ -80,11 +81,8 @@ use voxbrix_common::{
     },
     compute,
     entity::{
-        action::Action,
-        actor_model::ActorModel,
         chunk::Chunk,
         snapshot::Snapshot,
-        state_component::StateComponent,
     },
     messages::{
         client::ClientAccept,
@@ -159,7 +157,7 @@ impl ServerLoop {
         let state_components_label_map = List::load(STATE_COMPONENTS_PATH)
             .await
             .expect("state component list not found")
-            .into_label_map(StateComponent::from_usize);
+            .into_label_map();
 
         let class_ac =
             ClassActorComponent::new(state_components_label_map.get("actor_class").unwrap());
@@ -187,7 +185,7 @@ impl ServerLoop {
         let actor_model_label_map = List::load(ACTOR_MODEL_LIST_PATH)
             .await
             .expect("loading actor model label map")
-            .into_label_map(ActorModel::from_usize);
+            .into_label_map();
 
         actor_class_loading_system
             .load_component("model", &mut model_acc, |desc: String| {
@@ -209,7 +207,7 @@ impl ServerLoop {
         let action_label_map = List::load(ACTION_LIST)
             .await
             .expect("loading actor model label map")
-            .into_label_map(|i| Action(i as u64));
+            .into_label_map();
 
         let mut engine_config = wasmtime::Config::new();
 
@@ -238,10 +236,16 @@ impl ServerLoop {
         )
         .expect("failed to map actions to scripts");
 
+        let dimension_kind_label_map = List::load(DIMENSION_KIND_LIST)
+            .await
+            .expect("loading dimension kind label map")
+            .into_label_map();
+
         let shared_event_tx_clone = shared_event_tx.clone();
         let chunk_generation_system = ChunkGenerationSystem::new(
             database.clone(),
             block_class_label_map.clone(),
+            dimension_kind_label_map,
             move |chunk, block_classes, packer| {
                 let data = ChunkData {
                     chunk,
@@ -253,7 +257,8 @@ impl ServerLoop {
 
                 let _ = shared_event_tx_clone.send(SharedEvent::ChunkLoaded { data, data_encoded });
             },
-        );
+        )
+        .await;
 
         let mut send_status_interval = time::interval(PROCESS_INTERVAL);
         send_status_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);

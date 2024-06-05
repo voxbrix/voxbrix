@@ -10,6 +10,7 @@ use voxbrix_common::{
     },
     messages::StatePacker,
     system::actor_class_loading::LoadActorClassComponent,
+    AsFromUsize,
 };
 
 pub mod model;
@@ -71,7 +72,7 @@ where
     pub fn get(&self, actor: &Actor, actor_class: &ActorClass) -> Option<&T> {
         self.overrides
             .get(actor)
-            .or_else(|| self.classes.get(actor_class.into_usize())?.as_ref())
+            .or_else(|| self.classes.get(actor_class.as_usize())?.as_ref())
     }
 
     pub fn remove_actor(&mut self, actor: &Actor, snapshot: Snapshot) -> Option<T> {

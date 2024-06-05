@@ -1,3 +1,4 @@
+use crate::AsFromUsize;
 use bincode::{
     Decode,
     Encode,
@@ -6,26 +7,45 @@ use serde::{
     Deserialize,
     Serialize,
 };
-use std::{
-    cmp::Ordering,
-    mem,
-};
+use std::cmp::Ordering;
+
+#[derive(
+    Encode, Decode, Serialize, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug,
+)]
+pub struct DimensionKind(pub u32);
+
+impl AsFromUsize for DimensionKind {
+    fn as_usize(&self) -> usize {
+        self.0.try_into().unwrap()
+    }
+
+    fn from_usize(i: usize) -> Self {
+        Self(i.try_into().unwrap())
+    }
+}
 
 #[derive(
     Encode, Decode, Serialize, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug,
 )]
 pub struct Dimension {
-    pub index: u32,
+    pub kind: DimensionKind,
+    pub phase: u64,
 }
 
 impl Dimension {
-    pub fn to_be_bytes(self) -> [u8; mem::size_of::<Self>()] {
-        self.index.to_be_bytes()
+    pub fn to_be_bytes(self) -> [u8; 12] {
+        let mut output = [0u8; 12];
+
+        output[.. 4].copy_from_slice(&self.kind.0.to_be_bytes());
+        output[4 ..].copy_from_slice(&self.phase.to_be_bytes());
+
+        output
     }
 
-    pub fn from_be_bytes(bytes: [u8; mem::size_of::<Self>()]) -> Self {
+    pub fn from_be_bytes(bytes: [u8; 12]) -> Self {
         Self {
-            index: u32::from_be_bytes(bytes),
+            kind: DimensionKind(u32::from_be_bytes(bytes[.. 4].try_into().unwrap())),
+            phase: u64::from_be_bytes(bytes[4 ..].try_into().unwrap()),
         }
     }
 }
@@ -287,7 +307,10 @@ mod tests {
 
     #[test]
     fn check_chunk_radius_expanding_iter() {
-        let dimension = Dimension { index: 0 };
+        let dimension = Dimension {
+            kind: DimensionKind(0),
+            phase: 0,
+        };
 
         let position = [0, 0, 0];
 

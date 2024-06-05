@@ -45,39 +45,39 @@ fn vs_main(
     polygon: PolygonInput,
 ) -> VertexOutput {
     var out: VertexOutput;
-    var position: vec3<f32>;
-    var light_level: u32;
 
-    switch vertex_desc.index {
-        case 0u: {
-              position = polygon.vertex_0_position;
-	      out.texture_position = polygon.vertex_0_texture_position;
-              light_level = polygon.vertex_0_light_level;
-        }
-        case 1u: {
-              position = polygon.vertex_1_position;
-	      out.texture_position = polygon.vertex_1_texture_position;
-              light_level = polygon.vertex_1_light_level;
-        }
-        case 2u: {
-              position = polygon.vertex_2_position;
-	      out.texture_position = polygon.vertex_2_texture_position;
-              light_level = polygon.vertex_2_light_level;
-        }
-        case 3u: {
-              position = polygon.vertex_3_position;
-	      out.texture_position = polygon.vertex_3_texture_position;
-              light_level = polygon.vertex_3_light_level;
-        }
-	default: {}
-    }
+    var position_array: array<vec3<f32>, 4> = array(
+        polygon.vertex_0_position,
+        polygon.vertex_1_position,
+        polygon.vertex_2_position,
+        polygon.vertex_3_position,
+    );
 
-    position = vec3<f32>(polygon.chunk - camera.chunk) * BLOCKS_IN_CHUNK_EDGE_F32 + position;
+    var texture_position_array: array<vec2<f32>, 4> = array(
+        polygon.vertex_0_texture_position,
+        polygon.vertex_1_texture_position,
+        polygon.vertex_2_texture_position,
+        polygon.vertex_3_texture_position,
+    );
+
+    var light_level_array: array<u32, 4> = array(
+        polygon.vertex_0_light_level,
+        polygon.vertex_1_light_level,
+        polygon.vertex_2_light_level,
+        polygon.vertex_3_light_level,
+    );
+
+    let position = vec3<f32>(polygon.chunk - camera.chunk)
+        * BLOCKS_IN_CHUNK_EDGE_F32
+	+ position_array[vertex_desc.index];
+
+    out.texture_position = texture_position_array[vertex_desc.index];
+
     out.clip_position = camera.view_projection * vec4<f32>(position, 1.0);
     
     out.texture_index = polygon.texture_index;
 
-    let sky_light_level: u32 = light_level >> 0u & 0xFFu;
+    let sky_light_level: u32 = light_level_array[vertex_desc.index] >> 0u & 0xFFu;
     out.sky_light_level = f32(sky_light_level) / MAX_LIGHT_LEVEL_F32;
     out.sky_light_level = pow(out.sky_light_level, 3.0);
 

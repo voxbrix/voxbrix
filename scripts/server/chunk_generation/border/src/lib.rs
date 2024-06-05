@@ -26,7 +26,7 @@ macro_rules! block_class {
 }
 
 #[no_mangle]
-pub extern "C" fn generate_chunk(seed: u64, chunk_x: i32, chunk_y: i32, chunk_z: i32) {
+pub extern "C" fn generate_chunk(seed: u64, phase: u64, chunk_x: i32, chunk_y: i32, chunk_z: i32) {
     let blocks_in_chunk_edge = unsafe {
         static mut BICE: Option<u32> = None;
         if BICE.is_none() {
@@ -44,6 +44,7 @@ pub extern "C" fn generate_chunk(seed: u64, chunk_x: i32, chunk_y: i32, chunk_z:
     };
 
     let mut hasher = Hasher64::new(seed);
+    hasher.write(&phase.to_le_bytes());
     hasher.write(&(chunk_z / 8).to_le_bytes());
     let seed = hasher.finish();
 

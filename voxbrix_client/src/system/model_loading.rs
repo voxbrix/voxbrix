@@ -15,6 +15,7 @@ use tokio::task;
 use voxbrix_common::{
     read_ron_file,
     system::list_loading::List,
+    AsFromUsize,
     LabelMap,
 };
 
@@ -117,11 +118,10 @@ impl ModelLoadingSystem {
         Ok(())
     }
 
-    pub fn into_label_map<E>(self, f: impl Fn(usize) -> E) -> LabelMap<E> {
-        self.model_list
-            .into_iter()
-            .enumerate()
-            .map(|(c, l)| (l, f(c)))
-            .collect()
+    pub fn into_label_map<E>(self) -> LabelMap<E>
+    where
+        E: AsFromUsize,
+    {
+        LabelMap::from_list(&self.model_list)
     }
 }

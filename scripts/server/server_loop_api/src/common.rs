@@ -12,8 +12,12 @@ use bincode::{
 };
 
 #[derive(Encode, Decode, Clone, Copy, Debug)]
+pub struct DimensionKind(pub u32);
+
+#[derive(Encode, Decode, Clone, Copy, Debug)]
 pub struct Dimension {
-    pub index: u32,
+    pub kind: DimensionKind,
+    pub phase: u64,
 }
 
 #[derive(Encode, Decode, Clone, Copy, Debug)]

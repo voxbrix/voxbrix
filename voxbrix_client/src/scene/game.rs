@@ -40,13 +40,6 @@ use crate::{
             },
         },
     },
-    entity::{
-        actor_model::{
-            ActorAnimation,
-            ActorBodyPart,
-        },
-        block_model::BlockModel,
-    },
     scene::{
         menu::MenuSceneParameters,
         SceneSwitch,
@@ -133,13 +126,11 @@ use voxbrix_common::{
     compute,
     entity::{
         actor::Actor,
-        actor_model::ActorModel,
         chunk::{
             Chunk,
             Dimension,
         },
         snapshot::Snapshot,
-        state_component::StateComponent,
     },
     math::Vec3F32,
     messages::{
@@ -320,8 +311,7 @@ impl GameScene {
         let mut collision_bcc = CollisionBlockClassComponent::new();
         let mut opacity_bcc = OpacityBlockClassComponent::new();
 
-        let block_model_label_map =
-            block_model_loading_system.into_label_map(BlockModel::from_usize);
+        let block_model_label_map = block_model_loading_system.into_label_map();
 
         block_class_loading_system.load_component(
             "model",
@@ -361,9 +351,7 @@ impl GameScene {
             TextureLoadingSystem::load_data(ACTOR_TEXTURE_LIST_PATH, ACTOR_TEXTURE_PATH_PREFIX)
                 .await?;
 
-        let state_components_label_map = List::load(STATE_COMPONENTS_PATH)
-            .await?
-            .into_label_map(StateComponent::from_usize);
+        let state_components_label_map = List::load(STATE_COMPONENTS_PATH).await?.into_label_map();
 
         let class_ac = ClassActorComponent::new(
             state_components_label_map.get("actor_class").unwrap(),
@@ -406,10 +394,10 @@ impl GameScene {
 
         let actor_body_part_label_map = List::load(ACTOR_MODEL_BODY_PART_LIST_PATH)
             .await?
-            .into_label_map(ActorBodyPart::from_usize);
+            .into_label_map();
         let actor_animation_label_map = List::load(ACTOR_MODEL_ANIMATION_LIST_PATH)
             .await?
-            .into_label_map(ActorAnimation::from_usize);
+            .into_label_map();
 
         let ctx = ActorModelBuilderContext {
             actor_texture_label_map: &actor_texture_loading_system.label_map,
@@ -423,8 +411,7 @@ impl GameScene {
             |desc: ActorModelBuilderDescriptor| desc.describe(&ctx),
         )?;
 
-        let actor_model_label_map =
-            actor_model_loading_system.into_label_map(ActorModel::from_usize);
+        let actor_model_label_map = actor_model_loading_system.into_label_map();
 
         actor_class_loading_system.load_component(
             "model",
@@ -443,7 +430,10 @@ impl GameScene {
             Position {
                 chunk: Chunk {
                     position: [0, 0, 0],
-                    dimension: Dimension { index: 0 },
+                    dimension: Dimension {
+                        kind: voxbrix_common::entity::chunk::DimensionKind(0),
+                        phase: 0,
+                    },
                 },
                 offset: Vec3F32::new(0.0, 0.0, 4.0),
             },

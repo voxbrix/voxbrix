@@ -1,5 +1,5 @@
 [package]
-name = "chunk_generation"
+name = "border"
 version = "0.1.0"
 edition = "2021"
 

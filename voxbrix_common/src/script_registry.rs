@@ -234,9 +234,7 @@ impl<T> ScriptRegistry<T> {
 
         let engine_clone = engine.clone();
 
-        let label_map = list
-            .clone()
-            .into_label_map(|i| Script(i.try_into().unwrap()));
+        let label_map = list.clone().into_label_map();
 
         let modules = task::spawn_blocking(move || {
             list.list

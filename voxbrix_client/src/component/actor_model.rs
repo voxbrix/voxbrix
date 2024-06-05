@@ -2,7 +2,10 @@ use crate::system::model_loading::LoadableComponent;
 use ron::value::RawValue;
 use serde::Deserialize;
 use std::collections::BTreeMap;
-use voxbrix_common::entity::actor_model::ActorModel;
+use voxbrix_common::{
+    entity::actor_model::ActorModel,
+    AsFromUsize,
+};
 
 pub mod builder;
 
@@ -16,7 +19,7 @@ impl<T> ActorModelComponent<T> {
     }
 
     pub fn get(&self, model: &ActorModel) -> Option<&T> {
-        self.data.get(model.into_usize())?.as_ref()
+        self.data.get(model.as_usize())?.as_ref()
     }
 }
 

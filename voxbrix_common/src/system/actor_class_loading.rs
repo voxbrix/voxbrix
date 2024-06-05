@@ -115,11 +115,7 @@ impl ActorClassLoadingSystem {
         Ok(())
     }
 
-    pub fn into_label_map(self) -> LabelMap<ActorClass> {
-        self.actor_class_list
-            .into_iter()
-            .enumerate()
-            .map(|(c, l)| (l, ActorClass::from_usize(c)))
-            .collect()
+    pub fn into_label_map(&self) -> LabelMap<ActorClass> {
+        LabelMap::from_list(&self.actor_class_list)
     }
 }

@@ -49,12 +49,7 @@ impl TextureLoadingSystem {
                 })
                 .collect::<Result<Vec<_>, _>>()?;
 
-            let label_map = texture_list
-                .list
-                .into_iter()
-                .enumerate()
-                .map(|(i, t)| (t, i as u32))
-                .collect();
+            let label_map = LabelMap::from_list(&texture_list.list);
 
             Ok(Self {
                 size: texture_list.size,

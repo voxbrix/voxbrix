@@ -114,10 +114,6 @@ impl BlockClassLoadingSystem {
     }
 
     pub fn into_label_map(self) -> LabelMap<BlockClass> {
-        self.block_class_list
-            .into_iter()
-            .enumerate()
-            .map(|(c, l)| (l, BlockClass::from_usize(c)))
-            .collect()
+        LabelMap::from_list(&self.block_class_list)
     }
 }
