@@ -9,3 +9,5 @@ pub const ACTOR_TEXTURE_LIST_PATH: &str = "assets/client/textures/actors.ron";
 pub const BLOCK_TEXTURE_LIST_PATH: &str = "assets/client/textures/blocks.ron";
 pub const ACTOR_TEXTURE_PATH_PREFIX: &str = "assets/client/textures/actors";
 pub const BLOCK_TEXTURE_PATH_PREFIX: &str = "assets/client/textures/blocks";
+
+pub const DEFAULT_FONT_PATH: &str = "assets/client/fonts/LanaPixel.ttf";

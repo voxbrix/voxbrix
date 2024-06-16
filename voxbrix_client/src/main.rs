@@ -1,5 +1,13 @@
-use crate::system::render::output_thread::OutputThread;
+use crate::{
+    assets::DEFAULT_FONT_PATH,
+    system::render::output_thread::OutputThread,
+};
 use backtrace::Backtrace;
+use egui::{
+    FontData,
+    FontDefinitions,
+    FontFamily,
+};
 use log::error;
 use scene::SceneManager;
 use std::{
@@ -183,6 +191,22 @@ fn main() {
                         context.set_pixels_per_point(2.0);
 
                         let viewport_id = context.viewport_id();
+
+                        let font = voxbrix_common::read_file_async(DEFAULT_FONT_PATH).await
+                            .expect("unable to read default font");
+
+                        let mut fonts = FontDefinitions::default();
+
+                        let mut font = FontData::from_owned(font);
+
+                        font.tweak.y_offset = 2.0;
+
+                        fonts.font_data.insert("default".to_owned(), font);
+
+                        fonts.families.get_mut(&FontFamily::Proportional).unwrap()
+                            .insert(0, "default".to_owned());
+
+                        context.set_fonts(fonts);
 
                         let interface_state = egui_winit::State::new(
                             context,

@@ -28,6 +28,7 @@ use std::{
     path::Path,
     sync::Arc,
 };
+use tokio::task;
 
 /// Moves the block with the data in the brackets into the rayon threadpool and awaits for the data
 /// to be returned.
@@ -60,6 +61,16 @@ where
     let data = ron::from_str::<T>(&string).with_context(|| format!("parsing {:?}", &path))?;
 
     Ok(data)
+}
+
+pub async fn read_file_async(
+    path: impl AsRef<Path> + std::fmt::Debug + Send + 'static,
+) -> Result<Vec<u8>, anyhow::Error> {
+    task::spawn_blocking(move || {
+        fs::read(path.as_ref()).with_context(|| format!("reading {:?}", &path))
+    })
+    .await
+    .expect("unable to join blocking task")
 }
 
 pub trait AsFromUsize {

@@ -27,7 +27,7 @@ voxbrix_common = { path = "../voxbrix_common" }
 local_channel = { path = "../local_channel" }
 winit = "0.29"
 wgpu = { version = "0.19", default-features = false, features = ["metal", "wgsl"] }
-egui = "0.26"
+egui = { version = "0.26", default-features = false }
 egui-winit = { version = "0.26", default-features = false, features = ["clipboard", "wayland"] }
 egui-wgpu = "0.26"
 bytemuck = { version = "1", features = ["derive"] }
