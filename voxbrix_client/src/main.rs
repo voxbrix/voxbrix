@@ -7,6 +7,8 @@ use egui::{
     FontData,
     FontDefinitions,
     FontFamily,
+    FontId,
+    TextStyle,
 };
 use log::error;
 use scene::SceneManager;
@@ -188,7 +190,8 @@ fn main() {
 
                         let context = egui::Context::default();
 
-                        context.set_pixels_per_point(2.0);
+                        // TODO defined dynamically in settings
+                        context.set_pixels_per_point(1.5);
 
                         let viewport_id = context.viewport_id();
 
@@ -199,7 +202,7 @@ fn main() {
 
                         let mut font = FontData::from_owned(font);
 
-                        font.tweak.y_offset = 2.0;
+                        font.tweak.y_offset = 4.0;
 
                         fonts.font_data.insert("default".to_owned(), font);
 
@@ -207,6 +210,18 @@ fn main() {
                             .insert(0, "default".to_owned());
 
                         context.set_fonts(fonts);
+
+                        let mut style = (*context.style()).clone();
+
+                        style.text_styles = [
+                          (TextStyle::Heading, FontId::new(22.0, FontFamily::Proportional)),
+                          (TextStyle::Body, FontId::new(22.0, FontFamily::Proportional)),
+                          (TextStyle::Monospace, FontId::new(22.0, FontFamily::Proportional)),
+                          (TextStyle::Button, FontId::new(22.0, FontFamily::Proportional)),
+                          (TextStyle::Small, FontId::new(22.0, FontFamily::Proportional)),
+                        ].into();
+
+                        context.set_style(style);
 
                         let interface_state = egui_winit::State::new(
                             context,
