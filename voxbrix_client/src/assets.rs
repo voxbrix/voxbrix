@@ -11,3 +11,4 @@ pub const ACTOR_TEXTURE_PATH_PREFIX: &str = "assets/client/textures/actors";
 pub const BLOCK_TEXTURE_PATH_PREFIX: &str = "assets/client/textures/blocks";
 
 pub const DEFAULT_FONT_PATH: &str = "assets/client/fonts/LanaPixel.ttf";
+pub const SHADERS_PATH: &str = "assets/client/shaders/shaders.wgsl";

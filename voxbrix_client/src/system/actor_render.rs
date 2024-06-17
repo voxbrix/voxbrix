@@ -1,4 +1,5 @@
 use crate::{
+    assets::SHADERS_PATH,
     component::{
         actor::{
             animation_state::{
@@ -62,11 +63,18 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
             actor_texture_bind_group,
         } = self;
 
+        let shaders = voxbrix_common::read_file_async(SHADERS_PATH)
+            .await
+            .expect("unable to read shaders file");
+
+        let shaders =
+            std::str::from_utf8(&shaders).expect("unable to convert binary file to UTF-8 string");
+
         let shaders = output_thread
             .device()
             .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("Shaders"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("../shaders.wgsl").into()),
+                label: Some("Actor Shaders"),
+                source: wgpu::ShaderSource::Wgsl(shaders.into()),
             });
 
         let render_pipeline_layout =
