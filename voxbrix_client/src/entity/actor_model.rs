@@ -30,9 +30,9 @@ impl MinMax for ActorAnimation {
 impl nohash_hasher::IsEnabled for ActorAnimation {}
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
-pub struct ActorBodyPart(pub u64);
+pub struct ActorBone(pub u64);
 
-impl AsFromUsize for ActorBodyPart {
+impl AsFromUsize for ActorBone {
     fn as_usize(&self) -> usize {
         self.0.try_into().unwrap()
     }
@@ -42,10 +42,10 @@ impl AsFromUsize for ActorBodyPart {
     }
 }
 
-impl std::hash::Hash for ActorBodyPart {
+impl std::hash::Hash for ActorBone {
     fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
         hasher.write_u64(self.0)
     }
 }
 
-impl nohash_hasher::IsEnabled for ActorBodyPart {}
+impl nohash_hasher::IsEnabled for ActorBone {}

@@ -14,10 +14,10 @@ use crate::{
         actor_class::model::ModelActorClassComponent,
         actor_model::builder::{
             BuilderActorModelComponent,
-            BASE_BODY_PART,
+            BASE_BONE,
         },
     },
-    entity::actor_model::ActorBodyPart,
+    entity::actor_model::ActorBone,
     system::render::{
         gpu_vec::GpuVec,
         output_thread::OutputThread,
@@ -154,7 +154,7 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
         ActorRenderSystem {
             render_pipeline,
             actor_texture_bind_group,
-            body_part_buffer: IntMap::default(),
+            bone_transformations: IntMap::default(),
             polygons: Vec::new(),
             vertex_buffer,
             polygon_buffer,
@@ -162,15 +162,10 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
     }
 }
 
-struct BodyPartInfo {
-    transform: Mat4F32,
-    parent: ActorBodyPart,
-}
-
 pub struct ActorRenderSystem {
     render_pipeline: wgpu::RenderPipeline,
     actor_texture_bind_group: wgpu::BindGroup,
-    body_part_buffer: IntMap<ActorBodyPart, BodyPartInfo>,
+    bone_transformations: IntMap<ActorBone, Mat4F32>,
     polygons: Vec<Polygon>,
     vertex_buffer: wgpu::Buffer,
     polygon_buffer: GpuVec,
@@ -199,7 +194,7 @@ impl ActorRenderSystem {
                 Some((actor, position, model))
             })
         {
-            self.body_part_buffer.clear();
+            self.bone_transformations.clear();
 
             let model_builder = match builder_amc.get(model) {
                 Some(s) => s,
@@ -253,24 +248,17 @@ impl ActorRenderSystem {
                         as f32
                         / walking_animation_duration_ms as f32;
 
-                    for (body_part, new_transform) in
-                        model_builder.list_body_parts().filter_map(|bp| {
-                            let transform =
-                                model_builder.animate_body_part(bp, &walking_animation, state)?;
+                    for (bone, new_transform) in model_builder.list_bones().filter_map(|bp| {
+                        let transform =
+                            model_builder.animate_bone(bp, &walking_animation, state)?;
 
-                            Some((bp, transform))
-                        })
-                    {
-                        if let Some(prev_state) = self.body_part_buffer.get_mut(&body_part) {
-                            prev_state.transform = new_transform.to_matrix() * prev_state.transform;
+                        Some((bp, transform))
+                    }) {
+                        if let Some(prev_state) = self.bone_transformations.get_mut(&bone) {
+                            *prev_state = new_transform.to_matrix() * *prev_state;
                         } else {
-                            self.body_part_buffer.insert(
-                                *body_part,
-                                BodyPartInfo {
-                                    transform: new_transform.to_matrix(),
-                                    parent: model_builder.get_body_part_parent(body_part).unwrap(),
-                                },
-                            );
+                            self.bone_transformations
+                                .insert(*bone, new_transform.to_matrix());
                         }
                     }
                 }
@@ -278,25 +266,24 @@ impl ActorRenderSystem {
                 animation_state_ac.remove(&actor, &walking_animation);
             }
 
-            for body_part in model_builder.list_body_parts() {
-                let &BodyPartInfo {
-                    mut transform,
-                    mut parent,
-                } = self
-                    .body_part_buffer
-                    .get(&body_part)
-                    .unwrap_or(&BodyPartInfo {
-                        transform: Mat4F32::IDENTITY,
-                        parent: BASE_BODY_PART,
-                    });
+            for bone in model_builder.list_bones() {
+                let mut transform = Mat4F32::IDENTITY;
+                let mut curr_bone = *bone;
 
-                while let Some(parent_info) = self.body_part_buffer.get(&parent) {
-                    transform = parent_info.transform * transform;
-                    parent = parent_info.parent;
+                // Walt up through all parents and apply their transformations
+                while let Some(param) = model_builder.get_bone_parameters(&curr_bone) {
+                    if let Some(animation_transform) = self.bone_transformations.get(&curr_bone) {
+                        transform = *animation_transform * transform;
+                    }
+
+                    // Go to next parent
+                    transform = param.transformation * transform;
+                    curr_bone = param.parent;
                 }
+
                 transform = base_transform * transform;
 
-                model_builder.build_body_part(body_part, &position, &transform, &mut self.polygons);
+                model_builder.build_bone(bone, &position, &transform, &mut self.polygons);
             }
         }
     }

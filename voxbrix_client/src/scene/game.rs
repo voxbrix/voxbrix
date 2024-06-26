@@ -1,7 +1,7 @@
 use crate::{
     assets::{
         ACTOR_MODEL_ANIMATION_LIST_PATH,
-        ACTOR_MODEL_BODY_PART_LIST_PATH,
+        ACTOR_MODEL_BONE_LIST_PATH,
         ACTOR_MODEL_PATH_PREFIX,
         ACTOR_TEXTURE_LIST_PATH,
         ACTOR_TEXTURE_PATH_PREFIX,
@@ -392,7 +392,7 @@ impl GameScene {
             ModelLoadingSystem::load_data(ACTOR_MODEL_LIST_PATH, ACTOR_MODEL_PATH_PREFIX).await?;
         let mut builder_amc = BuilderActorModelComponent::new();
 
-        let actor_body_part_label_map = List::load(ACTOR_MODEL_BODY_PART_LIST_PATH)
+        let actor_bone_label_map = List::load(ACTOR_MODEL_BONE_LIST_PATH)
             .await?
             .into_label_map();
         let actor_animation_label_map = List::load(ACTOR_MODEL_ANIMATION_LIST_PATH)
@@ -401,7 +401,7 @@ impl GameScene {
 
         let ctx = ActorModelBuilderContext {
             actor_texture_label_map: &actor_texture_loading_system.label_map,
-            actor_body_part_label_map: &actor_body_part_label_map,
+            actor_bone_label_map: &actor_bone_label_map,
             actor_animation_label_map: &actor_animation_label_map,
         };
 

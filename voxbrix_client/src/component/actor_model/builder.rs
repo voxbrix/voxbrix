@@ -2,7 +2,7 @@ use crate::{
     component::actor_model::ActorModelComponent,
     entity::actor_model::{
         ActorAnimation,
-        ActorBodyPart,
+        ActorBone,
     },
     system::render::primitives::{
         Polygon,
@@ -26,39 +26,49 @@ use voxbrix_common::{
     LabelMap,
 };
 
-pub const BASE_BODY_PART: ActorBodyPart = ActorBodyPart(0);
+pub const BASE_BONE: ActorBone = ActorBone(0);
 const VERTEX_TEXTURE_POSITION_OFFSET: f32 = 0.01;
 
 pub type BuilderActorModelComponent = ActorModelComponent<ActorModelBuilder>;
 
 pub struct ActorModelBuilder {
-    center: Vec3F32,
     default_scale: f32,
     texture: u32,
-    body_parts: IntMap<ActorBodyPart, ActorBodyPartBuilder>,
+    skeleton: IntMap<ActorBone, BoneParameters>,
+    model_parts: IntMap<ActorBone, ActorModelPartBuilder>,
     animations: IntMap<ActorAnimation, ActorAnimationBuilder>,
 }
 
 impl ActorModelBuilder {
-    pub fn list_body_parts(&self) -> impl ExactSizeIterator<Item = &ActorBodyPart> {
-        self.body_parts.keys()
+    pub fn list_bones(&self) -> impl ExactSizeIterator<Item = &ActorBone> {
+        self.skeleton.keys()
     }
 
-    pub fn build_body_part(
+    pub fn build_bone(
         &self,
-        body_part: &ActorBodyPart,
+        bone: &ActorBone,
         position: &Position,
         transform: &Mat4F32,
         polygons: &mut Vec<Polygon>,
     ) {
-        let body_part_builder = match self.body_parts.get(body_part) {
+        let bone_builder = match self.skeleton.get(bone) {
             Some(s) => s,
             None => {
                 return;
             },
         };
 
-        polygons.extend(body_part_builder.polygons.iter().map(|vertices| {
+        // TODO external model part replacements & additions
+        let model_part_builder = match self.model_parts.get(bone) {
+            Some(s) => s,
+            None => {
+                return;
+            },
+        };
+
+        let transform = *transform * model_part_builder.transformation;
+
+        polygons.extend(model_part_builder.polygons.iter().map(|vertices| {
             Polygon {
                 chunk: position.chunk.position.into(),
                 texture_index: self.texture,
@@ -67,8 +77,7 @@ impl ActorModelBuilder {
                     .map(|vertex| {
                         Vertex {
                             position: (position.offset
-                                + transform.transform_point3(vertex.position - self.center)
-                                    * self.default_scale)
+                                + transform.transform_point3(vertex.position) * self.default_scale)
                                 .into(),
                             texture_position: vertex.texture_position,
                             light_level: [15, 0, 0, 0],
@@ -82,28 +91,28 @@ impl ActorModelBuilder {
     }
 
     /// `time` must be in `(0 ..= 1)`
-    pub fn animate_body_part(
+    pub fn animate_bone(
         &self,
-        body_part: &ActorBodyPart,
+        bone: &ActorBone,
         animation: &ActorAnimation,
         time: f32,
     ) -> Option<Transformation> {
         let animation_builder = self.animations.get(animation)?;
 
-        let body_part = *body_part;
+        let bone = *bone;
 
         let time = time * animation_builder.duration;
         let time_key: Time = time.round_down() as Time;
 
         let prev_frame = animation_builder
             .transformations
-            .range((body_part, Time::MIN) ..= (body_part, time_key))
+            .range((bone, Time::MIN) ..= (bone, time_key))
             .rev()
             .next();
 
         let next_frame = animation_builder
             .transformations
-            .range((body_part, time_key + 1) .. (body_part, Time::MAX))
+            .range((bone, time_key + 1) .. (bone, Time::MAX))
             .next();
 
         let (((_, prev_time_key), prev_frame), ((_, next_time_key), next_frame)) =
@@ -129,33 +138,29 @@ impl ActorModelBuilder {
         self.animations.get(&animation).is_some()
     }
 
-    pub fn get_body_part_parent(&self, body_part: &ActorBodyPart) -> Option<ActorBodyPart> {
-        self.body_parts.get(body_part).map(|bp| bp.parent)
+    pub fn get_bone_parameters(&self, bone: &ActorBone) -> Option<&BoneParameters> {
+        self.skeleton.get(bone)
     }
 }
 
 pub struct ActorModelBuilderContext<'a> {
     pub actor_texture_label_map: &'a LabelMap<u32>,
-    pub actor_body_part_label_map: &'a LabelMap<ActorBodyPart>,
+    pub actor_bone_label_map: &'a LabelMap<ActorBone>,
     pub actor_animation_label_map: &'a LabelMap<ActorAnimation>,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct ActorModelBuilderDescriptor {
-    grid_size: [usize; 3],
     grid_in_block: usize,
     texture_label: String,
     texture_grid_size: [usize; 2],
-    body_parts: BTreeMap<String, ActorBodyPartDescriptor>,
+    skeleton: BTreeMap<String, ActorBoneDescriptor>,
+    model_parts: BTreeMap<String, ActorModelPartDescriptor>,
     animations: BTreeMap<String, ActorAnimationDescriptor>,
 }
 
 impl ActorModelBuilderDescriptor {
     pub fn describe(&self, ctx: &ActorModelBuilderContext) -> Result<ActorModelBuilder, Error> {
-        let center: Vec3F32 = self.grid_size.map(|s| s as f32 / 2.0).into();
-        let center_translate = Mat4F32::from_translation(center);
-        let center_translate_inv = Mat4F32::from_translation(-center);
-
         let default_scale = 1.0 / (self.grid_in_block as f32);
 
         let texture = ctx
@@ -165,29 +170,56 @@ impl ActorModelBuilderDescriptor {
                 Error::msg(format!("texture \"{}\" is undefined", self.texture_label))
             })?;
 
-        let body_parts = self
-            .body_parts
+        let skeleton = self
+            .skeleton
             .iter()
             .map(|(label, desc)| {
-                let body_part = ctx
-                    .actor_body_part_label_map
+                let bone = ctx
+                    .actor_bone_label_map
                     .get(&label)
-                    .ok_or_else(|| Error::msg(format!("body part \"{}\" is undefined", label)))?;
+                    .ok_or_else(|| Error::msg(format!("bone \"{}\" is undefined", label)))?;
 
-                let parent = ctx
-                    .actor_body_part_label_map
-                    .get(&desc.parent_label)
-                    .ok_or_else(|| {
-                        Error::msg(format!(
-                            "parent \"{}\" of body part \"{}\" is undefined",
-                            desc.parent_label, label,
-                        ))
-                    })?;
+                let parent = ctx.actor_bone_label_map.get(&desc.parent).ok_or_else(|| {
+                    Error::msg(format!(
+                        "parent \"{}\" of bone \"{}\" is undefined",
+                        desc.parent, label,
+                    ))
+                })?;
 
-                if parent != BASE_BODY_PART && self.body_parts.get(&desc.parent_label).is_none() {
+                if parent != BASE_BONE && self.skeleton.get(&desc.parent).is_none() {
                     return Err(Error::msg(format!(
-                        "parent \"{}\" of body part \"{}\" is not part of the model",
-                        desc.parent_label, label,
+                        "parent \"{}\" of bone \"{}\" is not part of the model",
+                        desc.parent, label,
+                    )));
+                }
+
+                let mut transformation = Mat4F32::IDENTITY;
+
+                for operation in desc.transformations.iter() {
+                    transformation = operation.to_matrix() * transformation;
+                }
+
+                let builder = BoneParameters {
+                    parent,
+                    transformation,
+                };
+
+                Ok((bone, builder))
+            })
+            .collect::<Result<_, Error>>()?;
+
+        let model_parts = self
+            .model_parts
+            .iter()
+            .map(|(label, desc)| {
+                let bone = ctx.actor_bone_label_map.get(&label).ok_or_else(|| {
+                    Error::msg(format!("bone \"{}\" for model part is undefined", label))
+                })?;
+
+                if bone != BASE_BONE && self.skeleton.get(label.as_str()).is_none() {
+                    return Err(Error::msg(format!(
+                        "bone \"{}\" is not part of the model, cannot attach model part to it",
+                        label,
                     )));
                 }
 
@@ -216,7 +248,7 @@ impl ActorModelBuilderDescriptor {
                         let side_texture_center = texture_coords_sum.map(|sum| sum / 4.0);
 
                         side.map_ref(|vertex| {
-                            let ActorBodyPartDescriptorVertex {
+                            let ActorModelPartDescriptorVertex {
                                 position,
                                 texture_position,
                             } = vertex;
@@ -234,7 +266,7 @@ impl ActorModelBuilderDescriptor {
                                 texture_position + correction_amplitude.copysign(correction_sign)
                             };
 
-                            ActorBodyPartVertex {
+                            ActorModelPartVertex {
                                 position: position.map(|pos| pos as f32).into(),
                                 texture_position: [
                                     get_texture_position(0),
@@ -245,117 +277,114 @@ impl ActorModelBuilderDescriptor {
                     })
                     .collect();
 
-                let builder = ActorBodyPartBuilder { parent, polygons };
+                let mut transformation = Mat4F32::IDENTITY;
 
-                Ok((body_part, builder))
-            })
-            .collect::<Result<_, Error>>()?;
-
-        let animations = self
-            .animations
-            .iter()
-            .map(|(label, desc)| {
-                let animation = ctx
-                    .actor_animation_label_map
-                    .get(&label)
-                    .ok_or_else(|| Error::msg(format!("animation \"{}\" is undefined", label)))?;
-
-                let mut transformations = BTreeMap::new();
-
-                for transform_desc in desc.transformations.iter() {
-                    let TransformationDescriptor {
-                        time,
-                        body_part,
-                        operations,
-                    } = transform_desc;
-
-                    let body_part =
-                        ctx.actor_body_part_label_map
-                            .get(&body_part)
-                            .ok_or_else(|| {
-                                Error::msg(format!(
-                                    "body part \"{}\" in animation \"{}\" is undefined",
-                                    body_part, label
-                                ))
-                            })?;
-
-                    let transform_mat = match transformations.get_mut(&(body_part, time)) {
-                        Some(t) => t,
-                        None => {
-                            transformations.insert((body_part, time), Mat4F32::IDENTITY);
-                            transformations.get_mut(&(body_part, time)).unwrap()
-                        },
-                    };
-
-                    for operation in operations {
-                        let operation = match operation {
-                            Operation::Scale(oper) => Mat4F32::from_scale(*oper),
-                            Operation::Rotate {
-                                axis,
-                                angle_degrees,
-                            } => {
-                                let oper =
-                                    QuatF32::from_axis_angle(*axis, angle_degrees.to_radians());
-                                Mat4F32::from_quat(oper)
-                            },
-                            Operation::Translate(oper) => Mat4F32::from_translation(*oper),
-                        };
-
-                        *transform_mat = operation * *transform_mat;
-                    }
+                for operation in desc.transformations.iter() {
+                    transformation = operation.to_matrix() * transformation;
                 }
 
-                let builder = ActorAnimationBuilder {
-                    duration: desc.duration as f32,
-                    transformations: transformations
-                        .iter()
-                        .map(|(key, transform)| {
-                            let transform = center_translate_inv * *transform * center_translate;
-
-                            (key, transform)
-                        })
-                        .map(|((model, anim), transform)| {
-                            ((*model, **anim), Transformation::from_matrix(&transform))
-                        })
-                        .collect(),
+                let builder = ActorModelPartBuilder {
+                    polygons,
+                    transformation,
                 };
 
-                Ok((animation, builder))
+                Ok((bone, builder))
             })
             .collect::<Result<_, Error>>()?;
 
+        let animations =
+            self.animations
+                .iter()
+                .map(|(label, desc)| {
+                    let animation = ctx.actor_animation_label_map.get(&label).ok_or_else(|| {
+                        Error::msg(format!("animation \"{}\" is undefined", label))
+                    })?;
+
+                    let mut transformations = BTreeMap::new();
+
+                    for transform_desc in desc.transformations.iter() {
+                        let TransformationDescriptor {
+                            time,
+                            bone,
+                            operations,
+                        } = transform_desc;
+
+                        let bone = ctx.actor_bone_label_map.get(&bone).ok_or_else(|| {
+                            Error::msg(format!(
+                                "bone \"{}\" in animation \"{}\" is undefined",
+                                bone, label
+                            ))
+                        })?;
+
+                        let transform_mat = match transformations.get_mut(&(bone, time)) {
+                            Some(t) => t,
+                            None => {
+                                transformations.insert((bone, time), Mat4F32::IDENTITY);
+                                transformations.get_mut(&(bone, time)).unwrap()
+                            },
+                        };
+
+                        for operation in operations {
+                            *transform_mat = operation.to_matrix() * *transform_mat;
+                        }
+                    }
+
+                    let builder = ActorAnimationBuilder {
+                        duration: desc.duration as f32,
+                        transformations: transformations
+                            .iter()
+                            .map(|((model, anim), transform)| {
+                                ((*model, **anim), Transformation::from_matrix(&transform))
+                            })
+                            .collect(),
+                    };
+
+                    Ok((animation, builder))
+                })
+                .collect::<Result<_, Error>>()?;
+
         Ok(ActorModelBuilder {
-            center,
             default_scale,
             texture,
-            body_parts,
+            skeleton,
+            model_parts,
             animations,
         })
     }
 }
 
 #[derive(Deserialize, Debug)]
-struct ActorBodyPartVertex {
+struct ActorModelPartVertex {
     position: Vec3F32,
     texture_position: [f32; 2],
 }
 
-struct ActorBodyPartBuilder {
-    parent: ActorBodyPart,
-    polygons: Vec<[ActorBodyPartVertex; 4]>,
+pub struct BoneParameters {
+    pub parent: ActorBone,
+    pub transformation: Mat4F32,
+}
+
+struct ActorModelPartBuilder {
+    polygons: Vec<[ActorModelPartVertex; 4]>,
+    transformation: Mat4F32,
 }
 
 #[derive(Deserialize, Debug)]
-struct ActorBodyPartDescriptorVertex {
-    position: [usize; 3],
+struct ActorModelPartDescriptorVertex {
+    position: [isize; 3],
     texture_position: [usize; 2],
 }
 
 #[derive(Deserialize, Debug)]
-pub struct ActorBodyPartDescriptor {
-    label: String,
-    parent_label: String,
-    sides: Vec<[ActorBodyPartDescriptorVertex; 4]>,
+pub struct ActorBoneDescriptor {
+    parent: String,
+    transformations: Vec<Operation>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ActorModelPartDescriptor {
+    sides: Vec<[ActorModelPartDescriptorVertex; 4]>,
+    transformations: Vec<Operation>,
 }
 
 type Time = u32;
@@ -384,7 +413,7 @@ impl Transformation {
 
 struct ActorAnimationBuilder {
     duration: f32,
-    transformations: BTreeMap<(ActorBodyPart, Time), Transformation>,
+    transformations: BTreeMap<(ActorBone, Time), Transformation>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -401,9 +430,25 @@ pub enum Operation {
     Translate(Vec3F32),
 }
 
+impl Operation {
+    fn to_matrix(&self) -> Mat4F32 {
+        match self {
+            Operation::Scale(oper) => Mat4F32::from_scale(*oper),
+            Operation::Rotate {
+                axis,
+                angle_degrees,
+            } => {
+                let oper = QuatF32::from_axis_angle(*axis, angle_degrees.to_radians());
+                Mat4F32::from_quat(oper)
+            },
+            Operation::Translate(oper) => Mat4F32::from_translation(*oper),
+        }
+    }
+}
+
 #[derive(Deserialize, Debug)]
 pub struct TransformationDescriptor {
     time: Time,
-    body_part: String,
+    bone: String,
     operations: Vec<Operation>,
 }
