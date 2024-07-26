@@ -191,20 +191,21 @@ impl Process<'_> {
             sd.snapshot,
         );
 
-        for (player, player_actor, client) in sd.actor_pc
+        for (player, player_actor, client) in sd
+            .actor_pc
             .iter()
             .filter_map(|(player, actor)| Some((player, actor, sd.client_pc.get(player)?)))
         {
             // Disconnect player if his last snapshot is too low
-            /*if snapshot.0 - client.last_server_snapshot.0 > MAX_SNAPSHOT_DIFF
+            // or if the client loop has been dropped
+            if sd.snapshot.0 - client.last_server_snapshot.0 > MAX_SNAPSHOT_DIFF
                 // TODO after several seconds disconnect Snapshot(0) ones anyway:
-                && client.last_server_snapshot != Snapshot(0) {
-                let _ = local
-                    .event_tx
-                    .send(ServerEvent::RemovePlayer { player: *player });
-
+                && client.last_server_snapshot != Snapshot(0)
+                || client.tx.is_disconnected()
+            {
+                sd.remove_queue.remove_player(player);
                 continue;
-            }*/
+            }
 
             let position_chunk = match sd.position_ac.get(&player_actor) {
                 Some(v) => v.chunk,

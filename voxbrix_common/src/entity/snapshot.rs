@@ -3,7 +3,7 @@ use bincode::{
     Encode,
 };
 
-pub const MAX_SNAPSHOT_DIFF: u64 = 300; // approx. 15 secs
+pub const MAX_SNAPSHOT_DIFF: u64 = 200; // approx. 10 secs
 
 /// Currently, Snapshot(0) means totally uninitialized client/server.
 /// All loops should start with Snapshot(1).

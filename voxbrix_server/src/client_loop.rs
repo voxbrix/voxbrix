@@ -83,15 +83,9 @@ enum LoopEvent {
 pub enum Error {
     UnexpectedMessage,
     InitializationTimeout,
-    Io,
     FailedRegistration,
     FailedLogin,
-    ReceiverClosed,
-    SenderClosed,
-    ReliableSendTimeout,
-    ReceiveTimeout,
-    ReliableSendError,
-    UnreliableSendError,
+    SendError,
     ReceiveError,
 }
 
@@ -146,7 +140,7 @@ impl ClientLoop {
         // if there's none - register,
         // if the password is not correct - send error
         let request = time::timeout(CLIENT_CONNECTION_TIMEOUT, async {
-            rx.recv().await.error(Error::ReceiverClosed)
+            rx.recv().await.error(Error::ReceiveError)
         })
         .await
         .map_err(|_| Error::InitializationTimeout)?
@@ -179,7 +173,7 @@ impl ClientLoop {
             reliable_tx
                 .send_reliable(BASE_CHANNEL, &buffer)
                 .await
-                .error(Error::Io)
+                .error(Error::SendError)
         })
         .await
         .map_err(|_| Error::InitializationTimeout)??;
@@ -190,7 +184,7 @@ impl ClientLoop {
                     username,
                     key_signature,
                 } = time::timeout(CLIENT_CONNECTION_TIMEOUT, async {
-                    rx.recv().await.error(Error::ReceiverClosed)
+                    rx.recv().await.error(Error::ReceiveError)
                 })
                 .await
                 .map_err(|_| Error::InitializationTimeout)?
@@ -254,7 +248,7 @@ impl ClientLoop {
                             reliable_tx
                                 .send_reliable(BASE_CHANNEL, &buffer)
                                 .await
-                                .error(Error::Io)
+                                .error(Error::SendError)
                         })
                         .await;
 
@@ -267,7 +261,7 @@ impl ClientLoop {
                     username,
                     public_key,
                 } = time::timeout(CLIENT_CONNECTION_TIMEOUT, async {
-                    rx.recv().await.error(Error::ReceiverClosed)
+                    rx.recv().await.error(Error::ReceiveError)
                 })
                 .await
                 .map_err(|_| Error::InitializationTimeout)?
@@ -343,7 +337,7 @@ impl ClientLoop {
                             reliable_tx
                                 .send_reliable(BASE_CHANNEL, &buffer)
                                 .await
-                                .error(Error::Io)
+                                .error(Error::SendError)
                         })
                         .await
                         .map_err(|_| Error::InitializationTimeout)?;
@@ -360,6 +354,7 @@ impl ClientLoop {
 
         let actor = match server_rx.recv_async().await {
             Ok(ClientEvent::AssignActor { actor }) => actor,
+            Err(_) => return Ok(()),
             _ => panic!("client_loop: incorrect answer to AddPlayer"),
         };
 
@@ -367,13 +362,13 @@ impl ClientLoop {
             local_channel::mpsc::channel::<(Channel, SendData)>();
         let unrel_send_task = stream::once_future(async move {
             while let Some((channel, data)) = unreliable_loop_rx.recv().await {
-                if let Err(err) = unreliable_tx
+                unreliable_tx
                     .send_unreliable(channel, data.as_slice())
                     .await
-                {
-                    warn!("client_loop: send_unreliable error {:?}", err);
-                    return Err(Error::UnreliableSendError);
-                }
+                    .map_err(|err| {
+                        warn!("client_loop: send_unreliable error {:?}", err);
+                        Error::SendError
+                    })?;
             }
 
             Ok(LoopEvent::Exit)
@@ -382,35 +377,56 @@ impl ClientLoop {
         let (reliable_loop_tx, mut reliable_loop_rx) =
             local_channel::mpsc::channel::<(Channel, SendData)>();
         let rel_send_task = stream::once_future(async move {
-            while let Some((channel, data)) = reliable_loop_rx
-                .recv()
-                .or(async {
-                    let _ = future::zip(reliable_tx.wait_complete(), future::pending::<()>()).await;
-                    unreachable!();
-                })
-                .await
-            {
-                match time::timeout(
-                    CLIENT_CONNECTION_TIMEOUT,
-                    reliable_tx.send_reliable(channel, data.as_slice()),
-                )
-                .await
-                .map_err(|_| ())
-                {
-                    Err(_) => {
-                        warn!("client_loop: send_reliable timeout {:?}", player);
-                        return Err(Error::ReliableSendTimeout);
-                    },
-                    Ok(Err(err)) => {
-                        warn!("client_loop: send_reliable error {:?}", err);
-                        return Err(Error::ReliableSendError);
-                    },
-                    Ok(Ok(())) => {},
-                }
-            }
+            loop {
+                let msg = (async { Ok(reliable_loop_rx.recv().await) })
+                    .or(async {
+                        reliable_tx.wait_complete().await.map_err(|err| {
+                            warn!("client_loop: wait_complete error {:?}", err);
+                            Error::SendError
+                        })?;
+                        future::pending::<()>().await;
+                        unreachable!();
+                    })
+                    .await?;
 
-            Ok(LoopEvent::Exit)
+                let Some((channel, data)) = msg else {
+                    // Server loop closed the connection
+                    return Ok(LoopEvent::Exit);
+                };
+
+                reliable_tx
+                    .send_reliable(channel, data.as_slice())
+                    .await
+                    .map_err(|err| {
+                        warn!("client_loop: send_reliable error {:?}", err);
+                        Error::SendError
+                    })?;
+            }
         });
+
+        let recv_stream = stream::unfold(rx, |mut rx| {
+            async move {
+                let value = rx
+                    .recv()
+                    .await
+                    .map(|(channel, data)| LoopEvent::PeerMessage { channel, data })
+                    .map_err(|err| {
+                        warn!("client_loop: connection interrupted: {:?}", err);
+                        Error::ReceiveError
+                    });
+
+                Some((value, rx))
+            }
+        });
+
+        let mut events = Box::pin(
+            server_rx
+                .stream()
+                .map(|e| Ok(LoopEvent::ServerLoop(e)))
+                .rr_ff(recv_stream)
+                .rr_ff(rel_send_task)
+                .rr_ff(unrel_send_task),
+        );
 
         let init_data_response = match request {
             InitRequest::Login => {
@@ -428,56 +444,12 @@ impl ClientLoop {
         };
 
         // Finalize successful connection
-        if let Err(err) = reliable_loop_tx.send((BASE_CHANNEL, SendData::Owned(init_data_response)))
+        if reliable_loop_tx
+            .send((BASE_CHANNEL, SendData::Owned(init_data_response)))
+            .is_err()
         {
-            warn!(
-                "client_loop: unable to send initialization response: {:?}",
-                err
-            );
-            let _ = event_tx.send(ServerEvent::RemovePlayer { player });
-            return Err(Error::SenderClosed);
+            return Ok(());
         }
-
-        let recv_stream = stream::unfold(&mut rx, |rx| {
-            async {
-                let nested_result = time::timeout(CLIENT_CONNECTION_TIMEOUT, async {
-                    rx.recv()
-                        .await
-                        .map(|(channel, data)| LoopEvent::PeerMessage { channel, data })
-                        .map_err(|err| {
-                            warn!("client_loop: connection interrupted: {:?}", err);
-                            Error::ReceiveError
-                        })
-                })
-                .await
-                .map_err(|_| {
-                    warn!("client_loop: receive timeout");
-                    Error::ReceiveTimeout
-                });
-
-                let next = match nested_result {
-                    Ok(Ok(next)) => Ok(next),
-                    Ok(Err(err)) => Err(err),
-                    Err(err) => Err(err),
-                };
-
-                if next.is_err() {
-                    // we need to inform the server loop
-                    let _ = event_tx.send(ServerEvent::RemovePlayer { player });
-                }
-
-                Some((next, rx))
-            }
-        });
-
-        let mut events = Box::pin(
-            server_rx
-                .stream()
-                .map(|e| Ok(LoopEvent::ServerLoop(e)))
-                .rr_ff(recv_stream)
-                .rr_ff(rel_send_task)
-                .rr_ff(unrel_send_task),
-        );
 
         while let Some(event) = events.next().await {
             match event? {
@@ -494,13 +466,16 @@ impl ClientLoop {
                 },
                 LoopEvent::PeerMessage { channel, data } => {
                     // Server loop is down
-                    event_tx
+                    if event_tx
                         .send(ServerEvent::PlayerEvent {
                             player,
                             channel,
                             data,
                         })
-                        .error(Error::SenderClosed)?;
+                        .is_err()
+                    {
+                        break;
+                    }
                 },
                 LoopEvent::Exit => break,
             }

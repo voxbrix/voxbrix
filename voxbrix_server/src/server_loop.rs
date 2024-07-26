@@ -128,9 +128,6 @@ pub enum ServerEvent {
         channel: Channel,
         data: Packet,
     },
-    RemovePlayer {
-        player: Player,
-    },
     SharedEvent(SharedEvent),
     ServerConnectionClosed,
 }
@@ -337,6 +334,7 @@ impl ServerLoop {
                     }.run());
                 },
                 ServerEvent::AddPlayer { player, client_tx } => {
+                    shared_data.remove_player(&player);
                     shared_data.add_player(player, client_tx);
                 },
                 ServerEvent::PlayerEvent {
@@ -352,9 +350,6 @@ impl ServerLoop {
                         }
                         .run();
                     }
-                },
-                ServerEvent::RemovePlayer { player } => {
-                    shared_data.remove_player(&player);
                 },
                 ServerEvent::SharedEvent(event) => {
                     match event {
