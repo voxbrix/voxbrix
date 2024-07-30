@@ -14,13 +14,17 @@
 //!     let (tx, mut rx) = local_channel::oneshot::oneshot();
 //!
 //!     assert!(tx.send("HelloWorld!").is_ok());
-//!     assert_eq!((&mut rx).await, Some("HelloWorld!"));
+//!     assert_eq!((&mut rx).await, Ok("HelloWorld!"));
 //!     assert!(tx.send("HelloWorldAgain!").is_ok());
-//!     assert_eq!(rx.await, Some("HelloWorldAgain!"));
+//!     assert_eq!(rx.await, Ok("HelloWorldAgain!"));
 //! });
 //! ```
 
-use crate::SendError;
+use crate::{
+    ReceiveError,
+    SendError,
+    TryReceiveError,
+};
 use std::{
     cell::RefCell,
     future::Future,
@@ -81,19 +85,32 @@ pub struct Receiver<T> {
     shared: Rc<RefCell<Shared<T>>>,
 }
 
+impl<T> Receiver<T> {
+    /// Tries to get an already sent value.
+    pub fn try_recv(&mut self) -> Result<T, TryReceiveError> {
+        let mut shared = self.shared.borrow_mut();
+
+        if !shared.is_open {
+            return Err(TryReceiveError::Closed);
+        }
+
+        shared.value.take().ok_or(TryReceiveError::Empty)
+    }
+}
+
 impl<T> Future for Receiver<T> {
-    type Output = Option<T>;
+    type Output = Result<T, ReceiveError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut shared = self.shared.borrow_mut();
         match shared.value.take() {
-            Some(value) => Poll::Ready(Some(value)),
+            Some(value) => Poll::Ready(Ok(value)),
             None => {
                 if shared.is_open {
                     shared.waker = Some(cx.waker().clone());
                     Poll::Pending
                 } else {
-                    Poll::Ready(None)
+                    Poll::Ready(Err(ReceiveError::Closed))
                 }
             },
         }

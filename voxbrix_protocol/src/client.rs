@@ -12,7 +12,9 @@
 //! };
 //!
 //! async fn example() {
-//!     let client = Client::bind(([127, 0, 0, 1], 12345)).expect("socket bound");
+//!     let client = Client::bind(([127, 0, 0, 1], 12345))
+//!         .await
+//!         .expect("socket bound");
 //!
 //!     let Connection {
 //!         mut receiver,
@@ -80,6 +82,7 @@ use flume::{
     unbounded as new_channel,
     Receiver as ChannelRx,
     Sender as ChannelTx,
+    TryRecvError as TryReceiveError,
 };
 use integer_encoding::{
     VarIntReader,
@@ -91,10 +94,13 @@ use k256::{
     PublicKey,
 };
 #[cfg(feature = "single")]
-use local_channel::mpsc::{
-    channel as new_channel,
-    Receiver as ChannelRx,
-    Sender as ChannelTx,
+use local_channel::{
+    mpsc::{
+        channel as new_channel,
+        Receiver as ChannelRx,
+        Sender as ChannelTx,
+    },
+    TryReceiveError,
 };
 use log::debug;
 use rand_core::OsRng;
@@ -793,7 +799,6 @@ impl ReliableSender {
             // Handling previous ACKs first
             let ack = if must_wait {
                 must_wait = false;
-                // TODO timeout retry limit?
                 let result = match time::timeout(RELIABLE_RESEND_AFTER, {
                     #[cfg(feature = "single")]
                     {
@@ -810,22 +815,16 @@ impl ReliableSender {
                     Err(_) => continue,
                 };
 
-                Some(result.ok_or(Error::ReceiverWasDropped)?)
+                result.map_err(|_| Error::ReceiverWasDropped)?
             } else {
-                // TODO: detect if the ack channel is broken
-                #[cfg(feature = "single")]
-                {
-                    self.ack_receiver.try_recv()
+                match self.ack_receiver.try_recv() {
+                    Ok(a) => a,
+                    #[cfg(feature = "single")]
+                    Err(TryReceiveError::Closed) => return Err(Error::ReceiverWasDropped),
+                    #[cfg(feature = "multi")]
+                    Err(TryReceiveError::Disconnected) => return Err(Error::ReceiverWasDropped),
+                    Err(TryReceiveError::Empty) => break,
                 }
-                #[cfg(feature = "multi")]
-                {
-                    self.ack_receiver.try_recv().ok()
-                }
-            };
-
-            let ack = match ack {
-                Some(a) => a,
-                None => break,
             };
 
             let index = ack.wrapping_sub(self.queue_front_sequence);

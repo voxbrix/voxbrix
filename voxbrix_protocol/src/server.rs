@@ -87,6 +87,7 @@ use flume::{
     unbounded as new_channel,
     Receiver as ChannelRx,
     Sender as ChannelTx,
+    TryRecvError as TryReceiveError,
 };
 use futures_lite::future::FutureExt;
 use integer_encoding::{
@@ -99,10 +100,13 @@ use k256::{
     PublicKey,
 };
 #[cfg(feature = "single")]
-use local_channel::mpsc::{
-    channel as new_channel,
-    Receiver as ChannelRx,
-    Sender as ChannelTx,
+use local_channel::{
+    mpsc::{
+        channel as new_channel,
+        Receiver as ChannelRx,
+        Sender as ChannelTx,
+    },
+    TryReceiveError,
 };
 use log::debug;
 use rand_core::OsRng;
@@ -312,16 +316,15 @@ impl Feedback {
             let (seq, msg) = {
                 #[cfg(feature = "single")]
                 {
-                    self.rx.recv().await.ok_or(Error::ServerWasDropped)?
+                    self.rx.recv()
                 }
                 #[cfg(feature = "multi")]
                 {
-                    self.rx
-                        .recv_async()
-                        .await
-                        .map_err(|_| Error::ServerWasDropped)?
+                    self.rx.recv_async()
                 }
-            };
+            }
+            .await
+            .map_err(|_| Error::ServerWasDropped)?;
 
             if seq == expect_seq {
                 break msg;
@@ -544,7 +547,12 @@ impl StreamReliableSender {
     async fn handle_acks_resend(&mut self, mut must_wait: bool) -> Result<(), Error> {
         loop {
             // Handling previous ACKs first
-            let result = if must_wait {
+            let InBuffer {
+                packet_type: _,
+                mut buffer,
+                tag_start,
+                stop,
+            } = if must_wait {
                 must_wait = false;
 
                 // TODO timeout retry limit?
@@ -564,26 +572,16 @@ impl StreamReliableSender {
                     Err(_) => continue,
                 };
 
-                Some(result.ok_or(Error::ServerWasDropped)?)
+                result.map_err(|_| Error::ServerWasDropped)?
             } else {
-                #[cfg(feature = "single")]
-                {
-                    self.ack_receiver.try_recv()
+                match self.ack_receiver.try_recv() {
+                    Ok(a) => a,
+                    #[cfg(feature = "single")]
+                    Err(TryReceiveError::Closed) => return Err(Error::ServerWasDropped),
+                    #[cfg(feature = "multi")]
+                    Err(TryReceiveError::Disconnected) => return Err(Error::ServerWasDropped),
+                    Err(TryReceiveError::Empty) => break,
                 }
-                #[cfg(feature = "multi")]
-                {
-                    self.ack_receiver.try_recv().ok()
-                }
-            };
-
-            let InBuffer {
-                packet_type: _,
-                mut buffer,
-                tag_start,
-                stop,
-            } = match result {
-                Some(p) => p,
-                None => break,
             };
 
             let decrypted_start = match crate::decode_in_buffer(
@@ -788,29 +786,23 @@ impl StreamReceiver {
                 }
             }
 
-            #[cfg(feature = "single")]
             let InBuffer {
                 packet_type,
                 buffer: mut in_buffer,
                 tag_start,
                 stop,
-            } = self
-                .transport_receiver
-                .recv()
-                .await
-                .ok_or(Error::ServerWasDropped)?;
-
-            #[cfg(feature = "multi")]
-            let InBuffer {
-                packet_type,
-                buffer: mut in_buffer,
-                tag_start,
-                stop,
-            } = self
-                .transport_receiver
-                .recv_async()
-                .await
-                .map_err(|_| Error::ServerWasDropped)?;
+            } = {
+                #[cfg(feature = "single")]
+                {
+                    self.transport_receiver.recv()
+                }
+                #[cfg(feature = "multi")]
+                {
+                    self.transport_receiver.recv_async()
+                }
+            }
+            .await
+            .map_err(|_| Error::ServerWasDropped)?;
 
             let start = match crate::decode_in_buffer(
                 &mut in_buffer.as_mut()[.. stop],
@@ -1272,9 +1264,6 @@ impl Server {
                             buffer,
                             result_tx,
                         } => {
-                            #[cfg(feature = "multi")]
-                            let mut result_tx = result_tx;
-
                             let client = match self.clients.get(peer) {
                                 Some(c) => c,
                                 None => {

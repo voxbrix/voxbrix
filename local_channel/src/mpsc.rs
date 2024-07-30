@@ -13,12 +13,16 @@
 //!
 //!     assert!(tx.send("1").is_ok());
 //!     assert!(tx.send("2").is_ok());
-//!     assert_eq!(rx.recv().await, Some("1"));
-//!     assert_eq!(rx.recv().await, Some("2"));
+//!     assert_eq!(rx.recv().await, Ok("1"));
+//!     assert_eq!(rx.recv().await, Ok("2"));
 //! });
 //! ```
 
-use crate::SendError;
+use crate::{
+    ReceiveError,
+    SendError,
+    TryReceiveError,
+};
 use futures_core::Stream;
 use std::{
     cell::RefCell,
@@ -96,17 +100,20 @@ pub struct Receiver<T> {
 
 impl<T> Receiver<T> {
     /// Fetches a value from the queue or returns a `Future` that allows to wait for the
-    /// next value. The output is either `Some` with the value or `None` if there are no pending
-    /// values in the queue and all associated `Sender`s are already dropped.
+    /// next value.
     pub fn recv(&mut self) -> Receive<'_, T> {
         Receive { receiver: self }
     }
 
     /// Tries to get an already sent value from the queue.
-    /// Returns either `Some` with the value or `None` if there are no pending
-    /// values in the queue.
-    pub fn try_recv(&mut self) -> Option<T> {
-        self.shared.borrow_mut().queue.pop_front()
+    pub fn try_recv(&mut self) -> Result<T, TryReceiveError> {
+        let mut shared = self.shared.borrow_mut();
+
+        if !shared.has_receiver {
+            return Err(TryReceiveError::Closed);
+        }
+
+        shared.queue.pop_front().ok_or(TryReceiveError::Empty)
     }
 
     /// Checks whether there are any of the associated `Sender`s.
@@ -141,18 +148,18 @@ pub struct Receive<'a, T> {
 }
 
 impl<'a, T> Future for Receive<'a, T> {
-    type Output = Option<T>;
+    type Output = Result<T, ReceiveError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut shared = self.receiver.shared.borrow_mut();
         match shared.queue.pop_front() {
-            Some(value) => Poll::Ready(Some(value)),
+            Some(value) => Poll::Ready(Ok(value)),
             None => {
                 if Rc::strong_count(&self.receiver.shared) > 1 {
                     shared.waker = Some(cx.waker().clone());
                     Poll::Pending
                 } else {
-                    Poll::Ready(None)
+                    Poll::Ready(Err(ReceiveError::Closed))
                 }
             },
         }
@@ -194,18 +201,18 @@ mod tests {
         future::block_on(async {
             let (tx, mut rx) = channel();
             tx.send("test").unwrap();
-            assert_eq!(future::poll_once(rx.recv()).await, Some(Some("test")),);
+            assert_eq!(future::poll_once(rx.recv()).await, Some(Ok("test")),);
 
             let tx2 = tx.clone();
             tx2.send("test2").unwrap();
-            assert_eq!(future::poll_once(rx.recv()).await, Some(Some("test2")),);
+            assert_eq!(future::poll_once(rx.recv()).await, Some(Ok("test2")),);
             assert_eq!(future::poll_once(rx.recv()).await, None);
             drop(tx2);
 
             tx.send("test").unwrap();
             tx.send("test2").unwrap();
-            assert_eq!(future::poll_once(rx.recv()).await, Some(Some("test")),);
-            assert_eq!(future::poll_once(rx.recv()).await, Some(Some("test2")),);
+            assert_eq!(future::poll_once(rx.recv()).await, Some(Ok("test")),);
+            assert_eq!(future::poll_once(rx.recv()).await, Some(Ok("test2")),);
             drop(tx);
             assert_eq!(rx.next().await, None);
 
@@ -223,7 +230,7 @@ mod tests {
             tx.send("test").unwrap();
             assert_eq!(rx.recv().await.unwrap(), "test");
             drop(tx);
-            assert!(rx.recv().await.is_none());
+            assert!(rx.recv().await.is_err());
         });
     }
 }

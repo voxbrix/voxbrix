@@ -68,10 +68,6 @@ trait AsSlice<T> {
     fn slice(&self) -> &[T];
 }
 
-trait AsMutSlice<T> {
-    fn mut_slice(&mut self) -> &mut [T];
-}
-
 impl<T> AsSlice<T> for Cursor<&[T]> {
     fn slice(&self) -> &[T] {
         &self.get_ref()[.. self.position() as usize]
@@ -81,13 +77,6 @@ impl<T> AsSlice<T> for Cursor<&[T]> {
 impl<T> AsSlice<T> for Cursor<&mut [T]> {
     fn slice(&self) -> &[T] {
         &self.get_ref()[.. self.position() as usize]
-    }
-}
-
-impl<T> AsMutSlice<T> for Cursor<&mut [T]> {
-    fn mut_slice(&mut self) -> &mut [T] {
-        let len = self.position() as usize;
-        &mut self.get_mut()[.. len]
     }
 }
 

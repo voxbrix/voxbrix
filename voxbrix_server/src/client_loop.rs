@@ -361,7 +361,7 @@ impl ClientLoop {
         let (unreliable_loop_tx, mut unreliable_loop_rx) =
             local_channel::mpsc::channel::<(Channel, SendData)>();
         let unrel_send_task = stream::once_future(async move {
-            while let Some((channel, data)) = unreliable_loop_rx.recv().await {
+            while let Ok((channel, data)) = unreliable_loop_rx.recv().await {
                 unreliable_tx
                     .send_unreliable(channel, data.as_slice())
                     .await
@@ -389,7 +389,7 @@ impl ClientLoop {
                     })
                     .await?;
 
-                let Some((channel, data)) = msg else {
+                let Ok((channel, data)) = msg else {
                     // Server loop closed the connection
                     return Ok(LoopEvent::Exit);
                 };
