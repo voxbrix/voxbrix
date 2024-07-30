@@ -51,11 +51,8 @@ impl ActorModelBuilder {
         transform: &Mat4F32,
         polygons: &mut Vec<Polygon>,
     ) {
-        let bone_builder = match self.skeleton.get(bone) {
-            Some(s) => s,
-            None => {
-                return;
-            },
+        if self.skeleton.get(bone).is_some() {
+            return;
         };
 
         // TODO external model part replacements & additions

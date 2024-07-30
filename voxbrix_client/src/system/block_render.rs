@@ -30,7 +30,6 @@ use crate::{
     },
 };
 use ahash::AHashMap;
-use anyhow::Result;
 use arrayvec::ArrayVec;
 use rayon::prelude::*;
 use std::mem;
@@ -54,8 +53,6 @@ use voxbrix_common::{
 };
 use wgpu::util::DeviceExt;
 
-// const VERTEX_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK * 6 /*sides*/ * 4 /*vertices*/;
-// const INDEX_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK * 6 /*sides*/ * 2 /*polygons*/ * 3 /*vertices*/;
 const POLYGON_SIZE: usize = Polygon::size() as usize;
 const POLYGON_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK * 6 /*sides*/;
 
@@ -406,7 +403,7 @@ impl BlockRenderSystem {
         }
     }
 
-    pub fn render(&mut self, renderer: Renderer) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(&mut self, renderer: Renderer) {
         if self.update_chunk_buffer {
             let mut polygons_len = 0;
 
@@ -477,7 +474,5 @@ impl BlockRenderSystem {
             render_pass.set_vertex_buffer(1, self.target_highlight_polygon_buffer.slice(..));
             render_pass.draw(0 .. 6, 0 .. 1);
         }
-
-        Ok(())
     }
 }

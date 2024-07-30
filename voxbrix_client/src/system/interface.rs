@@ -1,5 +1,4 @@
 use crate::system::render::Renderer;
-use anyhow::Result;
 use egui::Context;
 use egui_wgpu::ScreenDescriptor;
 use winit::{
@@ -43,7 +42,7 @@ impl InterfaceSystem {
     }
 
     /// Finishes the composition and renders the result.
-    pub fn render(&mut self, renderer: Renderer) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(&mut self, renderer: Renderer) {
         let interface = self.interface_state.egui_ctx().end_frame();
 
         let pixels_per_point = self.interface_state.egui_ctx().pixels_per_point();
@@ -97,8 +96,6 @@ impl InterfaceSystem {
 
         self.interface_renderer
             .render(&mut render_pass, &clipped_primitives, &screen_descriptor);
-
-        Ok(())
     }
 
     pub fn window_event(&mut self, window: &Window, event: &WindowEvent) {

@@ -12,10 +12,7 @@ use crate::{
             velocity::VelocityActorComponent,
         },
         actor_class::model::ModelActorClassComponent,
-        actor_model::builder::{
-            BuilderActorModelComponent,
-            BASE_BONE,
-        },
+        actor_model::builder::BuilderActorModelComponent,
     },
     entity::actor_model::ActorBone,
     system::render::{
@@ -29,7 +26,6 @@ use crate::{
         Renderer,
     },
 };
-use anyhow::Result;
 use nohash_hasher::IntMap;
 use std::time::Instant;
 use voxbrix_common::{
@@ -288,11 +284,11 @@ impl ActorRenderSystem {
         }
     }
 
-    pub fn render(&mut self, renderer: Renderer) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(&mut self, renderer: Renderer) {
         let polygons_len = self.polygons.len();
 
         if polygons_len == 0 {
-            return Ok(());
+            return;
         }
 
         let polygon_buffer_byte_size = (polygons_len * POLYGON_SIZE) as u64;
@@ -317,7 +313,5 @@ impl ActorRenderSystem {
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_vertex_buffer(1, self.polygon_buffer.get_slice());
         render_pass.draw(0 .. 6, 0 .. polygons_len as u32);
-
-        Ok(())
     }
 }

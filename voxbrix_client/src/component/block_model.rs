@@ -2,9 +2,6 @@ use crate::{
     entity::block_model::BlockModel,
     system::model_loading::LoadableComponent,
 };
-use ron::value::RawValue;
-use serde::Deserialize;
-use std::collections::BTreeMap;
 use voxbrix_common::AsFromUsize;
 
 pub mod builder;
@@ -28,10 +25,4 @@ impl<T> LoadableComponent<T> for BlockModelComponent<T> {
     fn reload(&mut self, data: Vec<Option<T>>) {
         self.data = data;
     }
-}
-
-#[derive(Deserialize, Debug)]
-pub struct BlockModelDescriptor {
-    label: String,
-    components: BTreeMap<String, Box<RawValue>>,
 }
