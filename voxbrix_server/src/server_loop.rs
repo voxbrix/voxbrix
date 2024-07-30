@@ -122,11 +122,13 @@ pub enum ServerEvent {
     AddPlayer {
         player: Player,
         client_tx: SharedSender<ClientEvent>,
+        session_id: u64,
     },
     PlayerEvent {
         player: Player,
         channel: Channel,
         data: Packet,
+        session_id: u64,
     },
     SharedEvent(SharedEvent),
     ServerConnectionClosed,
@@ -333,16 +335,29 @@ impl ServerLoop {
                         rt_handle,
                     }.run());
                 },
-                ServerEvent::AddPlayer { player, client_tx } => {
+                ServerEvent::AddPlayer {
+                    player,
+                    client_tx,
+                    session_id,
+                } => {
                     shared_data.remove_player(&player);
-                    shared_data.add_player(player, client_tx);
+                    shared_data.add_player(player, client_tx, session_id);
                 },
                 ServerEvent::PlayerEvent {
                     player,
                     channel,
                     data,
+                    session_id,
                 } => {
-                    if channel == BASE_CHANNEL {
+                    // Filter out outdated messages
+                    // and other channels
+                    if shared_data
+                        .client_pc
+                        .get(&player)
+                        .map(|c| c.session_id == session_id)
+                        .unwrap_or(false)
+                        && channel == BASE_CHANNEL
+                    {
                         PlayerEvent {
                             shared_data: &mut shared_data,
                             player,

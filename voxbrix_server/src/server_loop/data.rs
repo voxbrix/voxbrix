@@ -400,7 +400,7 @@ impl SharedData {
         }
     }
 
-    pub fn add_player(&mut self, player: Player, tx: Sender<ClientEvent>) {
+    pub fn add_player(&mut self, player: Player, tx: Sender<ClientEvent>, session_id: u64) {
         let tx_init = tx.clone();
         let actor = self.actor_registry.add();
 
@@ -426,6 +426,7 @@ impl SharedData {
                 last_server_snapshot: Snapshot(0),
                 last_client_snapshot: Snapshot(0),
                 last_confirmed_chunk: None,
+                session_id,
             },
         );
 

@@ -113,6 +113,7 @@ pub struct ClientLoop {
     pub database: Arc<Database>,
     pub event_tx: Sender<ServerEvent>,
     pub connection: Connection,
+    pub session_id: u64,
 }
 
 impl ClientLoop {
@@ -123,6 +124,7 @@ impl ClientLoop {
             database,
             event_tx,
             connection,
+            session_id,
         } = self;
 
         let Connection {
@@ -350,7 +352,11 @@ impl ClientLoop {
 
         let (client_tx, server_rx) = flume::unbounded();
 
-        let _ = event_tx.send(ServerEvent::AddPlayer { player, client_tx });
+        let _ = event_tx.send(ServerEvent::AddPlayer {
+            player,
+            client_tx,
+            session_id,
+        });
 
         let actor = match server_rx.recv_async().await {
             Ok(ClientEvent::AssignActor { actor }) => actor,
@@ -471,6 +477,7 @@ impl ClientLoop {
                             player,
                             channel,
                             data,
+                            session_id,
                         })
                         .is_err()
                     {

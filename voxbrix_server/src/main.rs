@@ -99,7 +99,15 @@ fn main() -> Result<()> {
 
             task::spawn_local(async move {
                 let mut server = server;
+                let mut session_id = 0u64;
+
                 loop {
+                    let session_id = {
+                        let curr = session_id;
+                        session_id = session_id.wrapping_add(1);
+                        curr
+                    };
+
                     match server.accept().await {
                         Ok(connection) => {
                             let database = database.clone();
@@ -110,6 +118,7 @@ fn main() -> Result<()> {
                                     database,
                                     event_tx,
                                     connection,
+                                    session_id,
                                 }
                                 .run()
                                 .await;

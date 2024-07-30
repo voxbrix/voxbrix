@@ -38,4 +38,5 @@ pub struct Client {
     // The last client snapshot received from the client
     pub last_client_snapshot: Snapshot,
     pub last_confirmed_chunk: Option<Chunk>,
+    pub session_id: u64,
 }
