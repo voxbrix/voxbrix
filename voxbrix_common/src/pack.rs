@@ -1,42 +1,77 @@
-use bincode::{
-    config::Configuration,
-    BorrowDecode,
-    Encode,
-};
 use lz4_flex::block as lz4;
+use postcard::ser_flavors::Flavor;
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use std::io::Write;
 
 const COMPRESS_LENGTH: usize = 100;
 // TODO have this separate for client and server:
 const MAX_UNCOMPRESSED_BYTES: usize = 100_000_000;
 
-const CONFIG: Configuration = bincode::config::standard();
+struct Writer<W> {
+    written: usize,
+    writer: W,
+}
 
-/// Low level packer with default config.
+impl<W> Flavor for Writer<W>
+where
+    W: Write,
+{
+    type Output = usize;
+
+    fn try_push(&mut self, data: u8) -> postcard::Result<()> {
+        self.writer
+            .write_all(&[data])
+            .map_err(|_| postcard::Error::SerializeBufferFull)?;
+        self.written += 1;
+        Ok(())
+    }
+
+    fn finalize(mut self) -> postcard::Result<Self::Output> {
+        self.writer
+            .flush()
+            .map_err(|_| postcard::Error::SerializeBufferFull)?;
+        Ok(self.written)
+    }
+
+    fn try_extend(&mut self, data: &[u8]) -> postcard::Result<()> {
+        self.writer
+            .write_all(data)
+            .map_err(|_| postcard::Error::SerializeBufferFull)?;
+        self.written += data.len();
+        Ok(())
+    }
+}
+
+/// Low level packer with default config, continues writing.
+pub fn encode_write<T, W>(value: &T, writer: &mut W) -> usize
+where
+    T: Serialize,
+    W: Write,
+{
+    postcard::serialize_with_flavor(value, Writer { written: 0, writer }).unwrap()
+}
+
+/// Low level packer with default config, resets the buffer before the write.
 pub fn encode_into<T>(value: &T, buffer: &mut Vec<u8>)
 where
-    T: Encode,
+    T: Serialize,
 {
     buffer.clear();
 
     encode_write(value, buffer);
 }
 
-/// Low level packer with default config.
-pub fn encode_write<T, W>(value: &T, buffer: &mut W) -> usize
-where
-    T: Encode,
-    W: Write,
-{
-    bincode::encode_into_std_write(value, buffer, CONFIG).expect("unable to serialize value")
-}
-
 /// Low level unpacker with default config.
 pub fn decode_from_slice<'a, T>(buffer: &'a [u8]) -> Option<(T, usize)>
 where
-    T: BorrowDecode<'a>,
+    T: Deserialize<'a>,
 {
-    bincode::borrow_decode_from_slice(buffer, CONFIG).ok()
+    let (value, leftover) = postcard::take_from_bytes(buffer).ok()?;
+    let bytes_read = buffer.len().saturating_sub(leftover.len());
+    Some((value, bytes_read))
 }
 
 #[derive(Debug)]
@@ -57,14 +92,14 @@ impl Packer {
 
     pub fn pack_uncompressed<T>(&self, data: &T, output: &mut Vec<u8>)
     where
-        T: Encode,
+        T: Serialize,
     {
         encode_into(data, output)
     }
 
     pub fn pack_compressed<T>(&mut self, data: &T, output: &mut Vec<u8>)
     where
-        T: Encode,
+        T: Serialize,
     {
         output.clear();
         self.buffer.clear();
@@ -101,7 +136,7 @@ impl Packer {
 
     pub fn pack_uncompressed_to_vec<T>(&mut self, data: &T) -> Vec<u8>
     where
-        T: Encode,
+        T: Serialize,
     {
         let mut output = Vec::new();
         self.pack_uncompressed(data, &mut output);
@@ -110,7 +145,7 @@ impl Packer {
 
     pub fn pack_compressed_to_vec<T>(&mut self, data: &T) -> Vec<u8>
     where
-        T: Encode,
+        T: Serialize,
     {
         let mut output = Vec::new();
         self.pack_compressed(data, &mut output);
@@ -119,14 +154,14 @@ impl Packer {
 
     pub fn unpack_uncompressed<'a, T>(&self, input: &'a [u8]) -> Result<T, UnpackError>
     where
-        T: BorrowDecode<'a>,
+        T: Deserialize<'a>,
     {
         Ok(decode_from_slice(input).ok_or(UnpackError)?.0)
     }
 
     pub fn unpack_compressed<'a, T>(&'a mut self, input: &'a [u8]) -> Result<T, UnpackError>
     where
-        T: BorrowDecode<'a>,
+        T: Deserialize<'a>,
     {
         match input.first() {
             Some(0) => {
@@ -166,7 +201,7 @@ impl Packer {
 
     pub fn pack<T>(&mut self, data: &T, output: &mut Vec<u8>)
     where
-        T: Encode + Pack,
+        T: Serialize + Pack,
     {
         output.clear();
 
@@ -179,7 +214,7 @@ impl Packer {
 
     pub fn pack_to_vec<T>(&mut self, data: &T) -> Vec<u8>
     where
-        T: Encode + Pack,
+        T: Serialize + Pack,
     {
         if T::DEFAULT_COMPRESSED {
             self.pack_compressed_to_vec(data)
@@ -190,7 +225,7 @@ impl Packer {
 
     pub fn unpack<'a, T>(&'a mut self, input: &'a [u8]) -> Result<T, UnpackError>
     where
-        T: BorrowDecode<'a> + Pack,
+        T: Deserialize<'a> + Pack,
     {
         if T::DEFAULT_COMPRESSED {
             self.unpack_compressed(input)

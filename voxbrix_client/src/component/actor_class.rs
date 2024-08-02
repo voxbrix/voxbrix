@@ -1,5 +1,5 @@
-use bincode::BorrowDecode;
 use nohash_hasher::IntMap;
+use serde::Deserialize;
 use voxbrix_common::{
     entity::{
         actor::Actor,
@@ -56,7 +56,7 @@ impl<T> OverridableActorClassComponent<T> {
 
 impl<'a, T> OverridableActorClassComponent<T>
 where
-    T: BorrowDecode<'a>,
+    T: Deserialize<'a>,
 {
     pub fn unpack_state(&mut self, state: &StateUnpacked<'a>) {
         if let Some((changes, _)) = state

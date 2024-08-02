@@ -1,10 +1,10 @@
 use crate::AsFromUsize;
-use bincode::{
-    Decode,
-    Encode,
+use serde::{
+    Deserialize,
+    Serialize,
 };
 
-#[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Copy, Clone, Debug)]
 pub struct BlockClass(pub u64);
 
 impl AsFromUsize for BlockClass {

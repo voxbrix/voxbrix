@@ -96,9 +96,9 @@ impl LocalInput<'_> {
                                         .is_some()
                                     {
                                         // TODO Handle with script
-                                        use bincode::{
-                                            Decode,
-                                            Encode,
+                                        use serde::{
+                                            Deserialize,
+                                            Serialize,
                                         };
                                         use voxbrix_common::entity::{
                                             action::Action,
@@ -111,7 +111,7 @@ impl LocalInput<'_> {
                                                 &sd.orientation_ac,
                                             );
 
-                                        #[derive(Encode, Decode)]
+                                        #[derive(Serialize, Deserialize)]
                                         pub struct RemoveBlock {
                                             chunk: Chunk,
                                             offset: [f32; 3],
@@ -156,9 +156,9 @@ impl LocalInput<'_> {
 
                                         if Block::from_chunk_offset(chunk, block).is_some() {
                                             // TODO Handle with script
-                                            use bincode::{
-                                                Decode,
-                                                Encode,
+                                            use serde::{
+                                                Deserialize,
+                                                Serialize,
                                             };
                                             use voxbrix_common::entity::{
                                                 action::Action,
@@ -172,7 +172,7 @@ impl LocalInput<'_> {
                                                     &sd.orientation_ac,
                                                 );
 
-                                            #[derive(Encode, Decode)]
+                                            #[derive(Serialize, Deserialize)]
                                             pub struct PlaceBlock {
                                                 chunk: Chunk,
                                                 offset: [f32; 3],

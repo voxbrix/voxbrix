@@ -9,8 +9,8 @@ use anyhow::{
     Context,
     Error,
 };
-use bincode::Encode;
 use nohash_hasher::IntMap;
+use serde::Serialize;
 use std::{
     fmt::Debug,
     mem,
@@ -47,7 +47,7 @@ pub struct ScriptDataFull<T> {
 /// Returns written length.
 pub fn write_script_buffer<T>(
     mut store: impl AsContextMut<Data = ScriptData<T>>,
-    value: impl Encode,
+    value: impl Serialize,
 ) -> u32 {
     let mut store_data = store.as_context_mut();
     let store_data = store_data.data_mut().as_full_mut();
@@ -199,7 +199,7 @@ impl<T> ScriptRegistry<T> {
     pub fn run_script<U, I>(&mut self, script: &Script, data: U, input: I)
     where
         U: NonStatic<Static = T>,
-        I: Encode,
+        I: Serialize,
     {
         self.access_script(script, data, |bundle| {
             let input_len = write_script_buffer(&mut bundle.store, &input);

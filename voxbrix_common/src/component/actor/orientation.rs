@@ -3,38 +3,15 @@ use crate::math::{
     QuatF32,
     Vec3F32,
 };
-use bincode::{
-    de::Decoder,
-    enc::Encoder,
-    error::{
-        DecodeError,
-        EncodeError,
-    },
-    Decode,
-    Encode,
+use serde::{
+    Deserialize,
+    Serialize,
 };
 
-#[derive(PartialEq, Clone, Copy, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Copy, Debug)]
 pub struct Orientation {
     pub rotation: QuatF32,
 }
-
-impl Encode for Orientation {
-    fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
-        Encode::encode(&self.rotation.to_array(), encoder)?;
-        Ok(())
-    }
-}
-
-impl Decode for Orientation {
-    fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
-        Ok(Self {
-            rotation: QuatF32::from_array(Decode::decode(decoder)?),
-        })
-    }
-}
-
-bincode::impl_borrow_decode!(Orientation);
 
 impl Orientation {
     pub fn forward(&self) -> Vec3F32 {

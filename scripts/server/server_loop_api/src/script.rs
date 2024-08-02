@@ -1,17 +1,21 @@
 use crate::common::*;
-use bincode::{
-    config::Configuration,
-    Decode,
-    Encode,
+pub use paste::paste;
+use postcard::ser_flavors::Flavor;
+use serde::{
+    de::DeserializeOwned,
+    Serialize,
 };
-use std::ptr;
-
-static CODE_CONFIG: Configuration = bincode::config::standard();
+use std::{
+    io::Write,
+    panic,
+    ptr,
+};
 
 static mut SHARED_BUFFER: Vec<u8> = Vec::new();
 
-mod export {
+mod import {
     extern "C" {
+        pub fn handle_panic(ptr: *const u8, len: u32);
         pub fn get_blocks_in_chunk_edge() -> u32;
         pub fn get_target_block(ptr: *const u8, len: u32) -> u32;
         pub fn set_class_of_block(ptr: *const u8, len: u32);
@@ -28,21 +32,30 @@ mod export {
     }
 }
 
+pub fn handle_panic(script_name: &'static str) {
+    panic::set_hook(Box::new(move |panic_info| {
+        let msg = format!("script \"{}\": {}", script_name, panic_info);
+        unsafe {
+            import::handle_panic(msg.as_ptr(), msg.len() as u32);
+        }
+    }));
+}
+
 macro_rules! wrap_func {
     ($name:ident, $input_type:ty) => {
         pub fn $name(input: $input_type) {
             let req = write_buffer(input);
 
-            unsafe { export::$name(req.as_ptr(), req.len() as u32) };
+            unsafe { import::$name(req.as_ptr(), req.len() as u32) };
         }
     };
     ($name:ident, $input_type:ty, $output_type:ty) => {
         pub fn $name(input: $input_type) -> $output_type {
             let req = write_buffer(input);
 
-            let resp_len = unsafe { export::$name(req.as_ptr(), req.len() as u32) };
+            let resp_len = unsafe { import::$name(req.as_ptr(), req.len() as u32) };
 
-            read_buffer::<$output_type>(resp_len as usize)
+            read_buffer::<$output_type>(resp_len as usize).expect("incorrect host response")
         }
     };
 }
@@ -64,26 +77,76 @@ pub extern "C" fn get_buffer(len: u32) -> *mut u8 {
     prepare_shared_buffer(len as usize).as_mut_ptr()
 }
 
-pub fn read_buffer<T>(len: usize) -> T
+pub fn read_buffer<T>(len: usize) -> Option<T>
 where
-    T: Decode,
+    T: DeserializeOwned,
 {
     let input_slice = unsafe { &SHARED_BUFFER[.. len as usize] };
 
-    bincode::decode_from_slice(input_slice, CODE_CONFIG)
-        .unwrap()
-        .0
+    postcard::from_bytes(input_slice).ok()
+}
+
+pub fn read_action_input<T>(len: usize) -> Option<(Option<Actor>, T)>
+where
+    T: DeserializeOwned,
+{
+    let input_slice = unsafe { &SHARED_BUFFER[.. len as usize] };
+
+    let (actor, _, value) = postcard::from_bytes::<(Option<Actor>, u64, T)>(input_slice).ok()?;
+
+    Some((actor, value))
+}
+
+struct Writer<W> {
+    written: usize,
+    writer: W,
+}
+
+impl<W> Flavor for Writer<W>
+where
+    W: Write,
+{
+    type Output = usize;
+
+    fn try_push(&mut self, data: u8) -> postcard::Result<()> {
+        self.writer
+            .write_all(&[data])
+            .map_err(|_| postcard::Error::SerializeBufferFull)?;
+        self.written += 1;
+        Ok(())
+    }
+
+    fn finalize(mut self) -> postcard::Result<Self::Output> {
+        self.writer
+            .flush()
+            .map_err(|_| postcard::Error::SerializeBufferFull)?;
+        Ok(self.written)
+    }
+
+    fn try_extend(&mut self, data: &[u8]) -> postcard::Result<()> {
+        self.writer
+            .write_all(data)
+            .map_err(|_| postcard::Error::SerializeBufferFull)?;
+        self.written += data.len();
+        Ok(())
+    }
 }
 
 pub fn write_buffer<T>(value: T) -> &'static [u8]
 where
-    T: Encode,
+    T: Serialize,
 {
     unsafe {
         SHARED_BUFFER.clear();
 
-        bincode::encode_into_std_write(value, &mut *ptr::addr_of_mut!(SHARED_BUFFER), CODE_CONFIG)
-            .unwrap();
+        postcard::serialize_with_flavor(
+            &value,
+            Writer {
+                written: 0,
+                writer: &mut *ptr::addr_of_mut!(SHARED_BUFFER),
+            },
+        )
+        .unwrap();
 
         SHARED_BUFFER.as_slice()
     }
@@ -96,7 +159,7 @@ static mut BLOCKS_IN_CHUNK: usize = 0;
 pub fn blocks_in_chunk_edge() -> usize {
     unsafe {
         if BLOCKS_IN_CHUNK_EDGE == 0 {
-            BLOCKS_IN_CHUNK_EDGE = export::get_blocks_in_chunk_edge()
+            BLOCKS_IN_CHUNK_EDGE = import::get_blocks_in_chunk_edge()
                 .try_into()
                 .expect("BLOCKS_IN_CHUNK_EDGE provided is more than u16::MAX");
         }
@@ -181,7 +244,7 @@ wrap_func!(get_block_class_by_label, &str, Option<BlockClass>);
 macro_rules! block_class {
     ($name:ident) => {
         unsafe {
-            paste! {
+            server_loop_api::paste! {
                 static [<$name:upper _NAME>]: &'static str = stringify!($name);
                 static mut [<$name:upper>]: Option<BlockClass> = None;
                 if [<$name:upper>].is_none() {

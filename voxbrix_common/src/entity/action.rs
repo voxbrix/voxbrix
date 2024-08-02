@@ -1,10 +1,10 @@
 use crate::AsFromUsize;
-use bincode::{
-    Decode,
-    Encode,
+use serde::{
+    Deserialize,
+    Serialize,
 };
 
-#[derive(Encode, Decode, PartialEq, Eq, PartialOrd, Hash, Ord, Copy, Clone, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Hash, Ord, Copy, Clone, Debug)]
 pub struct Action(pub u64);
 
 impl nohash_hasher::IsEnabled for Action {}

@@ -1,10 +1,10 @@
-use bincode::{
-    BorrowDecode,
-    Encode,
-};
 use nohash_hasher::{
     IntMap,
     IntSet,
+};
+use serde::{
+    Deserialize,
+    Serialize,
 };
 use std::{
     mem,
@@ -48,7 +48,7 @@ struct ActorComponentPacker<'a, T> {
 
 impl<T> ActorComponentPacker<'static, T>
 where
-    T: Encode,
+    T: Serialize,
 {
     fn new() -> Self {
         Self {
@@ -81,7 +81,7 @@ where
 
 impl<'a, T> ActorComponentPacker<'a, T>
 where
-    T: Encode,
+    T: Serialize,
 {
     fn pack(mut self, buffer: &mut Vec<u8>) -> ActorComponentPacker<'static, T> {
         match self.loaded_data {
@@ -160,7 +160,7 @@ where
 
 impl<'a, T> ActorComponentPackable<T>
 where
-    T: 'a + BorrowDecode<'a> + PartialEq,
+    T: 'a + Deserialize<'a> + PartialEq,
 {
     pub fn unpack_player(
         &mut self,
@@ -190,7 +190,7 @@ where
 
 impl<T> ActorComponentPackable<T>
 where
-    T: 'static + Encode + PartialEq,
+    T: 'static + Serialize + PartialEq,
 {
     pub fn new(state_component: StateComponent) -> Self {
         Self {

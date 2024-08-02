@@ -12,16 +12,16 @@ pub mod system;
 
 use anyhow::Context;
 use arrayvec::ArrayVec;
-use bincode::{
-    Decode,
-    Encode,
-};
 use component::block::BlocksVec;
 use entity::{
     block_class::BlockClass,
     chunk::Chunk,
 };
-use serde::de::DeserializeOwned;
+use serde::{
+    de::DeserializeOwned,
+    Deserialize,
+    Serialize,
+};
 use std::{
     collections::HashMap,
     fs,
@@ -140,7 +140,7 @@ where
     }
 }
 
-#[derive(Encode, Decode, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct ChunkData {
     pub chunk: Chunk,
     pub block_classes: BlocksVec<BlockClass>,

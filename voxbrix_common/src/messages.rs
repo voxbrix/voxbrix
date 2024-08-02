@@ -10,13 +10,13 @@ use crate::{
         UnpackError,
     },
 };
-use bincode::{
-    BorrowDecode,
-    Encode,
-};
 use nohash_hasher::{
     IntMap,
     IntSet,
+};
+use serde::{
+    Deserialize,
+    Serialize,
 };
 use std::{
     collections::VecDeque,
@@ -29,7 +29,7 @@ pub mod server;
 /// State container.
 /// The components supposed to be transfered in delta manner,
 /// meaining that only changed components are in the map.
-#[derive(Encode, BorrowDecode)]
+#[derive(Serialize, Deserialize)]
 pub struct StatePacked<'a>(&'a [u8]);
 
 pub struct StateUnpacked<'a> {
@@ -163,19 +163,19 @@ impl StatePacker {
     }
 }
 
-#[derive(BorrowDecode)]
+#[derive(Deserialize)]
 pub enum ActorStateUnpack<T> {
     Full(Vec<(Actor, T)>),
     Change(Vec<(Actor, Option<T>)>),
 }
 
-#[derive(Encode)]
+#[derive(Serialize)]
 pub enum ActorStatePack<'a, T> {
     Full(&'a [(Actor, &'a T)]),
     Change(&'a [(Actor, Option<&'a T>)]),
 }
 
-#[derive(Encode, BorrowDecode)]
+#[derive(Serialize, Deserialize)]
 pub struct ActionsPacked<'a>(&'a [u8]);
 
 pub struct ActionsUnpacked<'a> {
@@ -264,7 +264,7 @@ impl ActionsPacker {
         }
     }
 
-    pub fn add_action(&mut self, action: Action, snapshot: Snapshot, data: impl Encode) {
+    pub fn add_action(&mut self, action: Action, snapshot: Snapshot, data: impl Serialize) {
         let size = pack::encode_write(&data, &mut self.data);
 
         self.actions.push_back((snapshot, action, size));

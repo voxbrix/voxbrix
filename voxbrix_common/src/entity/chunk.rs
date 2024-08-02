@@ -1,17 +1,11 @@
 use crate::AsFromUsize;
-use bincode::{
-    Decode,
-    Encode,
-};
 use serde::{
     Deserialize,
     Serialize,
 };
 use std::cmp::Ordering;
 
-#[derive(
-    Encode, Decode, Serialize, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug,
-)]
+#[derive(Serialize, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
 pub struct DimensionKind(pub u32);
 
 impl AsFromUsize for DimensionKind {
@@ -24,9 +18,7 @@ impl AsFromUsize for DimensionKind {
     }
 }
 
-#[derive(
-    Encode, Decode, Serialize, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug,
-)]
+#[derive(Serialize, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
 pub struct Dimension {
     pub kind: DimensionKind,
     pub phase: u64,
@@ -50,7 +42,7 @@ impl Dimension {
     }
 }
 
-#[derive(Encode, Decode, Serialize, Deserialize, Hash, PartialEq, Eq, Copy, Clone, Debug)]
+#[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Copy, Clone, Debug)]
 pub struct Chunk {
     pub position: [i32; 3],
     pub dimension: Dimension,

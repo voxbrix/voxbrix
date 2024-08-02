@@ -4,9 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bincode = { git = "https://github.com/bincode-org/bincode.git", rev = "8f65c60" }
+serde = { version = ">=1.0.184", default-features = false, features = ["derive"] } 
+postcard = { version = "1.0.8", default-features = false, optional = true }
+paste = { version = "1.0", optional = true }
 
 [features]
 default = ["script"]
 host = []
-script = []
+script = ["postcard", "paste"]

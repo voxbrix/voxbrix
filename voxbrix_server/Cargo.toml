@@ -11,8 +11,9 @@ tokio = { workspace = true, features = ["rt", "time"] }
 rayon = { workspace = true }
 futures-lite = { workspace = true }
 flume = { workspace = true }
-bincode = { workspace = true } 
+postcard = { workspace = true } 
 serde = { workspace = true } 
+serde-big-array = { workspace = true }
 k256 = { workspace = true } 
 lz4_flex = { workspace = true } 
 nohash-hasher = { workspace = true }

@@ -8,15 +8,19 @@ use crate::{
     },
     pack::Pack,
 };
-use bincode::{
+use serde::{
     de::{
-        BorrowDecoder,
-        Decoder,
+        Deserialize,
+        Deserializer,
+        Error as _,
+        SeqAccess,
+        Visitor,
     },
-    error::DecodeError,
-    BorrowDecode,
-    Decode,
-    Encode,
+    ser::{
+        Serialize,
+        SerializeTuple,
+        Serializer,
+    },
 };
 use std::{
     alloc::{
@@ -24,6 +28,7 @@ use std::{
         Layout,
     },
     collections::HashMap,
+    fmt,
 };
 
 pub mod sky_light;
@@ -76,36 +81,61 @@ impl<T> BlocksVecBuilder<T> {
     }
 }
 
-#[derive(Encode, Clone, Debug)]
-pub struct BlocksVec<T>(Box<[T; BLOCKS_IN_CHUNK]>);
-
-impl<T> Decode for BlocksVec<T>
+impl<'de, T> Visitor<'de> for BlocksVecBuilder<T>
 where
-    T: Decode,
+    T: Deserialize<'de>,
 {
-    fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
-        let mut value = Self::new();
+    type Value = BlocksVec<T>;
 
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "an array of {} elements", BLOCKS_IN_CHUNK)
+    }
+
+    fn visit_seq<A>(mut self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
         for _ in 0 .. BLOCKS_IN_CHUNK {
-            value.push(Decode::decode(decoder)?);
+            let value = seq
+                .next_element()?
+                .ok_or(A::Error::custom("not enough Blocks for Chunk"))?;
+
+            self.push(value);
         }
 
-        Ok(value.build())
+        Ok(self.build())
     }
 }
 
-impl<'de, T> BorrowDecode<'de> for BlocksVec<T>
-where
-    T: BorrowDecode<'de>,
-{
-    fn borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D) -> Result<Self, DecodeError> {
-        let mut value = Self::new();
+#[derive(Clone, Debug)]
+pub struct BlocksVec<T>(Box<[T; BLOCKS_IN_CHUNK]>);
 
-        for _ in 0 .. BLOCKS_IN_CHUNK {
-            value.push(BorrowDecode::borrow_decode(decoder)?);
+impl<T> Serialize for BlocksVec<T>
+where
+    T: Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut tup = serializer.serialize_tuple(BLOCKS_IN_CHUNK)?;
+
+        for e in self.0.iter() {
+            tup.serialize_element(e)?;
         }
 
-        Ok(value.build())
+        tup.end()
+    }
+}
+impl<'de, T> Deserialize<'de> for BlocksVec<T>
+where
+    T: Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_tuple(BLOCKS_IN_CHUNK, BlocksVecBuilder::new())
     }
 }
 

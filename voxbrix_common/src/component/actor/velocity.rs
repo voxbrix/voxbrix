@@ -2,15 +2,9 @@ use crate::{
     component::actor::position::LocalPosition,
     math::Vec3F32,
 };
-use bincode::{
-    de::Decoder,
-    enc::Encoder,
-    error::{
-        DecodeError,
-        EncodeError,
-    },
-    Decode,
-    Encode,
+use serde::{
+    Deserialize,
+    Serialize,
 };
 use std::{
     ops::{
@@ -20,27 +14,10 @@ use std::{
     time::Duration,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 pub struct Velocity {
     pub vector: Vec3F32,
 }
-
-impl Encode for Velocity {
-    fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
-        Encode::encode(&self.vector.to_array(), encoder)?;
-        Ok(())
-    }
-}
-
-impl Decode for Velocity {
-    fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
-        Ok(Self {
-            vector: Vec3F32::from_array(Decode::decode(decoder)?),
-        })
-    }
-}
-
-bincode::impl_borrow_decode!(Velocity);
 
 impl Add<Velocity> for Velocity {
     type Output = Self;

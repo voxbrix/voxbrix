@@ -1,10 +1,10 @@
 use crate::system::movement_interpolation::TARGET_QUEUE_LENGTH;
 use arrayvec::ArrayVec;
-use bincode::{
-    BorrowDecode,
-    Encode,
-};
 use nohash_hasher::IntMap;
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use std::{
     collections::BTreeMap,
     ops::Deref,
@@ -130,7 +130,7 @@ where
 
 impl<T> ActorComponentPackable<T>
 where
-    T: 'static + Encode,
+    T: 'static + Serialize,
 {
     pub fn pack_player(&mut self, state: &mut StatePacker, last_client_snapshot: Snapshot) {
         if last_client_snapshot < self.last_change_snapshot {
@@ -145,7 +145,7 @@ where
 
 impl<'a, T> ActorComponentPackable<T>
 where
-    T: BorrowDecode<'a>,
+    T: Deserialize<'a>,
 {
     pub fn unpack_state(&mut self, state: &StateUnpacked<'a>) {
         if let Some((changes, _)) = state
@@ -261,7 +261,7 @@ impl<T> ActorComponentUnpackable<T> {
         state: &StateUnpacked<'a>,
         mut convert: impl FnMut(Actor, Option<T>, U) -> T,
     ) where
-        U: BorrowDecode<'a>,
+        U: Deserialize<'a>,
     {
         if let Some((changes, _)) = state
             .get_component(&self.state_component)

@@ -6,3 +6,4 @@ mod script;
 
 #[cfg(feature = "script")]
 pub use script::*;
+pub use serde;

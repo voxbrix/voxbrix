@@ -1,6 +1,6 @@
 use crate::component::actor::ActorComponentPackable;
-use bincode::Encode;
 use nohash_hasher::IntSet;
+use serde::Serialize;
 use voxbrix_common::{
     entity::{
         actor::Actor,
@@ -27,7 +27,7 @@ where
 
 impl<T> PackableOverridableActorClassComponent<T>
 where
-    T: 'static + Encode + PartialEq,
+    T: 'static + Serialize + PartialEq,
 {
     pub fn new(state_component: StateComponent) -> Self {
         Self {

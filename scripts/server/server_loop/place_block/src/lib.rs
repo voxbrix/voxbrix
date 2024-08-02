@@ -1,33 +1,21 @@
-use std::panic;
-use bincode::{Encode, Decode};
 use server_loop_api::{
     self as api,
-    GetTargetBlockRequest,
-    SetClassOfBlockRequest,
-    Actor,
+    serde::{
+        self,
+        Deserialize,
+        Serialize,
+    },
     Block,
     BlockClass,
     Chunk,
+    GetTargetBlockRequest,
+    SetClassOfBlockRequest,
 };
-
-extern "C" {
-    fn handle_panic(ptr: *const u8, len: u32);
-    //fn log_message(ptr: *const u8, len: u32);
-}
 
 static SCRIPT_NAME: &'static str = "place_block";
 
-#[no_mangle]
-pub extern "C" fn start() {
-    panic::set_hook(Box::new(|panic_info| {
-        let msg = format!("script \"{}\": {}", SCRIPT_NAME, panic_info);
-        unsafe {
-            handle_panic(msg.as_ptr(), msg.len() as u32);
-        }
-    }));
-}
-
-#[derive(Encode, Decode)]
+#[derive(Serialize, Deserialize)]
+#[serde(crate = "self::serde")]
 pub struct PlaceBlock {
     chunk: Chunk,
     offset: [f32; 3],
@@ -37,18 +25,13 @@ pub struct PlaceBlock {
 
 #[no_mangle]
 pub extern "C" fn run(input_len: u32) {
-    panic::set_hook(Box::new(|panic_info| {
-        let msg = format!("script \"{}\": {}", SCRIPT_NAME, panic_info);
-        unsafe {
-            handle_panic(msg.as_ptr(), msg.len() as u32);
-        }
-    }));
+    api::handle_panic(SCRIPT_NAME);
+
     // Action is prefixed with serialized length as it is represented by byte array on the host.
-    let (
-        _actor_opt,
-        _action_len_prefix,
-        action,
-    ) = api::read_buffer::<(Option<Actor>, u64, PlaceBlock)>(input_len as usize);
+    let Some((_actor_opt, action)) = api::read_action_input::<PlaceBlock>(input_len as usize)
+    else {
+        return;
+    };
 
     let Some(target) = api::get_target_block(GetTargetBlockRequest {
         chunk: action.chunk,
@@ -66,9 +49,7 @@ pub extern "C" fn run(input_len: u32) {
     };
     let mut block_offset = target.block.into_coords().map(|u| u as i32);
     block_offset[axis] += direction;
-    if let Some((chunk, block)) =
-        Block::from_chunk_offset(target.chunk, block_offset)
-    {
+    if let Some((chunk, block)) = Block::from_chunk_offset(target.chunk, block_offset) {
         api::set_class_of_block(SetClassOfBlockRequest {
             chunk,
             block,

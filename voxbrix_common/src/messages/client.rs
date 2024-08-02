@@ -14,15 +14,16 @@ use crate::{
     },
     ChunkData,
 };
-use bincode::{
-    BorrowDecode,
-    Decode,
-    Encode,
+use serde::{
+    Deserialize,
+    Serialize,
 };
 
-#[derive(Encode, Decode)]
+#[derive(Serialize, Deserialize)]
 pub struct InitResponse {
+    #[serde(with = "serde_big_array::BigArray")]
     pub public_key: [u8; 33],
+    #[serde(with = "serde_big_array::BigArray")]
     pub key_signature: [u8; 64],
 }
 
@@ -30,19 +31,19 @@ impl Pack for InitResponse {
     const DEFAULT_COMPRESSED: bool = false;
 }
 
-#[derive(Encode, Decode, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub enum LoginFailure {
     IncorrectCredentials,
     Unknown,
 }
 
-#[derive(Encode, Decode, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub enum RegisterFailure {
     UsernameTaken,
     Unknown,
 }
 
-#[derive(Encode, Decode)]
+#[derive(Serialize, Deserialize)]
 pub struct InitData {
     pub actor: Actor,
     // position: Position,
@@ -53,7 +54,7 @@ impl Pack for InitData {
     const DEFAULT_COMPRESSED: bool = false;
 }
 
-#[derive(Encode, Decode)]
+#[derive(Serialize, Deserialize)]
 pub enum LoginResult {
     Success(InitData),
     Failure(LoginFailure),
@@ -63,7 +64,7 @@ impl Pack for LoginResult {
     const DEFAULT_COMPRESSED: bool = false;
 }
 
-#[derive(Encode, Decode)]
+#[derive(Serialize, Deserialize)]
 pub enum RegisterResult {
     Success(InitData),
     Failure(RegisterFailure),
@@ -73,7 +74,7 @@ impl Pack for RegisterResult {
     const DEFAULT_COMPRESSED: bool = false;
 }
 
-#[derive(Encode, BorrowDecode)]
+#[derive(Serialize, Deserialize)]
 pub struct ChunkChanges<'a>(&'a [u8]);
 
 impl<'a> ChunkChanges<'a> {
@@ -204,16 +205,17 @@ impl<'a> ChunkChangesChunkEncoder<'a> {
     }
 }
 
-#[derive(Encode, BorrowDecode)]
+#[derive(Serialize, Deserialize)]
 pub enum ClientAccept<'a> {
     State {
         snapshot: Snapshot,
         // last client's snapshot received by the server
         last_client_snapshot: Snapshot,
+        #[serde(borrow)]
         state: StatePacked<'a>,
     },
     ChunkData(ChunkData),
-    ChunkChanges(ChunkChanges<'a>),
+    ChunkChanges(#[serde(borrow)] ChunkChanges<'a>),
 }
 
 impl Pack for ClientAccept<'_> {

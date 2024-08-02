@@ -1,26 +1,25 @@
 #[cfg(feature = "script")]
 use crate::blocks_in_chunk;
-use bincode::{
-    de::Decoder,
-    enc::Encoder,
-    error::{
-        DecodeError,
-        EncodeError,
+use serde::{
+    de::{
+        Deserializer,
+        Error as _,
     },
-    Decode,
-    Encode,
+    ser::Serializer,
+    Deserialize,
+    Serialize,
 };
 
-#[derive(Encode, Decode, Clone, Copy, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct DimensionKind(pub u32);
 
-#[derive(Encode, Decode, Clone, Copy, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct Dimension {
     pub kind: DimensionKind,
     pub phase: u64,
 }
 
-#[derive(Encode, Decode, Clone, Copy, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct Chunk {
     pub position: [i32; 3],
     pub dimension: Dimension,
@@ -50,17 +49,17 @@ impl Block {
 }
 
 #[cfg(feature = "script")]
-impl Decode for Block {
-    fn decode<D>(decoder: &mut D) -> Result<Self, DecodeError>
+impl<'de> Deserialize<'de> for Block {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: Decoder,
+        D: Deserializer<'de>,
     {
-        let block: usize = u16::decode(decoder)?
+        let block: usize = u16::deserialize(deserializer)?
             .try_into()
-            .map_err(|_| DecodeError::LimitExceeded)?;
+            .map_err(|_| D::Error::custom("Block value out of bounds"))?;
 
         if block > blocks_in_chunk() {
-            return Err(DecodeError::LimitExceeded);
+            return Err(D::Error::custom("Block value out of bounds of chunk"));
         }
 
         Ok(Block(block))
@@ -68,52 +67,50 @@ impl Decode for Block {
 }
 
 #[cfg(not(feature = "script"))]
-impl Decode for Block {
-    fn decode<D>(decoder: &mut D) -> Result<Self, DecodeError>
+impl<'de> Deserialize<'de> for Block {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: Decoder,
+        D: Deserializer<'de>,
     {
-        let block: usize = u16::decode(decoder)?
+        let block: usize = u16::deserialize(deserializer)?
             .try_into()
-            .map_err(|_| DecodeError::LimitExceeded)?;
+            .map_err(|_| D::Error::custom("Block value out of bounds"))?;
 
         Ok(Block(block))
     }
 }
 
-bincode::impl_borrow_decode!(Block);
-
-impl Encode for Block {
-    fn encode<E>(&self, encoder: &mut E) -> Result<(), EncodeError>
+impl Serialize for Block {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        E: Encoder,
+        S: Serializer,
     {
         let value: u16 = self.0.try_into().unwrap();
-        value.encode(encoder)
+        value.serialize(serializer)
     }
 }
 
-#[derive(Encode, Decode, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct GetTargetBlockRequest {
     pub chunk: Chunk,
     pub offset: [f32; 3],
     pub direction: [f32; 3],
 }
 
-#[derive(Encode, Decode, Clone, Copy, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct BlockClass(pub u64);
 
-#[derive(Encode, Decode, Clone, Copy, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct Actor(pub u64);
 
-#[derive(Encode, Decode, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct GetTargetBlockResponse {
     pub chunk: Chunk,
     pub block: Block,
     pub side: u8,
 }
 
-#[derive(Encode, Decode, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct SetClassOfBlockRequest {
     pub chunk: Chunk,
     pub block: Block,

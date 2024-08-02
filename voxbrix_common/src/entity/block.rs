@@ -1,13 +1,12 @@
 use crate::entity::chunk::Chunk;
-use bincode::{
-    de::Decoder,
-    enc::Encoder,
-    error::{
-        DecodeError,
-        EncodeError,
+use serde::{
+    de::{
+        Deserializer,
+        Error as _,
     },
-    Decode,
-    Encode,
+    ser::Serializer,
+    Deserialize,
+    Serialize,
 };
 
 pub const BLOCKS_IN_CHUNK_EDGE: usize = 16;
@@ -21,6 +20,33 @@ pub const BLOCKS_IN_CHUNK_EDGE_I32: i32 = BLOCKS_IN_CHUNK_EDGE as i32;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
 pub struct Block(usize);
+
+impl<'de> Deserialize<'de> for Block {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let block: usize = u16::deserialize(deserializer)?
+            .try_into()
+            .map_err(|_| D::Error::custom("Block value out of bounds"))?;
+
+        if block > BLOCKS_IN_CHUNK {
+            return Err(D::Error::custom("Block value out of bounds of chunk"));
+        }
+
+        Ok(Block(block))
+    }
+}
+
+impl Serialize for Block {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let value: u16 = self.0.try_into().unwrap();
+        value.serialize(serializer)
+    }
+}
 
 impl Block {
     pub fn from_usize(value: usize) -> Option<Self> {
@@ -45,33 +71,6 @@ impl std::hash::Hash for Block {
 }
 
 impl nohash_hasher::IsEnabled for Block {}
-
-impl Decode for Block {
-    fn decode<D>(decoder: &mut D) -> Result<Self, DecodeError>
-    where
-        D: Decoder,
-    {
-        let block: usize = u16::decode(decoder)?.try_into().unwrap();
-
-        if block > BLOCKS_IN_CHUNK {
-            return Err(DecodeError::LimitExceeded);
-        }
-
-        Ok(Block(block))
-    }
-}
-
-bincode::impl_borrow_decode!(Block);
-
-impl Encode for Block {
-    fn encode<E>(&self, encoder: &mut E) -> Result<(), EncodeError>
-    where
-        E: Encoder,
-    {
-        let value: u16 = self.0.try_into().unwrap();
-        value.encode(encoder)
-    }
-}
 
 impl Block {
     pub fn into_coords(self) -> BlockCoords {

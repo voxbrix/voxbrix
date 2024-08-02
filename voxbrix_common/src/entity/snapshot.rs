@@ -1,13 +1,13 @@
-use bincode::{
-    Decode,
-    Encode,
+use serde::{
+    Deserialize,
+    Serialize,
 };
 
 pub const MAX_SNAPSHOT_DIFF: u64 = 200; // approx. 10 secs
 
 /// Currently, Snapshot(0) means totally uninitialized client/server.
 /// All loops should start with Snapshot(1).
-#[derive(Encode, Decode, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
 pub struct Snapshot(pub u64);
 
 impl std::hash::Hash for Snapshot {

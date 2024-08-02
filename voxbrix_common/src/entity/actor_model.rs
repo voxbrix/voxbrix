@@ -1,10 +1,10 @@
 use crate::AsFromUsize;
-use bincode::{
-    Decode,
-    Encode,
+use serde::{
+    Deserialize,
+    Serialize,
 };
 
-#[derive(Encode, Decode, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
 pub struct ActorModel(pub u64);
 
 impl AsFromUsize for ActorModel {

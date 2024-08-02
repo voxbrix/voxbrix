@@ -1,33 +1,20 @@
-use std::panic;
-use bincode::{Encode, Decode};
 use server_loop_api::{
     self as api,
-    GetTargetBlockRequest,
-    SetClassOfBlockRequest,
-    Actor,
+    serde::{
+        self,
+        Deserialize,
+        Serialize,
+    },
     BlockClass,
     Chunk,
+    GetTargetBlockRequest,
+    SetClassOfBlockRequest,
 };
-use paste::paste;
-
-extern "C" {
-    fn handle_panic(ptr: *const u8, len: u32);
-    //fn log_message(ptr: *const u8, len: u32);
-}
 
 static SCRIPT_NAME: &'static str = "remove_block";
 
-#[no_mangle]
-pub extern "C" fn start() {
-    panic::set_hook(Box::new(|panic_info| {
-        let msg = format!("script \"{}\": {}", SCRIPT_NAME, panic_info);
-        unsafe {
-            handle_panic(msg.as_ptr(), msg.len() as u32);
-        }
-    }));
-}
-
-#[derive(Encode, Decode)]
+#[derive(Serialize, Deserialize)]
+#[serde(crate = "self::serde")]
 pub struct RemoveBlock {
     chunk: Chunk,
     offset: [f32; 3],
@@ -36,18 +23,13 @@ pub struct RemoveBlock {
 
 #[no_mangle]
 pub extern "C" fn run(input_len: u32) {
-    panic::set_hook(Box::new(|panic_info| {
-        let msg = format!("script \"{}\": {}", SCRIPT_NAME, panic_info);
-        unsafe {
-            handle_panic(msg.as_ptr(), msg.len() as u32);
-        }
-    }));
+    api::handle_panic(SCRIPT_NAME);
+
     // Action is prefixed with serialized length as it is represented by byte array on the host.
-    let (
-        _actor_opt,
-        _action_len_prefix,
-        action,
-    ) = api::read_buffer::<(Option<Actor>, u64, RemoveBlock)>(input_len as usize);
+    let Some((_actor_opt, action)) = api::read_action_input::<RemoveBlock>(input_len as usize)
+    else {
+        return;
+    };
 
     let Some(target) = api::get_target_block(GetTargetBlockRequest {
         chunk: action.chunk,

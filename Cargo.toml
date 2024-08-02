@@ -22,8 +22,9 @@ tokio = "1"
 rayon = "1.8"
 futures-lite = { version = "2", default-features = false }
 flume = { version = "0.11", default-features = false, features = ["async"] }
-bincode = { git = "https://github.com/bincode-org/bincode.git", rev = "8f65c60" }
+postcard = { version = "1.0.8", default-features = false }
 serde = { version = ">=1.0.184", default-features = false, features = ["std", "derive"] } 
+serde-big-array = "0.5.1"
 k256 = { version = "0.13.3", features = ["ecdsa"] }
 lz4_flex = "0.11"
 arrayvec = { version = "0.7", default-features = false }
