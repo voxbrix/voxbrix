@@ -48,10 +48,6 @@ impl<T> OverridableActorClassComponent<T> {
             .get(actor)
             .or_else(|| self.classes.get(actor_class.as_usize())?.as_ref())
     }
-
-    pub fn remove_actor(&mut self, actor: &Actor) -> Option<T> {
-        self.overrides.remove(actor)
-    }
 }
 
 impl<'a, T> OverridableActorClassComponent<T>

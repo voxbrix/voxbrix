@@ -415,7 +415,6 @@ struct ActorAnimationBuilder {
 
 #[derive(Deserialize, Debug)]
 pub struct ActorAnimationDescriptor {
-    label: String,
     duration: u16,
     transformations: Vec<TransformationDescriptor>,
 }

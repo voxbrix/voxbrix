@@ -69,7 +69,6 @@ fn copy_surface_config(to: &mut wgpu::SurfaceConfiguration, from: &wgpu::Surface
 pub struct OutputThread {
     render_handle: Arc<RenderHandle>,
     window: &'static Window,
-    instance: wgpu::Instance,
     input_source: Receiver<InputEvent>,
     current_surface_config: wgpu::SurfaceConfiguration,
     next_surface_config: wgpu::SurfaceConfiguration,
@@ -88,7 +87,7 @@ impl OutputThread {
         let render_handle = Arc::new(render_handle);
         let WindowHandle {
             window,
-            instance,
+            instance: _,
             surface,
             event_rx: input_source,
         } = window_handle;
@@ -168,7 +167,6 @@ impl OutputThread {
         Self {
             render_handle,
             window,
-            instance,
             input_source,
             current_surface_config,
             next_surface_config,
@@ -223,7 +221,7 @@ impl OutputThread {
         &self.render_handle.queue
     }
 
-    pub fn frame_time(&mut self) -> &mut Option<Duration> {
-        &mut self.frame_time
-    }
+    // pub fn frame_time(&mut self) -> &mut Option<Duration> {
+    // &mut self.frame_time
+    // }
 }

@@ -6,10 +6,7 @@ use serde::{
     Deserialize,
     Serialize,
 };
-use std::{
-    mem,
-    ops::Deref,
-};
+use std::mem;
 use voxbrix_common::{
     entity::{
         actor::Actor,
@@ -111,40 +108,40 @@ where
     }
 }
 
-pub struct Writable<'a, T> {
-    actor: Actor,
-    snapshot: Snapshot,
-    changes: &'a mut IntMap<Actor, Snapshot>,
-    data: &'a mut T,
-}
-
-impl<'a, T> Writable<'a, T>
-where
-    T: PartialEq,
-{
-    /// Only updates value if it is different from the old one.
-    pub fn update(&mut self, value: T) {
-        let Self {
-            actor,
-            snapshot,
-            changes,
-            data,
-        } = self;
-
-        if value != **data {
-            **data = value;
-            changes.insert(*actor, *snapshot);
-        }
-    }
-}
-
-impl<'a, T> Deref for Writable<'a, T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        self.data
-    }
-}
+// pub struct Writable<'a, T> {
+// actor: Actor,
+// snapshot: Snapshot,
+// changes: &'a mut IntMap<Actor, Snapshot>,
+// data: &'a mut T,
+// }
+//
+// impl<'a, T> Writable<'a, T>
+// where
+// T: PartialEq,
+// {
+// Only updates value if it is different from the old one.
+// pub fn update(&mut self, value: T) {
+// let Self {
+// actor,
+// snapshot,
+// changes,
+// data,
+// } = self;
+//
+// if value != **data {
+// data = value;
+// changes.insert(*actor, *snapshot);
+// }
+// }
+// }
+//
+// impl<'a, T> Deref for Writable<'a, T> {
+// type Target = T;
+//
+// fn deref(&self) -> &T {
+// self.data
+// }
+// }
 
 /// Component that can be packed into State and distributed to clients
 pub struct ActorComponentPackable<T>
@@ -280,18 +277,14 @@ where
         self.storage.insert(i, new)
     }
 
-    pub fn get(&self, i: &Actor) -> Option<&T> {
-        self.storage.get(i)
-    }
-
-    pub fn get_writable(&mut self, i: &Actor, snapshot: Snapshot) -> Option<Writable<T>> {
-        Some(Writable {
-            actor: *i,
-            snapshot,
-            changes: &mut self.changes,
-            data: self.storage.get_mut(i)?,
-        })
-    }
+    // pub fn get_writable(&mut self, i: &Actor, snapshot: Snapshot) -> Option<Writable<T>> {
+    // Some(Writable {
+    // actor: *i,
+    // snapshot,
+    // changes: &mut self.changes,
+    // data: self.storage.get_mut(i)?,
+    // })
+    // }
 
     pub fn iter(&self) -> impl Iterator<Item = (Actor, &T)> {
         self.storage.iter().map(|(k, v)| (*k, v))
@@ -323,16 +316,8 @@ impl<T> ActorComponent<T> {
         self.storage.get(i)
     }
 
-    pub fn get_mut(&mut self, i: &Actor) -> Option<&mut T> {
-        self.storage.get_mut(i)
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (Actor, &T)> {
         self.storage.iter().map(|(&a, t)| (a, t))
-    }
-
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = (Actor, &mut T)> {
-        self.storage.iter_mut().map(|(&a, t)| (a, t))
     }
 
     pub fn remove(&mut self, i: &Actor) -> Option<T> {

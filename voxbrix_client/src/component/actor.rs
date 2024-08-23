@@ -121,11 +121,6 @@ where
     pub fn iter(&self) -> impl Iterator<Item = (Actor, &T)> {
         self.storage.iter().map(|(k, v)| (*k, v))
     }
-
-    pub fn remove(&mut self, i: &Actor, snapshot: Snapshot) -> Option<T> {
-        self.last_change_snapshot = snapshot;
-        self.storage.remove(i)
-    }
 }
 
 impl<T> ActorComponentPackable<T>
@@ -179,43 +174,6 @@ where
     }
 }
 
-/// Internal component that is not shared with the server.
-pub struct ActorComponent<T> {
-    storage: IntMap<Actor, T>,
-}
-
-impl<T> ActorComponent<T> {
-    pub fn new() -> Self {
-        Self {
-            storage: IntMap::default(),
-        }
-    }
-
-    pub fn insert(&mut self, i: Actor, new: T) -> Option<T> {
-        self.storage.insert(i, new)
-    }
-
-    pub fn get(&self, i: &Actor) -> Option<&T> {
-        self.storage.get(i)
-    }
-
-    pub fn get_mut(&mut self, i: &Actor) -> Option<&mut T> {
-        self.storage.get_mut(i)
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (Actor, &T)> {
-        self.storage.iter().map(|(&a, t)| (a, t))
-    }
-
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = (Actor, &mut T)> {
-        self.storage.iter_mut().map(|(&a, t)| (a, t))
-    }
-
-    pub fn remove(&mut self, i: &Actor) -> Option<T> {
-        self.storage.remove(i)
-    }
-}
-
 /// Internal component that is received from the server.
 pub struct ActorComponentUnpackable<T> {
     state_component: StateComponent,
@@ -230,28 +188,8 @@ impl<T> ActorComponentUnpackable<T> {
         }
     }
 
-    pub fn insert(&mut self, i: Actor, new: T) -> Option<T> {
-        self.storage.insert(i, new)
-    }
-
-    pub fn get(&self, i: &Actor) -> Option<&T> {
-        self.storage.get(i)
-    }
-
-    pub fn get_mut(&mut self, i: &Actor) -> Option<&mut T> {
-        self.storage.get_mut(i)
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (Actor, &T)> {
-        self.storage.iter().map(|(&a, t)| (a, t))
-    }
-
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (Actor, &mut T)> {
         self.storage.iter_mut().map(|(&a, t)| (a, t))
-    }
-
-    pub fn remove(&mut self, i: &Actor) -> Option<T> {
-        self.storage.remove(i)
     }
 }
 
@@ -318,29 +256,25 @@ where
         self.data.get(&(*actor, *key))
     }
 
-    pub fn get_actor(&self, actor: &Actor) -> impl DoubleEndedIterator<Item = (Actor, K, &T)> {
-        self.data
-            .range((*actor, K::MIN) .. (*actor, K::MAX))
-            .map(|(&(m, k), t)| (m, k, t))
-    }
-
-    pub fn extend(&mut self, iter: impl Iterator<Item = (Actor, K, T)>) {
-        self.data.extend(iter.map(|(m, k, t)| ((m, k), t)))
-    }
+    // pub fn get_actor(&self, actor: &Actor) -> impl DoubleEndedIterator<Item = (Actor, K, &T)> {
+    // self.data
+    // .range((*actor, K::MIN) .. (*actor, K::MAX))
+    // .map(|(&(m, k), t)| (m, k, t))
+    // }
 
     pub fn remove(&mut self, actor: &Actor, key: &K) -> Option<T> {
         self.data.remove(&(*actor, *key))
     }
 
-    pub fn remove_actor(&mut self, actor: &Actor) -> BTreeMap<(Actor, K), T> {
-        let mut removed = self.data.split_off(&(*actor, K::MIN));
-
-        let mut right_part = removed.split_off(&(*actor, K::MAX));
-
-        self.data.append(&mut right_part);
-
-        removed
-    }
+    // pub fn remove_actor(&mut self, actor: &Actor) -> BTreeMap<(Actor, K), T> {
+    // let mut removed = self.data.split_off(&(*actor, K::MIN));
+    //
+    // let mut right_part = removed.split_off(&(*actor, K::MAX));
+    //
+    // self.data.append(&mut right_part);
+    //
+    // removed
+    // }
 }
 
 const TARGET_QUEUE_LENGTH_EXTRA: usize = TARGET_QUEUE_LENGTH + 1;

@@ -382,10 +382,6 @@ impl PositionActorComponent {
         })
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (Actor, &Position)> {
-        self.storage.iter().map(|(k, v)| (*k, v))
-    }
-
     pub fn remove(&mut self, actor: &Actor, snapshot: Snapshot) {
         if let Some(value) = self.storage.remove(actor) {
             self.chunk_changes.push_back(ActorChunkChange {

@@ -4,13 +4,11 @@ use serde::Serialize;
 use voxbrix_common::{
     entity::{
         actor::Actor,
-        actor_class::ActorClass,
         snapshot::Snapshot,
         state_component::StateComponent,
     },
     messages::StatePacker,
     system::actor_class_loading::LoadActorClassComponent,
-    AsFromUsize,
 };
 
 pub mod model;
@@ -63,20 +61,6 @@ where
             actors_full_update,
             actors_partial_update,
         )
-    }
-
-    pub fn insert_actor(&mut self, actor: Actor, new: T, snapshot: Snapshot) -> Option<T> {
-        self.overrides.insert(actor, new, snapshot)
-    }
-
-    pub fn get(&self, actor: &Actor, actor_class: &ActorClass) -> Option<&T> {
-        self.overrides
-            .get(actor)
-            .or_else(|| self.classes.get(actor_class.as_usize())?.as_ref())
-    }
-
-    pub fn remove_actor(&mut self, actor: &Actor, snapshot: Snapshot) -> Option<T> {
-        self.overrides.remove(actor, snapshot)
     }
 }
 

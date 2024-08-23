@@ -115,11 +115,6 @@ impl EntityRemoveQueueInner {
         })
     }
 
-    fn remove_actor(&mut self, actor: &Actor) {
-        self.actors.insert(*actor);
-        self.is_not_empty = true;
-    }
-
     fn remove_player(&mut self, player: &Player) {
         self.players.insert(*player);
         self.is_not_empty = true;
@@ -129,13 +124,6 @@ impl EntityRemoveQueueInner {
 impl EntityRemoveQueue {
     pub fn new() -> Self {
         Self(EntityRemoveQueueInner::new())
-    }
-
-    pub fn remove_actor(&mut self, actor: &Actor) {
-        self.0
-            .as_mut()
-            .expect("EntityRemoveQueue is taken")
-            .remove_actor(actor)
     }
 
     pub fn remove_player(&mut self, player: &Player) {

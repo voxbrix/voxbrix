@@ -1,7 +1,4 @@
 use crate::system::model_loading::LoadableComponent;
-use ron::value::RawValue;
-use serde::Deserialize;
-use std::collections::BTreeMap;
 use voxbrix_common::{
     entity::actor_model::ActorModel,
     AsFromUsize,
@@ -27,10 +24,4 @@ impl<T> LoadableComponent<T> for ActorModelComponent<T> {
     fn reload(&mut self, data: Vec<Option<T>>) {
         self.data = data;
     }
-}
-
-#[derive(Deserialize, Debug)]
-pub struct ActorModelDescriptor {
-    label: String,
-    components: BTreeMap<String, Box<RawValue>>,
 }

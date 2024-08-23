@@ -18,7 +18,6 @@ use wgpu::util::{
 #[derive(Debug)]
 enum CameraError {
     InvalidActor,
-    InvalidCameraParameters,
 }
 
 #[derive(Debug)]
