@@ -1,6 +1,7 @@
 use crate::entity::player::Player;
 use nohash_hasher::IntMap;
 
+pub mod actions_packer;
 pub mod actor;
 pub mod chunk_update;
 pub mod chunk_view;

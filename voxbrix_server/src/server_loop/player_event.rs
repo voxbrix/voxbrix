@@ -6,6 +6,8 @@ use crate::{
     entity::player::Player,
     server_loop::data::{
         ScriptSharedData,
+        SendMutPtr,
+        SendPtr,
         SharedData,
     },
 };
@@ -13,6 +15,7 @@ use log::{
     debug,
     warn,
 };
+use server_loop_api::ActionInput;
 use voxbrix_common::messages::server::ServerAccept;
 use voxbrix_protocol::server::Packet;
 
@@ -117,6 +120,12 @@ impl PlayerEvent<'_> {
                     },
                 );
 
+                // Pruning confirmed Server -> Client actions.
+                sd.actions_packer_pc
+                    .get_mut(&player)
+                    .expect("actions packer not found for a player")
+                    .confirm_snapshot(last_server_snapshot);
+
                 let actions = match sd.actions_unpacker.unpack_actions(actions) {
                     Ok(v) => v,
                     Err(_) => {
@@ -139,13 +148,25 @@ impl PlayerEvent<'_> {
                     let actor_opt = sd.actor_pc.get(&player);
 
                     let script_data = ScriptSharedData {
-                        block_class_label_map: &sd.block_class_label_map,
-                        class_bc: &mut sd.class_bc,
-                        collision_bcc: &sd.collision_bcc,
+                        snapshot: sd.snapshot,
+                        actor_pc: SendPtr::new(&sd.actor_pc),
+                        actions_packer_pc: SendMutPtr::new(&mut sd.actions_packer_pc),
+                        chunk_view_pc: SendPtr::new(&sd.chunk_view_pc),
+                        position_ac: SendPtr::new(&sd.position_ac),
+                        block_class_label_map: SendPtr::new(&sd.block_class_label_map),
+                        class_bc: SendMutPtr::new(&mut sd.class_bc),
+                        collision_bcc: SendPtr::new(&sd.collision_bcc),
                     };
 
-                    sd.script_registry
-                        .run_script(&script, script_data, (actor_opt, data));
+                    sd.script_registry.run_script(
+                        &script,
+                        script_data,
+                        ActionInput {
+                            action: (*action).into(),
+                            actor: Some((*actor).into()),
+                            data,
+                        },
+                    );
                 }
             },
         }

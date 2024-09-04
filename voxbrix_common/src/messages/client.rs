@@ -6,7 +6,10 @@ use crate::{
         chunk::Chunk,
         snapshot::Snapshot,
     },
-    messages::StatePacked,
+    messages::{
+        ActionsPacked,
+        StatePacked,
+    },
     pack::{
         self,
         Pack,
@@ -213,6 +216,8 @@ pub enum ClientAccept<'a> {
         last_client_snapshot: Snapshot,
         #[serde(borrow)]
         state: StatePacked<'a>,
+        #[serde(borrow)]
+        actions: ActionsPacked<'a>,
     },
     ChunkData(ChunkData),
     ChunkChanges(#[serde(borrow)] ChunkChanges<'a>),

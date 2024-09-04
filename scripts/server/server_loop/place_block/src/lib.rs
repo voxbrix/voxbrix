@@ -27,16 +27,16 @@ pub struct PlaceBlock {
 pub extern "C" fn run(input_len: u32) {
     api::handle_panic(SCRIPT_NAME);
 
-    // Action is prefixed with serialized length as it is represented by byte array on the host.
-    let Some((_actor_opt, action)) = api::read_action_input::<PlaceBlock>(input_len as usize)
-    else {
+    let Some(input) = api::read_action_input::<PlaceBlock>(input_len as usize) else {
         return;
     };
 
+    api::broadcast_action(input.action, input.actor, ());
+
     let Some(target) = api::get_target_block(GetTargetBlockRequest {
-        chunk: action.chunk,
-        offset: action.offset,
-        direction: action.direction,
+        chunk: input.data.chunk,
+        offset: input.data.offset,
+        direction: input.data.direction,
     }) else {
         return;
     };
@@ -53,7 +53,7 @@ pub extern "C" fn run(input_len: u32) {
         api::set_class_of_block(SetClassOfBlockRequest {
             chunk,
             block,
-            block_class: action.block_class,
+            block_class: input.data.block_class,
         });
     }
 }

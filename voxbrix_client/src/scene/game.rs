@@ -134,6 +134,7 @@ use voxbrix_common::{
     math::Vec3F32,
     messages::{
         ActionsPacker,
+        ActionsUnpacker,
         StatePacker,
         StateUnpacker,
     },
@@ -580,6 +581,7 @@ impl GameScene {
             state_packer,
             state_unpacker: StateUnpacker::new(),
             actions_packer: ActionsPacker::new(),
+            actions_unpacker: ActionsUnpacker::new(),
 
             last_process_time,
 

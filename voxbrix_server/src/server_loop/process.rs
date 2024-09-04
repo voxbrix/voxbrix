@@ -334,11 +334,17 @@ impl Process<'_> {
             }
 
             let state = sd.state_packer.pack_state();
+            let actions = sd
+                .actions_packer_pc
+                .get_mut(player)
+                .expect("no actions packer found for a player")
+                .pack_actions();
 
             let data = sd.packer.pack_to_vec(&ClientAccept::State {
                 snapshot: sd.snapshot,
                 last_client_snapshot: client.last_client_snapshot,
                 state,
+                actions,
             });
 
             if client

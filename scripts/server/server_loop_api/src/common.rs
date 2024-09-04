@@ -103,6 +103,16 @@ pub struct BlockClass(pub u64);
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct Actor(pub u64);
 
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
+pub struct Action(pub u64);
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
+pub struct ActionInput<'a> {
+    pub action: Action,
+    pub actor: Option<Actor>,
+    pub data: &'a [u8],
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GetTargetBlockResponse {
     pub chunk: Chunk,

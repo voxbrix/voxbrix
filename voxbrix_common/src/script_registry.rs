@@ -124,11 +124,15 @@ impl<T> ScriptData<T> {
     /// Common buffer that can be used for e.g. serializing into it before copying to the store
     /// memory.
     pub fn buffer(&mut self) -> &mut Vec<u8> {
-        &mut self
+        let buf = &mut self
             .dynamic_data
             .as_mut()
             .expect("dynamic data unset")
-            .buffer
+            .buffer;
+
+        buf.clear();
+
+        buf
     }
 }
 

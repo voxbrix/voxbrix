@@ -48,6 +48,7 @@ use voxbrix_common::{
     },
     messages::{
         ActionsPacker,
+        ActionsUnpacker,
         StatePacker,
         StateUnpacker,
     },
@@ -111,6 +112,7 @@ pub struct GameSharedData {
     pub state_packer: StatePacker,
     pub state_unpacker: StateUnpacker,
     pub actions_packer: ActionsPacker,
+    pub actions_unpacker: ActionsUnpacker,
 
     pub last_process_time: Instant,
 

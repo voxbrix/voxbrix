@@ -23,6 +23,7 @@ use crate::{
             status::StatusChunkComponent,
         },
         player::{
+            actions_packer::ActionsPackerPlayerComponent,
             actor::ActorPlayerComponent,
             chunk_update::ChunkUpdatePlayerComponent,
             chunk_view::ChunkViewPlayerComponent,
@@ -279,6 +280,7 @@ impl ServerLoop {
             actor_registry: ActorRegistry::new(),
 
             client_pc: ClientPlayerComponent::new(),
+            actions_packer_pc: ActionsPackerPlayerComponent::new(),
             actor_pc: ActorPlayerComponent::new(),
             chunk_update_pc: ChunkUpdatePlayerComponent::new(),
             chunk_view_pc: ChunkViewPlayerComponent::new(),

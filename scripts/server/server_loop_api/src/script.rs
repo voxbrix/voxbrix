@@ -20,6 +20,7 @@ mod import {
         pub fn get_target_block(ptr: *const u8, len: u32) -> u32;
         pub fn set_class_of_block(ptr: *const u8, len: u32);
         pub fn get_block_class_by_label(ptr: *const u8, len: u32) -> u32;
+        pub fn broadcast_action_local(ptr: *const u8, len: u32);
         // fn get_class_of_block(chunk_x: i32, chunk_y: i32, chunk_z: i32, block: u16) -> u64;
         // fn set_class_of_block(chunk_x: i32, chunk_y: i32, chunk_z: i32, block: u16, class: u64);
         // fn get_last_transparent_block(
@@ -86,15 +87,56 @@ where
     postcard::from_bytes(input_slice).ok()
 }
 
-pub fn read_action_input<T>(len: usize) -> Option<(Option<Actor>, T)>
+pub struct ActionInputParsed<T> {
+    pub action: Action,
+    pub actor: Option<Actor>,
+    pub data: T,
+}
+
+pub fn read_action_input<T>(len: usize) -> Option<ActionInputParsed<T>>
 where
     T: DeserializeOwned,
 {
     let input_slice = unsafe { &SHARED_BUFFER[.. len as usize] };
 
-    let (actor, _, value) = postcard::from_bytes::<(Option<Actor>, u64, T)>(input_slice).ok()?;
+    let input = postcard::from_bytes::<ActionInput>(input_slice).ok()?;
 
-    Some((actor, value))
+    let data = postcard::from_bytes::<T>(input.data).ok()?;
+
+    Some(ActionInputParsed {
+        action: input.action,
+        actor: input.actor,
+        data,
+    })
+}
+
+// TODO instead of None optionally have a possibility to pass a position.
+pub fn broadcast_action<T>(action: Action, actor: Option<Actor>, data: T)
+where
+    T: Serialize,
+{
+    static mut BROADCAST_BUFFER: Vec<u8> = Vec::new();
+
+    unsafe {
+        BROADCAST_BUFFER.clear();
+
+        postcard::serialize_with_flavor(
+            &data,
+            Writer {
+                written: 0,
+                writer: &mut *ptr::addr_of_mut!(BROADCAST_BUFFER),
+            },
+        )
+        .unwrap();
+
+        let input_slice = write_buffer(ActionInput {
+            action,
+            actor,
+            data: BROADCAST_BUFFER.as_slice(),
+        });
+
+        import::broadcast_action_local(input_slice.as_ptr(), input_slice.len().try_into().unwrap());
+    }
 }
 
 struct Writer<W> {

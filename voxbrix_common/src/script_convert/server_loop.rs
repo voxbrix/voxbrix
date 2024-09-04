@@ -1,4 +1,6 @@
 use crate::entity::{
+    action::Action,
+    actor::Actor,
     block::Block,
     block_class::BlockClass,
     chunk::{
@@ -16,12 +18,7 @@ impl From<server_loop_api::Block> for Block {
 
 impl From<Block> for server_loop_api::Block {
     fn from(value: Block) -> Self {
-        Self::from_usize(
-            value
-                .as_usize()
-                .try_into()
-                .expect("block index must not exceed u16::MAX"),
-        )
+        Self::from_usize(value.as_usize())
     }
 }
 
@@ -76,5 +73,29 @@ impl From<Chunk> for server_loop_api::Chunk {
 impl From<server_loop_api::BlockClass> for BlockClass {
     fn from(value: server_loop_api::BlockClass) -> Self {
         Self(value.0.into())
+    }
+}
+
+impl From<server_loop_api::Action> for Action {
+    fn from(value: server_loop_api::Action) -> Self {
+        Self(value.0)
+    }
+}
+
+impl From<Action> for server_loop_api::Action {
+    fn from(value: Action) -> Self {
+        Self(value.0)
+    }
+}
+
+impl From<server_loop_api::Actor> for Actor {
+    fn from(value: server_loop_api::Actor) -> Self {
+        Self(value.0)
+    }
+}
+
+impl From<Actor> for server_loop_api::Actor {
+    fn from(value: Actor) -> Self {
+        Self(value.0)
     }
 }

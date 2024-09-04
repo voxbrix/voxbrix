@@ -15,7 +15,9 @@ use voxbrix_common::{
         },
         chunk::status::ChunkStatus,
     },
+    entity::actor::Actor,
     messages::client::ClientAccept,
+    pack,
     ChunkData,
 };
 use voxbrix_protocol::client::Error as ClientError;
@@ -51,6 +53,7 @@ impl NetworkInput<'_> {
                 snapshot: new_lss,
                 last_client_snapshot: new_lcs,
                 state,
+                actions,
             } => {
                 let current_time = Instant::now();
 
@@ -99,6 +102,32 @@ impl NetworkInput<'_> {
                         )
                     },
                 );
+
+                sd.actions_packer.confirm_snapshot(new_lcs);
+
+                let actions = match sd.actions_unpacker.unpack_actions(actions) {
+                    Ok(m) => m,
+                    Err(_) => return Transition::Menu,
+                };
+
+                // Filtering out already handled actions
+                for (action, _, data) in actions
+                    .data()
+                    .iter()
+                    .filter(|(_, snapshot, _)| *snapshot > sd.last_server_snapshot)
+                {
+                    let (actor_opt, action_data): (Option<Actor>, &[u8]) =
+                        pack::decode_from_slice(data)
+                            .expect("unable to unpack server answer")
+                            .0;
+                    error!(
+                        "received action {:?} of {:?} with data len {}",
+                        action,
+                        actor_opt,
+                        action_data.len()
+                    );
+                }
+
                 sd.last_client_snapshot = new_lcs;
                 sd.last_server_snapshot = new_lss;
             },

@@ -22,6 +22,7 @@ use crate::{
             },
         },
         player::{
+            actions_packer::ActionsPackerPlayerComponent,
             actor::ActorPlayerComponent,
             chunk_update::ChunkUpdatePlayerComponent,
             chunk_view::{
@@ -55,11 +56,13 @@ use log::debug;
 use nohash_hasher::IntSet;
 use redb::Database;
 use server_loop_api::{
+    ActionInput,
     GetTargetBlockRequest,
     GetTargetBlockResponse,
     SetClassOfBlockRequest,
 };
 use std::{
+    mem,
     sync::Arc,
     time::Instant,
 };
@@ -78,6 +81,7 @@ use voxbrix_common::{
         snapshot::Snapshot,
     },
     messages::{
+        ActionsPacker,
         ActionsUnpacker,
         StatePacker,
         StateUnpacker,
@@ -141,16 +145,51 @@ impl EntityRemoveQueue {
     }
 }
 
-/// For the wrapped script functions the pointers only guaranteed to be valid until the function
-/// returns.
-pub struct ScriptSharedData {
-    pub block_class_label_map: *const LabelMap<BlockClass>,
-    pub class_bc: *mut ClassBlockComponent,
-    pub collision_bcc: *const CollisionBlockClassComponent,
+pub struct SendMutPtr<T>(*mut T);
+unsafe impl<T> Send for SendMutPtr<T> where T: Send {}
+
+impl<T> SendMutPtr<T> {
+    pub fn new(value: &mut T) -> Self {
+        Self(value)
+    }
+
+    pub unsafe fn get<'a>(&'a self) -> &'a T {
+        &*self.0
+    }
+
+    pub unsafe fn get_mut<'a>(&'a mut self) -> &'a mut T {
+        &mut *self.0
+    }
 }
 
-// Safety: all the internal types behind the pointers must be Send.
-unsafe impl Send for ScriptSharedData {}
+pub struct SendPtr<T>(*const T);
+unsafe impl<T> Send for SendPtr<T> where T: Sync {}
+
+impl<T> SendPtr<T> {
+    pub fn new(value: &T) -> Self {
+        Self(value)
+    }
+
+    pub unsafe fn get<'a>(&'a self) -> &'a T {
+        unsafe { &*self.0 }
+    }
+}
+
+/// For safely retrieving the data:
+/// 1. Make sure that the pointers (SendPtr and SendMutPtr) do not live after the wrapped function
+///    returns. Should be easy: do NOT replace SendPtr- and SendMutPtr-typed fields of the
+///    ScriptSharedData in the wrapped functions.
+/// 2. Pointers created must not violate borrowing rules.
+pub struct ScriptSharedData {
+    pub snapshot: Snapshot,
+    pub actor_pc: SendPtr<ActorPlayerComponent>,
+    pub actions_packer_pc: SendMutPtr<ActionsPackerPlayerComponent>,
+    pub chunk_view_pc: SendPtr<ChunkViewPlayerComponent>,
+    pub position_ac: SendPtr<PositionActorComponent>,
+    pub block_class_label_map: SendPtr<LabelMap<BlockClass>>,
+    pub class_bc: SendMutPtr<ClassBlockComponent>,
+    pub collision_bcc: SendPtr<CollisionBlockClassComponent>,
+}
 
 // Try to make unsafe blocks only output owned types.
 pub fn setup_script_registry(registry: &mut ScriptRegistry<ScriptSharedData>) {
@@ -195,7 +234,9 @@ pub fn setup_script_registry(registry: &mut ScriptRegistry<ScriptSharedData>) {
         let (command, _) =
             pack::decode_from_slice::<GetTargetBlockRequest>(bytes).expect("invalid argument");
 
-        let sd = caller.data_mut().shared();
+        let sd = caller.data().shared();
+        let class_bc = unsafe { sd.class_bc.get() };
+        let collision_bcc = unsafe { sd.collision_bcc.get() };
 
         let response = position::get_target_block(
             &Position {
@@ -203,12 +244,12 @@ pub fn setup_script_registry(registry: &mut ScriptRegistry<ScriptSharedData>) {
                 offset: command.offset.into(),
             },
             command.direction.into(),
-            |chunk, block| unsafe {
-                (&*sd.class_bc)
+            |chunk, block| {
+                class_bc
                     .get_chunk(&chunk)
                     .map(|blocks| {
                         let class = blocks.get(block);
-                        (&*sd.collision_bcc).get(class).is_some()
+                        collision_bcc.get(class).is_some()
                     })
                     .unwrap_or(false)
             },
@@ -240,15 +281,14 @@ pub fn setup_script_registry(registry: &mut ScriptRegistry<ScriptSharedData>) {
             pack::decode_from_slice::<SetClassOfBlockRequest>(bytes).expect("invalid argument");
 
         let sd = caller.data_mut().shared_mut();
+        let class_bc = unsafe { sd.class_bc.get_mut() };
 
-        unsafe {
-            let Some(mut classes) = (&mut *sd.class_bc).get_mut_chunk(&command.chunk.into()) else {
-                debug!("changing non-existant chunk");
-                return;
-            };
+        let Some(mut classes) = class_bc.get_mut_chunk(&command.chunk.into()) else {
+            debug!("changing non-existant chunk");
+            return;
+        };
 
-            classes.set(command.block.into(), command.block_class.into());
-        }
+        classes.set(command.block.into(), command.block_class.into());
     }
 
     registry.func_wrap("env", "set_class_of_block", set_class_of_block);
@@ -265,12 +305,66 @@ pub fn setup_script_registry(registry: &mut ScriptRegistry<ScriptSharedData>) {
 
         let (label, _) = pack::decode_from_slice::<&str>(bytes).expect("invalid argument");
 
-        let response = unsafe { (&*caller.data().shared().block_class_label_map).get(label) };
+        let sd = caller.data().shared();
+        let block_class_label_map = unsafe { sd.block_class_label_map.get() };
+
+        let response = block_class_label_map.get(label);
 
         script_registry::write_script_buffer(&mut caller, response)
     }
 
     registry.func_wrap("env", "get_block_class_by_label", get_block_class_by_label);
+
+    fn broadcast_action_local(
+        mut caller: Caller<ScriptData<ScriptSharedData>>,
+        buf_ptr: u32,
+        buf_len: u32,
+    ) {
+        let ptr = buf_ptr as usize;
+        let len = buf_len as usize;
+        let memory = caller.data().memory();
+        let mut bytes = mem::take(caller.data_mut().buffer());
+        bytes.extend_from_slice(&memory.data(&caller)[ptr .. ptr + len]);
+
+        let sd = caller.data_mut().shared_mut();
+        let actor_pc = unsafe { sd.actor_pc.get() };
+        let actions_packer_pc = unsafe { sd.actions_packer_pc.get_mut() };
+        let position_ac = unsafe { sd.position_ac.get() };
+        let chunk_view_pc = unsafe { sd.chunk_view_pc.get() };
+
+        // TODO Instead of option, in the future we should have either actor or "acting position"
+        // directly as an enum.
+        let input: ActionInput = pack::decode_from_slice(&bytes)
+            .expect("unable to decode action data")
+            .0;
+
+        let action_actor: Option<Actor> = input.actor.map(Into::into);
+
+        let acting_position = position_ac
+            .get(&action_actor.expect("actor was not passed by the script"))
+            .expect("acting actor has no position");
+
+        for player in chunk_view_pc.iter().filter_map(|(player, chunk_view)| {
+            let position = position_ac.get(actor_pc.get(&player)?)?;
+
+            position
+                .chunk
+                .radius(chunk_view.radius)
+                .is_within(&acting_position.chunk)
+                .then_some(())?;
+
+            Some(player)
+        }) {
+            actions_packer_pc
+                .get_mut(&player)
+                .expect("no action packer found for a player")
+                .add_action(input.action.into(), sd.snapshot, (action_actor, input.data));
+        }
+
+        *caller.data_mut().buffer() = bytes;
+    }
+
+    registry.func_wrap("env", "broadcast_action_local", broadcast_action_local);
 }
 
 /// All components and systems the loop has.
@@ -284,6 +378,7 @@ pub struct SharedData {
     pub actor_pc: ActorPlayerComponent,
     pub chunk_update_pc: ChunkUpdatePlayerComponent,
     pub chunk_view_pc: ChunkViewPlayerComponent,
+    pub actions_packer_pc: ActionsPackerPlayerComponent,
 
     pub class_ac: ClassActorComponent,
     pub position_ac: PositionActorComponent,
@@ -372,6 +467,7 @@ impl SharedData {
         self.client_pc.remove(&player);
         self.chunk_update_pc.remove(&player);
         self.chunk_view_pc.remove(&player);
+        self.actions_packer_pc.remove(&player);
         if let Some(actor) = self.actor_pc.remove(&player) {
             self.remove_actor(&actor);
         }
@@ -415,6 +511,8 @@ impl SharedData {
                 radius: PLAYER_CHUNK_VIEW_RADIUS,
             },
         );
+
+        self.actions_packer_pc.insert(player, ActionsPacker::new());
 
         if tx_init.send(ClientEvent::AssignActor { actor }).is_err() {
             self.remove_player(&player);

@@ -30,6 +30,10 @@ impl ChunkViewPlayerComponent {
         self.data.get(player)
     }
 
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = (Player, &ChunkView)> {
+        self.data.iter().map(|(p, v)| (*p, v))
+    }
+
     pub fn remove(&mut self, player: &Player) {
         self.data.remove(player);
     }
