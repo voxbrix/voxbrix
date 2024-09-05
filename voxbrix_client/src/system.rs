@@ -1,13 +1,11 @@
 pub mod actor_render;
 pub mod block_render;
 pub mod chunk_presence;
-pub mod chunk_render_pipeline;
 pub mod controller;
 pub mod interface;
 pub mod model_loading;
 pub mod movement_interpolation;
 pub mod player_position;
 pub mod render;
-pub mod sky_light;
 pub mod texture_loading;
 pub mod velocity;

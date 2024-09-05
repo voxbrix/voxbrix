@@ -1,16 +1,16 @@
 use crate::entity::chunk::Chunk;
-use std::collections::BTreeMap;
+use ahash::AHashMap;
 
 pub mod status;
 
 pub struct ChunkComponent<T> {
-    chunks: BTreeMap<Chunk, T>,
+    chunks: AHashMap<Chunk, T>,
 }
 
 impl<T> ChunkComponent<T> {
     pub fn new() -> Self {
         Self {
-            chunks: BTreeMap::new(),
+            chunks: AHashMap::new(),
         }
     }
 

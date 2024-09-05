@@ -15,24 +15,28 @@ use crate::{
             },
         },
     },
-    system::{
-        chunk_render_pipeline::ComputeContext,
-        render::{
-            gpu_vec::GpuVec,
-            output_thread::OutputThread,
-            primitives::{
-                Polygon,
-                VertexDescription,
-            },
-            RenderParameters,
-            Renderer,
+    system::render::{
+        gpu_vec::GpuVec,
+        output_thread::OutputThread,
+        primitives::{
+            Polygon,
+            VertexDescription,
         },
+        RenderParameters,
+        Renderer,
     },
 };
-use ahash::AHashMap;
+use ahash::{
+    AHashMap,
+    AHashSet,
+};
 use arrayvec::ArrayVec;
 use rayon::prelude::*;
-use std::mem;
+use std::{
+    collections::VecDeque,
+    iter,
+    mem,
+};
 use voxbrix_common::{
     component::block::{
         sky_light::{
@@ -236,6 +240,10 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
                 });
 
         BlockRenderSystem {
+            block_change_queue: VecDeque::new(),
+            block_change_neighbors: AHashMap::new(),
+            chunk_queue: VecDeque::new(),
+            enqueued_chunks: AHashSet::new(),
             render_pipeline,
             chunk_buffer_shards: AHashMap::new(),
             update_chunk_buffer: false,
@@ -256,6 +264,10 @@ enum TargetHighlighting {
 }
 
 pub struct BlockRenderSystem {
+    block_change_queue: VecDeque<Chunk>,
+    block_change_neighbors: AHashMap<Chunk, [bool; 6]>,
+    chunk_queue: VecDeque<Chunk>,
+    enqueued_chunks: AHashSet<Chunk>,
     render_pipeline: wgpu::RenderPipeline,
     chunk_buffer_shards: AHashMap<Chunk, Vec<Polygon>>,
     update_chunk_buffer: bool,
@@ -343,24 +355,24 @@ impl BlockRenderSystem {
         polygon_buffer
     }
 
-    // TODO move into component
-    pub fn remove_chunk(&mut self, chunk: &Chunk) {
-        self.chunk_buffer_shards.remove(chunk);
+    /// Add Chunk into the low-priority queue, without taking care of neighbors
+    /// should be used for adding new chunks after they are processed through other systems.
+    /// The previous steps should take care and manually add neighbors if necessary.
+    pub fn enqueue_chunk(&mut self, chunk: Chunk) {
+        // Ignore if already exists in either queue.
+        if self.block_change_neighbors.contains_key(&chunk) || !self.enqueued_chunks.insert(chunk) {
+            return;
+        }
+
+        self.chunk_queue.push_back(chunk);
     }
 
-    pub fn compute_chunks(
-        &mut self,
-        compute_context: ComputeContext<'_>,
-        class_bc: &ClassBlockComponent,
-        model_bcc: &ModelBlockClassComponent,
-        builder_bmc: &BuilderBlockModelComponent,
-        culling_bmc: &CullingBlockModelComponent,
-        sky_light_bc: &SkyLightBlockComponent,
-    ) {
-        let chunk = compute_context.queue.next().unwrap();
+    /// Block changes enqueued into high-priority queue.
+    /// Also re-renders neighbor chunks if necessary.
+    pub fn block_change(&mut self, chunk: &Chunk, block: Block) {
+        let mut neighbor_needs_render = [false; 6];
 
-        let par_iter = [
-            [0, 0, 0],
+        let neighbor_chunks = [
             [-1, 0, 0],
             [1, 0, 0],
             [0, -1, 0],
@@ -369,14 +381,100 @@ impl BlockRenderSystem {
             [0, 0, 1],
         ]
         .into_iter()
-        .filter_map(|offset| {
-            let chunk = chunk.checked_add(offset)?;
-            class_bc.get_chunk(&chunk)?;
-            sky_light_bc.get_chunk(&chunk)?;
-            Some(chunk)
-        })
-        .par_bridge()
-        .map(|chunk| {
+        .map(|offset| chunk.checked_add(offset))
+        .enumerate()
+        .filter_map(|(side, chunk)| Some((side, chunk?)));
+
+        let neighbors = block.neighbors();
+
+        for (side, _chunk) in neighbor_chunks {
+            if let Neighbor::OtherChunk(_) = neighbors[side] {
+                neighbor_needs_render[side] = true;
+            }
+        }
+
+        if let Some(prev) = self.block_change_neighbors.get(chunk) {
+            // Add to-be-rendered neighbors instead of replacing existing
+            for i in 0 .. 6 {
+                neighbor_needs_render[i] = neighbor_needs_render[i] || prev[i];
+            }
+        } else {
+            self.block_change_queue.push_back(*chunk);
+            self.block_change_neighbors
+                .insert(*chunk, neighbor_needs_render);
+            // This queue is high priority, remove from the other one
+            self.enqueued_chunks.remove(chunk);
+        }
+    }
+
+    pub fn is_queue_empty(&mut self) -> bool {
+        self.enqueued_chunks.is_empty() && self.block_change_neighbors.is_empty()
+    }
+
+    pub fn remove_chunk(&mut self, chunk: &Chunk) {
+        self.enqueued_chunks.remove(chunk);
+        self.block_change_neighbors.remove(chunk);
+        self.chunk_buffer_shards.remove(chunk);
+    }
+
+    pub fn process(
+        &mut self,
+        class_bc: &ClassBlockComponent,
+        model_bcc: &ModelBlockClassComponent,
+        builder_bmc: &BuilderBlockModelComponent,
+        culling_bmc: &CullingBlockModelComponent,
+        sky_light_bc: &SkyLightBlockComponent,
+    ) {
+        let chunk_exists = |chunk: &Chunk| -> bool {
+            class_bc.get_chunk(chunk).is_some() && sky_light_bc.get_chunk(chunk).is_some()
+        };
+
+        let mut selected_chunks = iter::from_fn(|| self.block_change_queue.pop_front())
+            .filter_map(|chunk| self.block_change_neighbors.get_key_value(&chunk))
+            .flat_map(|(chunk, neighbors)| {
+                let offsets = [
+                    [-1, 0, 0],
+                    [1, 0, 0],
+                    [0, -1, 0],
+                    [0, 1, 0],
+                    [0, 0, -1],
+                    [0, 0, 1],
+                ];
+
+                let neighbor_iter = neighbors.into_iter().zip(offsets.into_iter()).filter_map(
+                    |(needs_render, offset)| {
+                        if !needs_render {
+                            return None;
+                        }
+
+                        chunk.checked_add(offset)
+                    },
+                );
+
+                iter::once(*chunk).chain(neighbor_iter)
+            })
+            .filter(chunk_exists)
+            .collect::<Vec<_>>();
+
+        for chunk in selected_chunks.iter() {
+            self.block_change_neighbors.remove(chunk);
+            self.enqueued_chunks.remove(chunk);
+        }
+
+        // Add some from non-priority queue
+        let to_add = rayon::current_num_threads()
+            .saturating_sub(2)
+            .max(1)
+            .saturating_sub(selected_chunks.len());
+
+        selected_chunks.extend(
+            iter::from_fn(|| self.chunk_queue.pop_front())
+                .filter(|chunk| self.enqueued_chunks.remove(chunk))
+                .filter(chunk_exists)
+                .take(to_add),
+        );
+
+        let par_iter = selected_chunks.into_par_iter().map(|chunk| {
             let shard = Self::build_chunk_buffer_shard(
                 &chunk,
                 class_bc,

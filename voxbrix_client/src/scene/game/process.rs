@@ -1,16 +1,14 @@
 use super::Transition;
 use crate::{
     scene::game::data::GameSharedData,
-    system::{
-        chunk_render_pipeline::Procedure,
-        render::{
-            output_thread::OutputBundle,
-            Renderer,
-        },
+    system::render::{
+        output_thread::OutputBundle,
+        Renderer,
     },
 };
 use rayon::prelude::*;
 use std::time::Instant;
+use voxbrix_common::entity::block::BLOCKS_IN_CHUNK;
 
 pub struct Process<'a> {
     pub shared_data: &'a mut GameSharedData,
@@ -36,12 +34,6 @@ impl Process<'_> {
         let elapsed = now.saturating_duration_since(sd.last_process_time);
         sd.last_process_time = now;
 
-        let player_chunk = sd
-            .position_ac
-            .get(&sd.player_actor)
-            .expect("player Actor must exist")
-            .chunk;
-
         sd.chunk_presence_system.process(
             sd.player_chunk_view_radius,
             &sd.player_actor,
@@ -51,34 +43,9 @@ impl Process<'_> {
                 sd.class_bc.remove_chunk(&chunk);
                 sd.sky_light_bc.remove_chunk(&chunk);
                 sd.block_render_system.remove_chunk(&chunk);
-                sd.chunk_render_pipeline_system
-                    .chunk_removed(chunk, |chunk| sd.class_bc.get_chunk(chunk).is_some());
+                sd.sky_light_system.remove_chunk(&chunk);
             },
         );
-
-        sd.chunk_render_pipeline_system
-            .compute_next(player_chunk, |context| {
-                match context.procedure {
-                    Procedure::ComputeSkyLight => {
-                        sd.sky_light_system.compute_chunks(
-                            context,
-                            &sd.class_bc,
-                            &sd.opacity_bcc,
-                            &mut sd.sky_light_bc,
-                        );
-                    },
-                    Procedure::BuildPolygons => {
-                        sd.block_render_system.compute_chunks(
-                            context,
-                            &sd.class_bc,
-                            &sd.model_bcc,
-                            &sd.builder_bmc,
-                            &sd.culling_bmc,
-                            &sd.sky_light_bc,
-                        )
-                    },
-                }
-            });
 
         sd.player_position_system.process(
             elapsed,

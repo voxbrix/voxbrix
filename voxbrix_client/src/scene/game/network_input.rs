@@ -109,7 +109,7 @@ impl NetworkInput<'_> {
                 sd.class_bc.insert_chunk(chunk, block_classes);
                 sd.status_cc.insert(chunk, ChunkStatus::Active);
 
-                sd.chunk_render_pipeline_system.chunk_added(chunk);
+                sd.sky_light_system.enqueue_chunk(chunk);
             },
             ClientAccept::ChunkChanges(changes) => {
                 let Ok(mut chunk_decoder) = changes.decode_chunks() else {
@@ -135,10 +135,10 @@ impl NetworkInput<'_> {
 
                         if let Some(ref mut chunk_classes) = chunk_classes {
                             *chunk_classes.get_mut(block) = block_class;
+                            sd.sky_light_system.block_change(&chunk, block);
+                            sd.block_render_system.block_change(&chunk, block);
                         }
                     }
-
-                    sd.chunk_render_pipeline_system.chunk_updated(chunk);
                 }
             },
         }

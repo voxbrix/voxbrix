@@ -48,7 +48,6 @@ use crate::{
         actor_render::ActorRenderSystemDescriptor,
         block_render::BlockRenderSystemDescriptor,
         chunk_presence::ChunkPresenceSystem,
-        chunk_render_pipeline::ChunkRenderPipelineSystem,
         controller::DirectControl,
         interface::InterfaceSystemDescriptor,
         model_loading::ModelLoadingSystem,
@@ -62,7 +61,6 @@ use crate::{
             },
             RenderSystemDescriptor,
         },
-        sky_light::SkyLightSystem,
         texture_loading::TextureLoadingSystem,
     },
     window::InputEvent,
@@ -86,6 +84,7 @@ use process::Process;
 use send_state::SendState;
 use std::{
     io::ErrorKind as StdIoErrorKind,
+    task::Poll,
     time::{
         Duration,
         Instant,
@@ -143,6 +142,7 @@ use voxbrix_common::{
         actor_class_loading::ActorClassLoadingSystem,
         block_class_loading::BlockClassLoadingSystem,
         list_loading::List,
+        sky_light::SkyLightSystem,
     },
 };
 use voxbrix_protocol::client::{
@@ -162,6 +162,7 @@ enum Event {
     SendState,
     LocalInput(InputEvent),
     NetworkInput(Result<Vec<u8>, ClientError>),
+    ChunkCalculation,
 }
 
 #[must_use = "must be handled"]
@@ -524,7 +525,9 @@ impl GameScene {
         let surface_source = output_thread.get_surface_source();
         let input_source = output_thread.get_input_source();
 
-        let mut shared_data = GameSharedData {
+        let mut chunk_calc_phase = 0;
+
+        let mut sd = GameSharedData {
             packer,
 
             class_ac,
@@ -560,7 +563,6 @@ impl GameScene {
             render_system,
             actor_render_system,
             block_render_system,
-            chunk_render_pipeline_system: ChunkRenderPipelineSystem::new(),
 
             block_class_label_map,
 
@@ -601,33 +603,77 @@ impl GameScene {
                 .rr_ff(event_rx.stream()),
         );
 
-        while let Some(event) = stream.next().await {
+        while let Some(event) = stream
+            .next()
+            .or(future::poll_fn(|_| {
+                // This works because the only update can come from the previous iteration of the
+                // loop
+                if sd.sky_light_system.is_queue_empty() && sd.block_render_system.is_queue_empty() {
+                    return Poll::Pending;
+                }
+
+                Poll::Ready(Some(Event::ChunkCalculation))
+            }))
+            .await
+        {
             let transition = match event {
                 Event::Process(output_bundle) => {
-                    compute!((shared_data) Process {
-                    shared_data: &mut shared_data,
+                    compute!((sd) Process {
+                    shared_data: &mut sd,
                     output_bundle,
                 }.run())
                 },
                 Event::SendState => {
                     SendState {
-                        shared_data: &mut shared_data,
+                        shared_data: &mut sd,
                     }
                     .run()
                 },
                 Event::LocalInput(event) => {
                     LocalInput {
-                        shared_data: &mut shared_data,
+                        shared_data: &mut sd,
                         event,
                     }
                     .run()
                 },
                 Event::NetworkInput(event) => {
                     NetworkInput {
-                        shared_data: &mut shared_data,
+                        shared_data: &mut sd,
                         event,
                     }
                     .run()
+                },
+                Event::ChunkCalculation => {
+                    chunk_calc_phase = match chunk_calc_phase {
+                        0 => {
+                            let changed_chunks = sd.sky_light_system.process(
+                                voxbrix_common::entity::block::BLOCKS_IN_CHUNK,
+                                &sd.class_bc,
+                                &sd.opacity_bcc,
+                                &mut sd.sky_light_bc,
+                            );
+
+                            for chunk in changed_chunks {
+                                sd.block_render_system.enqueue_chunk(chunk);
+                            }
+
+                            1
+                        },
+                        1 => {
+                            sd.block_render_system.process(
+                                &sd.class_bc,
+                                &sd.model_bcc,
+                                &sd.builder_bmc,
+                                &sd.culling_bmc,
+                                &sd.sky_light_bc,
+                            );
+
+                            0
+                        },
+                        _ => unreachable!(),
+                    };
+
+                    Transition::None
                 },
             };
 
@@ -637,26 +683,25 @@ impl GameScene {
                     return Ok(SceneSwitch::Exit);
                 },
                 Transition::Menu => {
-                    let (interface_state, interface_renderer) =
-                        shared_data.interface_system.destruct();
+                    let (interface_state, interface_renderer) = sd.interface_system.destruct();
                     return Ok(SceneSwitch::Menu {
                         parameters: MenuSceneParameters {
                             interface_state,
                             interface_renderer,
-                            output_thread: shared_data.render_system.into_output(),
+                            output_thread: sd.render_system.into_output(),
                         },
                     });
                 },
             }
         }
 
-        let (interface_state, interface_renderer) = shared_data.interface_system.destruct();
+        let (interface_state, interface_renderer) = sd.interface_system.destruct();
 
         Ok(SceneSwitch::Menu {
             parameters: MenuSceneParameters {
                 interface_state,
                 interface_renderer,
-                output_thread: shared_data.render_system.into_output(),
+                output_thread: sd.render_system.into_output(),
             },
         })
     }

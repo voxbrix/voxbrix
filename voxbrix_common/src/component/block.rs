@@ -23,10 +23,6 @@ use serde::{
     },
 };
 use std::{
-    alloc::{
-        self,
-        Layout,
-    },
     collections::HashMap,
     fmt,
 };
@@ -43,41 +39,27 @@ pub trait Blocks<T> {
     fn get(&self, block: Block) -> &T;
 }
 
-pub struct BlocksVecBuilder<T> {
-    next: usize,
-    uninit: Box<[T; BLOCKS_IN_CHUNK]>,
-}
+pub struct BlocksVecBuilder<T>(Vec<T>);
 
 impl<T> BlocksVecBuilder<T> {
     pub fn new() -> Self {
-        // SAFETY: fast and safe way to get Box of [0u8; MAX_PACKET_SIZE]
-        // without copying stack to heap (as would be with Box::new())
-        // https://doc.rust-lang.org/std/boxed/index.html#memory-layout
-        unsafe {
-            let layout = Layout::new::<[T; BLOCKS_IN_CHUNK]>();
-            let ptr = alloc::alloc(layout);
-            if ptr.is_null() {
-                alloc::handle_alloc_error(layout);
-            }
-
-            Self {
-                next: 0,
-                uninit: Box::from_raw(ptr.cast()),
-            }
-        }
+        let mut vec = Vec::new();
+        vec.reserve_exact(BLOCKS_IN_CHUNK);
+        Self(vec)
     }
 
     pub fn push(&mut self, value: T) {
-        self.uninit[self.next] = value;
-        self.next += 1;
+        self.0.push(value)
     }
 
     pub fn build(self) -> BlocksVec<T> {
-        if self.next != BLOCKS_IN_CHUNK {
-            panic!("BlocksVecBuilder is not complete");
-        }
-
-        BlocksVec(self.uninit)
+        BlocksVec(
+            self.0
+                .into_boxed_slice()
+                .try_into()
+                .ok()
+                .expect("BlocksVecBuilder is not complete"),
+        )
     }
 }
 

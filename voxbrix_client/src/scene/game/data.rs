@@ -23,13 +23,11 @@ use crate::{
         actor_render::ActorRenderSystem,
         block_render::BlockRenderSystem,
         chunk_presence::ChunkPresenceSystem,
-        chunk_render_pipeline::ChunkRenderPipelineSystem,
         controller::DirectControl,
         interface::InterfaceSystem,
         movement_interpolation::MovementInterpolationSystem,
         player_position::PlayerPositionSystem,
         render::RenderSystem,
-        sky_light::SkyLightSystem,
     },
 };
 use flume::Sender;
@@ -54,6 +52,7 @@ use voxbrix_common::{
         StateUnpacker,
     },
     pack::Packer,
+    system::sky_light::SkyLightSystem,
     LabelMap,
 };
 
@@ -94,7 +93,6 @@ pub struct GameSharedData {
     pub render_system: RenderSystem,
     pub actor_render_system: ActorRenderSystem,
     pub block_render_system: BlockRenderSystem,
-    pub chunk_render_pipeline_system: ChunkRenderPipelineSystem,
 
     pub block_class_label_map: LabelMap<BlockClass>,
 
