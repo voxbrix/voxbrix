@@ -51,7 +51,7 @@ impl ActorModelBuilder {
         transform: &Mat4F32,
         polygons: &mut Vec<Polygon>,
     ) {
-        if self.skeleton.get(bone).is_some() {
+        if self.skeleton.get(bone).is_none() {
             return;
         };
 
