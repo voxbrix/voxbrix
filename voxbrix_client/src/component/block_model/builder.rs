@@ -142,20 +142,18 @@ pub struct BlockModelBuilder {
 }
 
 impl BlockModelBuilder {
-    pub fn build(
-        &self,
-        polygons: &mut Vec<Polygon>,
-        chunk: &Chunk,
+    pub fn build<'a>(
+        &'a self,
+        chunk: &'a Chunk,
         block: Block,
         cull_mask: CullFlags,
         sky_light_level: [u8; 6],
-    ) {
+    ) -> impl Iterator<Item = Polygon> + 'a {
         let block = block.into_coords();
 
-        let extension = self
-            .polygons
+        self.polygons
             .iter()
-            .filter(|pb| {
+            .filter(move |pb| {
                 match pb.culling_neighbor {
                     CullingNeighbor::None => true,
                     CullingNeighbor::NegativeX => cull_mask.contains(CullFlags::X0),
@@ -166,7 +164,7 @@ impl BlockModelBuilder {
                     CullingNeighbor::PositiveZ => cull_mask.contains(CullFlags::Z1),
                 }
             })
-            .map(|pb| {
+            .map(move |pb| {
                 Polygon {
                     chunk: chunk.position,
                     texture_index: pb.texture_index,
@@ -203,9 +201,7 @@ impl BlockModelBuilder {
                         }
                     }),
                 }
-            });
-
-        polygons.extend(extension);
+            })
     }
 }
 

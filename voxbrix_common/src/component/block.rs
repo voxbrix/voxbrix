@@ -8,6 +8,7 @@ use crate::{
     },
     pack::Pack,
 };
+use rayon::prelude::*;
 use serde::{
     de::{
         Deserialize,
@@ -143,6 +144,19 @@ impl<T> BlocksVec<T> {
     pub fn iter<'a>(&'a self) -> impl ExactSizeIterator<Item = (Block, &T)> + 'a {
         self.0
             .iter()
+            .enumerate()
+            .map(|(b, v)| (Block::from_usize(b).unwrap(), v))
+    }
+}
+
+impl<'a, T> BlocksVec<T>
+where
+    T: Send + Sync + 'a,
+{
+    pub fn par_iter(&'a self) -> impl IndexedParallelIterator<Item = (Block, &'a T)> + 'a {
+        self.0
+            .as_slice()
+            .par_iter()
             .enumerate()
             .map(|(b, v)| (Block::from_usize(b).unwrap(), v))
     }

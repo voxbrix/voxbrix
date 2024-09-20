@@ -49,7 +49,6 @@ use voxbrix_common::{
         block::{
             Block,
             Neighbor,
-            BLOCKS_IN_CHUNK,
         },
         block_class::BlockClass,
         chunk::Chunk,
@@ -58,7 +57,6 @@ use voxbrix_common::{
 use wgpu::util::DeviceExt;
 
 const POLYGON_SIZE: usize = Polygon::size() as usize;
-const POLYGON_BUFFER_CAPACITY: usize = BLOCKS_IN_CHUNK * 6 /*sides*/;
 
 fn neighbors_to_cull_flags(
     neighbors: &[Neighbor; 6],
@@ -246,6 +244,7 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
             enqueued_chunks: AHashSet::new(),
             render_pipeline,
             chunk_buffer_shards: AHashMap::new(),
+            free_shards: Vec::new(),
             update_chunk_buffer: false,
             prepared_vertex_buffer: vertex_buffer,
             prepared_polygon_buffer: polygon_buffer,
@@ -270,6 +269,7 @@ pub struct BlockRenderSystem {
     enqueued_chunks: AHashSet<Chunk>,
     render_pipeline: wgpu::RenderPipeline,
     chunk_buffer_shards: AHashMap<Chunk, Vec<Polygon>>,
+    free_shards: Vec<Vec<Polygon>>,
     update_chunk_buffer: bool,
     prepared_vertex_buffer: wgpu::Buffer,
     prepared_polygon_buffer: GpuVec,
@@ -280,16 +280,14 @@ pub struct BlockRenderSystem {
 }
 
 impl BlockRenderSystem {
-    fn build_chunk_buffer_shard(
-        chunk: &Chunk,
-        class_bc: &ClassBlockComponent,
-        model_bcc: &ModelBlockClassComponent,
-        builder_bmc: &BuilderBlockModelComponent,
-        culling_bmc: &CullingBlockModelComponent,
-        sky_light_bc: &SkyLightBlockComponent,
-    ) -> Vec<Polygon> {
-        let mut polygon_buffer = Vec::with_capacity(POLYGON_BUFFER_CAPACITY);
-
+    fn build_chunk_buffer_shard<'a>(
+        chunk: &'a Chunk,
+        class_bc: &'a ClassBlockComponent,
+        model_bcc: &'a ModelBlockClassComponent,
+        builder_bmc: &'a BuilderBlockModelComponent,
+        culling_bmc: &'a CullingBlockModelComponent,
+        sky_light_bc: &'a SkyLightBlockComponent,
+    ) -> impl ParallelIterator<Item = Polygon> + 'a {
         let neighbor_chunk_ids = [
             [-1, 0, 0],
             [1, 0, 0],
@@ -315,44 +313,43 @@ impl BlockRenderSystem {
             Some(block_light)
         });
 
-        for (block, block_class) in this_chunk_class.iter() {
-            if let Some(model_builder) = model_bcc.get(block_class).and_then(|m| builder_bmc.get(m))
-            {
-                let neighbors = block.neighbors();
+        this_chunk_class
+            .par_iter()
+            .flat_map_iter(move |(block, block_class)| {
+                model_bcc
+                    .get(block_class)
+                    .and_then(|m| builder_bmc.get(m))
+                    .into_iter()
+                    .flat_map(move |model_builder| {
+                        let neighbors = block.neighbors();
 
-                let cull_flags = neighbors_to_cull_flags(
-                    &neighbors,
-                    this_chunk_class,
-                    &neighbor_chunk_class,
-                    model_bcc,
-                    culling_bmc,
-                );
+                        let cull_flags = neighbors_to_cull_flags(
+                            &neighbors,
+                            this_chunk_class,
+                            &neighbor_chunk_class,
+                            model_bcc,
+                            culling_bmc,
+                        );
 
-                let sky_light_levels = neighbors
-                    .iter()
-                    .zip(neighbor_chunk_light)
-                    .map(|(neighbor, neighbor_chunk_light)| {
-                        Some(match neighbor {
-                            Neighbor::ThisChunk(block) => *this_chunk_light.get(*block),
-                            Neighbor::OtherChunk(block) => *neighbor_chunk_light?.get(*block),
-                        })
+                        let sky_light_levels = neighbors
+                            .iter()
+                            .zip(neighbor_chunk_light)
+                            .map(|(neighbor, neighbor_chunk_light)| {
+                                Some(match neighbor {
+                                    Neighbor::ThisChunk(block) => *this_chunk_light.get(*block),
+                                    Neighbor::OtherChunk(block) => {
+                                        *neighbor_chunk_light?.get(*block)
+                                    },
+                                })
+                            })
+                            .map(|light| light.unwrap_or(SkyLight::MIN).value())
+                            .collect::<ArrayVec<_, 6>>()
+                            .into_inner()
+                            .unwrap_or_else(|_| unreachable!());
+
+                        model_builder.build(chunk, block, cull_flags, sky_light_levels)
                     })
-                    .map(|light| light.unwrap_or(SkyLight::MIN).value())
-                    .collect::<ArrayVec<_, 6>>()
-                    .into_inner()
-                    .unwrap_or_else(|_| unreachable!());
-
-                model_builder.build(
-                    &mut polygon_buffer,
-                    chunk,
-                    block,
-                    cull_flags,
-                    sky_light_levels,
-                );
-            }
-        }
-
-        polygon_buffer
+            })
     }
 
     /// Add Chunk into the low-priority queue, without taking care of neighbors
@@ -414,7 +411,9 @@ impl BlockRenderSystem {
     pub fn remove_chunk(&mut self, chunk: &Chunk) {
         self.enqueued_chunks.remove(chunk);
         self.block_change_neighbors.remove(chunk);
-        self.chunk_buffer_shards.remove(chunk);
+        if let Some(shard) = self.chunk_buffer_shards.remove(chunk) {
+            self.free_shards.push(shard);
+        }
     }
 
     pub fn process(
@@ -427,6 +426,18 @@ impl BlockRenderSystem {
     ) {
         let chunk_exists = |chunk: &Chunk| -> bool {
             class_bc.get_chunk(chunk).is_some() && sky_light_bc.get_chunk(chunk).is_some()
+        };
+
+        let mut get_shard = |chunk: Chunk| -> (Chunk, Vec<Polygon>) {
+            let mut shard = self
+                .chunk_buffer_shards
+                .remove(&chunk)
+                .or_else(|| self.free_shards.pop())
+                .unwrap_or_default();
+
+            shard.clear();
+
+            (chunk, shard)
         };
 
         let mut selected_chunks = iter::from_fn(|| self.block_change_queue.pop_front())
@@ -454,9 +465,10 @@ impl BlockRenderSystem {
                 iter::once(*chunk).chain(neighbor_iter)
             })
             .filter(chunk_exists)
+            .map(&mut get_shard)
             .collect::<Vec<_>>();
 
-        for chunk in selected_chunks.iter() {
+        for (chunk, _) in selected_chunks.iter() {
             self.block_change_neighbors.remove(chunk);
             self.enqueued_chunks.remove(chunk);
         }
@@ -471,18 +483,20 @@ impl BlockRenderSystem {
             iter::from_fn(|| self.chunk_queue.pop_front())
                 .filter(|chunk| self.enqueued_chunks.remove(chunk))
                 .filter(chunk_exists)
+                .map(get_shard)
                 .take(to_add),
         );
 
-        let par_iter = selected_chunks.into_par_iter().map(|chunk| {
-            let shard = Self::build_chunk_buffer_shard(
+        // TODO reuse old shard buffer
+        let par_iter = selected_chunks.into_par_iter().map(|(chunk, mut shard)| {
+            shard.par_extend(Self::build_chunk_buffer_shard(
                 &chunk,
                 class_bc,
                 model_bcc,
                 builder_bmc,
                 culling_bmc,
                 sky_light_bc,
-            );
+            ));
 
             (chunk, shard)
         });
