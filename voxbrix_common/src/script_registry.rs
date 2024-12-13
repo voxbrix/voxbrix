@@ -34,12 +34,102 @@ pub struct ScriptCache<T> {
     pub instance: Instance,
 }
 
-pub struct ScriptDataFull<T> {
-    pub data: T,
-    /// Complete memory of the store.
-    pub memory: Memory,
+struct DynamicScriptData<T> {
+    shared: T,
     buffer: Vec<u8>,
+}
+
+struct StaticScriptData {
+    // Complete memory of the store.
+    memory: Memory,
+    // Common function that allows to allocate a buffer in the store of the given length and
+    // returns a pointer to a memory inside the store.
+    // Used to serialize input of the script.
     get_buffer_func: TypedFunc<u32, u32>,
+}
+
+pub struct ScriptData<T> {
+    dynamic_data: Option<DynamicScriptData<T>>,
+    static_data: Option<StaticScriptData>,
+}
+
+impl<T> ScriptData<T> {
+    // Empty, unusable ScriptData for initializing the store.
+    fn empty() -> Self {
+        Self {
+            dynamic_data: None,
+            static_data: None,
+        }
+    }
+
+    fn unset_dynamic(&mut self, common_buffer: &mut Vec<u8>) -> T {
+        let data = self
+            .dynamic_data
+            .take()
+            .expect("dynamic data is already unset");
+        *common_buffer = data.buffer;
+        data.shared
+    }
+
+    fn set_dynamic(&mut self, shared: T, common_buffer: &mut Vec<u8>) {
+        self.dynamic_data = Some(DynamicScriptData {
+            buffer: mem::take(common_buffer),
+            shared,
+        });
+    }
+
+    fn initialize(&mut self, memory: Memory, get_buffer_func: TypedFunc<u32, u32>) {
+        self.static_data = Some(StaticScriptData {
+            memory,
+            get_buffer_func,
+        });
+    }
+
+    pub fn shared(&self) -> &T {
+        &self
+            .dynamic_data
+            .as_ref()
+            .expect("dynamic data unset")
+            .shared
+    }
+
+    pub fn shared_mut(&mut self) -> &mut T {
+        &mut self
+            .dynamic_data
+            .as_mut()
+            .expect("dynamic data unset")
+            .shared
+    }
+
+    /// Complete memory of the store.
+    pub fn memory(&self) -> Memory {
+        self.static_data
+            .as_ref()
+            .expect("script data is not initialized")
+            .memory
+            .clone()
+    }
+
+    /// Common function that allows to allocate a buffer of the given length in
+    /// the memory of the store.
+    /// Returns a pointer to the allocated memory inside the store.
+    pub fn get_buffer_func(&self) -> TypedFunc<u32, u32> {
+        self.static_data
+            .as_ref()
+            .expect("script data is not initialized")
+            .get_buffer_func
+            .clone()
+    }
+
+    /// Common buffer that can be used for e.g. serializing into it before copying to the store
+    /// memory.
+    pub fn buffer(&mut self) -> &mut Vec<u8> {
+        &mut self
+            .dynamic_data
+            .as_mut()
+            .expect("dynamic data unset")
+            .buffer
+    }
 }
 
 /// Calls `get_buffer(len: 32) -> *const u8` in the script and
@@ -50,11 +140,11 @@ pub fn write_script_buffer<T>(
     value: impl Serialize,
 ) -> u32 {
     let mut store_data = store.as_context_mut();
-    let store_data = store_data.data_mut().as_full_mut();
-    let mut buffer = mem::take(&mut store_data.buffer);
+    let store_data = store_data.data_mut();
+    let mut buffer = mem::take(store_data.buffer());
 
-    let get_buffer_func = store_data.get_buffer_func.clone();
-    let memory = store_data.memory.clone();
+    let get_buffer_func = store_data.get_buffer_func();
+    let memory = store_data.memory();
 
     buffer.clear();
     pack::encode_into(&value, &mut buffer);
@@ -70,41 +160,9 @@ pub fn write_script_buffer<T>(
 
     (&mut memory.data_mut(&mut store)[start .. end]).copy_from_slice(buffer.as_slice());
 
-    store.as_context_mut().data_mut().as_full_mut().buffer = buffer;
+    *store.as_context_mut().data_mut().buffer() = buffer;
 
     input_len
-}
-
-pub enum ScriptData<T> {
-    Full(ScriptDataFull<T>),
-    Empty,
-}
-
-impl<T> ScriptData<T> {
-    pub fn into_full(self) -> ScriptDataFull<T> {
-        match self {
-            ScriptData::Full(v) => v,
-            ScriptData::Empty => panic!("script data is empty"),
-        }
-    }
-
-    pub fn as_full_mut(&mut self) -> &mut ScriptDataFull<T> {
-        match self {
-            ScriptData::Full(v) => v,
-            ScriptData::Empty => panic!("script data is empty"),
-        }
-    }
-
-    pub fn as_full(&self) -> &ScriptDataFull<T> {
-        match self {
-            ScriptData::Full(v) => v,
-            ScriptData::Empty => panic!("script data is empty"),
-        }
-    }
-}
-
-pub unsafe trait NonStatic {
-    type Static;
 }
 
 pub struct ScriptRegistry<T> {
@@ -125,13 +183,7 @@ impl<T> ScriptRegistry<T> {
         &self.label_map
     }
 
-    /// Safety: For non-static T, the references inside
-    /// will only be valid within the scope of the `func`.
-    /// Make sure you provide anonymous lifetime as
-    /// lifetime of `T` while wrapping host functions for non-static `T`.
-    /// For example:
-    /// `ScriptData<ScriptSharedData<'_>>`.
-    pub unsafe fn func_wrap<Params, Args>(
+    pub fn func_wrap<Params, Args>(
         &mut self,
         module: &str,
         name: &str,
@@ -140,68 +192,56 @@ impl<T> ScriptRegistry<T> {
         self.linker.func_wrap(module, name, func).unwrap();
     }
 
-    pub fn access_script<U>(
+    pub fn access_script(
         &mut self,
         script: &Script,
-        data: U,
-        mut access: impl FnMut(&mut ScriptCache<U>),
-    ) where
-        U: NonStatic<Static = T>,
-    {
+        shared: T,
+        mut access: impl FnMut(&mut ScriptCache<T>),
+    ) -> T {
         if !self.cache.contains_key(script) {
-            let mut store = Store::new(&self.engine, ScriptData::Empty);
+            let mut store = Store::new(&self.engine, ScriptData::empty());
+
             let module = self
                 .modules
                 .get(script.0 as usize)
                 .expect("script not found");
+
             let instance = self
                 .linker
                 .instantiate(&mut store, module)
                 .expect("instantiation should not fail");
+
+            let get_buffer_func = instance
+                .get_typed_func::<u32, u32>(&mut store, "get_buffer")
+                .unwrap();
+
+            let memory = instance.get_memory(&mut store, "memory").unwrap();
+
+            store.data_mut().initialize(memory, get_buffer_func);
 
             self.cache.insert(*script, ScriptCache { store, instance });
         }
 
         self.buffer.clear();
 
-        let cache = self.cache.remove(script).unwrap();
+        let mut cache = self.cache.remove(script).unwrap();
 
-        let mut cache = unsafe { mem::transmute::<ScriptCache<T>, ScriptCache<U>>(cache) };
-
-        let get_buffer_func = cache
-            .instance
-            .get_typed_func::<u32, u32>(&mut cache.store, "get_buffer")
-            .unwrap();
-
-        let memory = cache
-            .instance
-            .get_memory(&mut cache.store, "memory")
-            .unwrap();
-
-        *cache.store.data_mut() = ScriptData::Full(ScriptDataFull {
-            data,
-            get_buffer_func,
-            memory,
-            buffer: mem::take(&mut self.buffer),
-        });
+        cache.store.data_mut().set_dynamic(shared, &mut self.buffer);
 
         access(&mut cache);
 
-        let full = mem::replace(cache.store.data_mut(), ScriptData::Empty);
-
-        self.buffer = full.into_full().buffer;
-
-        let cache = unsafe { mem::transmute::<ScriptCache<U>, ScriptCache<T>>(cache) };
+        let shared = cache.store.data_mut().unset_dynamic(&mut self.buffer);
 
         self.cache.insert(*script, cache);
+
+        shared
     }
 
-    pub fn run_script<U, I>(&mut self, script: &Script, data: U, input: I)
+    pub fn run_script<I>(&mut self, script: &Script, shared: T, input: I) -> T
     where
-        U: NonStatic<Static = T>,
         I: Serialize,
     {
-        self.access_script(script, data, |bundle| {
+        self.access_script(script, shared, |bundle| {
             let input_len = write_script_buffer(&mut bundle.store, &input);
 
             let run = bundle
@@ -211,7 +251,7 @@ impl<T> ScriptRegistry<T> {
 
             run.call(&mut bundle.store, input_len)
                 .expect("unable to run script");
-        });
+        })
     }
 
     pub fn engine(&self) -> &Engine {

@@ -88,7 +88,6 @@ use voxbrix_common::{
     },
     script_registry::{
         self,
-        NonStatic,
         ScriptData,
         ScriptRegistry,
     },
@@ -142,46 +141,46 @@ impl EntityRemoveQueue {
     }
 }
 
-pub struct ScriptSharedData<'a> {
-    pub block_class_label_map: &'a LabelMap<BlockClass>,
-    pub class_bc: &'a mut ClassBlockComponent,
-    pub collision_bcc: &'a CollisionBlockClassComponent,
+/// For the wrapped script functions the pointers only guaranteed to be valid until the function
+/// returns.
+pub struct ScriptSharedData {
+    pub block_class_label_map: *const LabelMap<BlockClass>,
+    pub class_bc: *mut ClassBlockComponent,
+    pub collision_bcc: *const CollisionBlockClassComponent,
 }
 
+// Safety: all the internal types behind the pointers must be Send.
+unsafe impl Send for ScriptSharedData {}
+
+// Try to make unsafe blocks only output owned types.
 pub fn setup_script_registry(registry: &mut ScriptRegistry<ScriptSharedData>) {
     fn handle_panic(caller: Caller<ScriptData<ScriptSharedData>>, msg_ptr: u32, msg_len: u32) {
         let ptr = msg_ptr as usize;
         let len = msg_len as usize;
-        let memory = caller.data().as_full().memory.clone();
+        let memory = caller.data().memory();
         let msg = std::str::from_utf8(&memory.data(&caller)[ptr .. ptr + len]).unwrap();
 
         panic!("script ended with panic: {}", msg);
     }
 
-    unsafe {
-        registry.func_wrap("env", "handle_panic", handle_panic);
-    }
+    registry.func_wrap("env", "handle_panic", handle_panic);
 
     fn log_message(caller: Caller<ScriptData<ScriptSharedData>>, msg_ptr: u32, msg_len: u32) {
         let ptr = msg_ptr as usize;
         let len = msg_len as usize;
-        let memory = caller.data().as_full().memory.clone();
+        let memory = caller.data().memory();
         let msg = std::str::from_utf8(&memory.data(&caller)[ptr .. ptr + len]).unwrap();
 
         log::error!("{}", msg);
     }
 
-    unsafe {
-        registry.func_wrap("env", "log_message", log_message);
-    }
+    registry.func_wrap("env", "log_message", log_message);
 
     fn get_blocks_in_chunk_edge(_: Caller<ScriptData<ScriptSharedData>>) -> u32 {
         BLOCKS_IN_CHUNK_EDGE as u32
     }
 
-    unsafe {
-        registry.func_wrap("env", "get_blocks_in_chunk_edge", get_blocks_in_chunk_edge);
-    }
+    registry.func_wrap("env", "get_blocks_in_chunk_edge", get_blocks_in_chunk_edge);
 
     fn get_target_block(
         mut caller: Caller<ScriptData<ScriptSharedData>>,
@@ -190,13 +189,13 @@ pub fn setup_script_registry(registry: &mut ScriptRegistry<ScriptSharedData>) {
     ) -> u32 {
         let ptr = buf_ptr as usize;
         let len = buf_len as usize;
-        let memory = caller.data().as_full().memory.clone();
+        let memory = caller.data().memory();
         let bytes = &memory.data(&caller)[ptr .. ptr + len];
 
         let (command, _) =
             pack::decode_from_slice::<GetTargetBlockRequest>(bytes).expect("invalid argument");
 
-        let sd = &caller.data().as_full().data;
+        let sd = caller.data_mut().shared();
 
         let response = position::get_target_block(
             &Position {
@@ -204,12 +203,12 @@ pub fn setup_script_registry(registry: &mut ScriptRegistry<ScriptSharedData>) {
                 offset: command.offset.into(),
             },
             command.direction.into(),
-            |chunk, block| {
-                sd.class_bc
+            |chunk, block| unsafe {
+                (&*sd.class_bc)
                     .get_chunk(&chunk)
                     .map(|blocks| {
                         let class = blocks.get(block);
-                        sd.collision_bcc.get(class).is_some()
+                        (&*sd.collision_bcc).get(class).is_some()
                     })
                     .unwrap_or(false)
             },
@@ -225,9 +224,7 @@ pub fn setup_script_registry(registry: &mut ScriptRegistry<ScriptSharedData>) {
         script_registry::write_script_buffer(&mut caller, response)
     }
 
-    unsafe {
-        registry.func_wrap("env", "get_target_block", get_target_block);
-    }
+    registry.func_wrap("env", "get_target_block", get_target_block);
 
     fn set_class_of_block(
         mut caller: Caller<ScriptData<ScriptSharedData>>,
@@ -236,25 +233,25 @@ pub fn setup_script_registry(registry: &mut ScriptRegistry<ScriptSharedData>) {
     ) {
         let ptr = buf_ptr as usize;
         let len = buf_len as usize;
-        let memory = caller.data().as_full().memory.clone();
+        let memory = caller.data().memory();
         let bytes = &memory.data(&caller)[ptr .. ptr + len];
 
         let (command, _) =
             pack::decode_from_slice::<SetClassOfBlockRequest>(bytes).expect("invalid argument");
 
-        let sd = &mut caller.data_mut().as_full_mut().data;
+        let sd = caller.data_mut().shared_mut();
 
-        let Some(mut classes) = sd.class_bc.get_mut_chunk(&command.chunk.into()) else {
-            debug!("changing non-existant chunk");
-            return;
-        };
+        unsafe {
+            let Some(mut classes) = (&mut *sd.class_bc).get_mut_chunk(&command.chunk.into()) else {
+                debug!("changing non-existant chunk");
+                return;
+            };
 
-        classes.set(command.block.into(), command.block_class.into());
+            classes.set(command.block.into(), command.block_class.into());
+        }
     }
 
-    unsafe {
-        registry.func_wrap("env", "set_class_of_block", set_class_of_block);
-    }
+    registry.func_wrap("env", "set_class_of_block", set_class_of_block);
 
     fn get_block_class_by_label(
         mut caller: Caller<ScriptData<ScriptSharedData>>,
@@ -263,25 +260,17 @@ pub fn setup_script_registry(registry: &mut ScriptRegistry<ScriptSharedData>) {
     ) -> u32 {
         let ptr = buf_ptr as usize;
         let len = buf_len as usize;
-        let memory = caller.data().as_full().memory.clone();
+        let memory = caller.data().memory();
         let bytes = &memory.data(&caller)[ptr .. ptr + len];
 
         let (label, _) = pack::decode_from_slice::<&str>(bytes).expect("invalid argument");
 
-        let sd = &caller.data().as_full().data;
-
-        let response = sd.block_class_label_map.get(label);
+        let response = unsafe { (&*caller.data().shared().block_class_label_map).get(label) };
 
         script_registry::write_script_buffer(&mut caller, response)
     }
 
-    unsafe {
-        registry.func_wrap("env", "get_block_class_by_label", get_block_class_by_label);
-    }
-}
-
-unsafe impl NonStatic for ScriptSharedData<'_> {
-    type Static = ScriptSharedData<'static>;
+    registry.func_wrap("env", "get_block_class_by_label", get_block_class_by_label);
 }
 
 /// All components and systems the loop has.
@@ -319,7 +308,7 @@ pub struct SharedData {
     pub chunk_activation_system: ChunkActivationSystem,
     pub chunk_generation_system: ChunkGenerationSystem,
 
-    pub script_registry: ScriptRegistry<ScriptSharedData<'static>>,
+    pub script_registry: ScriptRegistry<ScriptSharedData>,
 
     pub script_action_component: ScriptActionComponent,
 
