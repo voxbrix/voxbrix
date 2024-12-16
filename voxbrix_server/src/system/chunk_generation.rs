@@ -102,7 +102,6 @@ impl ChunkGenerationSystem {
             let mut engine_config = Config::new();
 
             engine_config
-                .wasm_threads(false)
                 .wasm_multi_value(false)
                 .wasm_multi_memory(false);
 

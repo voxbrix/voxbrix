@@ -3,6 +3,7 @@ name = "voxbrix"
 version = "0.1.0"
 license = "MIT OR Apache-2.0"
 description = "A voxel game."
+edition = "2021"
 
 [workspace]
 members = [
@@ -19,19 +20,19 @@ edition = "2021"
 
 [workspace.dependencies]
 tokio = "1"
-rayon = "1.8"
+rayon = "1.10"
 futures-lite = { version = "2", default-features = false }
 flume = { version = "0.11", default-features = false, features = ["async"] }
-postcard = { version = "1.0.8", default-features = false }
+postcard = { version = "1.1.1", default-features = false }
 serde = { version = ">=1.0.184", default-features = false, features = ["std", "derive"] } 
 serde-big-array = "0.5.1"
-k256 = { version = "0.13.3", features = ["ecdsa"] }
+k256 = { version = "0.13.4", features = ["ecdsa"] }
 lz4_flex = "0.11"
 arrayvec = { version = "0.7", default-features = false }
 ron = "0.9.0-alpha.0"
 nohash-hasher = "0.2"
 ahash = "0.8"
-wasmtime = { version = "19.0", default-features = false, features = ["runtime", "cranelift", "parallel-compilation"] }
+wasmtime = { version = "27.0", default-features = false, features = ["runtime", "cranelift", "parallel-compilation"] }
 anyhow = "1.0"
 log = "0.4"
 env_logger = "0.11"

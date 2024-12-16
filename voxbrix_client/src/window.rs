@@ -18,7 +18,6 @@ use winit::{
     window::{
         Fullscreen,
         Window,
-        WindowBuilder,
     },
 };
 
@@ -54,11 +53,13 @@ pub fn create_window(handle_tx: Sender<WindowHandle>) -> Result<()> {
         gles_minor_version: wgpu::Gles3MinorVersion::Automatic,
     });
 
-    let window: &'static _ = Box::leak(Box::new(WindowBuilder::new().build(&event_loop)?));
+    let attributes = Window::default_attributes()
+        .with_title("Voxbrix")
+        .with_fullscreen(Some(Fullscreen::Borderless(None)));
+
+    let window: &'static _ = Box::leak(Box::new(event_loop.create_window(attributes)?));
 
     let surface = instance.create_surface(window).unwrap();
-
-    window.set_fullscreen(Some(Fullscreen::Borderless(None)));
 
     let (event_tx, event_rx) = flume::bounded(32);
 

@@ -19,6 +19,7 @@ use std::{
         PanicInfo,
     },
     process,
+    sync::Arc,
     thread::{
         self,
         Thread,
@@ -160,6 +161,7 @@ fn main() {
                                         | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
                                     required_limits: wgpu::Limits::default(),
                                     label: None,
+                                    memory_hints: Default::default(),
                                 },
                                 None,
                             )
@@ -204,7 +206,7 @@ fn main() {
 
                         font.tweak.y_offset = 4.0;
 
-                        fonts.font_data.insert("default".to_owned(), font);
+                        fonts.font_data.insert("default".to_owned(), Arc::new(font));
 
                         fonts.families.get_mut(&FontFamily::Proportional).unwrap()
                             .insert(0, "default".to_owned());
@@ -229,6 +231,7 @@ fn main() {
                             &window_handle.window,
                             None,
                             None,
+                            None,
                         );
 
                         let output_thread = OutputThread::new(
@@ -247,6 +250,7 @@ fn main() {
                             output_thread.current_surface_config().format,
                             None,
                             1,
+                            false,
                         );
 
                         let scene_manager = SceneManager {

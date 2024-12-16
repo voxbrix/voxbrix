@@ -92,7 +92,8 @@ impl InterfaceSystem {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
-            });
+            })
+            .forget_lifetime();
 
         self.interface_renderer
             .render(&mut render_pass, &clipped_primitives, &screen_descriptor);

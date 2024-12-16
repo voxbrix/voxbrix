@@ -212,7 +212,6 @@ impl ServerLoop {
         let mut engine_config = wasmtime::Config::new();
 
         engine_config
-            .wasm_threads(false)
             .wasm_multi_value(false)
             .wasm_multi_memory(false);
 

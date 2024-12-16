@@ -1,3 +1,6 @@
+// Scripts supposed to be only executed as WASM, where this is not an issue
+#![cfg_attr(feature = "script", allow(static_mut_refs))]
+
 use crate::common::*;
 pub use paste::paste;
 use postcard::ser_flavors::Flavor;

@@ -98,10 +98,12 @@ impl<T> Value for DataSized<T>
 where
     T: IntoDataSized + Debug,
 {
-    type AsBytes<'a> = T::Array
+    type AsBytes<'a>
+        = T::Array
     where
         Self: 'a;
-    type SelfType<'a> = DataSized<T>
+    type SelfType<'a>
+        = DataSized<T>
     where
         Self: 'a;
 
@@ -218,10 +220,12 @@ impl<T> Value for Data<'_, T>
 where
     T: TypeName + Debug,
 {
-    type AsBytes<'a> = &'a [u8]
+    type AsBytes<'a>
+        = &'a [u8]
     where
         Self: 'a;
-    type SelfType<'a> = Data<'a, T>
+    type SelfType<'a>
+        = Data<'a, T>
     where
         Self: 'a;
 
