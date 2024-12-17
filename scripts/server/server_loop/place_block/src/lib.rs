@@ -24,12 +24,10 @@ pub struct PlaceBlock {
 }
 
 #[no_mangle]
-pub extern "C" fn run(input_len: u32) {
+pub extern "C" fn run() {
     api::handle_panic(SCRIPT_NAME);
 
-    let Some(input) = api::read_action_input::<PlaceBlock>(input_len as usize) else {
-        return;
-    };
+    let input = api::read_action_input::<PlaceBlock>().expect("incorrect input");
 
     api::broadcast_action(input.action, input.actor, ());
 

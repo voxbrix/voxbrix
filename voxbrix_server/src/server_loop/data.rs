@@ -225,7 +225,7 @@ pub fn setup_script_registry(registry: &mut ScriptRegistry<ScriptSharedData>) {
         mut caller: Caller<ScriptData<ScriptSharedData>>,
         buf_ptr: u32,
         buf_len: u32,
-    ) -> u32 {
+    ) {
         let ptr = buf_ptr as usize;
         let len = buf_len as usize;
         let memory = caller.data().memory();
@@ -262,7 +262,7 @@ pub fn setup_script_registry(registry: &mut ScriptRegistry<ScriptSharedData>) {
             }
         });
 
-        script_registry::write_script_buffer(&mut caller, response)
+        script_registry::write_script_buffer(&mut caller, response);
     }
 
     registry.func_wrap("env", "get_target_block", get_target_block);
@@ -297,7 +297,7 @@ pub fn setup_script_registry(registry: &mut ScriptRegistry<ScriptSharedData>) {
         mut caller: Caller<ScriptData<ScriptSharedData>>,
         buf_ptr: u32,
         buf_len: u32,
-    ) -> u32 {
+    ) {
         let ptr = buf_ptr as usize;
         let len = buf_len as usize;
         let memory = caller.data().memory();
@@ -310,7 +310,7 @@ pub fn setup_script_registry(registry: &mut ScriptRegistry<ScriptSharedData>) {
 
         let response = block_class_label_map.get(label);
 
-        script_registry::write_script_buffer(&mut caller, response)
+        script_registry::write_script_buffer(&mut caller, response);
     }
 
     registry.func_wrap("env", "get_block_class_by_label", get_block_class_by_label);

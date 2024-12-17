@@ -1,6 +1,3 @@
-// Scripts supposed to be only executed as WASM, where this is not an issue
-#![cfg_attr(feature = "script", allow(static_mut_refs))]
-
 use crate::common::*;
 pub use paste::paste;
 use postcard::ser_flavors::Flavor;
@@ -20,27 +17,23 @@ mod import {
     extern "C" {
         pub fn handle_panic(ptr: *const u8, len: u32);
         pub fn get_blocks_in_chunk_edge() -> u32;
-        pub fn get_target_block(ptr: *const u8, len: u32) -> u32;
+
+        // The ones below use postcard to serialize input/output from/into shared buffer:
+        pub fn get_target_block(ptr: *const u8, len: u32);
         pub fn set_class_of_block(ptr: *const u8, len: u32);
-        pub fn get_block_class_by_label(ptr: *const u8, len: u32) -> u32;
+        pub fn get_block_class_by_label(ptr: *const u8, len: u32);
         pub fn broadcast_action_local(ptr: *const u8, len: u32);
-        // fn get_class_of_block(chunk_x: i32, chunk_y: i32, chunk_z: i32, block: u16) -> u64;
-        // fn set_class_of_block(chunk_x: i32, chunk_y: i32, chunk_z: i32, block: u16, class: u64);
-        // fn get_last_transparent_block(
-        // input_ptr: *mut u8,
-        // input_len: u32,
-        // );
-        // fn get_script_by_label(ptr: *const u8, len: u32) -> u64;
-        // The script will run after the current returns
-        // fn run_script(script: u64, input_ptr: *const u8, input_len: u32);
     }
 }
 
 pub fn handle_panic(script_name: &'static str) {
     panic::set_hook(Box::new(move |panic_info| {
-        let msg = format!("script \"{}\": {}", script_name, panic_info);
         unsafe {
-            import::handle_panic(msg.as_ptr(), msg.len() as u32);
+            let shared_buffer = &mut *ptr::addr_of_mut!(SHARED_BUFFER);
+
+            let _ = write!(shared_buffer, "script \"{}\": {}", script_name, panic_info);
+
+            import::handle_panic(shared_buffer.as_ptr(), shared_buffer.len() as u32);
         }
     }));
 }
@@ -48,46 +41,51 @@ pub fn handle_panic(script_name: &'static str) {
 macro_rules! wrap_func {
     ($name:ident, $input_type:ty) => {
         pub fn $name(input: $input_type) {
-            let req = write_buffer(input);
+            let (req_ptr, req_len) = write_buffer(input);
 
-            unsafe { import::$name(req.as_ptr(), req.len() as u32) };
+            unsafe { import::$name(req_ptr, req_len as u32) };
         }
     };
     ($name:ident, $input_type:ty, $output_type:ty) => {
         pub fn $name(input: $input_type) -> $output_type {
-            let req = write_buffer(input);
+            let (req_ptr, req_len) = write_buffer(input);
 
-            let resp_len = unsafe { import::$name(req.as_ptr(), req.len() as u32) };
+            unsafe { import::$name(req_ptr, req_len as u32) };
 
-            read_buffer::<$output_type>(resp_len as usize).expect("incorrect host response")
+            read_buffer::<$output_type>().expect("incorrect host response")
         }
     };
 }
 
-fn prepare_shared_buffer(len: usize) -> &'static mut [u8] {
-    unsafe {
-        if SHARED_BUFFER.capacity() < len {
-            SHARED_BUFFER.reserve(len - SHARED_BUFFER.capacity());
-        }
-
-        SHARED_BUFFER.set_len(len);
-        SHARED_BUFFER.as_mut()
-    }
-}
-
+/// Get pointer to the shared buffer of given length. Will reallocate the buffer if required.
 // TODO: must not accept 0 length
 #[no_mangle]
 pub extern "C" fn get_buffer(len: u32) -> *mut u8 {
-    prepare_shared_buffer(len as usize).as_mut_ptr()
+    let len = len as usize;
+
+    unsafe {
+        let shared_buffer = &mut *ptr::addr_of_mut!(SHARED_BUFFER);
+
+        if shared_buffer.capacity() < len {
+            shared_buffer.reserve(len - shared_buffer.capacity());
+        }
+
+        shared_buffer.set_len(len);
+        shared_buffer.as_mut_ptr()
+    }
 }
 
-pub fn read_buffer<T>(len: usize) -> Option<T>
+/// Deserialize value from the shared buffer.
+pub fn read_buffer<T>() -> Option<T>
 where
     T: DeserializeOwned,
 {
-    let input_slice = unsafe { &SHARED_BUFFER[.. len as usize] };
+    // Safety: no reference must escape the block
+    unsafe {
+        let shared_buffer = &mut *ptr::addr_of_mut!(SHARED_BUFFER);
 
-    postcard::from_bytes(input_slice).ok()
+        postcard::from_bytes(shared_buffer.as_slice()).ok()
+    }
 }
 
 pub struct ActionInputParsed<T> {
@@ -96,21 +94,25 @@ pub struct ActionInputParsed<T> {
     pub data: T,
 }
 
-pub fn read_action_input<T>(len: usize) -> Option<ActionInputParsed<T>>
+/// Deserialize action input from the shared buffer.
+pub fn read_action_input<T>() -> Option<ActionInputParsed<T>>
 where
     T: DeserializeOwned,
 {
-    let input_slice = unsafe { &SHARED_BUFFER[.. len as usize] };
+    // Safety: no reference must escape the block
+    unsafe {
+        let shared_buffer = &mut *ptr::addr_of_mut!(SHARED_BUFFER);
 
-    let input = postcard::from_bytes::<ActionInput>(input_slice).ok()?;
+        let input = postcard::from_bytes::<ActionInput>(shared_buffer.as_slice()).ok()?;
 
-    let data = postcard::from_bytes::<T>(input.data).ok()?;
+        let data = postcard::from_bytes::<T>(input.data).ok()?;
 
-    Some(ActionInputParsed {
-        action: input.action,
-        actor: input.actor,
-        data,
-    })
+        Some(ActionInputParsed {
+            action: input.action,
+            actor: input.actor,
+            data,
+        })
+    }
 }
 
 // TODO instead of None optionally have a possibility to pass a position.
@@ -120,25 +122,28 @@ where
 {
     static mut BROADCAST_BUFFER: Vec<u8> = Vec::new();
 
+    // Safety: no reference must escape the block
     unsafe {
-        BROADCAST_BUFFER.clear();
+        let broadcast_buffer = &mut *ptr::addr_of_mut!(BROADCAST_BUFFER);
+
+        broadcast_buffer.clear();
 
         postcard::serialize_with_flavor(
             &data,
             Writer {
                 written: 0,
-                writer: &mut *ptr::addr_of_mut!(BROADCAST_BUFFER),
+                writer: &mut *broadcast_buffer,
             },
         )
         .unwrap();
 
-        let input_slice = write_buffer(ActionInput {
+        let (input_slice_ptr, input_slice_len) = write_buffer(ActionInput {
             action,
             actor,
-            data: BROADCAST_BUFFER.as_slice(),
+            data: broadcast_buffer.as_slice(),
         });
 
-        import::broadcast_action_local(input_slice.as_ptr(), input_slice.len().try_into().unwrap());
+        import::broadcast_action_local(input_slice_ptr, input_slice_len.try_into().unwrap());
     }
 }
 
@@ -177,23 +182,30 @@ where
     }
 }
 
-pub fn write_buffer<T>(value: T) -> &'static [u8]
+/// Serialize the value into the shared buffer.
+/// WARNING: this will overwrite content of the shared buffer.
+pub fn write_buffer<T>(value: T) -> (*const u8, usize)
 where
     T: Serialize,
 {
+    // Safety: no reference must escape the block
     unsafe {
-        SHARED_BUFFER.clear();
+        let shared_buffer = &mut *ptr::addr_of_mut!(SHARED_BUFFER);
+
+        shared_buffer.clear();
 
         postcard::serialize_with_flavor(
             &value,
             Writer {
                 written: 0,
-                writer: &mut *ptr::addr_of_mut!(SHARED_BUFFER),
+                writer: &mut *shared_buffer,
             },
         )
         .unwrap();
 
-        SHARED_BUFFER.as_slice()
+        let slice = shared_buffer.as_slice();
+
+        (slice.as_ptr(), slice.len())
     }
 }
 

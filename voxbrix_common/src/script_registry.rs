@@ -138,11 +138,10 @@ impl<T> ScriptData<T> {
 
 /// Calls `get_buffer(len: 32) -> *const u8` in the script and
 /// writes at the pointer the whatever you put in the buffer.
-/// Returns written length.
 pub fn write_script_buffer<T>(
     mut store: impl AsContextMut<Data = ScriptData<T>>,
     value: impl Serialize,
-) -> u32 {
+) {
     let mut store_data = store.as_context_mut();
     let store_data = store_data.data_mut();
     let mut buffer = mem::take(store_data.buffer());
@@ -165,8 +164,6 @@ pub fn write_script_buffer<T>(
     (&mut memory.data_mut(&mut store)[start .. end]).copy_from_slice(buffer.as_slice());
 
     *store.as_context_mut().data_mut().buffer() = buffer;
-
-    input_len
 }
 
 pub struct ScriptRegistry<T> {
@@ -246,14 +243,14 @@ impl<T> ScriptRegistry<T> {
         I: Serialize,
     {
         self.access_script(script, shared, |bundle| {
-            let input_len = write_script_buffer(&mut bundle.store, &input);
+            write_script_buffer(&mut bundle.store, &input);
 
             let run = bundle
                 .instance
-                .get_typed_func::<u32, ()>(&mut bundle.store, "run")
+                .get_typed_func::<(), ()>(&mut bundle.store, "run")
                 .unwrap();
 
-            run.call(&mut bundle.store, input_len)
+            run.call(&mut bundle.store, ())
                 .expect("unable to run script");
         })
     }
