@@ -223,12 +223,17 @@ impl<T> ScriptRegistryBuilder<T> {
                     .get_typed_func::<u32, u32>(&mut store, "get_buffer")
                     .unwrap();
 
+                let run_func = instance
+                    .get_typed_func::<(), ()>(&mut store, "run")
+                    .unwrap();
+
                 let memory = instance.get_memory(&mut store, "memory").unwrap();
 
                 CacheEntry {
                     instance,
                     memory,
                     get_buffer_func,
+                    run_func,
                 }
             })
             .collect();
@@ -251,6 +256,8 @@ struct CacheEntry {
     // returns a pointer to a memory inside the store.
     // Used to serialize input of the script.
     get_buffer_func: TypedFunc<u32, u32>,
+
+    run_func: TypedFunc<(), ()>,
 }
 
 pub struct ScriptRegistry<T> {
@@ -270,12 +277,10 @@ impl<T> ScriptRegistry<T> {
         &self.label_map
     }
 
-    pub fn access_script(
-        &mut self,
-        script: &Script,
-        shared: T,
-        mut access: impl FnMut(&mut Store<ScriptData<T>>, &mut Instance),
-    ) -> T {
+    pub fn run_script<I>(&mut self, script: &Script, shared: T, input: I) -> T
+    where
+        I: Serialize,
+    {
         self.buffer.clear();
 
         let cache = self
@@ -290,26 +295,16 @@ impl<T> ScriptRegistry<T> {
             cache.get_buffer_func.clone(),
         );
 
-        access(&mut self.store, &mut cache.instance);
+        write_script_buffer(&mut self.store, &input);
+
+        cache
+            .run_func
+            .call(&mut self.store, ())
+            .expect("unable to run script");
 
         let shared = self.store.data_mut().unset_dynamic(&mut self.buffer);
 
         shared
-    }
-
-    pub fn run_script<I>(&mut self, script: &Script, shared: T, input: I) -> T
-    where
-        I: Serialize,
-    {
-        self.access_script(script, shared, |mut store, instance| {
-            write_script_buffer(&mut store, &input);
-
-            let run = instance
-                .get_typed_func::<(), ()>(&mut store, "run")
-                .unwrap();
-
-            run.call(&mut store, ()).expect("unable to run script");
-        })
     }
 
     pub fn engine(&self) -> &Engine {
