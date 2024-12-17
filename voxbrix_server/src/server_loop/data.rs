@@ -94,6 +94,7 @@ use voxbrix_common::{
         self,
         ScriptData,
         ScriptRegistry,
+        ScriptRegistryBuilder,
     },
     system::position,
     ChunkData,
@@ -192,7 +193,9 @@ pub struct ScriptSharedData {
 }
 
 // Try to make unsafe blocks only output owned types.
-pub fn setup_script_registry(registry: &mut ScriptRegistry<ScriptSharedData>) {
+pub fn setup_script_registry(
+    mut registry: ScriptRegistryBuilder<ScriptSharedData>,
+) -> ScriptRegistry<ScriptSharedData> {
     fn handle_panic(caller: Caller<ScriptData<ScriptSharedData>>, msg_ptr: u32, msg_len: u32) {
         let ptr = msg_ptr as usize;
         let len = msg_len as usize;
@@ -365,6 +368,8 @@ pub fn setup_script_registry(registry: &mut ScriptRegistry<ScriptSharedData>) {
     }
 
     registry.func_wrap("env", "broadcast_action_local", broadcast_action_local);
+
+    registry.build()
 }
 
 /// All components and systems the loop has.

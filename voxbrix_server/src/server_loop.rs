@@ -92,7 +92,10 @@ use voxbrix_common::{
         StateUnpacker,
     },
     pack::Packer,
-    script_registry::ScriptRegistry,
+    script_registry::{
+        ScriptRegistry,
+        ScriptRegistryBuilder,
+    },
     system::{
         actor_class_loading::ActorClassLoadingSystem,
         block_class_loading::BlockClassLoadingSystem,
@@ -217,12 +220,11 @@ impl ServerLoop {
 
         let engine = wasmtime::Engine::new(&engine_config).expect("wasm engine failed to start");
 
-        let mut script_registry =
-            ScriptRegistry::load(engine, SERVER_LOOP_SCRIPT_LIST, SERVER_LOOP_SCRIPT_DIR)
+        let script_registry = data::setup_script_registry(
+            ScriptRegistryBuilder::load(engine, SERVER_LOOP_SCRIPT_LIST, SERVER_LOOP_SCRIPT_DIR)
                 .await
-                .expect("failed to load scripts");
-
-        data::setup_script_registry(&mut script_registry);
+                .expect("failed to load scripts"),
+        );
 
         let action_script_map = Map::load(ACTION_SCRIPT_MAP)
             .await

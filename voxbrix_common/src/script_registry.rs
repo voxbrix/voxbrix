@@ -9,7 +9,6 @@ use anyhow::{
     Context,
     Error,
 };
-use nohash_hasher::IntMap;
 use serde::Serialize;
 use std::{
     fmt::Debug,
@@ -29,17 +28,9 @@ use wasmtime::{
     TypedFunc,
 };
 
-pub struct ScriptCache<T> {
-    pub store: Store<ScriptData<T>>,
-    pub instance: Instance,
-}
-
 struct DynamicScriptData<T> {
     shared: T,
     buffer: Vec<u8>,
-}
-
-struct StaticScriptData {
     // Complete memory of the store.
     memory: Memory,
     // Common function that allows to allocate a buffer in the store of the given length and
@@ -48,62 +39,46 @@ struct StaticScriptData {
     get_buffer_func: TypedFunc<u32, u32>,
 }
 
-pub struct ScriptData<T> {
-    dynamic_data: Option<DynamicScriptData<T>>,
-    static_data: Option<StaticScriptData>,
-}
+pub struct ScriptData<T>(Option<DynamicScriptData<T>>);
 
 impl<T> ScriptData<T> {
     // Empty, unusable ScriptData for initializing the store.
     fn empty() -> Self {
-        Self {
-            dynamic_data: None,
-            static_data: None,
-        }
+        Self(None)
     }
 
     fn unset_dynamic(&mut self, common_buffer: &mut Vec<u8>) -> T {
-        let data = self
-            .dynamic_data
-            .take()
-            .expect("dynamic data is already unset");
+        let data = self.0.take().expect("dynamic data is already unset");
         *common_buffer = data.buffer;
         data.shared
     }
 
-    fn set_dynamic(&mut self, shared: T, common_buffer: &mut Vec<u8>) {
-        self.dynamic_data = Some(DynamicScriptData {
+    fn set_dynamic(
+        &mut self,
+        shared: T,
+        common_buffer: &mut Vec<u8>,
+        memory: Memory,
+        get_buffer_func: TypedFunc<u32, u32>,
+    ) {
+        self.0 = Some(DynamicScriptData {
             buffer: mem::take(common_buffer),
             shared,
-        });
-    }
-
-    fn initialize(&mut self, memory: Memory, get_buffer_func: TypedFunc<u32, u32>) {
-        self.static_data = Some(StaticScriptData {
             memory,
             get_buffer_func,
         });
     }
 
     pub fn shared(&self) -> &T {
-        &self
-            .dynamic_data
-            .as_ref()
-            .expect("dynamic data unset")
-            .shared
+        &self.0.as_ref().expect("dynamic data unset").shared
     }
 
     pub fn shared_mut(&mut self) -> &mut T {
-        &mut self
-            .dynamic_data
-            .as_mut()
-            .expect("dynamic data unset")
-            .shared
+        &mut self.0.as_mut().expect("dynamic data unset").shared
     }
 
     /// Complete memory of the store.
     pub fn memory(&self) -> Memory {
-        self.static_data
+        self.0
             .as_ref()
             .expect("script data is not initialized")
             .memory
@@ -114,7 +89,7 @@ impl<T> ScriptData<T> {
     /// the memory of the store.
     /// Returns a pointer to the allocated memory inside the store.
     pub fn get_buffer_func(&self) -> TypedFunc<u32, u32> {
-        self.static_data
+        self.0
             .as_ref()
             .expect("script data is not initialized")
             .get_buffer_func
@@ -124,11 +99,7 @@ impl<T> ScriptData<T> {
     /// Common buffer that can be used for e.g. serializing into it before copying to the store
     /// memory.
     pub fn buffer(&mut self) -> &mut Vec<u8> {
-        let buf = &mut self
-            .dynamic_data
-            .as_mut()
-            .expect("dynamic data unset")
-            .buffer;
+        let buf = &mut self.0.as_mut().expect("dynamic data unset").buffer;
 
         buf.clear();
 
@@ -166,24 +137,15 @@ pub fn write_script_buffer<T>(
     *store.as_context_mut().data_mut().buffer() = buffer;
 }
 
-pub struct ScriptRegistry<T> {
+pub struct ScriptRegistryBuilder<T> {
     engine: Engine,
     label_map: LabelMap<Script>,
     modules: Vec<Module>,
     linker: Linker<ScriptData<T>>,
-    cache: IntMap<Script, ScriptCache<T>>,
     buffer: Vec<u8>,
 }
 
-impl<T> ScriptRegistry<T> {
-    pub fn get_script_by_label(&self, label: &str) -> Option<Script> {
-        self.label_map.get(label)
-    }
-
-    pub fn script_label_map(&self) -> &LabelMap<Script> {
-        &self.label_map
-    }
-
+impl<T> ScriptRegistryBuilder<T> {
     pub fn func_wrap<Params, Args>(
         &mut self,
         module: &str,
@@ -191,72 +153,6 @@ impl<T> ScriptRegistry<T> {
         func: impl IntoFunc<ScriptData<T>, Params, Args>,
     ) {
         self.linker.func_wrap(module, name, func).unwrap();
-    }
-
-    pub fn access_script(
-        &mut self,
-        script: &Script,
-        shared: T,
-        mut access: impl FnMut(&mut ScriptCache<T>),
-    ) -> T {
-        if !self.cache.contains_key(script) {
-            let mut store = Store::new(&self.engine, ScriptData::empty());
-
-            let module = self
-                .modules
-                .get(script.0 as usize)
-                .expect("script not found");
-
-            let instance = self
-                .linker
-                .instantiate(&mut store, module)
-                .expect("instantiation should not fail");
-
-            let get_buffer_func = instance
-                .get_typed_func::<u32, u32>(&mut store, "get_buffer")
-                .unwrap();
-
-            let memory = instance.get_memory(&mut store, "memory").unwrap();
-
-            store.data_mut().initialize(memory, get_buffer_func);
-
-            self.cache.insert(*script, ScriptCache { store, instance });
-        }
-
-        self.buffer.clear();
-
-        let mut cache = self.cache.remove(script).unwrap();
-
-        cache.store.data_mut().set_dynamic(shared, &mut self.buffer);
-
-        access(&mut cache);
-
-        let shared = cache.store.data_mut().unset_dynamic(&mut self.buffer);
-
-        self.cache.insert(*script, cache);
-
-        shared
-    }
-
-    pub fn run_script<I>(&mut self, script: &Script, shared: T, input: I) -> T
-    where
-        I: Serialize,
-    {
-        self.access_script(script, shared, |bundle| {
-            write_script_buffer(&mut bundle.store, &input);
-
-            let run = bundle
-                .instance
-                .get_typed_func::<(), ()>(&mut bundle.store, "run")
-                .unwrap();
-
-            run.call(&mut bundle.store, ())
-                .expect("unable to run script");
-        })
-    }
-
-    pub fn engine(&self) -> &Engine {
-        &self.engine
     }
 
     pub async fn load(
@@ -301,8 +197,122 @@ impl<T> ScriptRegistry<T> {
             label_map,
             modules,
             linker,
-            cache: IntMap::default(),
             buffer: Vec::new(),
         })
+    }
+
+    pub fn build(self) -> ScriptRegistry<T> {
+        let Self {
+            engine,
+            label_map,
+            modules,
+            linker,
+            buffer,
+        } = self;
+
+        let mut store = Store::new(&engine, ScriptData::empty());
+
+        let cache = modules
+            .into_iter()
+            .map(|module| {
+                let instance = linker
+                    .instantiate(&mut store, &module)
+                    .expect("instantiation should not fail");
+
+                let get_buffer_func = instance
+                    .get_typed_func::<u32, u32>(&mut store, "get_buffer")
+                    .unwrap();
+
+                let memory = instance.get_memory(&mut store, "memory").unwrap();
+
+                CacheEntry {
+                    instance,
+                    memory,
+                    get_buffer_func,
+                }
+            })
+            .collect();
+
+        ScriptRegistry {
+            engine,
+            label_map,
+            store,
+            cache,
+            buffer,
+        }
+    }
+}
+
+struct CacheEntry {
+    instance: Instance,
+    // Complete memory of the store.
+    memory: Memory,
+    // Common function that allows to allocate a buffer in the store of the given length and
+    // returns a pointer to a memory inside the store.
+    // Used to serialize input of the script.
+    get_buffer_func: TypedFunc<u32, u32>,
+}
+
+pub struct ScriptRegistry<T> {
+    engine: Engine,
+    label_map: LabelMap<Script>,
+    store: Store<ScriptData<T>>,
+    cache: Vec<CacheEntry>,
+    buffer: Vec<u8>,
+}
+
+impl<T> ScriptRegistry<T> {
+    pub fn get_script_by_label(&self, label: &str) -> Option<Script> {
+        self.label_map.get(label)
+    }
+
+    pub fn script_label_map(&self) -> &LabelMap<Script> {
+        &self.label_map
+    }
+
+    pub fn access_script(
+        &mut self,
+        script: &Script,
+        shared: T,
+        mut access: impl FnMut(&mut Store<ScriptData<T>>, &mut Instance),
+    ) -> T {
+        self.buffer.clear();
+
+        let cache = self
+            .cache
+            .get_mut(script.0 as usize)
+            .expect("script does not exist");
+
+        self.store.data_mut().set_dynamic(
+            shared,
+            &mut self.buffer,
+            cache.memory.clone(),
+            cache.get_buffer_func.clone(),
+        );
+
+        access(&mut self.store, &mut cache.instance);
+
+        let shared = self.store.data_mut().unset_dynamic(&mut self.buffer);
+
+        shared
+    }
+
+    pub fn run_script<I>(&mut self, script: &Script, shared: T, input: I) -> T
+    where
+        I: Serialize,
+    {
+        self.access_script(script, shared, |mut store, instance| {
+            write_script_buffer(&mut store, &input);
+
+            let run = instance
+                .get_typed_func::<(), ()>(&mut store, "run")
+                .unwrap();
+
+            run.call(&mut store, ()).expect("unable to run script");
+        })
+    }
+
+    pub fn engine(&self) -> &Engine {
+        &self.engine
     }
 }
