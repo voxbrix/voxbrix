@@ -1,0 +1,1906 @@
+{
+  "label": "human",
+  "components": {
+    "builder": {
+      "grid_in_block": 32,
+      "texture_label": "human",
+      "texture_grid_size": [
+        64,
+        64
+      ],
+      "skeleton": {
+        "head": {
+          "parent": "torso",
+          "transformations": [
+            {
+              "kind": "Translate",
+              "value": [
+                0,
+                0,
+                15
+              ]
+            }
+          ]
+        },
+        "torso": {
+          "parent": "base",
+          "transformations": [
+            {
+              "kind": "Translate",
+              "value": [
+                0,
+                0,
+                4
+              ]
+            }
+          ]
+        },
+        "right_hand": {
+          "parent": "torso",
+          "transformations": [
+            {
+              "kind": "Translate",
+              "value": [
+                0,
+                12,
+                6
+              ]
+            }
+          ]
+        },
+        "left_hand": {
+          "parent": "torso",
+          "transformations": [
+            {
+              "kind": "Translate",
+              "value": [
+                0,
+                -12,
+                6
+              ]
+            }
+          ]
+        },
+        "right_leg": {
+          "parent": "torso",
+          "transformations": [
+            {
+              "kind": "Translate",
+              "value": [
+                0,
+                4,
+                -14
+              ]
+            }
+          ]
+        },
+        "left_leg": {
+          "parent": "torso",
+          "transformations": [
+            {
+              "kind": "Translate",
+              "value": [
+                0,
+                -4,
+                -14
+              ]
+            }
+          ]
+        }
+      },
+      "model_parts": {
+        "head": {
+          "transformations": [],
+          "sides": [
+            [
+              {
+                "position": [
+                  -5,
+                  5,
+                  5
+                ],
+                "texture_position": [
+                  10,
+                  0
+                ]
+              },
+              {
+                "position": [
+                  -5,
+                  -5,
+                  5
+                ],
+                "texture_position": [
+                  20,
+                  0
+                ]
+              },
+              {
+                "position": [
+                  5,
+                  -5,
+                  5
+                ],
+                "texture_position": [
+                  20,
+                  10
+                ]
+              },
+              {
+                "position": [
+                  5,
+                  5,
+                  5
+                ],
+                "texture_position": [
+                  10,
+                  10
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  5,
+                  5,
+                  -5
+                ],
+                "texture_position": [
+                  20,
+                  10
+                ]
+              },
+              {
+                "position": [
+                  5,
+                  -5,
+                  -5
+                ],
+                "texture_position": [
+                  30,
+                  10
+                ]
+              },
+              {
+                "position": [
+                  -5,
+                  -5,
+                  -5
+                ],
+                "texture_position": [
+                  30,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  -5,
+                  5,
+                  -5
+                ],
+                "texture_position": [
+                  20,
+                  20
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  5,
+                  5,
+                  5
+                ],
+                "texture_position": [
+                  10,
+                  10
+                ]
+              },
+              {
+                "position": [
+                  5,
+                  -5,
+                  5
+                ],
+                "texture_position": [
+                  20,
+                  10
+                ]
+              },
+              {
+                "position": [
+                  5,
+                  -5,
+                  -5
+                ],
+                "texture_position": [
+                  20,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  5,
+                  5,
+                  -5
+                ],
+                "texture_position": [
+                  10,
+                  20
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  -5,
+                  -5,
+                  5
+                ],
+                "texture_position": [
+                  0,
+                  0
+                ]
+              },
+              {
+                "position": [
+                  -5,
+                  5,
+                  5
+                ],
+                "texture_position": [
+                  10,
+                  0
+                ]
+              },
+              {
+                "position": [
+                  -5,
+                  5,
+                  -5
+                ],
+                "texture_position": [
+                  10,
+                  10
+                ]
+              },
+              {
+                "position": [
+                  -5,
+                  -5,
+                  -5
+                ],
+                "texture_position": [
+                  0,
+                  10
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  -5,
+                  5,
+                  5
+                ],
+                "texture_position": [
+                  0,
+                  10
+                ]
+              },
+              {
+                "position": [
+                  5,
+                  5,
+                  5
+                ],
+                "texture_position": [
+                  10,
+                  10
+                ]
+              },
+              {
+                "position": [
+                  5,
+                  5,
+                  -5
+                ],
+                "texture_position": [
+                  10,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  -5,
+                  5,
+                  -5
+                ],
+                "texture_position": [
+                  0,
+                  20
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  5,
+                  -5,
+                  5
+                ],
+                "texture_position": [
+                  20,
+                  0
+                ]
+              },
+              {
+                "position": [
+                  -5,
+                  -5,
+                  5
+                ],
+                "texture_position": [
+                  30,
+                  0
+                ]
+              },
+              {
+                "position": [
+                  -5,
+                  -5,
+                  -5
+                ],
+                "texture_position": [
+                  30,
+                  10
+                ]
+              },
+              {
+                "position": [
+                  5,
+                  -5,
+                  -5
+                ],
+                "texture_position": [
+                  20,
+                  10
+                ]
+              }
+            ]
+          ]
+        },
+        "torso": {
+          "transformations": [],
+          "sides": [
+            [
+              {
+                "position": [
+                  -4,
+                  8,
+                  10
+                ],
+                "texture_position": [
+                  16,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  -8,
+                  10
+                ],
+                "texture_position": [
+                  32,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  -8,
+                  10
+                ],
+                "texture_position": [
+                  32,
+                  52
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  8,
+                  10
+                ],
+                "texture_position": [
+                  16,
+                  52
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  4,
+                  8,
+                  -10
+                ],
+                "texture_position": [
+                  16,
+                  52
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  -8,
+                  -10
+                ],
+                "texture_position": [
+                  32,
+                  52
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  -8,
+                  -10
+                ],
+                "texture_position": [
+                  32,
+                  60
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  8,
+                  -10
+                ],
+                "texture_position": [
+                  16,
+                  60
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  4,
+                  8,
+                  10
+                ],
+                "texture_position": [
+                  30,
+                  0
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  -8,
+                  10
+                ],
+                "texture_position": [
+                  46,
+                  0
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  -8,
+                  -10
+                ],
+                "texture_position": [
+                  46,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  8,
+                  -10
+                ],
+                "texture_position": [
+                  30,
+                  20
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  -4,
+                  -8,
+                  10
+                ],
+                "texture_position": [
+                  46,
+                  0
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  8,
+                  10
+                ],
+                "texture_position": [
+                  62,
+                  0
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  8,
+                  -10
+                ],
+                "texture_position": [
+                  62,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  -8,
+                  -10
+                ],
+                "texture_position": [
+                  46,
+                  20
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  -4,
+                  8,
+                  10
+                ],
+                "texture_position": [
+                  0,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  8,
+                  10
+                ],
+                "texture_position": [
+                  8,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  8,
+                  -10
+                ],
+                "texture_position": [
+                  8,
+                  64
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  8,
+                  -10
+                ],
+                "texture_position": [
+                  0,
+                  64
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  4,
+                  -8,
+                  10
+                ],
+                "texture_position": [
+                  8,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  -8,
+                  10
+                ],
+                "texture_position": [
+                  16,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  -8,
+                  -10
+                ],
+                "texture_position": [
+                  16,
+                  64
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  -8,
+                  -10
+                ],
+                "texture_position": [
+                  8,
+                  64
+                ]
+              }
+            ]
+          ]
+        },
+        "right_hand": {
+          "transformations": [],
+          "sides": [
+            [
+              {
+                "position": [
+                  -4,
+                  4,
+                  4
+                ],
+                "texture_position": [
+                  32,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  -4,
+                  4
+                ],
+                "texture_position": [
+                  40,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  -4,
+                  4
+                ],
+                "texture_position": [
+                  40,
+                  52
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  4,
+                  4
+                ],
+                "texture_position": [
+                  32,
+                  52
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  4,
+                  4,
+                  -20
+                ],
+                "texture_position": [
+                  32,
+                  52
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  -4,
+                  -20
+                ],
+                "texture_position": [
+                  40,
+                  52
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  -4,
+                  -20
+                ],
+                "texture_position": [
+                  40,
+                  60
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  4,
+                  -20
+                ],
+                "texture_position": [
+                  32,
+                  60
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  4,
+                  4,
+                  4
+                ],
+                "texture_position": [
+                  8,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  -4,
+                  4
+                ],
+                "texture_position": [
+                  16,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  -4,
+                  -20
+                ],
+                "texture_position": [
+                  16,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  4,
+                  -20
+                ],
+                "texture_position": [
+                  8,
+                  44
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  -4,
+                  -4,
+                  4
+                ],
+                "texture_position": [
+                  0,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  4,
+                  4
+                ],
+                "texture_position": [
+                  8,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  4,
+                  -20
+                ],
+                "texture_position": [
+                  8,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  -4,
+                  -20
+                ],
+                "texture_position": [
+                  0,
+                  44
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  -4,
+                  4,
+                  4
+                ],
+                "texture_position": [
+                  16,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  4,
+                  4
+                ],
+                "texture_position": [
+                  24,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  4,
+                  -20
+                ],
+                "texture_position": [
+                  24,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  4,
+                  -20
+                ],
+                "texture_position": [
+                  16,
+                  44
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  4,
+                  -4,
+                  4
+                ],
+                "texture_position": [
+                  24,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  -4,
+                  4
+                ],
+                "texture_position": [
+                  32,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  -4,
+                  -20
+                ],
+                "texture_position": [
+                  32,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  -4,
+                  -20
+                ],
+                "texture_position": [
+                  24,
+                  44
+                ]
+              }
+            ]
+          ]
+        },
+        "left_hand": {
+          "transformations": [],
+          "sides": [
+            [
+              {
+                "position": [
+                  -4,
+                  4,
+                  4
+                ],
+                "texture_position": [
+                  40,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  -4,
+                  4
+                ],
+                "texture_position": [
+                  32,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  -4,
+                  4
+                ],
+                "texture_position": [
+                  32,
+                  52
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  4,
+                  4
+                ],
+                "texture_position": [
+                  40,
+                  52
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  4,
+                  4,
+                  -20
+                ],
+                "texture_position": [
+                  40,
+                  52
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  -4,
+                  -20
+                ],
+                "texture_position": [
+                  32,
+                  52
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  -4,
+                  -20
+                ],
+                "texture_position": [
+                  32,
+                  60
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  4,
+                  -20
+                ],
+                "texture_position": [
+                  40,
+                  60
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  4,
+                  4,
+                  4
+                ],
+                "texture_position": [
+                  16,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  -4,
+                  4
+                ],
+                "texture_position": [
+                  8,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  -4,
+                  -20
+                ],
+                "texture_position": [
+                  8,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  4,
+                  -20
+                ],
+                "texture_position": [
+                  16,
+                  44
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  -4,
+                  -4,
+                  4
+                ],
+                "texture_position": [
+                  8,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  4,
+                  4
+                ],
+                "texture_position": [
+                  0,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  4,
+                  -20
+                ],
+                "texture_position": [
+                  0,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  -4,
+                  -20
+                ],
+                "texture_position": [
+                  8,
+                  44
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  -4,
+                  4,
+                  4
+                ],
+                "texture_position": [
+                  32,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  4,
+                  4
+                ],
+                "texture_position": [
+                  24,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  4,
+                  -20
+                ],
+                "texture_position": [
+                  24,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  4,
+                  -20
+                ],
+                "texture_position": [
+                  32,
+                  44
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  4,
+                  -4,
+                  4
+                ],
+                "texture_position": [
+                  24,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  -4,
+                  4
+                ],
+                "texture_position": [
+                  16,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  -4,
+                  -20
+                ],
+                "texture_position": [
+                  16,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  -4,
+                  -20
+                ],
+                "texture_position": [
+                  24,
+                  44
+                ]
+              }
+            ]
+          ]
+        },
+        "right_leg": {
+          "transformations": [],
+          "sides": [
+            [
+              {
+                "position": [
+                  -4,
+                  4,
+                  4
+                ],
+                "texture_position": [
+                  40,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  -4,
+                  4
+                ],
+                "texture_position": [
+                  48,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  -4,
+                  4
+                ],
+                "texture_position": [
+                  48,
+                  52
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  4,
+                  4
+                ],
+                "texture_position": [
+                  40,
+                  52
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  4,
+                  4,
+                  -20
+                ],
+                "texture_position": [
+                  40,
+                  52
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  -4,
+                  -20
+                ],
+                "texture_position": [
+                  48,
+                  52
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  -4,
+                  -20
+                ],
+                "texture_position": [
+                  48,
+                  60
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  4,
+                  -20
+                ],
+                "texture_position": [
+                  40,
+                  60
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  4,
+                  4,
+                  4
+                ],
+                "texture_position": [
+                  40,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  -4,
+                  4
+                ],
+                "texture_position": [
+                  48,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  -4,
+                  -20
+                ],
+                "texture_position": [
+                  48,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  4,
+                  -20
+                ],
+                "texture_position": [
+                  40,
+                  44
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  -4,
+                  -4,
+                  4
+                ],
+                "texture_position": [
+                  32,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  4,
+                  4
+                ],
+                "texture_position": [
+                  40,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  4,
+                  -20
+                ],
+                "texture_position": [
+                  40,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  -4,
+                  -20
+                ],
+                "texture_position": [
+                  32,
+                  44
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  -4,
+                  4,
+                  4
+                ],
+                "texture_position": [
+                  48,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  4,
+                  4
+                ],
+                "texture_position": [
+                  56,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  4,
+                  -20
+                ],
+                "texture_position": [
+                  56,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  4,
+                  -20
+                ],
+                "texture_position": [
+                  48,
+                  44
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  4,
+                  -4,
+                  4
+                ],
+                "texture_position": [
+                  56,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  -4,
+                  4
+                ],
+                "texture_position": [
+                  64,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  -4,
+                  -20
+                ],
+                "texture_position": [
+                  64,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  -4,
+                  -20
+                ],
+                "texture_position": [
+                  56,
+                  44
+                ]
+              }
+            ]
+          ]
+        },
+        "left_leg": {
+          "transformations": [],
+          "sides": [
+            [
+              {
+                "position": [
+                  -4,
+                  4,
+                  4
+                ],
+                "texture_position": [
+                  48,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  -4,
+                  4
+                ],
+                "texture_position": [
+                  40,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  -4,
+                  4
+                ],
+                "texture_position": [
+                  40,
+                  52
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  4,
+                  4
+                ],
+                "texture_position": [
+                  48,
+                  52
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  4,
+                  4,
+                  -20
+                ],
+                "texture_position": [
+                  48,
+                  52
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  -4,
+                  -20
+                ],
+                "texture_position": [
+                  40,
+                  52
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  -4,
+                  -20
+                ],
+                "texture_position": [
+                  40,
+                  60
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  4,
+                  -20
+                ],
+                "texture_position": [
+                  48,
+                  60
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  4,
+                  4,
+                  4
+                ],
+                "texture_position": [
+                  48,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  -4,
+                  4
+                ],
+                "texture_position": [
+                  40,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  -4,
+                  -20
+                ],
+                "texture_position": [
+                  40,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  4,
+                  -20
+                ],
+                "texture_position": [
+                  48,
+                  44
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  -4,
+                  -4,
+                  4
+                ],
+                "texture_position": [
+                  40,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  4,
+                  4
+                ],
+                "texture_position": [
+                  32,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  4,
+                  -20
+                ],
+                "texture_position": [
+                  32,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  -4,
+                  -20
+                ],
+                "texture_position": [
+                  40,
+                  44
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  -4,
+                  4,
+                  4
+                ],
+                "texture_position": [
+                  64,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  4,
+                  4
+                ],
+                "texture_position": [
+                  56,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  4,
+                  -20
+                ],
+                "texture_position": [
+                  56,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  4,
+                  -20
+                ],
+                "texture_position": [
+                  64,
+                  44
+                ]
+              }
+            ],
+            [
+              {
+                "position": [
+                  4,
+                  -4,
+                  4
+                ],
+                "texture_position": [
+                  56,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  -4,
+                  4
+                ],
+                "texture_position": [
+                  48,
+                  20
+                ]
+              },
+              {
+                "position": [
+                  -4,
+                  -4,
+                  -20
+                ],
+                "texture_position": [
+                  48,
+                  44
+                ]
+              },
+              {
+                "position": [
+                  4,
+                  -4,
+                  -20
+                ],
+                "texture_position": [
+                  56,
+                  44
+                ]
+              }
+            ]
+          ]
+        }
+      },
+      "animations": {
+        "walking": {
+          "label": "walking",
+          "duration": 4,
+          "transformations": [
+            {
+              "time": 0,
+              "bone": "right_leg",
+              "operations": []
+            },
+            {
+              "time": 0,
+              "bone": "left_leg",
+              "operations": [
+                {
+                  "kind": "Scale",
+                  "value": [
+                    1.0,
+                    1.0,
+                    0.8
+                  ]
+                }
+              ]
+            },
+            {
+              "time": 1,
+              "bone": "right_leg",
+              "operations": [
+                {
+                  "kind": "Rotate",
+                  "axis": [
+                    0.0,
+                    1.0,
+                    0.0
+                  ],
+                  "angle_degrees": 45.0
+                }
+              ]
+            },
+            {
+              "time": 1,
+              "bone": "left_leg",
+              "operations": [
+                {
+                  "kind": "Rotate",
+                  "axis": [
+                    0.0,
+                    1.0,
+                    0.0
+                  ],
+                  "angle_degrees": -45.0
+                }
+              ]
+            },
+            {
+              "time": 2,
+              "bone": "right_leg",
+              "operations": [
+                {
+                  "kind": "Scale",
+                  "value": [
+                    1.0,
+                    1.0,
+                    0.8
+                  ]
+                }
+              ]
+            },
+            {
+              "time": 2,
+              "bone": "left_leg",
+              "operations": []
+            },
+            {
+              "time": 3,
+              "bone": "right_leg",
+              "operations": [
+                {
+                  "kind": "Rotate",
+                  "axis": [
+                    0.0,
+                    1.0,
+                    0.0
+                  ],
+                  "angle_degrees": -45.0
+                }
+              ]
+            },
+            {
+              "time": 3,
+              "bone": "left_leg",
+              "operations": [
+                {
+                  "kind": "Rotate",
+                  "axis": [
+                    0.0,
+                    1.0,
+                    0.0
+                  ],
+                  "angle_degrees": 45.0
+                }
+              ]
+            },
+            {
+              "time": 4,
+              "bone": "right_leg",
+              "operations": []
+            },
+            {
+              "time": 4,
+              "bone": "left_leg",
+              "operations": [
+                {
+                  "kind": "Scale",
+                  "value": [
+                    1.0,
+                    1.0,
+                    0.8
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  }
+}

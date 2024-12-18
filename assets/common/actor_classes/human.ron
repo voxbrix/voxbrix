@@ -1,6 +1,0 @@
-(
-    label: "human",
-    components: {
-        "model": "human",
-    },
-)

@@ -420,16 +420,17 @@ pub struct ActorAnimationDescriptor {
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(tag = "kind")]
 pub enum Operation {
-    Scale(Vec3F32),
+    Scale { value: Vec3F32 },
     Rotate { axis: Vec3F32, angle_degrees: f32 },
-    Translate(Vec3F32),
+    Translate { value: Vec3F32 },
 }
 
 impl Operation {
     fn to_matrix(&self) -> Mat4F32 {
         match self {
-            Operation::Scale(oper) => Mat4F32::from_scale(*oper),
+            Operation::Scale { value } => Mat4F32::from_scale(*value),
             Operation::Rotate {
                 axis,
                 angle_degrees,
@@ -437,7 +438,7 @@ impl Operation {
                 let oper = QuatF32::from_axis_angle(*axis, angle_degrees.to_radians());
                 Mat4F32::from_quat(oper)
             },
-            Operation::Translate(oper) => Mat4F32::from_translation(*oper),
+            Operation::Translate { value } => Mat4F32::from_translation(*value),
         }
     }
 }

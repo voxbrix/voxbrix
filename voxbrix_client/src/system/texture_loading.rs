@@ -11,7 +11,7 @@ use std::{
 };
 use tokio::task;
 use voxbrix_common::{
-    read_ron_file,
+    read_data_file,
     LabelMap,
 };
 
@@ -37,7 +37,7 @@ impl TextureLoadingSystem {
         path_prefix: &'static str,
     ) -> Result<Self, Error> {
         task::spawn_blocking(move || {
-            let texture_list: TextureList = read_ron_file(list_path)?;
+            let texture_list: TextureList = read_data_file(list_path)?;
 
             let textures = texture_list
                 .list

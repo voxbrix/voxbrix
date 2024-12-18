@@ -1,0 +1,12 @@
+{
+  "label": "grass",
+  "components": {
+    "model": "grass",
+    "collision": {
+      "type": "SolidCube"
+    },
+    "opacity": {
+      "type": "Full"
+    }
+  }
+}

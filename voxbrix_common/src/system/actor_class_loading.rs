@@ -1,14 +1,14 @@
 use crate::{
     entity::actor_class::ActorClass,
-    read_ron_file,
+    read_data_file,
     LabelMap,
 };
 use anyhow::Error;
-use ron::value::RawValue;
 use serde::{
     de::DeserializeOwned,
     Deserialize,
 };
+use serde_json::value::RawValue;
 use std::{
     collections::BTreeMap,
     path::Path,
@@ -16,7 +16,7 @@ use std::{
 use tokio::task;
 
 const PATH: &str = "assets/common/actor_classes";
-const LIST_PATH: &str = "assets/common/actor_classes.ron";
+const LIST_PATH: &str = "assets/common/actor_classes.json";
 
 pub trait LoadActorClassComponent<T> {
     fn reload_classes(&mut self, data: Vec<Option<T>>);
@@ -41,19 +41,19 @@ pub struct ActorClassLoadingSystem {
 impl ActorClassLoadingSystem {
     pub async fn load_data() -> Result<Self, Error> {
         task::spawn_blocking(|| {
-            let actor_class_list = read_ron_file::<ActorClassList>(LIST_PATH)?.list;
+            let actor_class_list = read_data_file::<ActorClassList>(LIST_PATH)?.list;
 
             let mut components = BTreeMap::new();
 
             for (actor_class_id, actor_class_label) in actor_class_list.iter().enumerate() {
-                let file_name = format!("{}.ron", actor_class_label);
+                let file_name = format!("{}.json", actor_class_label);
 
                 let descriptor: ActorClassDescriptior =
-                    read_ron_file(Path::new(PATH).join(file_name))?;
+                    read_data_file(Path::new(PATH).join(file_name))?;
 
                 if descriptor.label != *actor_class_label {
                     return Err(Error::msg(format!(
-                        "Label defined in file differs from file name: {} in {}.ron",
+                        "Label defined in file differs from file name: {} in {}.json",
                         descriptor.label, actor_class_label
                     )));
                 }
@@ -102,7 +102,7 @@ impl ActorClassLoadingSystem {
                 val_opt
                     .as_ref()
                     .map(|val| {
-                        let descriptor = val.clone().into_rust::<D>()?;
+                        let descriptor = serde_json::from_str::<D>(val.get())?;
 
                         conversion(descriptor)
                     })

@@ -2,18 +2,18 @@ use anyhow::{
     Context,
     Error,
 };
-use ron::value::RawValue;
 use serde::{
     de::DeserializeOwned,
     Deserialize,
 };
+use serde_json::value::RawValue;
 use std::{
     collections::BTreeMap,
     path::Path,
 };
 use tokio::task;
 use voxbrix_common::{
-    read_ron_file,
+    read_data_file,
     system::list_loading::List,
     AsFromUsize,
     LabelMap,
@@ -40,19 +40,19 @@ impl ModelLoadingSystem {
         path_prefix: &'static str,
     ) -> Result<Self, Error> {
         task::spawn_blocking(move || {
-            let model_list = read_ron_file::<List>(list_path)?.list;
+            let model_list = read_data_file::<List>(list_path)?.list;
 
             let mut components = BTreeMap::new();
 
             for (model_id, model_label) in model_list.iter().enumerate() {
-                let file_name = format!("{}.ron", model_label);
+                let file_name = format!("{}.json", model_label);
 
                 let descriptor: ModelDescriptior =
-                    read_ron_file(Path::new(path_prefix).join(file_name))?;
+                    read_data_file(Path::new(path_prefix).join(file_name))?;
 
                 if descriptor.label != *model_label {
                     return Err(Error::msg(format!(
-                        "label defined in file differs from file name: {} in {}.ron",
+                        "label defined in file differs from file name: {} in {}.json",
                         descriptor.label, model_label
                     )));
                 }
@@ -101,7 +101,7 @@ impl ModelLoadingSystem {
                 val_opt
                     .as_ref()
                     .map(|val| {
-                        let descriptor = val.clone().into_rust::<D>()?;
+                        let descriptor = serde_json::from_str::<D>(val.get())?;
 
                         conversion(descriptor)
                     })

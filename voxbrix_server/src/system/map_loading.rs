@@ -9,7 +9,7 @@ use std::{
     path::Path,
 };
 use tokio::task;
-use voxbrix_common::read_ron_file;
+use voxbrix_common::read_data_file;
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct Map {
@@ -22,7 +22,7 @@ impl Map {
     ) -> Result<Self, Error> {
         let read_path = path.clone();
 
-        task::spawn_blocking(move || read_ron_file::<Map>(read_path))
+        task::spawn_blocking(move || read_data_file::<Map>(read_path))
             .await
             .unwrap()
             .with_context(|| format!("unable to load map \"{:?}\"", path))

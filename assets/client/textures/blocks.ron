@@ -1,9 +1,0 @@
-(
-    size: 16,
-    list: [
-        "highlight",
-        "grass",
-        "dirt",
-        "stone",
-    ],
-)

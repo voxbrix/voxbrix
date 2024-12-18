@@ -14,7 +14,7 @@ serde = { workspace = true }
 serde-big-array = { workspace = true }
 lz4_flex = { workspace = true }
 arrayvec = { workspace = true }
-ron = { workspace = true }
+serde_json = { workspace = true }
 nohash-hasher = { workspace = true }
 ahash = { workspace = true }
 wasmtime = { workspace = true }

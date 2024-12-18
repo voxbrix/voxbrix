@@ -1,6 +1,0 @@
-(
-    map: {
-        "remove_block": "remove_block",
-        "place_block": "place_block",
-    },
-)

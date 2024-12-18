@@ -141,7 +141,7 @@ impl<T> BlocksVec<T> {
         self.0.get_mut(block.as_usize()).unwrap()
     }
 
-    pub fn iter<'a>(&'a self) -> impl ExactSizeIterator<Item = (Block, &T)> + 'a {
+    pub fn iter<'a>(&'a self) -> impl ExactSizeIterator<Item = (Block, &'a T)> + 'a {
         self.0
             .iter()
             .enumerate()

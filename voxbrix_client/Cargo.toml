@@ -15,7 +15,7 @@ postcard = { workspace = true }
 serde = { workspace = true } 
 k256 = { workspace = true } 
 arrayvec = { workspace = true }
-ron = { workspace = true }
+serde_json = { workspace = true } 
 nohash-hasher = { workspace = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }

@@ -1,7 +1,7 @@
 use crate::{
     entity::script::Script,
     pack,
-    read_ron_file,
+    read_data_file,
     system::list_loading::List,
     LabelMap,
 };
@@ -19,7 +19,6 @@ use tokio::task;
 use wasmtime::{
     AsContextMut,
     Engine,
-    Instance,
     IntoFunc,
     Linker,
     Memory,
@@ -163,7 +162,7 @@ impl<T> ScriptRegistryBuilder<T> {
         let list = {
             let list_path = list_path.clone();
 
-            task::spawn_blocking(move || read_ron_file::<List>(list_path))
+            task::spawn_blocking(move || read_data_file::<List>(list_path))
                 .await
                 .unwrap()
         }
@@ -230,7 +229,6 @@ impl<T> ScriptRegistryBuilder<T> {
                 let memory = instance.get_memory(&mut store, "memory").unwrap();
 
                 CacheEntry {
-                    instance,
                     memory,
                     get_buffer_func,
                     run_func,
@@ -249,7 +247,6 @@ impl<T> ScriptRegistryBuilder<T> {
 }
 
 struct CacheEntry {
-    instance: Instance,
     // Complete memory of the store.
     memory: Memory,
     // Common function that allows to allocate a buffer in the store of the given length and

@@ -1,0 +1,11 @@
+{
+  "list": [
+    "base",
+    "head",
+    "torso",
+    "left_hand",
+    "right_hand",
+    "left_leg",
+    "right_leg"
+  ]
+}

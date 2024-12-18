@@ -1,5 +1,5 @@
 use crate::{
-    read_ron_file,
+    read_data_file,
     AsFromUsize,
     LabelMap,
 };
@@ -25,7 +25,7 @@ impl List {
     ) -> Result<Self, Error> {
         let read_path = path.clone();
 
-        task::spawn_blocking(move || read_ron_file::<List>(read_path))
+        task::spawn_blocking(move || read_data_file::<List>(read_path))
             .await
             .unwrap()
             .with_context(|| format!("unable to load list \"{:?}\"", path))

@@ -52,13 +52,14 @@ macro_rules! compute {
 }
 
 /// Blocking IO, must not be used directly in async
-pub fn read_ron_file<T>(path: impl AsRef<Path> + std::fmt::Debug) -> Result<T, anyhow::Error>
+pub fn read_data_file<T>(path: impl AsRef<Path> + std::fmt::Debug) -> Result<T, anyhow::Error>
 where
     T: DeserializeOwned,
 {
     let string =
         fs::read_to_string(path.as_ref()).with_context(|| format!("reading {:?}", &path))?;
-    let data = ron::from_str::<T>(&string).with_context(|| format!("parsing {:?}", &path))?;
+    let data =
+        serde_json::from_str::<T>(&string).with_context(|| format!("parsing {:?}", &path))?;
 
     Ok(data)
 }
