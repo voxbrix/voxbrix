@@ -39,6 +39,7 @@ use crate::{
                 CullingBlockModelComponent,
             },
         },
+        texture::location::LocationTextureComponent,
     },
     scene::{
         menu::MenuSceneParameters,
@@ -277,10 +278,16 @@ impl GameScene {
             }
         });
 
+        let mut block_location_tc = LocationTextureComponent::new();
+
         let block_class_loading_system = BlockClassLoadingSystem::load_data().await?;
-        let block_texture_loading_system =
-            TextureLoadingSystem::load_data(BLOCK_TEXTURE_LIST_PATH, BLOCK_TEXTURE_PATH_PREFIX)
-                .await?;
+        let block_texture_loading_system = TextureLoadingSystem::load_data(
+            output_thread.device(),
+            BLOCK_TEXTURE_LIST_PATH,
+            BLOCK_TEXTURE_PATH_PREFIX,
+            &mut block_location_tc,
+        )
+        .await?;
 
         let mut builder_bmc = BuilderBlockModelComponent::new();
         let mut culling_bmc = CullingBlockModelComponent::new();
@@ -289,7 +296,8 @@ impl GameScene {
             ModelLoadingSystem::load_data(BLOCK_MODEL_LIST_PATH, BLOCK_MODEL_PATH_PREFIX).await?;
 
         let block_model_context = BlockModelContext {
-            block_texture_label_map: &block_texture_loading_system.label_map,
+            texture_label_map: block_texture_loading_system.label_map(),
+            location_tc: &block_location_tc,
         };
 
         block_model_loading_system.load_component(
@@ -349,9 +357,15 @@ impl GameScene {
         let direct_control_system = DirectControl::new(player_actor, 10.0, 0.4);
         let chunk_presence_system = ChunkPresenceSystem::new();
         let sky_light_system = SkyLightSystem::new();
-        let actor_texture_loading_system =
-            TextureLoadingSystem::load_data(ACTOR_TEXTURE_LIST_PATH, ACTOR_TEXTURE_PATH_PREFIX)
-                .await?;
+
+        let mut actor_location_tc = LocationTextureComponent::new();
+        let actor_texture_loading_system = TextureLoadingSystem::load_data(
+            output_thread.device(),
+            ACTOR_TEXTURE_LIST_PATH,
+            ACTOR_TEXTURE_PATH_PREFIX,
+            &mut actor_location_tc,
+        )
+        .await?;
 
         let state_components_label_map = List::load(STATE_COMPONENTS_PATH).await?.into_label_map();
 
@@ -402,7 +416,8 @@ impl GameScene {
             .into_label_map();
 
         let ctx = ActorModelBuilderContext {
-            actor_texture_label_map: &actor_texture_loading_system.label_map,
+            texture_label_map: actor_texture_loading_system.label_map(),
+            location_tc: &actor_location_tc,
             actor_bone_label_map: &actor_bone_label_map,
             actor_animation_label_map: &actor_animation_label_map,
         };
@@ -511,6 +526,8 @@ impl GameScene {
             render_parameters,
             block_texture_bind_group_layout,
             block_texture_bind_group,
+            block_texture_label_map: block_texture_loading_system.label_map(),
+            location_tc: &block_location_tc,
         }
         .build(&output_thread)
         .await;

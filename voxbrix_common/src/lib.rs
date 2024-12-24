@@ -79,6 +79,16 @@ pub trait AsFromUsize {
     fn from_usize(i: usize) -> Self;
 }
 
+impl AsFromUsize for usize {
+    fn as_usize(&self) -> usize {
+        (*self).try_into().unwrap()
+    }
+
+    fn from_usize(i: usize) -> Self {
+        i.try_into().unwrap()
+    }
+}
+
 impl AsFromUsize for u32 {
     fn as_usize(&self) -> usize {
         (*self).try_into().unwrap()

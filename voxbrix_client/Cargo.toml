@@ -34,3 +34,4 @@ bytemuck = { version = "1", features = ["derive"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 bitflags = "2"
 argon2 = { version = "0.5.3", default-features = false, features = ["alloc"] }
+rect_packer = "0.2.1"

@@ -1,5 +1,9 @@
 use crate::{
-    component::block_model::BlockModelComponent,
+    component::{
+        block_model::BlockModelComponent,
+        texture::location::LocationTextureComponent,
+    },
+    entity::texture::Texture,
     system::render::primitives::{
         Polygon,
         Vertex,
@@ -45,7 +49,8 @@ struct BlockModelDescriptorPolygon {
 }
 
 pub struct BlockModelContext<'a> {
-    pub block_texture_label_map: &'a LabelMap<u32>,
+    pub texture_label_map: LabelMap<Texture>,
+    pub location_tc: &'a LocationTextureComponent,
 }
 
 #[derive(Deserialize, Debug)]
@@ -62,34 +67,69 @@ impl BlockModelBuilderDescriptor {
                 .polygons
                 .iter()
                 .map(|desc| {
+                    let texture = context
+                        .texture_label_map
+                        .get(&desc.texture_label)
+                        .ok_or_else(|| {
+                            Error::msg(format!(
+                                "block texture label \"{}\" is undefined",
+                                &desc.texture_label
+                            ))
+                        })?;
+
+                    // Here is the fix for the glitchy pixels on the edge of sides
+                    // (just cause those grinded my gears)
+                    // Sometimes pixels on the edge of a side appear to be sampled from the outside
+                    // of the designated texture area, it happens because of f32 texture position inaccuracy
+                    // To compensate, find the center of the side in texture surface and move every
+                    // vertex toward that center by VERTEX_TEXTURE_POSITION_OFFSET fracture
+                    // of the grid size
+                    // Grid size involved in correction to have approximately the same offset even for
+                    // non-square textures
+                    let texture_coords_sum =
+                        desc.vertices.iter().fold([0.0, 0.0], |sum, vertex| {
+                            let coords = [0, 1].map(|i| {
+                                (vertex.texture_position[i] as f32)
+                                    / (self.texture_grid_size[i] as f32)
+                            });
+
+                            let coords = context.location_tc.get_coords(texture, coords);
+
+                            [0, 1].map(|i| coords[i] + sum[i])
+                        });
+
+                    let side_texture_center = texture_coords_sum.map(|sum| sum / 4.0);
+
                     Ok::<_, Error>(PolygonBuilder {
                         culling_neighbor: desc.culling_neighbor,
-                        texture_index: context
-                            .block_texture_label_map
-                            .get(&desc.texture_label)
-                            .ok_or_else(|| {
-                                Error::msg(format!(
-                                    "block texture label \"{}\" is undefined",
-                                    &desc.texture_label
-                                ))
-                            })?,
+                        texture_index: context.location_tc.get_index(texture),
                         vertices: desc.vertices.map_ref(
                             |BlockModelDescriptorVertex {
                                  position,
                                  texture_position,
                              }| {
+                                let texture_position = [0, 1].map(|i| {
+                                    (texture_position[i] as f32) / self.texture_grid_size[i] as f32
+                                });
+
+                                let texture_position =
+                                    context.location_tc.get_coords(texture, texture_position);
+
+                                let correction_amplitude =
+                                    context.location_tc.get_edge_correction(texture);
+
+                                let texture_position = [0, 1].map(|i| {
+                                    let correction_sign =
+                                        side_texture_center[i] - texture_position[i];
+
+                                    texture_position[i]
+                                        + correction_amplitude[i].copysign(correction_sign)
+                                });
+
                                 VertexBuilder {
-                                    position: [
-                                        position[0] as f32 / self.grid_size[0] as f32,
-                                        position[1] as f32 / self.grid_size[1] as f32,
-                                        position[2] as f32 / self.grid_size[2] as f32,
-                                    ],
-                                    texture_position: [
-                                        texture_position[0] as f32
-                                            / self.texture_grid_size[0] as f32,
-                                        texture_position[1] as f32
-                                            / self.texture_grid_size[1] as f32,
-                                    ],
+                                    position: [0, 1, 2]
+                                        .map(|i| position[i] as f32 / self.grid_size[i] as f32),
+                                    texture_position,
                                 }
                             },
                         ),
@@ -202,86 +242,5 @@ impl BlockModelBuilder {
                     }),
                 }
             })
-    }
-}
-
-pub fn side_highlighting(chunk: [i32; 3], block: Block, side: usize) -> Polygon {
-    const ELEVATION: f32 = 0.01;
-    const TEXTURE_INDEX: u32 = 0;
-
-    let [x, y, z] = block.into_coords();
-
-    let positions = match side {
-        0 => [[x, y, z + 1], [x, y + 1, z + 1], [x, y + 1, z], [x, y, z]],
-        1 => {
-            [
-                [x + 1, y + 1, z + 1],
-                [x + 1, y, z + 1],
-                [x + 1, y, z],
-                [x + 1, y + 1, z],
-            ]
-        },
-        2 => [[x + 1, y, z + 1], [x, y, z + 1], [x, y, z], [x + 1, y, z]],
-        3 => {
-            [
-                [x, y + 1, z + 1],
-                [x + 1, y + 1, z + 1],
-                [x + 1, y + 1, z],
-                [x, y + 1, z],
-            ]
-        },
-        4 => [[x, y, z], [x, y + 1, z], [x + 1, y + 1, z], [x + 1, y, z]],
-        5 => {
-            [
-                [x + 1, y, z + 1],
-                [x + 1, y + 1, z + 1],
-                [x, y + 1, z + 1],
-                [x, y, z + 1],
-            ]
-        },
-        _ => panic!("build_target_hightlight: incorrect side index"),
-    };
-
-    let (change_axis, change_amount) = match side {
-        0 => (0, -ELEVATION),
-        1 => (0, ELEVATION),
-        2 => (1, -ELEVATION),
-        3 => (1, ELEVATION),
-        4 => (2, -ELEVATION),
-        5 => (2, ELEVATION),
-        _ => unreachable!(),
-    };
-
-    let positions = positions.map(|a| {
-        let mut result = a.map(|i| i as f32);
-        result[change_axis] += change_amount;
-        result
-    });
-
-    Polygon {
-        chunk,
-        texture_index: TEXTURE_INDEX,
-        vertices: [
-            Vertex {
-                position: positions[0],
-                texture_position: [0.0, 0.0],
-                light_level: [16, 0, 0, 0],
-            },
-            Vertex {
-                position: positions[1],
-                texture_position: [1.0, 0.0],
-                light_level: [16, 0, 0, 0],
-            },
-            Vertex {
-                position: positions[2],
-                texture_position: [1.0, 1.0],
-                light_level: [16, 0, 0, 0],
-            },
-            Vertex {
-                position: positions[3],
-                texture_position: [0.0, 1.0],
-                light_level: [16, 0, 0, 0],
-            },
-        ],
     }
 }

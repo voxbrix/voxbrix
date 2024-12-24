@@ -14,12 +14,15 @@ use crate::{
                 CullingBlockModelComponent,
             },
         },
+        texture::location::LocationTextureComponent,
     },
+    entity::texture::Texture,
     system::render::{
         gpu_vec::GpuVec,
         output_thread::OutputThread,
         primitives::{
             Polygon,
+            Vertex,
             VertexDescription,
         },
         RenderParameters,
@@ -53,6 +56,7 @@ use voxbrix_common::{
         block_class::BlockClass,
         chunk::Chunk,
     },
+    LabelMap,
 };
 use wgpu::util::DeviceExt;
 
@@ -124,6 +128,8 @@ pub struct BlockRenderSystemDescriptor<'a> {
     pub render_parameters: RenderParameters<'a>,
     pub block_texture_bind_group_layout: wgpu::BindGroupLayout,
     pub block_texture_bind_group: wgpu::BindGroup,
+    pub block_texture_label_map: LabelMap<Texture>,
+    pub location_tc: &'a LocationTextureComponent,
 }
 
 impl<'a> BlockRenderSystemDescriptor<'a> {
@@ -136,6 +142,8 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
                 },
             block_texture_bind_group_layout,
             block_texture_bind_group,
+            block_texture_label_map,
+            location_tc,
         } = self;
 
         let shaders = voxbrix_common::read_file_async(SHADERS_PATH)
@@ -240,6 +248,13 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
                     mapped_at_creation: false,
                 });
 
+        let highlight_texture = block_texture_label_map
+            .get("highlight")
+            .expect("highlight texture is missing");
+        let highlight_texture_index = location_tc.get_index(highlight_texture);
+        let highlight_texture_coords = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+            .map(|coords| location_tc.get_coords(highlight_texture, coords));
+
         BlockRenderSystem {
             block_change_queue: VecDeque::new(),
             block_change_neighbors: AHashMap::new(),
@@ -255,6 +270,8 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
             block_texture_bind_group,
             target_highlighting: TargetHighlighting::None,
             target_highlight_polygon_buffer,
+            highlight_texture_index,
+            highlight_texture_coords,
         }
     }
 }
@@ -280,6 +297,8 @@ pub struct BlockRenderSystem {
     block_texture_bind_group: wgpu::BindGroup,
     target_highlighting: TargetHighlighting,
     target_highlight_polygon_buffer: wgpu::Buffer,
+    highlight_texture_index: u32,
+    highlight_texture_coords: [[f32; 2]; 4],
 }
 
 impl BlockRenderSystem {
@@ -511,8 +530,70 @@ impl BlockRenderSystem {
 
     pub fn build_target_highlight(&mut self, target: Option<(Chunk, Block, usize)>) {
         if let Some((chunk, block, side)) = target {
-            self.target_highlighting =
-                TargetHighlighting::New(builder::side_highlighting(chunk.position, block, side));
+            const ELEVATION: f32 = 0.01;
+
+            let [x, y, z] = block.into_coords();
+
+            let positions = match side {
+                0 => [[x, y, z + 1], [x, y + 1, z + 1], [x, y + 1, z], [x, y, z]],
+                1 => {
+                    [
+                        [x + 1, y + 1, z + 1],
+                        [x + 1, y, z + 1],
+                        [x + 1, y, z],
+                        [x + 1, y + 1, z],
+                    ]
+                },
+                2 => [[x + 1, y, z + 1], [x, y, z + 1], [x, y, z], [x + 1, y, z]],
+                3 => {
+                    [
+                        [x, y + 1, z + 1],
+                        [x + 1, y + 1, z + 1],
+                        [x + 1, y + 1, z],
+                        [x, y + 1, z],
+                    ]
+                },
+                4 => [[x, y, z], [x, y + 1, z], [x + 1, y + 1, z], [x + 1, y, z]],
+                5 => {
+                    [
+                        [x + 1, y, z + 1],
+                        [x + 1, y + 1, z + 1],
+                        [x, y + 1, z + 1],
+                        [x, y, z + 1],
+                    ]
+                },
+                _ => panic!("build_target_hightlight: incorrect side index"),
+            };
+
+            let (change_axis, change_amount) = match side {
+                0 => (0, -ELEVATION),
+                1 => (0, ELEVATION),
+                2 => (1, -ELEVATION),
+                3 => (1, ELEVATION),
+                4 => (2, -ELEVATION),
+                5 => (2, ELEVATION),
+                _ => unreachable!(),
+            };
+
+            let positions = positions.map(|a| {
+                let mut result = a.map(|i| i as f32);
+                result[change_axis] += change_amount;
+                result
+            });
+
+            let polygon = Polygon {
+                chunk: chunk.position,
+                texture_index: self.highlight_texture_index,
+                vertices: [0, 1, 2, 3].map(|i| {
+                    Vertex {
+                        position: positions[i],
+                        texture_position: self.highlight_texture_coords[i],
+                        light_level: [16, 0, 0, 0],
+                    }
+                }),
+            };
+
+            self.target_highlighting = TargetHighlighting::New(polygon);
         } else {
             self.target_highlighting = TargetHighlighting::None;
         }

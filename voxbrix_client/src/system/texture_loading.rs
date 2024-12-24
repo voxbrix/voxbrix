@@ -1,10 +1,23 @@
+use crate::{
+    component::texture::location::{
+        Location,
+        LocationTextureComponent,
+    },
+    entity::texture::Texture,
+};
 use anyhow::{
     Context,
     Error,
 };
-use image::ImageFormat;
+use image::{
+    GenericImage,
+    ImageFormat,
+    RgbaImage,
+};
+use rect_packer::DensePacker;
 use serde::Deserialize;
 use std::{
+    collections::BTreeMap,
     fs,
     num::NonZeroU32,
     path::Path,
@@ -18,26 +31,39 @@ use voxbrix_common::{
 const TEXTURE_FORMAT: ImageFormat = ImageFormat::Png;
 const TEXTURE_FORMAT_NAME: &str = "png";
 const TEXTURE_FORMAT_WGPU: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+const MIN_TEXTURE_ATLAS_SIZE: u32 = 512;
+const MAX_TEXTURE_ATLAS_SIZE: u32 = 8096;
+const EDGE_CORRECTION_PIXELS: f64 = 0.00001;
 
 #[derive(Deserialize, Debug)]
 struct TextureList {
-    size: usize,
     list: Vec<String>,
 }
 
 pub struct TextureLoadingSystem {
-    pub size: usize,
-    pub textures: Vec<Vec<u8>>,
-    pub label_map: LabelMap<u32>,
+    data: Vec<RgbaImage>,
+    label_map: LabelMap<Texture>,
 }
 
 impl TextureLoadingSystem {
     pub async fn load_data(
+        device: &wgpu::Device,
         list_path: &'static str,
         path_prefix: &'static str,
+        location_tc: &mut LocationTextureComponent,
     ) -> Result<Self, Error> {
-        task::spawn_blocking(move || {
+        let max_size = device
+            .limits()
+            .max_texture_dimension_2d
+            .min(MAX_TEXTURE_ATLAS_SIZE);
+
+        let (locations, slf) = task::spawn_blocking(move || {
             let texture_list: TextureList = read_data_file(list_path)?;
+
+            let mut packers = vec![DensePacker::new(
+                MIN_TEXTURE_ATLAS_SIZE.try_into().unwrap(),
+                MIN_TEXTURE_ATLAS_SIZE.try_into().unwrap(),
+            )];
 
             let textures = texture_list
                 .list
@@ -45,20 +71,125 @@ impl TextureLoadingSystem {
                 .map(|texture_label| {
                     let file_path = Path::new(path_prefix)
                         .join(format!("{}.{}", texture_label, TEXTURE_FORMAT_NAME));
-                    fs::read(&file_path).with_context(|| format!("reading {:?}", &file_path))
+                    let file_bytes = fs::read(&file_path)
+                        .with_context(|| format!("reading {:?}", &file_path))?;
+
+                    let texture =
+                        image::load_from_memory_with_format(file_bytes.as_ref(), TEXTURE_FORMAT)?
+                            .into_rgba8();
+
+                    Ok((texture_label, texture))
+                })
+                .collect::<Result<Vec<_>, anyhow::Error>>()?;
+
+            let mut locations = textures
+                .iter()
+                .map(|(label, texture)| {
+                    let tex_width = texture
+                        .dimensions()
+                        .0
+                        .try_into()
+                        .expect("texture too large");
+                    let tex_height = texture
+                        .dimensions()
+                        .1
+                        .try_into()
+                        .expect("texture too large");
+
+                    let idx_pos = packers.iter_mut().enumerate().find_map(|(idx, packer)| {
+                        Some((idx, packer.pack(tex_width, tex_height, false)?))
+                    });
+
+                    let (idx, pos) = idx_pos
+                        .or_else(|| {
+                            let curr_size = packers[0].size().0 as u32;
+
+                            if packers.len() != 1 || curr_size >= max_size {
+                                return None;
+                            }
+                            let packer = packers.first_mut().unwrap();
+                            let new_size = (packer.size().0 as u32 * 2)
+                                .min(max_size)
+                                .try_into()
+                                .unwrap();
+                            packer.resize(new_size, new_size);
+
+                            Some((0, packer.pack(tex_width, tex_height, false)?))
+                        })
+                        .map_or_else(
+                            || {
+                                let curr_size = packers[0].size().0;
+
+                                let mut packer = DensePacker::new(curr_size, curr_size);
+                                let pos =
+                                    packer.pack(tex_width, tex_height, false).ok_or_else(|| {
+                                        anyhow::anyhow!(
+                                            "texture \"{}\" is too large, maximum size is {}",
+                                            label,
+                                            curr_size
+                                        )
+                                    })?;
+
+                                let idx = packers.len();
+                                packers.push(packer);
+
+                                Ok::<_, anyhow::Error>((idx, pos))
+                            },
+                            |idx_pos| Ok(idx_pos),
+                        )?;
+
+                    Ok::<_, anyhow::Error>(Location {
+                        data_index: idx.try_into().unwrap(),
+                        position: [pos.x as u32, pos.y as u32],
+                        size: [pos.width as u32, pos.height as u32],
+                        edge_correction: [0.0; 2],
+                    })
                 })
                 .collect::<Result<Vec<_>, _>>()?;
 
+            for location in locations.iter_mut() {
+                let size = packers[location.data_index as usize].size();
+
+                location.edge_correction =
+                    [size.0, size.1].map(|size| (EDGE_CORRECTION_PIXELS / size as f64) as f32);
+            }
+
+            let mut data = packers
+                .iter()
+                .map(|packer| {
+                    let (size_x, size_y) = packer.size();
+                    RgbaImage::new(size_x as u32, size_y as u32)
+                })
+                .collect::<Vec<_>>();
+
+            for (texture_id, location) in locations.iter().enumerate() {
+                let data = data.get_mut(location.data_index as usize).unwrap();
+                data.sub_image(
+                    location.position[0],
+                    location.position[1],
+                    location.size[0],
+                    location.size[1],
+                )
+                .copy_from(&textures[texture_id].1, 0, 0)
+                .expect("incorrect texture location calculation");
+            }
+
             let label_map = LabelMap::from_list(&texture_list.list);
 
-            Ok(Self {
-                size: texture_list.size,
-                textures,
-                label_map,
-            })
+            Ok::<_, Error>((locations, Self { data, label_map }))
         })
         .await
-        .unwrap()
+        .unwrap()?;
+
+        let atlas_size = [slf.data[0].dimensions().0, slf.data[0].dimensions().1];
+
+        location_tc.load(atlas_size, locations);
+
+        Ok(slf)
+    }
+
+    pub fn label_map(&self) -> LabelMap<Texture> {
+        self.label_map.clone()
     }
 
     pub fn prepare_buffer(
@@ -67,21 +198,7 @@ impl TextureLoadingSystem {
         queue: &wgpu::Queue,
         texture_format: &wgpu::TextureFormat,
     ) -> (wgpu::BindGroupLayout, wgpu::BindGroup) {
-        let textures = &self.textures;
-
-        let texture_bytes = textures
-            .iter()
-            .map(|buf| {
-                let bytes_rgba =
-                    image::load_from_memory_with_format(buf.as_ref(), TEXTURE_FORMAT)?.into_rgba8();
-
-                Ok(bytes_rgba)
-            })
-            .collect::<Result<Vec<_>, anyhow::Error>>()
-            .unwrap();
-
-        // TODO
-        let texture_size = texture_bytes[0].dimensions();
+        let texture_size = self.data[0].dimensions();
 
         let extent = wgpu::Extent3d {
             width: texture_size.0,
@@ -100,8 +217,9 @@ impl TextureLoadingSystem {
             view_formats: &[*texture_format],
         };
 
-        let texture_views = texture_bytes
-            .into_iter()
+        let texture_views = self
+            .data
+            .iter()
             .map(|texture_bytes| {
                 let texture = device.create_texture(&texture_descriptior);
                 queue.write_texture(
@@ -147,13 +265,13 @@ impl TextureLoadingSystem {
                             view_dimension: wgpu::TextureViewDimension::D2,
                             multisampled: false,
                         },
-                        count: NonZeroU32::new(textures.len() as u32),
+                        count: NonZeroU32::new(self.data.len() as u32),
                     },
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
                         visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: NonZeroU32::new(textures.len() as u32),
+                        count: NonZeroU32::new(self.data.len() as u32),
                     },
                 ],
             });
@@ -167,7 +285,7 @@ impl TextureLoadingSystem {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::SamplerArray(
-                        &textures.iter().map(|_| &sampler).collect::<Vec<_>>(),
+                        &self.data.iter().map(|_| &sampler).collect::<Vec<_>>(),
                     ),
                 },
             ],

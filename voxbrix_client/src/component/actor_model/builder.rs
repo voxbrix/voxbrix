@@ -1,8 +1,14 @@
 use crate::{
-    component::actor_model::ActorModelComponent,
-    entity::actor_model::{
-        ActorAnimation,
-        ActorBone,
+    component::{
+        actor_model::ActorModelComponent,
+        texture::location::LocationTextureComponent,
+    },
+    entity::{
+        actor_model::{
+            ActorAnimation,
+            ActorBone,
+        },
+        texture::Texture,
     },
     system::render::primitives::{
         Polygon,
@@ -27,7 +33,6 @@ use voxbrix_common::{
 };
 
 pub const BASE_BONE: ActorBone = ActorBone(0);
-const VERTEX_TEXTURE_POSITION_OFFSET: f32 = 0.01;
 
 pub type BuilderActorModelComponent = ActorModelComponent<ActorModelBuilder>;
 
@@ -141,7 +146,8 @@ impl ActorModelBuilder {
 }
 
 pub struct ActorModelBuilderContext<'a> {
-    pub actor_texture_label_map: &'a LabelMap<u32>,
+    pub texture_label_map: LabelMap<Texture>,
+    pub location_tc: &'a LocationTextureComponent,
     pub actor_bone_label_map: &'a LabelMap<ActorBone>,
     pub actor_animation_label_map: &'a LabelMap<ActorAnimation>,
 }
@@ -161,7 +167,7 @@ impl ActorModelBuilderDescriptor {
         let default_scale = 1.0 / (self.grid_in_block as f32);
 
         let texture = ctx
-            .actor_texture_label_map
+            .texture_label_map
             .get(&self.texture_label)
             .ok_or_else(|| {
                 Error::msg(format!("texture \"{}\" is undefined", self.texture_label))
@@ -233,14 +239,17 @@ impl ActorModelBuilderDescriptor {
                         // of the grid size
                         // Grid size involved in correction to have approximately the same offset even for
                         // non-square textures
-                        let texture_coords_sum =
-                            side.iter().fold([0.0, 0.0], |[sum_x, sum_y], vertex| {
-                                let x_float = (vertex.texture_position[0] as f32)
-                                    / (self.texture_grid_size[0] as f32);
-                                let y_float = (vertex.texture_position[1] as f32)
-                                    / (self.texture_grid_size[1] as f32);
-                                [x_float + sum_x, y_float + sum_y]
+
+                        let texture_coords_sum = side.iter().fold([0.0, 0.0], |sum, vertex| {
+                            let coords = [0, 1].map(|i| {
+                                (vertex.texture_position[i] as f32)
+                                    / (self.texture_grid_size[i] as f32)
                             });
+
+                            let coords = ctx.location_tc.get_coords(texture, coords);
+
+                            [0, 1].map(|i| coords[i] + sum[i])
+                        });
 
                         let side_texture_center = texture_coords_sum.map(|sum| sum / 4.0);
 
@@ -250,25 +259,25 @@ impl ActorModelBuilderDescriptor {
                                 texture_position,
                             } = vertex;
 
-                            let get_texture_position = |axis| {
-                                let grid_size = self.texture_grid_size[axis] as f32;
+                            let texture_position = [0, 1].map(|i| {
+                                (texture_position[i] as f32) / self.texture_grid_size[i] as f32
+                            });
 
-                                let texture_position = (texture_position[axis] as f32) / grid_size;
+                            let texture_position =
+                                ctx.location_tc.get_coords(texture, texture_position);
 
-                                let correction_amplitude =
-                                    VERTEX_TEXTURE_POSITION_OFFSET / grid_size;
+                            let correction_amplitude = ctx.location_tc.get_edge_correction(texture);
 
-                                let correction_sign = side_texture_center[axis] - texture_position;
+                            let texture_position = [0, 1].map(|i| {
+                                let correction_sign = side_texture_center[i] - texture_position[i];
 
-                                texture_position + correction_amplitude.copysign(correction_sign)
-                            };
+                                texture_position[i]
+                                    + correction_amplitude[i].copysign(correction_sign)
+                            });
 
                             ActorModelPartVertex {
                                 position: position.map(|pos| pos as f32).into(),
-                                texture_position: [
-                                    get_texture_position(0),
-                                    get_texture_position(1),
-                                ],
+                                texture_position,
                             }
                         })
                     })
@@ -342,7 +351,7 @@ impl ActorModelBuilderDescriptor {
 
         Ok(ActorModelBuilder {
             default_scale,
-            texture,
+            texture: ctx.location_tc.get_index(texture),
             skeleton,
             model_parts,
             animations,
