@@ -44,7 +44,7 @@ impl GpuVec {
         device: &wgpu::Device,
         queue: &'a wgpu::Queue,
         length: wgpu::BufferAddress,
-    ) -> BufferMutSlice<'_> {
+    ) -> BufferMutSlice<'a> {
         self.length = length;
         let capacity = self.buffer.size();
 

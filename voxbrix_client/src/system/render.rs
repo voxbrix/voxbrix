@@ -1,30 +1,27 @@
-use crate::component::actor::{
-    orientation::OrientationActorComponent,
-    position::PositionActorComponent,
+use crate::{
+    component::actor::{
+        orientation::OrientationActorComponent,
+        position::PositionActorComponent,
+    },
+    window::{
+        Frame,
+        UiRenderer,
+        Window,
+    },
 };
 use arrayvec::ArrayVec;
 use camera::{
     Camera,
     CameraParameters,
 };
-use log::warn;
-use output_thread::{
-    OutputBundle,
-    OutputThread,
-};
 use std::{
     iter,
     mem,
 };
 use voxbrix_common::entity::actor::Actor;
-use winit::{
-    dpi::PhysicalSize,
-    window::CursorGrabMode,
-};
 
 pub mod camera;
 pub mod gpu_vec;
-pub mod output_thread;
 pub mod primitives;
 
 fn build_depth_texture_view(device: &wgpu::Device, mut size: wgpu::Extent3d) -> wgpu::TextureView {
@@ -50,7 +47,7 @@ pub struct RenderSystemDescriptor<'a> {
     pub camera_parameters: CameraParameters,
     pub position_ac: &'a PositionActorComponent,
     pub orientation_ac: &'a OrientationActorComponent,
-    pub output_thread: OutputThread,
+    pub window: Window,
 }
 
 impl<'a> RenderSystemDescriptor<'a> {
@@ -60,13 +57,11 @@ impl<'a> RenderSystemDescriptor<'a> {
             camera_parameters,
             position_ac,
             orientation_ac,
-            output_thread,
+            window,
         } = self;
 
-        let sc = output_thread.current_surface_config();
-
         let camera = Camera::new(
-            &output_thread.device(),
+            &window.device(),
             player_actor,
             camera_parameters,
             position_ac,
@@ -74,33 +69,33 @@ impl<'a> RenderSystemDescriptor<'a> {
         );
 
         let depth_texture_size = wgpu::Extent3d {
-            width: sc.width,
-            height: sc.height,
+            width: 1,
+            height: 1,
             depth_or_array_layers: 1,
         };
 
-        let depth_texture_view =
-            build_depth_texture_view(&output_thread.device(), depth_texture_size);
+        let depth_texture_view = build_depth_texture_view(&window.device(), depth_texture_size);
 
         RenderSystem {
             camera,
-            texture_format: sc.format,
+            texture_format: window.texture_format(),
             depth_texture_view,
             depth_texture_size,
-            output_thread,
+            window,
             process: None,
         }
     }
 }
 
-#[derive(Debug)]
 pub struct Renderer<'a> {
     is_first_pass: bool,
     pub encoder: &'a mut wgpu::CommandEncoder,
     pub view: &'a wgpu::TextureView,
-    pub surface_config: &'a wgpu::SurfaceConfiguration,
     pub device: &'a wgpu::Device,
     pub queue: &'a wgpu::Queue,
+    /// Only the last renderer will have this present:
+    pub ui_renderer: Option<&'a mut UiRenderer>,
+    surface_texture_size: wgpu::Extent3d,
     depth_texture_view: &'a wgpu::TextureView,
     camera_bind_group: &'a wgpu::BindGroup,
 }
@@ -111,9 +106,10 @@ impl<'a> Renderer<'a> {
             is_first_pass,
             encoder,
             view,
-            surface_config: _,
             device: _,
             queue: _,
+            ui_renderer: _,
+            surface_texture_size: _,
             depth_texture_view,
             camera_bind_group,
         } = self;
@@ -158,6 +154,10 @@ impl<'a> Renderer<'a> {
 
         render_pass
     }
+
+    pub fn surface_texture_size(&self) -> wgpu::Extent3d {
+        self.surface_texture_size
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -167,7 +167,7 @@ pub struct RenderParameters<'a> {
 }
 
 struct RenderProcess {
-    bundle: OutputBundle,
+    frame: Frame,
     view: wgpu::TextureView,
 }
 
@@ -176,19 +176,11 @@ pub struct RenderSystem {
     texture_format: wgpu::TextureFormat,
     depth_texture_view: wgpu::TextureView,
     depth_texture_size: wgpu::Extent3d,
-    output_thread: OutputThread,
+    window: Window,
     process: Option<RenderProcess>,
 }
 
 impl RenderSystem {
-    pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
-        if new_size.width > 0 && new_size.height > 0 {
-            let config = self.output_thread.next_surface_config();
-            config.width = new_size.width;
-            config.height = new_size.height;
-        }
-    }
-
     pub fn get_render_parameters(&self) -> RenderParameters {
         RenderParameters {
             camera_bind_group_layout: self.camera.get_bind_group_layout(),
@@ -202,41 +194,40 @@ impl RenderSystem {
         orientation_ac: &OrientationActorComponent,
     ) {
         self.camera
-            .update(&self.output_thread.queue(), position_ac, orientation_ac);
+            .update(self.window.queue(), position_ac, orientation_ac);
     }
 
-    pub fn start_render(&mut self, bundle: OutputBundle) {
-        let config = self.output_thread.current_surface_config();
-        self.camera.resize(config.width, config.height);
+    pub fn start_render(&mut self, frame: Frame) {
+        let view_size = frame.surface_texture().texture.size();
+        self.camera.resize(view_size.width, view_size.height);
 
-        let view = bundle
-            .output()
+        let view = frame
+            .surface_texture()
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let view_size = bundle.output().texture.size();
-
         if view_size != self.depth_texture_size {
             self.depth_texture_size = view_size;
-            self.depth_texture_view =
-                build_depth_texture_view(&self.output_thread.device(), view_size);
+            self.depth_texture_view = build_depth_texture_view(self.window.device(), view_size);
         }
 
-        self.process = Some(RenderProcess { bundle, view });
+        self.process = Some(RenderProcess { frame, view });
     }
 
     /// Returned renderer requires that the camera uniform buffer
     /// has binding group index 0 in the corresponding shaders
     pub fn get_renderers<'a, const N: usize>(&'a mut self) -> [Renderer<'a>; N] {
-        let device = self.output_thread.device();
-        let queue = self.output_thread.queue();
+        let device = self.window.device();
+        let queue = self.window.queue();
 
         let process = self
             .process
             .as_mut()
             .expect("render process must be started");
 
-        let encoders = process.bundle.encoders();
+        let surface_texture_size = process.frame.surface_texture().texture.size();
+
+        let encoders = &mut process.frame.encoders;
 
         let slice_start = encoders.len();
         let mut is_first_pass = encoders.is_empty();
@@ -250,60 +241,46 @@ impl RenderSystem {
 
         encoders.extend(encoders_extend);
 
-        encoders[slice_start ..]
+        let mut output = encoders[slice_start ..]
             .iter_mut()
             .map(|encoder| {
                 Renderer {
                     is_first_pass: mem::replace(&mut is_first_pass, false),
                     encoder,
                     view: &process.view,
-                    surface_config: self.output_thread.current_surface_config(),
                     device,
                     queue,
+                    ui_renderer: None,
+                    surface_texture_size,
                     depth_texture_view: &self.depth_texture_view,
                     camera_bind_group: &self.camera.get_bind_group(),
                 }
             })
             .collect::<ArrayVec<_, N>>()
             .into_inner()
-            .unwrap()
+            .unwrap_or_else(|_| unreachable!());
+
+        output.last_mut().unwrap().ui_renderer = Some(&mut process.frame.ui_renderer);
+
+        output
     }
 
     pub fn finish_render(&mut self) {
-        let RenderProcess { bundle, view: _ } =
+        let RenderProcess { frame, view: _ } =
             self.process.take().expect("render process must be started");
 
-        self.output_thread.present_output(bundle);
+        self.window.submit_frame(frame);
     }
 
-    pub fn into_output(self) -> OutputThread {
-        self.output_thread
+    pub fn into_window(self) -> Window {
+        self.window
     }
 
-    pub fn cursor_visibility(&self, visible: bool) {
-        let result = if visible {
-            self.output_thread.window().set_cursor_visible(true);
-            self.output_thread
-                .window()
-                .set_cursor_grab(CursorGrabMode::None)
-        } else {
-            self.output_thread.window().set_cursor_visible(false);
-            self.output_thread
-                .window()
-                .set_cursor_grab(CursorGrabMode::Confined)
-                .or_else(|_| {
-                    self.output_thread
-                        .window()
-                        .set_cursor_grab(CursorGrabMode::Locked)
-                })
-        };
-
-        if let Err(err) = result {
-            warn!("unable to set cursor grab: {:?}", err);
-        }
+    pub fn cursor_visibility(&mut self, visible: bool) {
+        self.window.cursor_visible = visible;
     }
 
-    pub fn output_thread(&self) -> &OutputThread {
-        &self.output_thread
+    pub fn window(&self) -> &Window {
+        &self.window
     }
 }

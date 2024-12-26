@@ -50,21 +50,21 @@ use crate::{
         block_render::BlockRenderSystemDescriptor,
         chunk_presence::ChunkPresenceSystem,
         controller::DirectControl,
-        interface::InterfaceSystemDescriptor,
+        interface::InterfaceSystem,
         model_loading::ModelLoadingSystem,
         movement_interpolation::MovementInterpolationSystem,
         player_position::PlayerPositionSystem,
         render::{
             camera::CameraParameters,
-            output_thread::{
-                OutputBundle,
-                OutputThread,
-            },
             RenderSystemDescriptor,
         },
         texture_loading::TextureLoadingSystem,
     },
-    window::InputEvent,
+    window::{
+        Frame,
+        InputEvent,
+        Window,
+    },
     CONNECTION_TIMEOUT,
 };
 use anyhow::Result;
@@ -160,7 +160,7 @@ mod process;
 mod send_state;
 
 enum Event {
-    Process(OutputBundle),
+    Process(Frame),
     SendState,
     LocalInput(InputEvent),
     NetworkInput(Result<Vec<u8>, ClientError>),
@@ -175,9 +175,7 @@ enum Transition {
 }
 
 pub struct GameSceneParameters {
-    pub interface_state: egui_winit::State,
-    pub interface_renderer: egui_wgpu::Renderer,
-    pub output_thread: OutputThread,
+    pub window: Window,
     pub connection: (Sender, Receiver),
     pub player_actor: Actor,
     pub player_chunk_view_radius: i32,
@@ -192,9 +190,7 @@ impl GameScene {
         let GameScene {
             parameters:
                 GameSceneParameters {
-                    interface_state,
-                    interface_renderer,
-                    output_thread,
+                    mut window,
                     connection,
                     player_actor,
                     player_chunk_view_radius,
@@ -282,7 +278,7 @@ impl GameScene {
 
         let block_class_loading_system = BlockClassLoadingSystem::load_data().await?;
         let block_texture_loading_system = TextureLoadingSystem::load_data(
-            output_thread.device(),
+            window.device(),
             BLOCK_TEXTURE_LIST_PATH,
             BLOCK_TEXTURE_PATH_PREFIX,
             &mut block_location_tc,
@@ -360,7 +356,7 @@ impl GameScene {
 
         let mut actor_location_tc = LocationTextureComponent::new();
         let actor_texture_loading_system = TextureLoadingSystem::load_data(
-            output_thread.device(),
+            window.device(),
             ACTOR_TEXTURE_LIST_PATH,
             ACTOR_TEXTURE_PATH_PREFIX,
             &mut actor_location_tc,
@@ -469,56 +465,42 @@ impl GameScene {
             snapshot,
         );
 
-        output_thread
-            .window()
-            .set_cursor_grab(winit::window::CursorGrabMode::Confined)
-            .or_else(|_| {
-                output_thread
-                    .window()
-                    .set_cursor_grab(winit::window::CursorGrabMode::Locked)
-            })?;
-        output_thread.window().set_cursor_visible(false);
+        window.cursor_visible = false;
 
-        let texture_format = output_thread.current_surface_config().format;
+        let texture_format = window.texture_format();
 
         let (block_texture_bind_group_layout, block_texture_bind_group) =
             block_texture_loading_system.prepare_buffer(
-                &output_thread.device(),
-                &output_thread.queue(),
+                window.device(),
+                window.queue(),
                 &texture_format,
             );
 
         let (actor_texture_bind_group_layout, actor_texture_bind_group) =
             actor_texture_loading_system.prepare_buffer(
-                &output_thread.device(),
-                &output_thread.queue(),
+                window.device(),
+                window.queue(),
                 &texture_format,
             );
 
-        let surface_size = output_thread.window().inner_size();
-
-        let interface_system = InterfaceSystemDescriptor {
-            interface_state,
-            interface_renderer,
-        }
-        .build();
+        let interface_system = InterfaceSystem::new();
 
         let render_system = RenderSystemDescriptor {
             player_actor,
             // TODO hide?
             camera_parameters: CameraParameters {
-                aspect: (surface_size.width as f32) / (surface_size.height as f32),
+                aspect: 1.0,
                 fovy: 70f32.to_radians(),
                 near: 0.01,
                 far: 100.0,
             },
             position_ac: &position_ac,
             orientation_ac: &orientation_ac,
-            output_thread,
+            window,
         }
         .build();
 
-        let output_thread = render_system.output_thread();
+        let window = render_system.window();
 
         let render_parameters = render_system.get_render_parameters();
 
@@ -529,7 +511,7 @@ impl GameScene {
             block_texture_label_map: block_texture_loading_system.label_map(),
             location_tc: &block_location_tc,
         }
-        .build(&output_thread)
+        .build(window)
         .await;
 
         let actor_render_system = ActorRenderSystemDescriptor {
@@ -537,11 +519,11 @@ impl GameScene {
             actor_texture_bind_group_layout,
             actor_texture_bind_group,
         }
-        .build(&output_thread)
+        .build(window)
         .await;
 
-        let surface_source = output_thread.get_surface_source();
-        let input_source = output_thread.get_input_source();
+        let frame_source = window.get_frame_source();
+        let input_source = window.get_input_source();
 
         let mut chunk_calc_phase = 0;
 
@@ -616,9 +598,9 @@ impl GameScene {
         })
         .or_ff(input_source.stream().map(Event::LocalInput))
         .or_ff(
-            surface_source
+            frame_source
                 .stream()
-                .map(|surface| Event::Process(surface))
+                .map(|frame| Event::Process(frame))
                 .rr_ff(event_rx.stream()),
         );
 
@@ -636,10 +618,10 @@ impl GameScene {
             .await
         {
             let transition = match event {
-                Event::Process(output_bundle) => {
+                Event::Process(frame) => {
                     compute!((sd) Process {
                     shared_data: &mut sd,
-                    output_bundle,
+                    frame,
                 }.run())
                 },
                 Event::SendState => {
@@ -702,25 +684,18 @@ impl GameScene {
                     return Ok(SceneSwitch::Exit);
                 },
                 Transition::Menu => {
-                    let (interface_state, interface_renderer) = sd.interface_system.destruct();
                     return Ok(SceneSwitch::Menu {
                         parameters: MenuSceneParameters {
-                            interface_state,
-                            interface_renderer,
-                            output_thread: sd.render_system.into_output(),
+                            window: sd.render_system.into_window(),
                         },
                     });
                 },
             }
         }
 
-        let (interface_state, interface_renderer) = sd.interface_system.destruct();
-
         Ok(SceneSwitch::Menu {
             parameters: MenuSceneParameters {
-                interface_state,
-                interface_renderer,
-                output_thread: sd.render_system.into_output(),
+                window: sd.render_system.into_window(),
             },
         })
     }

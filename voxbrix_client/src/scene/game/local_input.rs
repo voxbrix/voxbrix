@@ -3,14 +3,16 @@ use crate::{
         data::GameSharedData,
         Transition,
     },
-    window::InputEvent,
+    window::{
+        InputEvent,
+        WindowEvent,
+    },
 };
 use voxbrix_common::entity::block::Block;
 use winit::event::{
     DeviceEvent,
     ElementState,
     MouseButton,
-    WindowEvent,
 };
 
 pub struct LocalInput<'a> {
@@ -25,33 +27,25 @@ impl LocalInput<'_> {
             event,
         } = self;
 
+        if sd.inventory_open {
+            return Transition::None;
+        }
+
         match event {
-            InputEvent::DeviceEvent {
-                device_id: _,
-                event,
-            } => {
-                if !sd.inventory_open {
-                    match event {
-                        DeviceEvent::MouseMotion {
-                            delta: (horizontal, vertical),
-                        } => {
-                            sd.direct_control_system
-                                .process_mouse(horizontal as f32, vertical as f32);
-                        },
-                        _ => {},
-                    }
+            InputEvent::DeviceEvent(event) => {
+                match event {
+                    DeviceEvent::MouseMotion {
+                        delta: (horizontal, vertical),
+                    } => {
+                        sd.direct_control_system
+                            .process_mouse(horizontal as f32, vertical as f32);
+                    },
+                    _ => {},
                 }
             },
-            InputEvent::WindowEvent { event } => {
-                if sd.inventory_open {
-                    sd.interface_system
-                        .window_event(sd.render_system.output_thread().window(), &event);
-                }
+            InputEvent::WindowEvent(event) => {
                 match event {
-                    WindowEvent::Resized(size) => {
-                        sd.render_system.resize(size);
-                    },
-                    WindowEvent::CloseRequested | WindowEvent::Destroyed => {
+                    WindowEvent::CloseRequested => {
                         return Transition::Exit;
                     },
                     WindowEvent::KeyboardInput {

@@ -17,7 +17,6 @@ use crate::{
     entity::actor_model::ActorBone,
     system::render::{
         gpu_vec::GpuVec,
-        output_thread::OutputThread,
         primitives::{
             Polygon,
             VertexDescription,
@@ -25,6 +24,7 @@ use crate::{
         RenderParameters,
         Renderer,
     },
+    window::Window,
 };
 use nohash_hasher::IntMap;
 use std::time::Instant;
@@ -48,7 +48,7 @@ pub struct ActorRenderSystemDescriptor<'a> {
 }
 
 impl<'a> ActorRenderSystemDescriptor<'a> {
-    pub async fn build(self, output_thread: &OutputThread) -> ActorRenderSystem {
+    pub async fn build(self, window: &Window) -> ActorRenderSystem {
         let Self {
             render_parameters:
                 RenderParameters {
@@ -66,7 +66,7 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
         let shaders =
             std::str::from_utf8(&shaders).expect("unable to convert binary file to UTF-8 string");
 
-        let shaders = output_thread
+        let shaders = window
             .device()
             .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("Actor Shaders"),
@@ -74,7 +74,7 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
             });
 
         let render_pipeline_layout =
-            output_thread
+            window
                 .device()
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("Render Pipeline Layout"),
@@ -86,7 +86,7 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
                 });
 
         let render_pipeline =
-            output_thread
+            window
                 .device()
                 .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                     label: Some("Render Pipeline"),
@@ -132,23 +132,22 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
                     cache: None,
                 });
 
-        let vertex_buffer =
-            output_thread
-                .device()
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Vertex Buffer"),
-                    usage: wgpu::BufferUsages::VERTEX,
-                    contents: bytemuck::cast_slice(&[
-                        VertexDescription { index: 0 },
-                        VertexDescription { index: 1 },
-                        VertexDescription { index: 3 },
-                        VertexDescription { index: 2 },
-                        VertexDescription { index: 3 },
-                        VertexDescription { index: 1 },
-                    ]),
-                });
+        let vertex_buffer = window
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                usage: wgpu::BufferUsages::VERTEX,
+                contents: bytemuck::cast_slice(&[
+                    VertexDescription { index: 0 },
+                    VertexDescription { index: 1 },
+                    VertexDescription { index: 3 },
+                    VertexDescription { index: 2 },
+                    VertexDescription { index: 3 },
+                    VertexDescription { index: 1 },
+                ]),
+            });
 
-        let polygon_buffer = GpuVec::new(output_thread.device(), wgpu::BufferUsages::VERTEX);
+        let polygon_buffer = GpuVec::new(window.device(), wgpu::BufferUsages::VERTEX);
 
         ActorRenderSystem {
             render_pipeline,

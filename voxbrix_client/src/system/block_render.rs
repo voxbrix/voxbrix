@@ -5,7 +5,6 @@ use crate::{
         block_class::model::ModelBlockClassComponent,
         block_model::{
             builder::{
-                self,
                 BuilderBlockModelComponent,
                 CullFlags,
             },
@@ -19,7 +18,6 @@ use crate::{
     entity::texture::Texture,
     system::render::{
         gpu_vec::GpuVec,
-        output_thread::OutputThread,
         primitives::{
             Polygon,
             Vertex,
@@ -28,6 +26,7 @@ use crate::{
         RenderParameters,
         Renderer,
     },
+    window::Window,
 };
 use ahash::{
     AHashMap,
@@ -133,7 +132,7 @@ pub struct BlockRenderSystemDescriptor<'a> {
 }
 
 impl<'a> BlockRenderSystemDescriptor<'a> {
-    pub async fn build(self, output_thread: &OutputThread) -> BlockRenderSystem {
+    pub async fn build(self, window: &Window) -> BlockRenderSystem {
         let Self {
             render_parameters:
                 RenderParameters {
@@ -153,7 +152,7 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
         let shaders =
             std::str::from_utf8(&shaders).expect("unable to convert binary file to UTF-8 string");
 
-        let shaders = output_thread
+        let shaders = window
             .device()
             .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("Block Shaders"),
@@ -161,7 +160,7 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
             });
 
         let render_pipeline_layout =
-            output_thread
+            window
                 .device()
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("Render Pipeline Layout"),
@@ -173,7 +172,7 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
                 });
 
         let render_pipeline =
-            output_thread
+            window
                 .device()
                 .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                     label: Some("Render Pipeline"),
@@ -219,34 +218,31 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
                     cache: None,
                 });
 
-        let vertex_buffer =
-            output_thread
-                .device()
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Vertex Buffer"),
-                    usage: wgpu::BufferUsages::VERTEX,
-                    contents: bytemuck::cast_slice(&[
-                        VertexDescription { index: 0 },
-                        VertexDescription { index: 1 },
-                        VertexDescription { index: 3 },
-                        VertexDescription { index: 2 },
-                        VertexDescription { index: 3 },
-                        VertexDescription { index: 1 },
-                    ]),
-                });
+        let vertex_buffer = window
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                usage: wgpu::BufferUsages::VERTEX,
+                contents: bytemuck::cast_slice(&[
+                    VertexDescription { index: 0 },
+                    VertexDescription { index: 1 },
+                    VertexDescription { index: 3 },
+                    VertexDescription { index: 2 },
+                    VertexDescription { index: 3 },
+                    VertexDescription { index: 1 },
+                ]),
+            });
 
-        let polygon_buffer = GpuVec::new(output_thread.device(), wgpu::BufferUsages::VERTEX);
+        let polygon_buffer = GpuVec::new(window.device(), wgpu::BufferUsages::VERTEX);
 
         // Target block hightlighting
         let target_highlight_polygon_buffer =
-            output_thread
-                .device()
-                .create_buffer(&wgpu::BufferDescriptor {
-                    label: Some("Highlight Vertex Buffer"),
-                    size: Polygon::size(),
-                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                    mapped_at_creation: false,
-                });
+            window.device().create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Highlight Vertex Buffer"),
+                size: Polygon::size(),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
 
         let highlight_texture = block_texture_label_map
             .get("highlight")

@@ -3,17 +3,17 @@ use crate::{
         game::GameSceneParameters,
         SceneSwitch,
     },
-    system::render::output_thread::{
-        OutputBundle,
-        OutputThread,
+    window::{
+        Frame,
+        InputEvent,
+        Window,
+        WindowEvent,
     },
-    window::InputEvent,
     CONNECTION_TIMEOUT,
 };
 use anyhow::Result;
 use argon2::Argon2;
 use egui::CentralPanel;
-use egui_wgpu::ScreenDescriptor;
 use futures_lite::{
     future,
     StreamExt as _,
@@ -62,12 +62,9 @@ use voxbrix_protocol::client::{
     Receiver,
     Sender,
 };
-use winit::event::WindowEvent;
 
 pub struct MenuSceneParameters {
-    pub interface_state: egui_winit::State,
-    pub interface_renderer: egui_wgpu::Renderer,
-    pub output_thread: OutputThread,
+    pub window: Window,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -77,7 +74,7 @@ enum ActionType {
 }
 
 enum Event {
-    Process(OutputBundle),
+    Process(Frame),
     Input(InputEvent),
 }
 
@@ -88,25 +85,15 @@ pub struct MenuScene {
 impl MenuScene {
     pub async fn run(self) -> Result<SceneSwitch> {
         let Self {
-            parameters:
-                MenuSceneParameters {
-                    interface_state: mut state,
-                    interface_renderer: mut renderer,
-                    mut output_thread,
-                },
+            parameters: MenuSceneParameters { mut window },
         } = self;
 
-        let _ = output_thread
-            .window()
-            .set_cursor_grab(winit::window::CursorGrabMode::None);
-        output_thread.window().set_cursor_visible(true);
+        window.cursor_visible = true;
 
-        let mut resized = false;
+        let frame_source = window.get_frame_source();
+        let input_source = window.get_input_source();
 
-        let surface_source = output_thread.get_surface_source();
-        let input_source = output_thread.get_input_source();
-
-        let mut stream = surface_source
+        let mut stream = frame_source
             .stream()
             .map(Event::Process)
             .or_ff(input_source.stream().map(Event::Input));
@@ -133,9 +120,10 @@ impl MenuScene {
                 prev_form = form.clone();
             }
             match event {
-                Event::Process(mut output_bundle) => {
-                    let input = state.take_egui_input(&output_thread.window());
-                    let full_output = state.egui_ctx().run(input, |ctx| {
+                Event::Process(mut frame) => {
+                    let input = frame.take_ui_input();
+
+                    let full_output = window.ui_context().run(input, |ctx| {
                         CentralPanel::default().show(&ctx, |ui| {
                             ui.label("Voxbrix");
                             ui.label(&error_message);
@@ -167,48 +155,25 @@ impl MenuScene {
                         });
                     });
 
-                    let pixels_per_point = state.egui_ctx().pixels_per_point();
+                    let view_size = frame.surface_texture().texture.size();
 
-                    let clipped_primitives = state
-                        .egui_ctx()
-                        .tessellate(full_output.shapes, pixels_per_point);
-
-                    let mut encoder = output_thread.device().create_command_encoder(
-                        &wgpu::CommandEncoderDescriptor {
-                            label: Some("Render Encoder"),
-                        },
-                    );
-
-                    let config = output_thread.current_surface_config();
-                    let screen_descriptor = ScreenDescriptor {
-                        size_in_pixels: [config.width, config.height],
-                        pixels_per_point,
-                    };
-
-                    renderer.update_buffers(
-                        &output_thread.device(),
-                        &output_thread.queue(),
-                        &mut encoder,
-                        &clipped_primitives,
-                        &screen_descriptor,
-                    );
-
-                    for (id, image_delta) in &full_output.textures_delta.set {
-                        renderer.update_texture(
-                            &output_thread.device(),
-                            &output_thread.queue(),
-                            *id,
-                            image_delta,
-                        );
-                    }
-
-                    let view = output_bundle
-                        .output()
+                    let view = frame
+                        .surface_texture()
                         .texture
                         .create_view(&wgpu::TextureViewDescriptor::default());
 
-                    let mut render_pass = encoder
-                        .begin_render_pass(&wgpu::RenderPassDescriptor {
+                    let mut encoder =
+                        window
+                            .device()
+                            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                                label: Some("UI Render Encoder"),
+                            });
+
+                    frame.ui_renderer.render_output(
+                        full_output,
+                        &mut encoder,
+                        [view_size.width, view_size.height],
+                        &wgpu::RenderPassDescriptor {
                             label: Some("Render Pass"),
                             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                                 view: &view,
@@ -226,26 +191,12 @@ impl MenuScene {
                             depth_stencil_attachment: None,
                             timestamp_writes: None,
                             occlusion_query_set: None,
-                        })
-                        .forget_lifetime();
+                        },
+                    );
 
-                    renderer.render(&mut render_pass, &clipped_primitives, &screen_descriptor);
+                    frame.encoders.push(encoder);
 
-                    drop(render_pass);
-
-                    output_bundle.encoders().push(encoder);
-
-                    if resized {
-                        let physical_size = output_thread.window().inner_size();
-
-                        let config = output_thread.next_surface_config();
-                        config.width = physical_size.width;
-                        config.height = physical_size.height;
-
-                        resized = false;
-                    }
-
-                    output_thread.present_output(output_bundle);
+                    window.submit_frame(frame);
 
                     if let Some(ct) = connect_task.as_ref() {
                         if ct.is_finished() {
@@ -258,9 +209,7 @@ impl MenuScene {
 
                                     return Ok(SceneSwitch::Game {
                                         parameters: GameSceneParameters {
-                                            interface_state: state,
-                                            interface_renderer: renderer,
-                                            output_thread,
+                                            window,
                                             connection: (tx, rx),
                                             player_actor: actor,
                                             player_chunk_view_radius,
@@ -275,17 +224,12 @@ impl MenuScene {
                     }
                 },
                 Event::Input(event) => {
-                    if let InputEvent::WindowEvent { event } = event {
+                    if let InputEvent::WindowEvent(event) = event {
                         match event {
-                            WindowEvent::Resized(_size) => {
-                                resized = true;
-                            },
-                            WindowEvent::CloseRequested | WindowEvent::Destroyed => {
+                            WindowEvent::CloseRequested => {
                                 return Ok(SceneSwitch::Exit);
                             },
-                            _ => {
-                                let _ = state.on_window_event(output_thread.window(), &event);
-                            },
+                            _ => {},
                         }
                     }
                 },

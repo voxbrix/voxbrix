@@ -17,7 +17,6 @@ use image::{
 use rect_packer::DensePacker;
 use serde::Deserialize;
 use std::{
-    collections::BTreeMap,
     fs,
     num::NonZeroU32,
     path::Path,

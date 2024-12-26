@@ -1,25 +1,22 @@
 use super::Transition;
 use crate::{
     scene::game::data::GameSharedData,
-    system::render::{
-        output_thread::OutputBundle,
-        Renderer,
-    },
+    system::render::Renderer,
+    window::Frame,
 };
 use rayon::prelude::*;
 use std::time::Instant;
-use voxbrix_common::entity::block::BLOCKS_IN_CHUNK;
 
 pub struct Process<'a> {
     pub shared_data: &'a mut GameSharedData,
-    pub output_bundle: OutputBundle,
+    pub frame: Frame,
 }
 
 impl Process<'_> {
     pub fn run(self) -> Transition {
         let Process {
             shared_data: sd,
-            output_bundle,
+            mut frame,
         } = self;
 
         if sd.inventory_open && !sd.cursor_visible {
@@ -86,8 +83,7 @@ impl Process<'_> {
 
         sd.block_render_system.build_target_highlight(target);
 
-        sd.interface_system
-            .start(sd.render_system.output_thread().window());
+        sd.interface_system.start(&mut frame);
 
         sd.interface_system.add_interface(|ctx| {
             egui::Window::new("Inventory")
@@ -109,7 +105,7 @@ impl Process<'_> {
             &mut sd.animation_state_ac,
         );
 
-        sd.render_system.start_render(output_bundle);
+        sd.render_system.start_render(frame);
 
         let render_systems: [&mut (dyn FnMut(Renderer) + Send); 3] = [
             &mut |renderer| {

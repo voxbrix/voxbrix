@@ -1,4 +1,4 @@
-use crate::system::render::output_thread::OutputThread;
+use crate::window::Window;
 use anyhow::Result;
 use game::{
     GameScene,
@@ -19,25 +19,15 @@ pub enum SceneSwitch {
 }
 
 pub struct SceneManager {
-    pub interface_state: egui_winit::State,
-    pub interface_renderer: egui_wgpu::Renderer,
-    pub output_thread: OutputThread,
+    pub window: Window,
 }
 
 impl SceneManager {
     pub async fn run(self) -> Result<()> {
-        let Self {
-            interface_state,
-            interface_renderer,
-            output_thread,
-        } = self;
+        let Self { window } = self;
 
         let mut next_loop = Some(SceneSwitch::Menu {
-            parameters: MenuSceneParameters {
-                interface_state,
-                interface_renderer,
-                output_thread,
-            },
+            parameters: MenuSceneParameters { window },
         });
 
         loop {

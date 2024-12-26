@@ -106,7 +106,9 @@ pub struct GameSharedData {
     pub last_server_snapshot: Snapshot,
 
     pub unreliable_tx: Sender<Vec<u8>>,
+    #[allow(dead_code)]
     pub reliable_tx: Sender<Vec<u8>>,
+    #[allow(dead_code)]
     pub event_tx: Sender<Event>,
 
     pub state_packer: StatePacker,
