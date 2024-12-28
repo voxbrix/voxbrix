@@ -56,7 +56,7 @@ pub struct ChangedVecChunk<'a, T> {
 }
 
 impl<'a, T> ChangedVecChunk<'a, T> {
-    pub fn changes(&'a self) -> impl ExactSizeIterator<Item = (&Block, &T)> + 'a {
+    pub fn changes(&'a self) -> impl ExactSizeIterator<Item = (&'a Block, &'a T)> + 'a {
         self.changes.iter().map(|k| (k, self.data.get(*k)))
     }
 }

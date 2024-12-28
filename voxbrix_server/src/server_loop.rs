@@ -92,10 +92,7 @@ use voxbrix_common::{
         StateUnpacker,
     },
     pack::Packer,
-    script_registry::{
-        ScriptRegistry,
-        ScriptRegistryBuilder,
-    },
+    script_registry::ScriptRegistryBuilder,
     system::{
         actor_class_loading::ActorClassLoadingSystem,
         block_class_loading::BlockClassLoadingSystem,
@@ -304,7 +301,6 @@ impl ServerLoop {
 
             actor_class_label_map,
             block_class_label_map,
-            action_label_map,
 
             position_system,
             chunk_activation_system: ChunkActivationSystem::new(),

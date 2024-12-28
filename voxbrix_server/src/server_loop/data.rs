@@ -72,7 +72,6 @@ use voxbrix_common::{
         block_class::collision::CollisionBlockClassComponent,
     },
     entity::{
-        action::Action,
         actor::Actor,
         actor_class::ActorClass,
         block::BLOCKS_IN_CHUNK_EDGE,
@@ -402,7 +401,6 @@ pub struct SharedData {
 
     pub actor_class_label_map: LabelMap<ActorClass>,
     pub block_class_label_map: LabelMap<BlockClass>,
-    pub action_label_map: LabelMap<Action>,
 
     pub position_system: PositionSystem,
     pub chunk_activation_system: ChunkActivationSystem,

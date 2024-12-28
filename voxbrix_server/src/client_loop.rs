@@ -89,26 +89,6 @@ pub enum Error {
     ReceiveError,
 }
 
-trait ConvertResultError<T> {
-    fn error(self, error: Error) -> Result<T, Error>;
-}
-
-impl<T, E> ConvertResultError<T> for Result<T, E> {
-    fn error(self, error: Error) -> Result<T, Error> {
-        self.map_err(|_| error)
-    }
-}
-
-trait ConvertOption<T> {
-    fn error(self, error: Error) -> Result<T, Error>;
-}
-
-impl<T> ConvertResultError<T> for Option<T> {
-    fn error(self, error: Error) -> Result<T, Error> {
-        self.ok_or(error)
-    }
-}
-
 pub struct ClientLoop {
     pub database: Arc<Database>,
     pub event_tx: Sender<ServerEvent>,
@@ -142,14 +122,14 @@ impl ClientLoop {
         // if there's none - register,
         // if the password is not correct - send error
         let request = time::timeout(CLIENT_CONNECTION_TIMEOUT, async {
-            rx.recv().await.error(Error::ReceiveError)
+            rx.recv().await.map_err(|_| Error::ReceiveError)
         })
         .await
         .map_err(|_| Error::InitializationTimeout)?
         .and_then(|(_channel, data)| {
             packer
                 .unpack::<InitRequest>(data.as_ref())
-                .error(Error::UnexpectedMessage)
+                .map_err(|_| Error::UnexpectedMessage)
         })?;
 
         // TODO: read from config
@@ -175,7 +155,7 @@ impl ClientLoop {
             reliable_tx
                 .send_reliable(BASE_CHANNEL, &buffer)
                 .await
-                .error(Error::SendError)
+                .map_err(|_| Error::SendError)
         })
         .await
         .map_err(|_| Error::InitializationTimeout)??;
@@ -186,14 +166,14 @@ impl ClientLoop {
                     username,
                     key_signature,
                 } = time::timeout(CLIENT_CONNECTION_TIMEOUT, async {
-                    rx.recv().await.error(Error::ReceiveError)
+                    rx.recv().await.map_err(|_| Error::ReceiveError)
                 })
                 .await
                 .map_err(|_| Error::InitializationTimeout)?
                 .and_then(|(_channel, data)| {
                     packer
                         .unpack::<LoginRequest>(data.as_ref())
-                        .error(Error::UnexpectedMessage)
+                        .map_err(|_| Error::UnexpectedMessage)
                 })?;
 
                 let player_res = task::spawn_blocking(move || {
@@ -250,7 +230,7 @@ impl ClientLoop {
                             reliable_tx
                                 .send_reliable(BASE_CHANNEL, &buffer)
                                 .await
-                                .error(Error::SendError)
+                                .map_err(|_| Error::SendError)
                         })
                         .await;
 
@@ -263,14 +243,14 @@ impl ClientLoop {
                     username,
                     public_key,
                 } = time::timeout(CLIENT_CONNECTION_TIMEOUT, async {
-                    rx.recv().await.error(Error::ReceiveError)
+                    rx.recv().await.map_err(|_| Error::ReceiveError)
                 })
                 .await
                 .map_err(|_| Error::InitializationTimeout)?
                 .and_then(|(_channel, data)| {
                     packer
                         .unpack::<RegisterRequest>(data.as_ref())
-                        .error(Error::UnexpectedMessage)
+                        .map_err(|_| Error::UnexpectedMessage)
                 })?;
 
                 let player_res = task::spawn_blocking(move || {
@@ -339,7 +319,7 @@ impl ClientLoop {
                             reliable_tx
                                 .send_reliable(BASE_CHANNEL, &buffer)
                                 .await
-                                .error(Error::SendError)
+                                .map_err(|_| Error::SendError)
                         })
                         .await
                         .map_err(|_| Error::InitializationTimeout)?;

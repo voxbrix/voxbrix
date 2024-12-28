@@ -86,6 +86,7 @@ pub trait IntoDataSized: TypeName {
         DataSized::from_inner(self)
     }
 
+    #[allow(dead_code)]
     fn from_data_sized(value: DataSized<Self>) -> Self
     where
         Self: Sized,
@@ -138,9 +139,6 @@ where
         data1.cmp(&data2)
     }
 }
-
-#[derive(Debug)]
-pub struct UnstoreError;
 
 #[derive(Debug)]
 enum DataContainer<'a> {

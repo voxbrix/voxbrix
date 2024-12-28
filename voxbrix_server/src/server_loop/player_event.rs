@@ -145,8 +145,6 @@ impl PlayerEvent<'_> {
                         continue;
                     };
 
-                    let actor_opt = sd.actor_pc.get(&player);
-
                     let script_data = ScriptSharedData {
                         snapshot: sd.snapshot,
                         actor_pc: SendPtr::new(&sd.actor_pc),
