@@ -33,13 +33,13 @@ pub struct Vertex {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
-pub struct Polygon {
+pub struct Quad {
     pub chunk: [i32; 3],
     pub texture_index: u32,
     pub vertices: [Vertex; 4],
 }
 
-impl Polygon {
+impl Quad {
     pub fn desc<'a>() -> VertexBufferLayout<'a> {
         const VERTEX_ATTRIBUTES: &[VertexAttribute; 14] = &wgpu::vertex_attr_array![
             1 => Sint32x3,

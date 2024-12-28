@@ -11,7 +11,7 @@ use crate::{
         texture::Texture,
     },
     system::render::primitives::{
-        Polygon,
+        Quad,
         Vertex,
     },
 };
@@ -54,7 +54,7 @@ impl ActorModelBuilder {
         bone: &ActorBone,
         position: &Position,
         transform: &Mat4F32,
-        polygons: &mut Vec<Polygon>,
+        quads: &mut Vec<Quad>,
     ) {
         if self.skeleton.get(bone).is_none() {
             return;
@@ -70,8 +70,8 @@ impl ActorModelBuilder {
 
         let transform = *transform * model_part_builder.transformation;
 
-        polygons.extend(model_part_builder.polygons.iter().map(|vertices| {
-            Polygon {
+        quads.extend(model_part_builder.quads.iter().map(|vertices| {
+            Quad {
                 chunk: position.chunk.position.into(),
                 texture_index: self.texture,
                 vertices: vertices
@@ -226,21 +226,21 @@ impl ActorModelBuilderDescriptor {
                     )));
                 }
 
-                let polygons = desc
-                    .sides
+                let quads = desc
+                    .quads
                     .iter()
-                    .map(|side| {
-                        // Here is the fix for the glitchy pixels on the edge of sides
+                    .map(|quad| {
+                        // Here is the fix for the glitchy pixels on the edge of quads
                         // (just cause those grinded my gears)
-                        // Sometimes pixels on the edge of a side appear to be sampled from the outside
+                        // Sometimes pixels on the edge of a quad appear to be sampled from the outside
                         // of the designated texture area, it happens because of f32 texture position inaccuracy
-                        // To compensate, find the center of the side in texture surface and move every
+                        // To compensate, find the center of the quad in texture surface and move every
                         // vertex toward that center by VERTEX_TEXTURE_POSITION_OFFSET fracture
                         // of the grid size
                         // Grid size involved in correction to have approximately the same offset even for
                         // non-square textures
 
-                        let texture_coords_sum = side.iter().fold([0.0, 0.0], |sum, vertex| {
+                        let texture_coords_sum = quad.iter().fold([0.0, 0.0], |sum, vertex| {
                             let coords = [0, 1].map(|i| {
                                 (vertex.texture_position[i] as f32)
                                     / (self.texture_grid_size[i] as f32)
@@ -251,9 +251,9 @@ impl ActorModelBuilderDescriptor {
                             [0, 1].map(|i| coords[i] + sum[i])
                         });
 
-                        let side_texture_center = texture_coords_sum.map(|sum| sum / 4.0);
+                        let quad_texture_center = texture_coords_sum.map(|sum| sum / 4.0);
 
-                        side.map_ref(|vertex| {
+                        quad.map_ref(|vertex| {
                             let ActorModelPartDescriptorVertex {
                                 position,
                                 texture_position,
@@ -269,7 +269,7 @@ impl ActorModelBuilderDescriptor {
                             let correction_amplitude = ctx.location_tc.get_edge_correction(texture);
 
                             let texture_position = [0, 1].map(|i| {
-                                let correction_sign = side_texture_center[i] - texture_position[i];
+                                let correction_sign = quad_texture_center[i] - texture_position[i];
 
                                 texture_position[i]
                                     + correction_amplitude[i].copysign(correction_sign)
@@ -290,7 +290,7 @@ impl ActorModelBuilderDescriptor {
                 }
 
                 let builder = ActorModelPartBuilder {
-                    polygons,
+                    quads,
                     transformation,
                 };
 
@@ -371,7 +371,7 @@ pub struct BoneParameters {
 }
 
 struct ActorModelPartBuilder {
-    polygons: Vec<[ActorModelPartVertex; 4]>,
+    quads: Vec<[ActorModelPartVertex; 4]>,
     transformation: Mat4F32,
 }
 
@@ -389,7 +389,7 @@ pub struct ActorBoneDescriptor {
 
 #[derive(Deserialize, Debug)]
 pub struct ActorModelPartDescriptor {
-    sides: Vec<[ActorModelPartDescriptorVertex; 4]>,
+    quads: Vec<[ActorModelPartDescriptorVertex; 4]>,
     transformations: Vec<Operation>,
 }
 

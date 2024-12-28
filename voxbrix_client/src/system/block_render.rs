@@ -19,7 +19,7 @@ use crate::{
     system::render::{
         gpu_vec::GpuVec,
         primitives::{
-            Polygon,
+            Quad,
             Vertex,
             VertexDescription,
         },
@@ -53,13 +53,16 @@ use voxbrix_common::{
             Neighbor,
         },
         block_class::BlockClass,
-        chunk::Chunk,
+        chunk::{
+            Chunk,
+            Dimension,
+        },
     },
     LabelMap,
 };
 use wgpu::util::DeviceExt;
 
-const POLYGON_SIZE: usize = Polygon::size() as usize;
+const QUAD_SIZE: usize = Quad::size() as usize;
 
 fn neighbors_to_cull_flags(
     neighbors: &[Neighbor; 6],
@@ -109,17 +112,16 @@ fn neighbors_to_cull_flags(
 }
 
 struct ChunkInfo<'a> {
-    chunk_shard: &'a Vec<Polygon>,
-    polygon_length: usize,
-    polygon_buffer: Option<&'a mut [u8]>,
+    chunk_shard: &'a Vec<Quad>,
+    quad_length: usize,
+    quad_buffer: Option<&'a mut [u8]>,
 }
 
-fn slice_buffers<'a>(chunk_info: &mut [ChunkInfo<'a>], mut polygon_buffer: &'a mut [u8]) {
+fn slice_buffers<'a>(chunk_info: &mut [ChunkInfo<'a>], mut quad_buffer: &'a mut [u8]) {
     for chunk in chunk_info.iter_mut() {
-        let (polygon_buffer_shard, residue) =
-            polygon_buffer.split_at_mut(chunk.polygon_length * POLYGON_SIZE);
-        polygon_buffer = residue;
-        chunk.polygon_buffer = Some(polygon_buffer_shard);
+        let (quad_buffer_shard, residue) = quad_buffer.split_at_mut(chunk.quad_length * QUAD_SIZE);
+        quad_buffer = residue;
+        chunk.quad_buffer = Some(quad_buffer_shard);
     }
 }
 
@@ -180,7 +182,7 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
                     vertex: wgpu::VertexState {
                         module: &shaders,
                         entry_point: Some("vs_main"),
-                        buffers: &[VertexDescription::desc(), Polygon::desc()],
+                        buffers: &[VertexDescription::desc(), Quad::desc()],
                         compilation_options: Default::default(),
                     },
                     fragment: Some(wgpu::FragmentState {
@@ -233,16 +235,13 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
                 ]),
             });
 
-        let polygon_buffer = GpuVec::new(window.device(), wgpu::BufferUsages::VERTEX);
-
         // Target block hightlighting
-        let target_highlight_polygon_buffer =
-            window.device().create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Highlight Vertex Buffer"),
-                size: Polygon::size(),
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
+        let target_highlight_quad_buffer = window.device().create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Highlight Vertex Buffer"),
+            size: Quad::size(),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
         let highlight_texture = block_texture_label_map
             .get("highlight")
@@ -259,13 +258,14 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
             render_pipeline,
             chunk_buffer_shards: AHashMap::new(),
             free_shards: Vec::new(),
-            update_chunk_buffer: false,
             prepared_vertex_buffer: vertex_buffer,
-            prepared_polygon_buffer: polygon_buffer,
-            num_polygons: 0,
+            prepared_quad_buffers: AHashMap::new(),
+            updated_quad_buffers: AHashSet::new(),
+            superchunk_side_size: 4,
+            free_quad_buffers: Vec::new(),
             block_texture_bind_group,
             target_highlighting: TargetHighlighting::None,
-            target_highlight_polygon_buffer,
+            target_highlight_quad_buffer,
             highlight_texture_index,
             highlight_texture_coords,
         }
@@ -275,7 +275,54 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
 enum TargetHighlighting {
     None,
     Previous,
-    New(Polygon),
+    New(Quad),
+}
+
+struct QuadBuffer {
+    num_quads: u32,
+    buffer: GpuVec,
+}
+
+#[derive(Clone, Hash, PartialEq, Eq)]
+struct SuperChunk {
+    position: [i32; 3],
+    dimension: Dimension,
+}
+
+impl SuperChunk {
+    fn chunks(&self, side: i32) -> impl Iterator<Item = Chunk> {
+        let chunk_coord_base = self.position.map(|i| i * side);
+        let dimension = self.dimension;
+
+        (0 .. side)
+            .flat_map(move |z| (0 .. side).flat_map(move |y| (0 .. side).map(move |x| [x, y, z])))
+            .map(move |add| {
+                let position = [0, 1, 2].map(|i| chunk_coord_base[i] + add[i]);
+
+                Chunk {
+                    position,
+                    dimension,
+                }
+            })
+    }
+
+    fn of_chunk(side: i32, chunk: &Chunk) -> Self {
+        let position = chunk.position.map(|i| {
+            let mut quot = i / side;
+            let rem = i % side;
+
+            if i < 0 && rem != 0 {
+                quot -= 1;
+            }
+
+            quot
+        });
+
+        Self {
+            position,
+            dimension: chunk.dimension,
+        }
+    }
 }
 
 pub struct BlockRenderSystem {
@@ -284,15 +331,16 @@ pub struct BlockRenderSystem {
     chunk_queue: VecDeque<Chunk>,
     enqueued_chunks: AHashSet<Chunk>,
     render_pipeline: wgpu::RenderPipeline,
-    chunk_buffer_shards: AHashMap<Chunk, Vec<Polygon>>,
-    free_shards: Vec<Vec<Polygon>>,
-    update_chunk_buffer: bool,
+    chunk_buffer_shards: AHashMap<Chunk, Vec<Quad>>,
+    free_shards: Vec<Vec<Quad>>,
     prepared_vertex_buffer: wgpu::Buffer,
-    prepared_polygon_buffer: GpuVec,
-    num_polygons: u32,
+    superchunk_side_size: i32,
+    prepared_quad_buffers: AHashMap<SuperChunk, QuadBuffer>,
+    updated_quad_buffers: AHashSet<SuperChunk>,
+    free_quad_buffers: Vec<QuadBuffer>,
     block_texture_bind_group: wgpu::BindGroup,
     target_highlighting: TargetHighlighting,
-    target_highlight_polygon_buffer: wgpu::Buffer,
+    target_highlight_quad_buffer: wgpu::Buffer,
     highlight_texture_index: u32,
     highlight_texture_coords: [[f32; 2]; 4],
 }
@@ -305,7 +353,7 @@ impl BlockRenderSystem {
         builder_bmc: &'a BuilderBlockModelComponent,
         culling_bmc: &'a CullingBlockModelComponent,
         sky_light_bc: &'a SkyLightBlockComponent,
-    ) -> impl ParallelIterator<Item = Polygon> + 'a {
+    ) -> impl ParallelIterator<Item = Quad> + 'a {
         let neighbor_chunk_ids = [
             [-1, 0, 0],
             [1, 0, 0],
@@ -431,6 +479,17 @@ impl BlockRenderSystem {
         self.block_change_neighbors.remove(chunk);
         if let Some(shard) = self.chunk_buffer_shards.remove(chunk) {
             self.free_shards.push(shard);
+            let superchunk = SuperChunk::of_chunk(self.superchunk_side_size, chunk);
+            if superchunk
+                .chunks(self.superchunk_side_size)
+                .find(|chunk| self.chunk_buffer_shards.contains_key(chunk))
+                .is_none()
+            {
+                if let Some(quad_buffer) = self.prepared_quad_buffers.remove(&superchunk) {
+                    self.free_quad_buffers.push(quad_buffer);
+                }
+                self.updated_quad_buffers.remove(&superchunk);
+            }
         }
     }
 
@@ -446,7 +505,7 @@ impl BlockRenderSystem {
             class_bc.get_chunk(chunk).is_some() && sky_light_bc.get_chunk(chunk).is_some()
         };
 
-        let mut get_shard = |chunk: Chunk| -> (Chunk, Vec<Polygon>) {
+        let mut get_shard = |chunk: Chunk| -> (Chunk, Vec<Quad>) {
             let mut shard = self
                 .chunk_buffer_shards
                 .remove(&chunk)
@@ -505,7 +564,11 @@ impl BlockRenderSystem {
                 .take(to_add),
         );
 
-        // TODO reuse old shard buffer
+        for (chunk, _) in selected_chunks.iter() {
+            let superchunk = SuperChunk::of_chunk(self.superchunk_side_size, chunk);
+            self.updated_quad_buffers.insert(superchunk);
+        }
+
         let par_iter = selected_chunks.into_par_iter().map(|(chunk, mut shard)| {
             shard.par_extend(Self::build_chunk_buffer_shard(
                 &chunk,
@@ -520,8 +583,6 @@ impl BlockRenderSystem {
         });
 
         self.chunk_buffer_shards.par_extend(par_iter);
-
-        self.update_chunk_buffer = true;
     }
 
     pub fn build_target_highlight(&mut self, target: Option<(Chunk, Block, usize)>) {
@@ -577,7 +638,7 @@ impl BlockRenderSystem {
                 result
             });
 
-            let polygon = Polygon {
+            let quad = Quad {
                 chunk: chunk.position,
                 texture_index: self.highlight_texture_index,
                 vertices: [0, 1, 2, 3].map(|i| {
@@ -589,53 +650,73 @@ impl BlockRenderSystem {
                 }),
             };
 
-            self.target_highlighting = TargetHighlighting::New(polygon);
+            self.target_highlighting = TargetHighlighting::New(quad);
         } else {
             self.target_highlighting = TargetHighlighting::None;
         }
     }
 
     pub fn render(&mut self, renderer: Renderer) {
-        if self.update_chunk_buffer {
-            let mut polygons_len = 0;
+        for superchunk in self.updated_quad_buffers.drain() {
+            let mut quads_len = 0;
 
-            let mut chunk_info = self
-                .chunk_buffer_shards
-                .values()
-                .map(|polygons| {
-                    polygons_len += polygons.len();
+            let mut chunk_info = superchunk
+                .chunks(self.superchunk_side_size)
+                .filter_map(|chunk| self.chunk_buffer_shards.get(&chunk))
+                .map(|quads| {
+                    quads_len += quads.len();
 
                     ChunkInfo {
-                        chunk_shard: polygons,
-                        polygon_length: polygons.len(),
-                        polygon_buffer: None,
+                        chunk_shard: quads,
+                        quad_length: quads.len(),
+                        quad_buffer: None,
                     }
                 })
                 .collect::<Vec<_>>();
 
-            let polygon_buffer_byte_size = (polygons_len * POLYGON_SIZE) as u64;
+            let quad_buffer_byte_size = (quads_len * QUAD_SIZE) as u64;
+            let quads_len: u32 = quads_len.try_into().unwrap();
 
-            if polygons_len != 0 {
-                let mut writer = self.prepared_polygon_buffer.get_writer(
-                    renderer.device,
-                    renderer.queue,
-                    polygon_buffer_byte_size,
-                );
+            if quads_len == 0 {
+                if let Some(quad_buffer) = self.prepared_quad_buffers.remove(&superchunk) {
+                    self.free_quad_buffers.push(quad_buffer);
+                }
+            } else {
+                let quad_buffer =
+                    self.prepared_quad_buffers
+                        .entry(superchunk)
+                        .or_insert_with(|| {
+                            self.free_quad_buffers.pop().unwrap_or_else(|| {
+                                QuadBuffer {
+                                    num_quads: quads_len,
+                                    buffer: GpuVec::new(
+                                        renderer.device,
+                                        wgpu::BufferUsages::VERTEX,
+                                    ),
+                                }
+                            })
+                        });
+                {
+                    let mut writer = quad_buffer.buffer.get_writer(
+                        renderer.device,
+                        renderer.queue,
+                        quad_buffer_byte_size,
+                    );
 
-                slice_buffers(&mut chunk_info, writer.as_mut());
+                    slice_buffers(&mut chunk_info, writer.as_mut());
 
-                chunk_info.par_iter_mut().for_each(|chunk| {
-                    chunk
-                        .polygon_buffer
-                        .as_mut()
-                        .unwrap()
-                        .copy_from_slice(bytemuck::cast_slice(chunk.chunk_shard));
-                });
+                    chunk_info.par_iter_mut().for_each(|chunk| {
+                        chunk
+                            .quad_buffer
+                            .as_mut()
+                            .unwrap()
+                            .copy_from_slice(bytemuck::cast_slice(chunk.chunk_shard));
+                    });
+                }
+
+                quad_buffer.buffer.finish();
+                quad_buffer.num_quads = quads_len;
             }
-
-            self.prepared_polygon_buffer.finish();
-            self.num_polygons = polygons_len as u32;
-            self.update_chunk_buffer = false;
         }
 
         let queue = renderer.queue;
@@ -644,26 +725,26 @@ impl BlockRenderSystem {
 
         render_pass.set_bind_group(1, &self.block_texture_bind_group, &[]);
 
-        if !self.prepared_polygon_buffer.is_empty() {
+        for quad_buffer in self.prepared_quad_buffers.values() {
             render_pass.set_vertex_buffer(0, self.prepared_vertex_buffer.slice(..));
-            render_pass.set_vertex_buffer(1, self.prepared_polygon_buffer.get_slice());
-            render_pass.draw(0 .. 6, 0 .. self.num_polygons);
+            render_pass.set_vertex_buffer(1, quad_buffer.buffer.get_slice());
+            render_pass.draw(0 .. 6, 0 .. quad_buffer.num_quads);
         }
 
         let target_highlighting =
             mem::replace(&mut self.target_highlighting, TargetHighlighting::Previous);
 
         if !matches!(target_highlighting, TargetHighlighting::None) {
-            if let TargetHighlighting::New(polygon) = target_highlighting {
+            if let TargetHighlighting::New(quad) = target_highlighting {
                 queue.write_buffer(
-                    &self.target_highlight_polygon_buffer,
+                    &self.target_highlight_quad_buffer,
                     0,
-                    bytemuck::cast_slice(&[polygon]),
+                    bytemuck::cast_slice(&[quad]),
                 );
             }
 
             render_pass.set_vertex_buffer(0, self.prepared_vertex_buffer.slice(..));
-            render_pass.set_vertex_buffer(1, self.target_highlight_polygon_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, self.target_highlight_quad_buffer.slice(..));
             render_pass.draw(0 .. 6, 0 .. 1);
         }
     }

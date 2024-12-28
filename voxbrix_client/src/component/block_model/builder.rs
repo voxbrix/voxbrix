@@ -5,7 +5,7 @@ use crate::{
     },
     entity::texture::Texture,
     system::render::primitives::{
-        Polygon,
+        Quad,
         Vertex,
     },
 };
@@ -42,7 +42,7 @@ struct BlockModelDescriptorVertex {
 }
 
 #[derive(Deserialize, Debug)]
-struct BlockModelDescriptorPolygon {
+struct BlockModelDescriptorQuad {
     texture_label: String,
     culling_neighbor: CullingNeighbor,
     vertices: [BlockModelDescriptorVertex; 4],
@@ -57,14 +57,14 @@ pub struct BlockModelContext<'a> {
 pub struct BlockModelBuilderDescriptor {
     grid_size: [usize; 3],
     texture_grid_size: [usize; 2],
-    polygons: Vec<BlockModelDescriptorPolygon>,
+    quads: Vec<BlockModelDescriptorQuad>,
 }
 
 impl BlockModelBuilderDescriptor {
     pub fn describe(&self, context: &BlockModelContext) -> Result<BlockModelBuilder, Error> {
         Ok(BlockModelBuilder {
-            polygons: self
-                .polygons
+            quads: self
+                .quads
                 .iter()
                 .map(|desc| {
                     let texture = context
@@ -100,7 +100,7 @@ impl BlockModelBuilderDescriptor {
 
                     let side_texture_center = texture_coords_sum.map(|sum| sum / 4.0);
 
-                    Ok::<_, Error>(PolygonBuilder {
+                    Ok::<_, Error>(QuadBuilder {
                         culling_neighbor: desc.culling_neighbor,
                         texture_index: context.location_tc.get_index(texture),
                         vertices: desc.vertices.map_ref(
@@ -171,14 +171,14 @@ struct VertexBuilder {
     texture_position: [f32; 2],
 }
 
-struct PolygonBuilder {
+struct QuadBuilder {
     culling_neighbor: CullingNeighbor,
     texture_index: u32,
     vertices: [VertexBuilder; 4],
 }
 
 pub struct BlockModelBuilder {
-    polygons: Vec<PolygonBuilder>,
+    quads: Vec<QuadBuilder>,
 }
 
 impl BlockModelBuilder {
@@ -188,10 +188,10 @@ impl BlockModelBuilder {
         block: Block,
         cull_mask: CullFlags,
         sky_light_level: [u8; 6],
-    ) -> impl Iterator<Item = Polygon> + 'a {
+    ) -> impl Iterator<Item = Quad> + 'a {
         let block = block.into_coords();
 
-        self.polygons
+        self.quads
             .iter()
             .filter(move |pb| {
                 match pb.culling_neighbor {
@@ -205,7 +205,7 @@ impl BlockModelBuilder {
                 }
             })
             .map(move |pb| {
-                Polygon {
+                Quad {
                     chunk: chunk.position,
                     texture_index: pb.texture_index,
                     vertices: pb.vertices.map_ref(|vxb| {
@@ -216,7 +216,7 @@ impl BlockModelBuilder {
                         position[2] += block[2] as f32;
 
                         let sky_light_level = match pb.culling_neighbor {
-                            // TODO better lighting for non-cullable polygons
+                            // TODO better lighting for non-cullable quads
                             CullingNeighbor::None => {
                                 let light_float = sky_light_level
                                     .iter()

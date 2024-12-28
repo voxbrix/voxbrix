@@ -18,7 +18,7 @@ use crate::{
     system::render::{
         gpu_vec::GpuVec,
         primitives::{
-            Polygon,
+            Quad,
             VertexDescription,
         },
         RenderParameters,
@@ -39,7 +39,7 @@ use voxbrix_common::{
 };
 use wgpu::util::DeviceExt;
 
-const POLYGON_SIZE: usize = Polygon::size() as usize;
+const QUAD_SIZE: usize = Quad::size() as usize;
 
 pub struct ActorRenderSystemDescriptor<'a> {
     pub render_parameters: RenderParameters<'a>,
@@ -94,7 +94,7 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
                     vertex: wgpu::VertexState {
                         module: &shaders,
                         entry_point: Some("vs_main"),
-                        buffers: &[VertexDescription::desc(), Polygon::desc()],
+                        buffers: &[VertexDescription::desc(), Quad::desc()],
                         compilation_options: Default::default(),
                     },
                     fragment: Some(wgpu::FragmentState {
@@ -147,15 +147,15 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
                 ]),
             });
 
-        let polygon_buffer = GpuVec::new(window.device(), wgpu::BufferUsages::VERTEX);
+        let quad_buffer = GpuVec::new(window.device(), wgpu::BufferUsages::VERTEX);
 
         ActorRenderSystem {
             render_pipeline,
             actor_texture_bind_group,
             bone_transformations: IntMap::default(),
-            polygons: Vec::new(),
+            quads: Vec::new(),
             vertex_buffer,
-            polygon_buffer,
+            quad_buffer,
         }
     }
 }
@@ -164,9 +164,9 @@ pub struct ActorRenderSystem {
     render_pipeline: wgpu::RenderPipeline,
     actor_texture_bind_group: wgpu::BindGroup,
     bone_transformations: IntMap<ActorBone, Mat4F32>,
-    polygons: Vec<Polygon>,
+    quads: Vec<Quad>,
     vertex_buffer: wgpu::Buffer,
-    polygon_buffer: GpuVec,
+    quad_buffer: GpuVec,
 }
 
 impl ActorRenderSystem {
@@ -181,7 +181,7 @@ impl ActorRenderSystem {
         builder_amc: &BuilderActorModelComponent,
         animation_state_ac: &mut AnimationStateActorComponent,
     ) {
-        self.polygons.clear();
+        self.quads.clear();
 
         for (actor, position, model) in position_ac
             .iter()
@@ -281,39 +281,37 @@ impl ActorRenderSystem {
 
                 transform = base_transform * transform;
 
-                model_builder.build_bone(bone, &position, &transform, &mut self.polygons);
+                model_builder.build_bone(bone, &position, &transform, &mut self.quads);
             }
         }
     }
 
     pub fn render(&mut self, renderer: Renderer) {
-        let polygons_len = self.polygons.len();
+        let quads_len = self.quads.len();
 
-        if polygons_len == 0 {
+        if quads_len == 0 {
             return;
         }
 
-        let polygon_buffer_byte_size = (polygons_len * POLYGON_SIZE) as u64;
+        let quad_buffer_byte_size = (quads_len * QUAD_SIZE) as u64;
 
-        let mut writer = self.polygon_buffer.get_writer(
-            renderer.device,
-            renderer.queue,
-            polygon_buffer_byte_size,
-        );
+        let mut writer =
+            self.quad_buffer
+                .get_writer(renderer.device, renderer.queue, quad_buffer_byte_size);
 
         writer
             .as_mut()
-            .copy_from_slice(bytemuck::cast_slice(self.polygons.as_slice()));
+            .copy_from_slice(bytemuck::cast_slice(self.quads.as_slice()));
 
         drop(writer);
 
-        self.polygon_buffer.finish();
+        self.quad_buffer.finish();
 
         let mut render_pass = renderer.with_pipeline(&self.render_pipeline);
 
         render_pass.set_bind_group(1, &self.actor_texture_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        render_pass.set_vertex_buffer(1, self.polygon_buffer.get_slice());
-        render_pass.draw(0 .. 6, 0 .. polygons_len as u32);
+        render_pass.set_vertex_buffer(1, self.quad_buffer.get_slice());
+        render_pass.draw(0 .. 6, 0 .. quads_len as u32);
     }
 }

@@ -76,10 +76,6 @@ impl GpuVec {
         self.buffer.slice(.. self.length)
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.length == 0
-    }
-
     pub fn finish(&mut self) {
         if self.mapped {
             self.buffer.unmap();

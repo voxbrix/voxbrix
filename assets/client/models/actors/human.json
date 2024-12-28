@@ -91,7 +91,7 @@
       "model_parts": {
         "head": {
           "transformations": [],
-          "sides": [
+          "quads": [
             [
               {
                 "position": [
@@ -372,7 +372,7 @@
         },
         "torso": {
           "transformations": [],
-          "sides": [
+          "quads": [
             [
               {
                 "position": [
@@ -653,7 +653,7 @@
         },
         "right_hand": {
           "transformations": [],
-          "sides": [
+          "quads": [
             [
               {
                 "position": [
@@ -934,7 +934,7 @@
         },
         "left_hand": {
           "transformations": [],
-          "sides": [
+          "quads": [
             [
               {
                 "position": [
@@ -1215,7 +1215,7 @@
         },
         "right_leg": {
           "transformations": [],
-          "sides": [
+          "quads": [
             [
               {
                 "position": [
@@ -1496,7 +1496,7 @@
         },
         "left_leg": {
           "transformations": [],
-          "sides": [
+          "quads": [
             [
               {
                 "position": [

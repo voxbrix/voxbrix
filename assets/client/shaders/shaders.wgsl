@@ -15,7 +15,7 @@ struct VertexDescription {
     @location(0) index: u32,
 };
 
-struct PolygonInput {
+struct QuadInput {
     @location(1) chunk: vec3<i32>,
     @location(2) texture_index: u32,
     @location(3) vertex_0_position: vec3<f32>,
@@ -42,32 +42,32 @@ struct VertexOutput {
 @vertex
 fn vs_main(
     vertex_desc: VertexDescription,
-    polygon: PolygonInput,
+    quad: QuadInput,
 ) -> VertexOutput {
     var out: VertexOutput;
 
     var position_array: array<vec3<f32>, 4> = array(
-        polygon.vertex_0_position,
-        polygon.vertex_1_position,
-        polygon.vertex_2_position,
-        polygon.vertex_3_position,
+        quad.vertex_0_position,
+        quad.vertex_1_position,
+        quad.vertex_2_position,
+        quad.vertex_3_position,
     );
 
     var texture_position_array: array<vec2<f32>, 4> = array(
-        polygon.vertex_0_texture_position,
-        polygon.vertex_1_texture_position,
-        polygon.vertex_2_texture_position,
-        polygon.vertex_3_texture_position,
+        quad.vertex_0_texture_position,
+        quad.vertex_1_texture_position,
+        quad.vertex_2_texture_position,
+        quad.vertex_3_texture_position,
     );
 
     var light_level_array: array<u32, 4> = array(
-        polygon.vertex_0_light_level,
-        polygon.vertex_1_light_level,
-        polygon.vertex_2_light_level,
-        polygon.vertex_3_light_level,
+        quad.vertex_0_light_level,
+        quad.vertex_1_light_level,
+        quad.vertex_2_light_level,
+        quad.vertex_3_light_level,
     );
 
-    let position = vec3<f32>(polygon.chunk - camera.chunk)
+    let position = vec3<f32>(quad.chunk - camera.chunk)
         * BLOCKS_IN_CHUNK_EDGE_F32
 	+ position_array[vertex_desc.index];
 
@@ -75,7 +75,7 @@ fn vs_main(
 
     out.clip_position = camera.view_projection * vec4<f32>(position, 1.0);
     
-    out.texture_index = polygon.texture_index;
+    out.texture_index = quad.texture_index;
 
     let sky_light_level: u32 = light_level_array[vertex_desc.index] >> 0u & 0xFFu;
     out.sky_light_level = f32(sky_light_level) / MAX_LIGHT_LEVEL_F32;
