@@ -48,6 +48,7 @@ struct Initialized {
     shared: Arc<Shared>,
     window: Arc<WinitWindow>,
     surface: wgpu::Surface<'static>,
+    surface_texture: Option<wgpu::SurfaceTexture>,
     surface_config: wgpu::SurfaceConfiguration,
     surface_reconfigure: bool,
     frame_time: Option<Duration>,
@@ -174,11 +175,14 @@ impl ApplicationHandler<Frame> for App {
 
             let _ = request_tx.try_send(Frame {
                 encoders: Vec::new(),
-                surface_texture,
+                view: surface_texture
+                    .texture
+                    .create_view(&wgpu::TextureViewDescriptor::default()),
                 ui_renderer: UiRenderer {
                     shared: shared.clone(),
                     context: ui_context.clone(),
                     renderer,
+                    size: surface_texture.texture.size(),
                     io: UiRendererIo::Input(ui_state.take_egui_input(&window)),
                 },
                 cursor_visible,
@@ -200,6 +204,7 @@ impl ApplicationHandler<Frame> for App {
                 shared,
                 window,
                 surface,
+                surface_texture: Some(surface_texture),
                 surface_config,
                 surface_reconfigure: true,
                 frame_time: None,
@@ -265,14 +270,14 @@ impl ApplicationHandler<Frame> for App {
         }
     }
 
-    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: Frame) {
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: Frame) {
         let Self::Initialized(app) = self else {
             return;
         };
 
         let Frame {
             mut encoders,
-            surface_texture,
+            view: _,
             mut ui_renderer,
             cursor_visible,
         } = event;
@@ -281,7 +286,7 @@ impl ApplicationHandler<Frame> for App {
             .queue
             .submit(encoders.drain(..).map(|enc| enc.finish()));
 
-        surface_texture.present();
+        app.surface_texture.take().unwrap().present();
 
         if let UiRendererIo::Output(output) = mem::take(&mut ui_renderer.io) {
             app.ui_state
@@ -327,12 +332,22 @@ impl ApplicationHandler<Frame> for App {
             .get_current_texture()
             .expect("unable to acquire next output texture");
 
-        let _ = app.request_tx.try_send(Frame {
+        ui_renderer.size = surface_texture.texture.size();
+
+        let send_result = app.request_tx.try_send(Frame {
             encoders,
-            surface_texture,
+            view: surface_texture
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default()),
             ui_renderer,
             cursor_visible: app.cursor_visible,
         });
+
+        app.surface_texture = Some(surface_texture);
+
+        if send_result.is_err() {
+            event_loop.exit();
+        }
     }
 }
 
@@ -356,6 +371,7 @@ pub struct UiRenderer {
     shared: Arc<Shared>,
     context: egui::Context,
     renderer: egui_wgpu::Renderer,
+    size: wgpu::Extent3d,
     io: UiRendererIo,
 }
 
@@ -368,7 +384,6 @@ impl UiRenderer {
         &mut self,
         output: egui::FullOutput,
         encoder: &mut wgpu::CommandEncoder,
-        surface_texture_size: [u32; 2],
         render_pass_descriptor: &wgpu::RenderPassDescriptor,
     ) {
         self.io = UiRendererIo::Output(output.platform_output);
@@ -378,7 +393,7 @@ impl UiRenderer {
             .tessellate(output.shapes, output.pixels_per_point);
 
         let screen_descriptor = ScreenDescriptor {
-            size_in_pixels: surface_texture_size,
+            size_in_pixels: [self.size.width, self.size.height],
             pixels_per_point: output.pixels_per_point,
         };
 
@@ -468,14 +483,14 @@ pub enum InputEvent {
 
 pub struct Frame {
     pub encoders: Vec<wgpu::CommandEncoder>,
-    surface_texture: wgpu::SurfaceTexture,
+    pub view: wgpu::TextureView,
     pub ui_renderer: UiRenderer,
     cursor_visible: bool,
 }
 
 impl Frame {
-    pub fn surface_texture(&self) -> &wgpu::SurfaceTexture {
-        &self.surface_texture
+    pub fn size(&self) -> wgpu::Extent3d {
+        self.ui_renderer.size
     }
 
     pub fn take_ui_input(&mut self) -> egui::RawInput {

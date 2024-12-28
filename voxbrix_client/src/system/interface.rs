@@ -41,15 +41,12 @@ impl InterfaceSystem {
 
         self.context = None;
 
-        let surface_texture_size = renderer.surface_texture_size();
-
         renderer
             .ui_renderer
             .expect("renderer has no UI renderer")
             .render_output(
                 interface,
                 renderer.encoder,
-                [surface_texture_size.width, surface_texture_size.height],
                 &wgpu::RenderPassDescriptor {
                     label: Some("Render Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {

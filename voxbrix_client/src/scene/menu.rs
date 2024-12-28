@@ -155,13 +155,6 @@ impl MenuScene {
                         });
                     });
 
-                    let view_size = frame.surface_texture().texture.size();
-
-                    let view = frame
-                        .surface_texture()
-                        .texture
-                        .create_view(&wgpu::TextureViewDescriptor::default());
-
                     let mut encoder =
                         window
                             .device()
@@ -172,11 +165,10 @@ impl MenuScene {
                     frame.ui_renderer.render_output(
                         full_output,
                         &mut encoder,
-                        [view_size.width, view_size.height],
                         &wgpu::RenderPassDescriptor {
                             label: Some("Render Pass"),
                             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                view: &view,
+                                view: &frame.view,
                                 resolve_target: None,
                                 ops: wgpu::Operations {
                                     load: wgpu::LoadOp::Clear(wgpu::Color {

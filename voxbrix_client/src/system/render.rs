@@ -82,7 +82,7 @@ impl<'a> RenderSystemDescriptor<'a> {
             depth_texture_view,
             depth_texture_size,
             window,
-            process: None,
+            frame: None,
         }
     }
 }
@@ -95,7 +95,6 @@ pub struct Renderer<'a> {
     pub queue: &'a wgpu::Queue,
     /// Only the last renderer will have this present:
     pub ui_renderer: Option<&'a mut UiRenderer>,
-    surface_texture_size: wgpu::Extent3d,
     depth_texture_view: &'a wgpu::TextureView,
     camera_bind_group: &'a wgpu::BindGroup,
 }
@@ -109,7 +108,6 @@ impl<'a> Renderer<'a> {
             device: _,
             queue: _,
             ui_renderer: _,
-            surface_texture_size: _,
             depth_texture_view,
             camera_bind_group,
         } = self;
@@ -154,10 +152,6 @@ impl<'a> Renderer<'a> {
 
         render_pass
     }
-
-    pub fn surface_texture_size(&self) -> wgpu::Extent3d {
-        self.surface_texture_size
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -166,18 +160,13 @@ pub struct RenderParameters<'a> {
     pub texture_format: wgpu::TextureFormat,
 }
 
-struct RenderProcess {
-    frame: Frame,
-    view: wgpu::TextureView,
-}
-
 pub struct RenderSystem {
     camera: Camera,
     texture_format: wgpu::TextureFormat,
     depth_texture_view: wgpu::TextureView,
     depth_texture_size: wgpu::Extent3d,
     window: Window,
-    process: Option<RenderProcess>,
+    frame: Option<Frame>,
 }
 
 impl RenderSystem {
@@ -198,20 +187,15 @@ impl RenderSystem {
     }
 
     pub fn start_render(&mut self, frame: Frame) {
-        let view_size = frame.surface_texture().texture.size();
+        let view_size = frame.size();
         self.camera.resize(view_size.width, view_size.height);
-
-        let view = frame
-            .surface_texture()
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
 
         if view_size != self.depth_texture_size {
             self.depth_texture_size = view_size;
             self.depth_texture_view = build_depth_texture_view(self.window.device(), view_size);
         }
 
-        self.process = Some(RenderProcess { frame, view });
+        self.frame = Some(frame);
     }
 
     /// Returned renderer requires that the camera uniform buffer
@@ -220,14 +204,9 @@ impl RenderSystem {
         let device = self.window.device();
         let queue = self.window.queue();
 
-        let process = self
-            .process
-            .as_mut()
-            .expect("render process must be started");
+        let frame = self.frame.as_mut().expect("render process must be started");
 
-        let surface_texture_size = process.frame.surface_texture().texture.size();
-
-        let encoders = &mut process.frame.encoders;
+        let encoders = &mut frame.encoders;
 
         let slice_start = encoders.len();
         let mut is_first_pass = encoders.is_empty();
@@ -247,11 +226,10 @@ impl RenderSystem {
                 Renderer {
                     is_first_pass: mem::replace(&mut is_first_pass, false),
                     encoder,
-                    view: &process.view,
+                    view: &frame.view,
                     device,
                     queue,
                     ui_renderer: None,
-                    surface_texture_size,
                     depth_texture_view: &self.depth_texture_view,
                     camera_bind_group: &self.camera.get_bind_group(),
                 }
@@ -260,16 +238,14 @@ impl RenderSystem {
             .into_inner()
             .unwrap_or_else(|_| unreachable!());
 
-        output.last_mut().unwrap().ui_renderer = Some(&mut process.frame.ui_renderer);
+        output.last_mut().unwrap().ui_renderer = Some(&mut frame.ui_renderer);
 
         output
     }
 
     pub fn finish_render(&mut self) {
-        let RenderProcess { frame, view: _ } =
-            self.process.take().expect("render process must be started");
-
-        self.window.submit_frame(frame);
+        self.window
+            .submit_frame(self.frame.take().expect("render process must be started"));
     }
 
     pub fn into_window(self) -> Window {
