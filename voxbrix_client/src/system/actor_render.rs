@@ -305,8 +305,6 @@ impl ActorRenderSystem {
 
         drop(writer);
 
-        self.quad_buffer.finish();
-
         let mut render_pass = renderer.with_pipeline(&self.render_pipeline);
 
         render_pass.set_bind_group(1, &self.actor_texture_bind_group, &[]);

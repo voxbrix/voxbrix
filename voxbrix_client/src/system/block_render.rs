@@ -696,25 +696,23 @@ impl BlockRenderSystem {
                                 }
                             })
                         });
-                {
-                    let mut writer = quad_buffer.buffer.get_writer(
-                        renderer.device,
-                        renderer.queue,
-                        quad_buffer_byte_size,
-                    );
 
-                    slice_buffers(&mut chunk_info, writer.as_mut());
+                let mut writer = quad_buffer.buffer.get_writer(
+                    renderer.device,
+                    renderer.queue,
+                    quad_buffer_byte_size,
+                );
 
-                    chunk_info.par_iter_mut().for_each(|chunk| {
-                        chunk
-                            .quad_buffer
-                            .as_mut()
-                            .unwrap()
-                            .copy_from_slice(bytemuck::cast_slice(chunk.chunk_shard));
-                    });
-                }
+                slice_buffers(&mut chunk_info, writer.as_mut());
 
-                quad_buffer.buffer.finish();
+                chunk_info.par_iter_mut().for_each(|chunk| {
+                    chunk
+                        .quad_buffer
+                        .as_mut()
+                        .unwrap()
+                        .copy_from_slice(bytemuck::cast_slice(chunk.chunk_shard));
+                });
+
                 quad_buffer.num_quads = quads_len;
             }
         }
