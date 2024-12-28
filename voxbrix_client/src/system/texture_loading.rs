@@ -32,7 +32,7 @@ const TEXTURE_FORMAT_NAME: &str = "png";
 const TEXTURE_FORMAT_WGPU: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 const MIN_TEXTURE_ATLAS_SIZE: u32 = 512;
 const MAX_TEXTURE_ATLAS_SIZE: u32 = 8096;
-const EDGE_CORRECTION_PIXELS: f64 = 0.00001;
+const EDGE_CORRECTION_PIXELS: f64 = 0.001;
 
 #[derive(Deserialize, Debug)]
 struct TextureList {
