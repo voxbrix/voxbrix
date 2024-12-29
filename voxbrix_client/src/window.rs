@@ -34,6 +34,8 @@ use winit::{
     },
 };
 
+const SURFACE_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+
 enum App {
     Initialized(Initialized),
     Uninitialized(Option<Args>),
@@ -127,8 +129,13 @@ impl ApplicationHandler<Frame> for App {
                 .formats
                 .iter()
                 .copied()
-                .find(|f| *f == wgpu::TextureFormat::Rgba8UnormSrgb)
-                .expect("The GPU does not support Rgba8UnormSrgb texture format");
+                .find(|f| *f == SURFACE_TEXTURE_FORMAT)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "The GPU does not support {:?} texture format",
+                        SURFACE_TEXTURE_FORMAT
+                    )
+                });
 
             let surface_size = window.inner_size();
 

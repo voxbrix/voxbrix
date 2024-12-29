@@ -467,21 +467,11 @@ impl GameScene {
 
         window.cursor_visible = false;
 
-        let texture_format = window.texture_format();
-
         let (block_texture_bind_group_layout, block_texture_bind_group) =
-            block_texture_loading_system.prepare_buffer(
-                window.device(),
-                window.queue(),
-                &texture_format,
-            );
+            block_texture_loading_system.prepare_buffer(window.device(), window.queue());
 
         let (actor_texture_bind_group_layout, actor_texture_bind_group) =
-            actor_texture_loading_system.prepare_buffer(
-                window.device(),
-                window.queue(),
-                &texture_format,
-            );
+            actor_texture_loading_system.prepare_buffer(window.device(), window.queue());
 
         let interface_system = InterfaceSystem::new();
 

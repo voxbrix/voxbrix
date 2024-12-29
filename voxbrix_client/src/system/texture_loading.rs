@@ -29,7 +29,7 @@ use voxbrix_common::{
 
 const TEXTURE_FORMAT: ImageFormat = ImageFormat::Png;
 const TEXTURE_FORMAT_NAME: &str = "png";
-const TEXTURE_FORMAT_WGPU: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+const TEXTURE_FORMAT_SHADER: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Uint;
 const MIN_TEXTURE_ATLAS_SIZE: u32 = 512;
 const MAX_TEXTURE_ATLAS_SIZE: u32 = 8096;
 const EDGE_CORRECTION_PIXELS: f64 = 0.001;
@@ -195,7 +195,6 @@ impl TextureLoadingSystem {
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        texture_format: &wgpu::TextureFormat,
     ) -> (wgpu::BindGroupLayout, wgpu::BindGroup) {
         let texture_size = self.data[0].dimensions();
 
@@ -210,10 +209,10 @@ impl TextureLoadingSystem {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: TEXTURE_FORMAT_WGPU,
+            format: TEXTURE_FORMAT_SHADER,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             label: Some("texture"),
-            view_formats: &[*texture_format],
+            view_formats: &[TEXTURE_FORMAT_SHADER],
         };
 
         let texture_views = self
@@ -240,54 +239,28 @@ impl TextureLoadingSystem {
             })
             .collect::<Vec<_>>();
 
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
-
         let texture_views = texture_views.iter().collect::<Vec<_>>();
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("texture_bind_group_layout"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: NonZeroU32::new(self.data.len() as u32),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Uint,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: NonZeroU32::new(self.data.len() as u32),
-                    },
-                ],
+                    count: NonZeroU32::new(self.data.len() as u32),
+                }],
             });
 
         let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureViewArray(texture_views.as_slice()),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::SamplerArray(
-                        &self.data.iter().map(|_| &sampler).collect::<Vec<_>>(),
-                    ),
-                },
-            ],
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureViewArray(texture_views.as_slice()),
+            }],
             layout: &texture_bind_group_layout,
             label: Some("texture_bind_group"),
         });

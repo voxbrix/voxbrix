@@ -120,9 +120,9 @@ impl<'a> Renderer<'a> {
                 ops: wgpu::Operations {
                     load: if is_first_pass {
                         wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.5,
-                            g: 0.6,
-                            b: 0.7,
+                            r: 0.7,
+                            g: 0.8,
+                            b: 0.9,
                             a: 0.0,
                         })
                     } else {

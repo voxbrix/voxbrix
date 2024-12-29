@@ -79,7 +79,7 @@ fn vs_main(
 
     let sky_light_level: u32 = light_level_array[vertex_desc.index] >> 0u & 0xFFu;
     out.sky_light_level = f32(sky_light_level) / MAX_LIGHT_LEVEL_F32;
-    out.sky_light_level = pow(out.sky_light_level, 3.0);
+    out.sky_light_level = pow(out.sky_light_level, 1.5);
 
     // let light_r: u32 = in.joints >>  8u & 0xFFu;
     // let light_g: u32 = in.joints >> 16u & 0xFFu;
@@ -90,17 +90,21 @@ fn vs_main(
 
 
 @group(1) @binding(0)
-var block_textures: binding_array<texture_2d<f32>>;
-@group(1) @binding(1)
-var block_samplers: binding_array<sampler>;
+var textures: binding_array<texture_2d<u32>>;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    var output = textureSample(
-        block_textures[in.texture_index],
-        block_samplers[in.texture_index],
-        in.texture_position
+    var dimensions = textureDimensions(textures[in.texture_index]);
+
+    var texture_position = vec2<u32>(vec2<f32>(dimensions) * in.texture_position);
+
+    var uint_output = textureLoad(
+        textures[in.texture_index],
+        texture_position,
+	0
     );
+
+    var output: vec4<f32> = vec4<f32>(uint_output) / 255.0;
 
     output[0] *= in.sky_light_level;
     output[1] *= in.sky_light_level;
