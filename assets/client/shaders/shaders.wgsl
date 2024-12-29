@@ -69,7 +69,7 @@ fn vs_main(
 
     let position = vec3<f32>(quad.chunk - camera.chunk)
         * BLOCKS_IN_CHUNK_EDGE_F32
-	+ position_array[vertex_desc.index];
+        + position_array[vertex_desc.index];
 
     out.texture_position = texture_position_array[vertex_desc.index];
 
@@ -90,18 +90,19 @@ fn vs_main(
 
 
 @group(1) @binding(0)
-var textures: binding_array<texture_2d<u32>>;
+var textures: texture_2d_array<u32>;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    var dimensions = textureDimensions(textures[in.texture_index]);
+    var dimensions = textureDimensions(textures);
 
     var texture_position = vec2<u32>(vec2<f32>(dimensions) * in.texture_position);
 
     var uint_output = textureLoad(
-        textures[in.texture_index],
+        textures,
         texture_position,
-	0
+        in.texture_index,
+        0
     );
 
     var output: vec4<f32> = vec4<f32>(uint_output) / 255.0;

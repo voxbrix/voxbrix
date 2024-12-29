@@ -18,7 +18,6 @@ use rect_packer::DensePacker;
 use serde::Deserialize;
 use std::{
     fs,
-    num::NonZeroU32,
     path::Path,
 };
 use tokio::task;
@@ -30,6 +29,7 @@ use voxbrix_common::{
 const TEXTURE_FORMAT: ImageFormat = ImageFormat::Png;
 const TEXTURE_FORMAT_NAME: &str = "png";
 const TEXTURE_FORMAT_SHADER: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Uint;
+const TEXTURE_BYTES_PER_PIXEL: u32 = 4;
 const MIN_TEXTURE_ATLAS_SIZE: u32 = 512;
 const MAX_TEXTURE_ATLAS_SIZE: u32 = 8096;
 const EDGE_CORRECTION_PIXELS: f64 = 0.001;
@@ -198,14 +198,20 @@ impl TextureLoadingSystem {
     ) -> (wgpu::BindGroupLayout, wgpu::BindGroup) {
         let texture_size = self.data[0].dimensions();
 
-        let extent = wgpu::Extent3d {
+        let texture_size = wgpu::Extent3d {
             width: texture_size.0,
             height: texture_size.1,
+            depth_or_array_layers: self.data.len().try_into().unwrap(),
+        };
+
+        let texture_layer_size = wgpu::Extent3d {
+            width: texture_size.width,
+            height: texture_size.height,
             depth_or_array_layers: 1,
         };
 
         let texture_descriptior = wgpu::TextureDescriptor {
-            size: extent,
+            size: texture_size,
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -215,31 +221,34 @@ impl TextureLoadingSystem {
             view_formats: &[TEXTURE_FORMAT_SHADER],
         };
 
-        let texture_views = self
-            .data
-            .iter()
-            .map(|texture_bytes| {
-                let texture = device.create_texture(&texture_descriptior);
-                queue.write_texture(
-                    wgpu::ImageCopyTexture {
-                        texture: &texture,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    &texture_bytes,
-                    wgpu::ImageDataLayout {
-                        offset: 0,
-                        bytes_per_row: Some(4 * texture_size.0),
-                        rows_per_image: Some(texture_size.1),
-                    },
-                    extent,
-                );
-                texture.create_view(&wgpu::TextureViewDescriptor::default())
-            })
-            .collect::<Vec<_>>();
+        let texture = device.create_texture(&texture_descriptior);
 
-        let texture_views = texture_views.iter().collect::<Vec<_>>();
+        for (i, texture_bytes) in self.data.iter().enumerate() {
+            queue.write_texture(
+                wgpu::ImageCopyTexture {
+                    texture: &texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: i.try_into().unwrap(),
+                    },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &texture_bytes,
+                wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(TEXTURE_BYTES_PER_PIXEL * texture_size.width),
+                    rows_per_image: Some(texture_size.height),
+                },
+                texture_layer_size,
+            );
+        }
+
+        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -249,17 +258,17 @@ impl TextureLoadingSystem {
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Uint,
-                        view_dimension: wgpu::TextureViewDimension::D2,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
                         multisampled: false,
                     },
-                    count: NonZeroU32::new(self.data.len() as u32),
+                    count: None,
                 }],
             });
 
         let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::TextureViewArray(texture_views.as_slice()),
+                resource: wgpu::BindingResource::TextureView(&texture_view),
             }],
             layout: &texture_bind_group_layout,
             label: Some("texture_bind_group"),
