@@ -3,6 +3,7 @@ use bytemuck::{
     Zeroable,
 };
 use std::mem;
+use voxbrix_common::component::block::sky_light::SkyLight;
 use wgpu::*;
 
 #[repr(C)]
@@ -28,7 +29,19 @@ impl VertexDescription {
 pub struct Vertex {
     pub position: [f32; 3],
     pub texture_position: [f32; 2],
-    pub light_level: [u8; 4],
+    pub light_level: u32,
+}
+
+impl Vertex {
+    pub fn set_sky_light(&mut self, sky_light: SkyLight) {
+        // Create a mask to clear the bits for the specified index
+        // let mask = !(0xFF << (index * 8));
+
+        // Clear the bits at the specified index and set the new value
+        // (encoded & mask) | ((value as u32) << (index * 8))
+
+        self.light_level = (self.light_level & !0xFF) | (sky_light.value() as u32)
+    }
 }
 
 #[repr(C)]

@@ -102,6 +102,7 @@ impl Process<'_> {
             &sd.orientation_ac,
             &sd.model_acc,
             &sd.builder_amc,
+            &sd.sky_light_bc,
             &mut sd.animation_state_ac,
         );
 

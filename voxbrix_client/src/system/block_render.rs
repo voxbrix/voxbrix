@@ -408,7 +408,7 @@ impl BlockRenderSystem {
                                     },
                                 })
                             })
-                            .map(|light| light.unwrap_or(SkyLight::MIN).value())
+                            .map(|light| light.unwrap_or(SkyLight::MIN))
                             .collect::<ArrayVec<_, 6>>()
                             .into_inner()
                             .unwrap_or_else(|_| unreachable!());
@@ -641,13 +641,18 @@ impl BlockRenderSystem {
             let quad = Quad {
                 chunk: chunk.position,
                 texture_index: self.highlight_texture_index,
-                vertices: [0, 1, 2, 3].map(|i| {
-                    Vertex {
-                        position: positions[i],
-                        texture_position: self.highlight_texture_coords[i],
-                        light_level: [16, 0, 0, 0],
-                    }
-                }),
+                vertices: [0, 1, 2, 3]
+                    .map(|i| {
+                        Vertex {
+                            position: positions[i],
+                            texture_position: self.highlight_texture_coords[i],
+                            light_level: 0,
+                        }
+                    })
+                    .map(|mut v| {
+                        v.set_sky_light(SkyLight::MAX);
+                        v
+                    }),
             };
 
             self.target_highlighting = TargetHighlighting::New(quad);

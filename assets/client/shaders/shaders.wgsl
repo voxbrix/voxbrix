@@ -77,7 +77,7 @@ fn vs_main(
     
     out.texture_index = quad.texture_index;
 
-    let sky_light_level: u32 = light_level_array[vertex_desc.index] >> 0u & 0xFFu;
+    let sky_light_level: u32 = light_level_array[vertex_desc.index] & 0xFFu;
     out.sky_light_level = f32(sky_light_level) / MAX_LIGHT_LEVEL_F32;
     out.sky_light_level = pow(out.sky_light_level, 1.5);
 

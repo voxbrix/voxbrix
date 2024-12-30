@@ -82,7 +82,7 @@ impl ActorModelBuilder {
                                 + transform.transform_point3(vertex.position) * self.default_scale)
                                 .into(),
                             texture_position: vertex.texture_position,
-                            light_level: [15, 0, 0, 0],
+                            light_level: 0,
                         }
                     })
                     .collect::<ArrayVec<_, 4>>()

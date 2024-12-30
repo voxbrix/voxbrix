@@ -29,11 +29,19 @@ use crate::{
 use nohash_hasher::IntMap;
 use std::time::Instant;
 use voxbrix_common::{
-    entity::actor::Actor,
+    component::block::sky_light::{
+        SkyLight,
+        SkyLightBlockComponent,
+    },
+    entity::{
+        actor::Actor,
+        block::Block,
+    },
     math::{
         Directions,
         Mat4F32,
         QuatF32,
+        Round,
         Vec3F32,
     },
 };
@@ -179,6 +187,7 @@ impl ActorRenderSystem {
         orientation_ac: &OrientationActorComponent,
         model_acc: &ModelActorClassComponent,
         builder_amc: &BuilderActorModelComponent,
+        sky_light_bc: &SkyLightBlockComponent,
         animation_state_ac: &mut AnimationStateActorComponent,
     ) {
         self.quads.clear();
@@ -264,6 +273,15 @@ impl ActorRenderSystem {
                 animation_state_ac.remove(&actor, &walking_animation);
             }
 
+            let sky_light = Block::from_chunk_offset(
+                position.chunk,
+                position.offset.to_array().map(|f| f.round_down()),
+            )
+            .and_then(|(chunk, block)| sky_light_bc.get_chunk(&chunk).map(|c| *c.get(block)))
+            .unwrap_or(SkyLight::MAX);
+
+            let quads_start = self.quads.len();
+
             for bone in model_builder.list_bones() {
                 let mut transform = Mat4F32::IDENTITY;
                 let mut curr_bone = *bone;
@@ -283,6 +301,11 @@ impl ActorRenderSystem {
 
                 model_builder.build_bone(bone, &position, &transform, &mut self.quads);
             }
+
+            self.quads[quads_start ..]
+                .iter_mut()
+                .flat_map(|q| q.vertices.iter_mut())
+                .for_each(|v| v.set_sky_light(sky_light));
         }
     }
 

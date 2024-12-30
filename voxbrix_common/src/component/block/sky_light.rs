@@ -19,6 +19,10 @@ impl SkyLight {
     pub fn value(self) -> u8 {
         self.0
     }
+
+    pub fn from_value(value: u8) -> Self {
+        Self(value)
+    }
 }
 
 pub type SkyLightBlockComponent = BlockComponentSimple<BlocksVec<SkyLight>>;

@@ -13,6 +13,7 @@ use anyhow::Error;
 use bitflags::bitflags;
 use serde::Deserialize;
 use voxbrix_common::{
+    component::block::sky_light::SkyLight,
     entity::{
         block::Block,
         chunk::Chunk,
@@ -187,7 +188,7 @@ impl BlockModelBuilder {
         chunk: &'a Chunk,
         block: Block,
         cull_mask: CullFlags,
-        sky_light_level: [u8; 6],
+        sky_light_level: [SkyLight; 6],
     ) -> impl Iterator<Item = Quad> + 'a {
         let block = block.into_coords();
 
@@ -220,11 +221,11 @@ impl BlockModelBuilder {
                             CullingNeighbor::None => {
                                 let light_float = sky_light_level
                                     .iter()
-                                    .map(|side_light| *side_light as f32)
+                                    .map(|side_light| side_light.value() as f32)
                                     .sum::<f32>()
                                     / 6.0;
 
-                                light_float.min(u8::MAX as f32) as u8
+                                SkyLight::from_value(light_float as u8)
                             },
                             CullingNeighbor::NegativeX => sky_light_level[0],
                             CullingNeighbor::PositiveX => sky_light_level[1],
@@ -234,11 +235,15 @@ impl BlockModelBuilder {
                             CullingNeighbor::PositiveZ => sky_light_level[5],
                         };
 
-                        Vertex {
+                        let mut vertex = Vertex {
                             position,
                             texture_position: vxb.texture_position,
-                            light_level: [sky_light_level, 0, 0, 0],
-                        }
+                            light_level: 0,
+                        };
+
+                        vertex.set_sky_light(sky_light_level);
+
+                        vertex
                     }),
                 }
             })
