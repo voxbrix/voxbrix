@@ -67,7 +67,10 @@ use crate::{
     },
     CONNECTION_TIMEOUT,
 };
-use anyhow::Result;
+use anyhow::{
+    Context,
+    Result,
+};
 use data::GameSharedData;
 use futures_lite::{
     future::{
@@ -468,10 +471,26 @@ impl GameScene {
         window.cursor_visible = false;
 
         let (block_texture_bind_group_layout, block_texture_bind_group) =
-            block_texture_loading_system.prepare_buffer(window.device(), window.queue());
+            block_texture_loading_system
+                .prepare_buffer(
+                    window.device(),
+                    window.queue(),
+                    BLOCK_TEXTURE_PATH_PREFIX,
+                    &block_location_tc,
+                )
+                .await
+                .context("unable to prepare block texture buffer")?;
 
         let (actor_texture_bind_group_layout, actor_texture_bind_group) =
-            actor_texture_loading_system.prepare_buffer(window.device(), window.queue());
+            actor_texture_loading_system
+                .prepare_buffer(
+                    window.device(),
+                    window.queue(),
+                    ACTOR_TEXTURE_PATH_PREFIX,
+                    &actor_location_tc,
+                )
+                .await
+                .context("unable to prepare actor texture buffer")?;
 
         let interface_system = InterfaceSystem::new();
 

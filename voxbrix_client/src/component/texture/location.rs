@@ -11,6 +11,7 @@ pub struct Location {
 
 pub struct LocationTextureComponent {
     atlas_size: [u32; 2],
+    atlas_layers: u32,
     locations: Vec<Location>,
 }
 
@@ -18,13 +19,23 @@ impl LocationTextureComponent {
     pub fn new() -> Self {
         Self {
             atlas_size: [0; 2],
+            atlas_layers: 0,
             locations: Vec::new(),
         }
     }
 
-    pub fn load(&mut self, atlas_size: [u32; 2], locations: Vec<Location>) {
+    pub fn atlas_size(&self) -> [u32; 2] {
+        self.atlas_size
+    }
+
+    pub fn atlas_layers(&self) -> u32 {
+        self.atlas_layers
+    }
+
+    pub fn load(&mut self, atlas_size: [u32; 2], atlas_layers: u32, locations: Vec<Location>) {
         *self = Self {
             atlas_size,
+            atlas_layers,
             locations,
         }
     }
@@ -53,5 +64,12 @@ impl LocationTextureComponent {
             .get(texture.as_usize())
             .expect("texture not found")
             .edge_correction
+    }
+
+    pub fn iter<'a>(&'a self) -> impl ExactSizeIterator<Item = (Texture, &'a Location)> + 'a {
+        self.locations
+            .iter()
+            .enumerate()
+            .map(|(i, l)| (Texture::from_usize(i), l))
     }
 }
