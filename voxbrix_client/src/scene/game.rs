@@ -494,17 +494,24 @@ impl GameScene {
 
         let interface_system = InterfaceSystem::new();
 
+        let player_position = position_ac
+            .get(&player_actor)
+            .expect("player position is undefined");
+
+        let player_orientation = orientation_ac
+            .get(&player_actor)
+            .expect("player orientation is undefined");
+
         let render_system = RenderSystemDescriptor {
-            player_actor,
+            camera_actor: player_actor,
             // TODO hide?
             camera_parameters: CameraParameters {
+                chunk: player_position.chunk.position,
+                offset: player_position.offset.into(),
+                view_direction: player_orientation.forward().into(),
                 aspect: 1.0,
                 fovy: 70f32.to_radians(),
-                near: 0.01,
-                far: 100.0,
             },
-            position_ac: &position_ac,
-            orientation_ac: &orientation_ac,
             window,
         }
         .build();

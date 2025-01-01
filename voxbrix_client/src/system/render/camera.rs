@@ -1,9 +1,5 @@
-use crate::component::actor::{
-    orientation::OrientationActorComponent,
-    position::PositionActorComponent,
-};
 use voxbrix_common::{
-    entity::actor::Actor,
+    entity::block::BLOCKS_IN_CHUNK_EDGE_F32,
     math::{
         Directions,
         Mat4F32,
@@ -15,22 +11,35 @@ use wgpu::util::{
     DeviceExt,
 };
 
-#[derive(Debug)]
-enum CameraError {
-    InvalidActor,
-}
+const CAMERA_NEAR: f32 = 0.01;
 
 #[derive(Debug)]
 pub struct CameraParameters {
+    pub chunk: [i32; 3],
+    pub offset: [f32; 3],
+    pub view_direction: [f32; 3],
     pub aspect: f32,
     pub fovy: f32,
-    pub near: f32,
-    pub far: f32,
 }
 
 impl CameraParameters {
-    pub fn calc_perspective(&self) -> Mat4F32 {
-        Mat4F32::perspective_lh(self.fovy, self.aspect, self.near, self.far)
+    fn calc_uniform(&self) -> CameraUniform {
+        let look_to =
+            Mat4F32::look_to_lh(self.offset.into(), self.view_direction.into(), Vec3F32::UP);
+
+        let perspective = Mat4F32::perspective_infinite_lh(self.fovy, self.aspect, CAMERA_NEAR);
+
+        CameraUniform {
+            chunk: self.chunk,
+            _padding: 0,
+            // offset converted to homogeneous
+            view_position: [self.offset[0], self.offset[1], self.offset[2], 1.0],
+            view_projection: (perspective * look_to).to_cols_array(),
+        }
+    }
+
+    fn max_visible_angle(&self) -> f32 {
+        ((self.aspect.powi(2) + 1.0).sqrt() * (self.fovy / 2.0).tan()).atan()
     }
 }
 
@@ -43,44 +52,20 @@ struct CameraUniform {
     view_projection: [f32; 16],
 }
 
-fn calc_uniform(
-    actor: &Actor,
-    parameters: &CameraParameters,
-    position_ac: &PositionActorComponent,
-    orientation_ac: &OrientationActorComponent,
-) -> Result<CameraUniform, CameraError> {
-    let position = position_ac.get(actor).ok_or(CameraError::InvalidActor)?;
-    let orientation = orientation_ac.get(actor).ok_or(CameraError::InvalidActor)?;
-
-    let look_to = Mat4F32::look_to_lh(position.offset, orientation.forward(), Vec3F32::UP);
-
-    Ok(CameraUniform {
-        chunk: position.chunk.position.into(),
-        _padding: 0,
-        // offset converted to homogeneous
-        view_position: position.offset.extend(1.0).into(),
-        view_projection: (parameters.calc_perspective() * look_to).to_cols_array(),
-    })
-}
-
 #[derive(Debug)]
 pub struct Camera {
-    pub actor: Actor,
-    pub parameters: CameraParameters,
+    parameters: CameraParameters,
+    // Maximum angle from view direction that is still visible on the screen.
+    // Half of the diagonal FOV.
+    max_visible_angle: f32,
     buffer: wgpu::Buffer,
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
 }
 
 impl Camera {
-    pub fn new(
-        device: &wgpu::Device,
-        actor: Actor,
-        parameters: CameraParameters,
-        position_ac: &PositionActorComponent,
-        orientation_ac: &OrientationActorComponent,
-    ) -> Self {
-        let uniform = calc_uniform(&actor, &parameters, position_ac, orientation_ac).unwrap();
+    pub fn new(device: &wgpu::Device, parameters: CameraParameters) -> Self {
+        let uniform = parameters.calc_uniform();
 
         let buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Camera Buffer"),
@@ -111,13 +96,38 @@ impl Camera {
             label: Some("Camera Bind Group"),
         });
 
+        let max_visible_angle = parameters.max_visible_angle();
+
         Self {
-            actor,
             parameters,
+            max_visible_angle,
             buffer,
             bind_group_layout,
             bind_group,
         }
+    }
+
+    pub fn is_object_visible(&self, chunk: [i32; 3], offset: [f32; 3], radius: f32) -> bool {
+        let vec_to_object = Vec3F32::from_array([0, 1, 2].map(|i| {
+            let chunk_diff = chunk[i] - self.parameters.chunk[i];
+            chunk_diff as f32 * BLOCKS_IN_CHUNK_EDGE_F32 + (offset[i] - self.parameters.offset[i])
+        }));
+
+        let object_dist = vec_to_object.length();
+
+        if radius > object_dist {
+            // Camera is within the object radius:
+            return true;
+        }
+
+        let view_direction = Vec3F32::from_array(self.parameters.view_direction);
+
+        let object_angle =
+            (vec_to_object.dot(view_direction) / (object_dist * view_direction.length())).acos();
+
+        let max_visible_object_angle = (radius / object_dist).asin() + self.max_visible_angle;
+
+        object_angle < max_visible_object_angle
     }
 
     /// Make sure height != 0
@@ -125,17 +135,16 @@ impl Camera {
         self.parameters.aspect = (width as f32) / (height as f32);
     }
 
-    pub fn update(
-        &self,
-        queue: &wgpu::Queue,
-        position_ac: &PositionActorComponent,
-        orientation_ac: &OrientationActorComponent,
-    ) {
-        if let Ok(uniform) =
-            calc_uniform(&self.actor, &self.parameters, position_ac, orientation_ac)
-        {
-            queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[uniform]));
-        }
+    pub fn update_position(&mut self, chunk: [i32; 3], offset: [f32; 3], view_direction: [f32; 3]) {
+        self.parameters.chunk = chunk;
+        self.parameters.offset = offset;
+        self.parameters.view_direction = view_direction;
+    }
+
+    pub fn update_buffers(&mut self, queue: &wgpu::Queue) {
+        self.max_visible_angle = self.parameters.max_visible_angle();
+        let uniform = self.parameters.calc_uniform();
+        queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[uniform]));
     }
 
     pub fn get_bind_group_layout(&self) -> &wgpu::BindGroupLayout {

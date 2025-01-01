@@ -42,31 +42,21 @@ fn build_depth_texture_view(device: &wgpu::Device, mut size: wgpu::Extent3d) -> 
     texture.create_view(&wgpu::TextureViewDescriptor::default())
 }
 
-pub struct RenderSystemDescriptor<'a> {
-    pub player_actor: Actor,
+pub struct RenderSystemDescriptor {
+    pub camera_actor: Actor,
     pub camera_parameters: CameraParameters,
-    pub position_ac: &'a PositionActorComponent,
-    pub orientation_ac: &'a OrientationActorComponent,
     pub window: Window,
 }
 
-impl<'a> RenderSystemDescriptor<'a> {
+impl RenderSystemDescriptor {
     pub fn build(self) -> RenderSystem {
         let Self {
-            player_actor,
+            camera_actor,
             camera_parameters,
-            position_ac,
-            orientation_ac,
             window,
         } = self;
 
-        let camera = Camera::new(
-            &window.device(),
-            player_actor,
-            camera_parameters,
-            position_ac,
-            orientation_ac,
-        );
+        let camera = Camera::new(&window.device(), camera_parameters);
 
         let depth_texture_size = wgpu::Extent3d {
             width: 1,
@@ -77,6 +67,7 @@ impl<'a> RenderSystemDescriptor<'a> {
         let depth_texture_view = build_depth_texture_view(&window.device(), depth_texture_size);
 
         RenderSystem {
+            camera_actor,
             camera,
             texture_format: window.texture_format(),
             depth_texture_view,
@@ -95,8 +86,8 @@ pub struct Renderer<'a> {
     pub queue: &'a wgpu::Queue,
     /// Only the last renderer will have this present:
     pub ui_renderer: Option<&'a mut UiRenderer>,
+    pub camera: &'a Camera,
     depth_texture_view: &'a wgpu::TextureView,
-    camera_bind_group: &'a wgpu::BindGroup,
 }
 
 impl<'a> Renderer<'a> {
@@ -108,8 +99,8 @@ impl<'a> Renderer<'a> {
             device: _,
             queue: _,
             ui_renderer: _,
+            camera,
             depth_texture_view,
-            camera_bind_group,
         } = self;
 
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -148,7 +139,7 @@ impl<'a> Renderer<'a> {
         });
 
         render_pass.set_pipeline(pipeline);
-        render_pass.set_bind_group(0, camera_bind_group, &[]);
+        render_pass.set_bind_group(0, camera.get_bind_group(), &[]);
 
         render_pass
     }
@@ -161,6 +152,7 @@ pub struct RenderParameters<'a> {
 }
 
 pub struct RenderSystem {
+    camera_actor: Actor,
     camera: Camera,
     texture_format: wgpu::TextureFormat,
     depth_texture_view: wgpu::TextureView,
@@ -182,13 +174,26 @@ impl RenderSystem {
         position_ac: &PositionActorComponent,
         orientation_ac: &OrientationActorComponent,
     ) {
-        self.camera
-            .update(self.window.queue(), position_ac, orientation_ac);
+        let player_position = position_ac
+            .get(&self.camera_actor)
+            .expect("player position is undefined");
+
+        let player_orientation = orientation_ac
+            .get(&self.camera_actor)
+            .expect("player orientation is undefined");
+
+        self.camera.update_position(
+            player_position.chunk.position,
+            player_position.offset.into(),
+            player_orientation.forward().into(),
+        );
     }
 
     pub fn start_render(&mut self, frame: Frame) {
         let view_size = frame.size();
         self.camera.resize(view_size.width, view_size.height);
+
+        self.camera.update_buffers(self.window.queue());
 
         if view_size != self.depth_texture_size {
             self.depth_texture_size = view_size;
@@ -231,7 +236,7 @@ impl RenderSystem {
                     queue,
                     ui_renderer: None,
                     depth_texture_view: &self.depth_texture_view,
-                    camera_bind_group: &self.camera.get_bind_group(),
+                    camera: &self.camera,
                 }
             })
             .collect::<ArrayVec<_, N>>()

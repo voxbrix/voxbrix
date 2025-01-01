@@ -51,6 +51,7 @@ use voxbrix_common::{
         block::{
             Block,
             Neighbor,
+            BLOCKS_IN_CHUNK_EDGE_F32,
         },
         block_class::BlockClass,
         chunk::{
@@ -304,6 +305,27 @@ impl SuperChunk {
                     dimension,
                 }
             })
+    }
+
+    fn center(&self, side: i32) -> (Chunk, [f32; 3]) {
+        let center_chunk = self.position.map(|i| i * side + side / 2);
+
+        let center_offset = [(side % 2) as f32 * BLOCKS_IN_CHUNK_EDGE_F32; 3];
+
+        (
+            Chunk {
+                position: center_chunk,
+                dimension: self.dimension,
+            },
+            center_offset,
+        )
+    }
+
+    /// Max (diagonal) radius, in blocks
+    fn radius(side: i32) -> f32 {
+        // Cube diagonal is side * 3.0.sqrt()
+        const COEF: f32 = 1.73205077648162841796875f32 * BLOCKS_IN_CHUNK_EDGE_F32;
+        side as f32 * COEF
     }
 
     fn of_chunk(side: i32, chunk: &Chunk) -> Self {
@@ -724,11 +746,25 @@ impl BlockRenderSystem {
 
         let queue = renderer.queue;
 
+        let buffers_to_render = self
+            .prepared_quad_buffers
+            .iter()
+            .filter(|(superchunk, _)| {
+                let (chunk, offset) = superchunk.center(self.superchunk_side_size);
+
+                let radius = SuperChunk::radius(self.superchunk_side_size);
+
+                renderer
+                    .camera
+                    .is_object_visible(chunk.position, offset, radius)
+            })
+            .map(|(_, qb)| qb);
+
         let mut render_pass = renderer.with_pipeline(&mut self.render_pipeline);
 
         render_pass.set_bind_group(1, &self.block_texture_bind_group, &[]);
 
-        for quad_buffer in self.prepared_quad_buffers.values() {
+        for quad_buffer in buffers_to_render {
             render_pass.set_vertex_buffer(0, self.prepared_vertex_buffer.slice(..));
             render_pass.set_vertex_buffer(1, quad_buffer.buffer.get_slice());
             render_pass.draw(0 .. 6, 0 .. quad_buffer.num_quads);
