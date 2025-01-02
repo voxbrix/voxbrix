@@ -60,7 +60,7 @@ pub const MAX_SPLIT_DATA_SIZE: usize = MAX_SPLIT_PACKETS * MAX_DATA_SIZE;
 const SERVER_ID: usize = 0;
 const NEW_CONNECTION_ID: usize = 1;
 const UNRELIABLE_BUFFERS: usize = 8;
-const RELIABLE_QUEUE_LENGTH: u16 = 256;
+const RELIABLE_QUEUE_LENGTH: u16 = 64;
 const RELIABLE_RESEND_AFTER: Duration = Duration::from_millis(1000);
 const MAX_SPLIT_PACKETS: usize = 2000;
 

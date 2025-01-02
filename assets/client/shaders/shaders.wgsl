@@ -105,11 +105,22 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         0
     );
 
+    // Alpha channel is divided in two:
+    //   * Lower 4 bits define opacity;
+    //   * Higher 4 bits define how much the pixel is affected by shadow:
+    //     0 - not affected (max glowing), 15 - fully affected (not glowing).
+    var alpha = uint_output[3];
+
+    var emission_coef: f32 = 1.0 - f32(alpha >> 4 & 15) / 15.0;
+
+    let sky_light_coef = min(emission_coef + in.sky_light_level, 1.0);
+
     var output: vec4<f32> = vec4<f32>(uint_output) / 255.0;
 
-    output[0] *= in.sky_light_level;
-    output[1] *= in.sky_light_level;
-    output[2] *= in.sky_light_level;
+    output[0] *= sky_light_coef;
+    output[1] *= sky_light_coef;
+    output[2] *= sky_light_coef;
+    output[3] = f32(alpha & 15) / 15.0;
 
     return output;
 }
