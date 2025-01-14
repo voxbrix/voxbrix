@@ -4,10 +4,7 @@ use crate::{
         texture::location::LocationTextureComponent,
     },
     entity::texture::Texture,
-    system::render::primitives::{
-        Quad,
-        Vertex,
-    },
+    system::render::primitives::Quad,
 };
 use anyhow::Error;
 use bitflags::bitflags;
@@ -209,13 +206,11 @@ impl BlockModelBuilder {
                 Quad {
                     chunk: chunk.position,
                     texture_index: pb.texture_index,
-                    vertices: pb.vertices.map_ref(|vxb| {
-                        let mut position = vxb.position;
-
-                        position[0] += block[0] as f32;
-                        position[1] += block[1] as f32;
-                        position[2] += block[2] as f32;
-
+                    vertices: pb
+                        .vertices
+                        .map_ref(|vxb| [0, 1, 2].map(|i| vxb.position[i] + block[i] as f32)),
+                    texture_positions: pb.vertices.map_ref(|vxb| vxb.texture_position),
+                    light_parameters: pb.vertices.map_ref(|_| {
                         let sky_light_level = match pb.culling_neighbor {
                             // TODO better lighting for non-cullable quads
                             CullingNeighbor::None => {
@@ -235,15 +230,11 @@ impl BlockModelBuilder {
                             CullingNeighbor::PositiveZ => sky_light_level[5],
                         };
 
-                        let mut vertex = Vertex {
-                            position,
-                            texture_position: vxb.texture_position,
-                            light_level: 0,
-                        };
+                        let mut light = 0;
 
-                        vertex.set_sky_light(sky_light_level);
+                        light = (light & !0xFF) | (sky_light_level.value() as u32);
 
-                        vertex
+                        light
                     }),
                 }
             })

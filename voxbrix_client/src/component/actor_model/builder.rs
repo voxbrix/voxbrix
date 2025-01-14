@@ -10,13 +10,9 @@ use crate::{
         },
         texture::Texture,
     },
-    system::render::primitives::{
-        Quad,
-        Vertex,
-    },
+    system::render::primitives::Quad,
 };
 use anyhow::Error;
-use arrayvec::ArrayVec;
 use nohash_hasher::IntMap;
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -74,20 +70,13 @@ impl ActorModelBuilder {
             Quad {
                 chunk: position.chunk.position.into(),
                 texture_index: self.texture,
-                vertices: vertices
-                    .iter()
-                    .map(|vertex| {
-                        Vertex {
-                            position: (position.offset
-                                + transform.transform_point3(vertex.position) * self.default_scale)
-                                .into(),
-                            texture_position: vertex.texture_position,
-                            light_level: 0,
-                        }
-                    })
-                    .collect::<ArrayVec<_, 4>>()
-                    .into_inner()
-                    .unwrap(),
+                vertices: vertices.map_ref(|vertex| {
+                    (position.offset
+                        + transform.transform_point3(vertex.position) * self.default_scale)
+                        .into()
+                }),
+                texture_positions: vertices.map_ref(|vertex| vertex.texture_position),
+                light_parameters: [0; 4],
             }
         }));
     }

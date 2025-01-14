@@ -304,8 +304,10 @@ impl ActorRenderSystem {
 
             self.quads[quads_start ..]
                 .iter_mut()
-                .flat_map(|q| q.vertices.iter_mut())
-                .for_each(|v| v.set_sky_light(sky_light));
+                .flat_map(|q| q.light_parameters.iter_mut())
+                .for_each(|light| {
+                    *light = (*light & !0xFF) | (sky_light.value() as u32);
+                });
         }
     }
 

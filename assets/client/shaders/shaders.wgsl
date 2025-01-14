@@ -18,18 +18,12 @@ struct VertexDescription {
 struct QuadInput {
     @location(1) chunk: vec3<i32>,
     @location(2) texture_index: u32,
-    @location(3) vertex_0_position: vec3<f32>,
-    @location(4) vertex_0_texture_position: vec2<f32>,
-    @location(5) vertex_0_light_level: u32,
-    @location(6) vertex_1_position: vec3<f32>,
-    @location(7) vertex_1_texture_position: vec2<f32>,
-    @location(8) vertex_1_light_level: u32,
-    @location(9) vertex_2_position: vec3<f32>,
-    @location(10) vertex_2_texture_position: vec2<f32>,
-    @location(11) vertex_2_light_level: u32,
-    @location(12) vertex_3_position: vec3<f32>,
-    @location(13) vertex_3_texture_position: vec2<f32>,
-    @location(14) vertex_3_light_level: u32,
+    @location(3) vertices_0: vec4<f32>,
+    @location(4) vertices_1: vec4<f32>,
+    @location(5) vertices_2: vec4<f32>,
+    @location(6) texture_positions_0: vec4<f32>,
+    @location(7) texture_positions_1: vec4<f32>,
+    @location(8) light_parameters: vec4<u32>,
 }
 
 struct VertexOutput {
@@ -47,24 +41,17 @@ fn vs_main(
     var out: VertexOutput;
 
     var position_array: array<vec3<f32>, 4> = array(
-        quad.vertex_0_position,
-        quad.vertex_1_position,
-        quad.vertex_2_position,
-        quad.vertex_3_position,
+        vec3<f32>(quad.vertices_0[0], quad.vertices_0[1], quad.vertices_0[2]),
+        vec3<f32>(quad.vertices_0[3], quad.vertices_1[0], quad.vertices_1[1]),
+        vec3<f32>(quad.vertices_1[2], quad.vertices_1[3], quad.vertices_2[0]),
+        vec3<f32>(quad.vertices_2[1], quad.vertices_2[2], quad.vertices_2[3]),
     );
 
     var texture_position_array: array<vec2<f32>, 4> = array(
-        quad.vertex_0_texture_position,
-        quad.vertex_1_texture_position,
-        quad.vertex_2_texture_position,
-        quad.vertex_3_texture_position,
-    );
-
-    var light_level_array: array<u32, 4> = array(
-        quad.vertex_0_light_level,
-        quad.vertex_1_light_level,
-        quad.vertex_2_light_level,
-        quad.vertex_3_light_level,
+        vec2<f32>(quad.texture_positions_0[0], quad.texture_positions_0[1]),
+        vec2<f32>(quad.texture_positions_0[2], quad.texture_positions_0[3]),
+        vec2<f32>(quad.texture_positions_1[0], quad.texture_positions_1[1]),
+        vec2<f32>(quad.texture_positions_1[2], quad.texture_positions_1[3]),
     );
 
     let position = vec3<f32>(quad.chunk - camera.chunk)
@@ -77,7 +64,7 @@ fn vs_main(
     
     out.texture_index = quad.texture_index;
 
-    let sky_light_level: u32 = light_level_array[vertex_desc.index] & 0xFFu;
+    let sky_light_level: u32 = quad.light_parameters[vertex_desc.index] & 0xFFu;
     out.sky_light_level = f32(sky_light_level) / MAX_LIGHT_LEVEL_F32;
     out.sky_light_level = pow(out.sky_light_level, 1.5);
 

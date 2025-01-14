@@ -20,7 +20,6 @@ use crate::{
         gpu_vec::GpuVec,
         primitives::{
             Quad,
-            Vertex,
             VertexDescription,
         },
         RenderParameters,
@@ -663,18 +662,9 @@ impl BlockRenderSystem {
             let quad = Quad {
                 chunk: chunk.position,
                 texture_index: self.highlight_texture_index,
-                vertices: [0, 1, 2, 3]
-                    .map(|i| {
-                        Vertex {
-                            position: positions[i],
-                            texture_position: self.highlight_texture_coords[i],
-                            light_level: 0,
-                        }
-                    })
-                    .map(|mut v| {
-                        v.set_sky_light(SkyLight::MAX);
-                        v
-                    }),
+                vertices: [0, 1, 2, 3].map(|i| positions[i]),
+                texture_positions: [0, 1, 2, 3].map(|i| self.highlight_texture_coords[i]),
+                light_parameters: [0; 4],
             };
 
             self.target_highlighting = TargetHighlighting::New(quad);

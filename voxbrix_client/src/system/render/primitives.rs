@@ -3,7 +3,6 @@ use bytemuck::{
     Zeroable,
 };
 use std::mem;
-use voxbrix_common::component::block::sky_light::SkyLight;
 use wgpu::*;
 
 #[repr(C)]
@@ -26,49 +25,30 @@ impl VertexDescription {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
-pub struct Vertex {
-    pub position: [f32; 3],
-    pub texture_position: [f32; 2],
-    pub light_level: u32,
-}
-
-impl Vertex {
-    pub fn set_sky_light(&mut self, sky_light: SkyLight) {
-        // Create a mask to clear the bits for the specified index
-        // let mask = !(0xFF << (index * 8));
-
-        // Clear the bits at the specified index and set the new value
-        // (encoded & mask) | ((value as u32) << (index * 8))
-
-        self.light_level = (self.light_level & !0xFF) | (sky_light.value() as u32)
-    }
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Pod, Zeroable)]
 pub struct Quad {
     pub chunk: [i32; 3],
     pub texture_index: u32,
-    pub vertices: [Vertex; 4],
+    pub vertices: [[f32; 3]; 4],
+    pub texture_positions: [[f32; 2]; 4],
+    pub light_parameters: [u32; 4],
 }
 
 impl Quad {
     pub fn desc<'a>() -> VertexBufferLayout<'a> {
-        const VERTEX_ATTRIBUTES: &[VertexAttribute; 14] = &wgpu::vertex_attr_array![
+        const VERTEX_ATTRIBUTES: &[VertexAttribute; 8] = &wgpu::vertex_attr_array![
+            // chunk:
             1 => Sint32x3,
+            // texture_index:
             2 => Uint32,
-            3 => Float32x3,
-            4 => Float32x2,
-            5 => Uint32,
-            6 => Float32x3,
-            7 => Float32x2,
-            8 => Uint32,
-            9 => Float32x3,
-            10 => Float32x2,
-            11 => Uint32,
-            12 => Float32x3,
-            13 => Float32x2,
-            14 => Uint32,
+            // vertices
+            3 => Float32x4,
+            4 => Float32x4,
+            5 => Float32x4,
+            // texture_positions:
+            6 => Float32x4,
+            7 => Float32x4,
+            // light_parameters:
+            8 => Uint32x4,
         ];
 
         VertexBufferLayout {
