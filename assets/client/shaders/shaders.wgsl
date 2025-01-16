@@ -11,19 +11,12 @@ struct CameraUniform {
 @group(0) @binding(0)
 var<uniform> camera: CameraUniform;
 
-struct VertexDescription {
-    @location(0) index: u32,
-};
-
-struct QuadInput {
-    @location(1) chunk: vec3<i32>,
-    @location(2) texture_index: u32,
-    @location(3) vertices_0: vec4<f32>,
-    @location(4) vertices_1: vec4<f32>,
-    @location(5) vertices_2: vec4<f32>,
-    @location(6) texture_positions_0: vec4<f32>,
-    @location(7) texture_positions_1: vec4<f32>,
-    @location(8) light_parameters: vec4<u32>,
+struct VertexInput {
+    @location(0) chunk: vec3<i32>,
+    @location(1) texture_index: u32,
+    @location(2) offset: vec3<f32>,
+    @location(3) texture_position: vec2<f32>,
+    @location(4) light_parameters: u32,
 }
 
 struct VertexOutput {
@@ -35,36 +28,21 @@ struct VertexOutput {
 
 @vertex
 fn vs_main(
-    vertex_desc: VertexDescription,
-    quad: QuadInput,
+    in: VertexInput,
 ) -> VertexOutput {
     var out: VertexOutput;
 
-    var position_array: array<vec3<f32>, 4> = array(
-        vec3<f32>(quad.vertices_0[0], quad.vertices_0[1], quad.vertices_0[2]),
-        vec3<f32>(quad.vertices_0[3], quad.vertices_1[0], quad.vertices_1[1]),
-        vec3<f32>(quad.vertices_1[2], quad.vertices_1[3], quad.vertices_2[0]),
-        vec3<f32>(quad.vertices_2[1], quad.vertices_2[2], quad.vertices_2[3]),
-    );
-
-    var texture_position_array: array<vec2<f32>, 4> = array(
-        vec2<f32>(quad.texture_positions_0[0], quad.texture_positions_0[1]),
-        vec2<f32>(quad.texture_positions_0[2], quad.texture_positions_0[3]),
-        vec2<f32>(quad.texture_positions_1[0], quad.texture_positions_1[1]),
-        vec2<f32>(quad.texture_positions_1[2], quad.texture_positions_1[3]),
-    );
-
-    let position = vec3<f32>(quad.chunk - camera.chunk)
+    let position = vec3<f32>(in.chunk - camera.chunk)
         * BLOCKS_IN_CHUNK_EDGE_F32
-        + position_array[vertex_desc.index];
+        + in.offset;
 
-    out.texture_position = texture_position_array[vertex_desc.index];
+    out.texture_position = in.texture_position;
 
     out.clip_position = camera.view_projection * vec4<f32>(position, 1.0);
     
-    out.texture_index = quad.texture_index;
+    out.texture_index = in.texture_index;
 
-    let sky_light_level: u32 = quad.light_parameters[vertex_desc.index] & 0xFFu;
+    let sky_light_level: u32 = in.light_parameters & 0xFFu;
     out.sky_light_level = f32(sky_light_level) / MAX_LIGHT_LEVEL_F32;
     out.sky_light_level = pow(out.sky_light_level, 1.5);
 

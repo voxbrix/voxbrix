@@ -10,7 +10,7 @@ use crate::{
         },
         texture::Texture,
     },
-    system::render::primitives::Quad,
+    system::render::primitives::Vertex,
 };
 use anyhow::Error;
 use nohash_hasher::IntMap;
@@ -50,7 +50,7 @@ impl ActorModelBuilder {
         bone: &ActorBone,
         position: &Position,
         transform: &Mat4F32,
-        quads: &mut Vec<Quad>,
+        vertices: &mut Vec<Vertex>,
     ) {
         if self.skeleton.get(bone).is_none() {
             return;
@@ -66,18 +66,18 @@ impl ActorModelBuilder {
 
         let transform = *transform * model_part_builder.transformation;
 
-        quads.extend(model_part_builder.quads.iter().map(|vertices| {
-            Quad {
-                chunk: position.chunk.position.into(),
-                texture_index: self.texture,
-                vertices: vertices.map_ref(|vertex| {
-                    (position.offset
+        vertices.extend(model_part_builder.quads.iter().flat_map(|vertices| {
+            vertices.map_ref(|vertex| {
+                Vertex {
+                    chunk: position.chunk.position,
+                    texture_index: self.texture,
+                    offset: (position.offset
                         + transform.transform_point3(vertex.position) * self.default_scale)
-                        .into()
-                }),
-                texture_positions: vertices.map_ref(|vertex| vertex.texture_position),
-                light_parameters: [0; 4],
-            }
+                        .into(),
+                    texture_position: vertex.texture_position,
+                    light_parameters: 0,
+                }
+            })
         }));
     }
 

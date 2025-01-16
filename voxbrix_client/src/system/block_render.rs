@@ -18,12 +18,14 @@ use crate::{
     entity::texture::Texture,
     system::render::{
         gpu_vec::GpuVec,
-        primitives::{
-            Quad,
-            VertexDescription,
-        },
+        new_quad_index_buffer,
+        primitives::Vertex,
+        IndexType,
         RenderParameters,
         Renderer,
+        INDEX_FORMAT,
+        INDEX_FORMAT_BYTE_SIZE,
+        INITIAL_INDEX_BUFFER_LENGTH,
     },
     window::Window,
 };
@@ -60,9 +62,6 @@ use voxbrix_common::{
     },
     LabelMap,
 };
-use wgpu::util::DeviceExt;
-
-const QUAD_SIZE: usize = Quad::size() as usize;
 
 fn neighbors_to_cull_flags(
     neighbors: &[Neighbor; 6],
@@ -112,16 +111,17 @@ fn neighbors_to_cull_flags(
 }
 
 struct ChunkInfo<'a> {
-    chunk_shard: &'a Vec<Quad>,
-    quad_length: usize,
-    quad_buffer: Option<&'a mut [u8]>,
+    chunk_shard: &'a Vec<Vertex>,
+    vertex_length: usize,
+    vertex_buffer: Option<&'a mut [u8]>,
 }
 
-fn slice_buffers<'a>(chunk_info: &mut [ChunkInfo<'a>], mut quad_buffer: &'a mut [u8]) {
+fn slice_buffers<'a>(chunk_info: &mut [ChunkInfo<'a>], mut vertex_buffer: &'a mut [u8]) {
     for chunk in chunk_info.iter_mut() {
-        let (quad_buffer_shard, residue) = quad_buffer.split_at_mut(chunk.quad_length * QUAD_SIZE);
-        quad_buffer = residue;
-        chunk.quad_buffer = Some(quad_buffer_shard);
+        let (vertex_buffer_shard, residue) =
+            vertex_buffer.split_at_mut(chunk.vertex_length * const { Vertex::size() as usize });
+        vertex_buffer = residue;
+        chunk.vertex_buffer = Some(vertex_buffer_shard);
     }
 }
 
@@ -182,7 +182,7 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
                     vertex: wgpu::VertexState {
                         module: &shaders,
                         entry_point: Some("vs_main"),
-                        buffers: &[VertexDescription::desc(), Quad::desc()],
+                        buffers: &[Vertex::desc()],
                         compilation_options: Default::default(),
                     },
                     fragment: Some(wgpu::FragmentState {
@@ -220,28 +220,14 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
                     cache: None,
                 });
 
-        let vertex_buffer = window
-            .device()
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Vertex Buffer"),
-                usage: wgpu::BufferUsages::VERTEX,
-                contents: bytemuck::cast_slice(&[
-                    VertexDescription { index: 0 },
-                    VertexDescription { index: 1 },
-                    VertexDescription { index: 3 },
-                    VertexDescription { index: 2 },
-                    VertexDescription { index: 3 },
-                    VertexDescription { index: 1 },
-                ]),
-            });
-
         // Target block hightlighting
-        let target_highlight_quad_buffer = window.device().create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Highlight Vertex Buffer"),
-            size: Quad::size(),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        let target_highlight_vertex_buffer =
+            window.device().create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Highlight Vertex Buffer"),
+                size: Vertex::size() * 4,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
 
         let highlight_texture = block_texture_label_map
             .get("highlight")
@@ -249,6 +235,9 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
         let highlight_texture_index = location_tc.get_index(highlight_texture);
         let highlight_texture_coords = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
             .map(|coords| location_tc.get_coords(highlight_texture, coords));
+
+        let index_buffer =
+            new_quad_index_buffer(window.device(), window.queue(), INITIAL_INDEX_BUFFER_LENGTH);
 
         BlockRenderSystem {
             block_change_queue: VecDeque::new(),
@@ -258,14 +247,14 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
             render_pipeline,
             chunk_buffer_shards: AHashMap::new(),
             free_shards: Vec::new(),
-            prepared_vertex_buffer: vertex_buffer,
-            prepared_quad_buffers: AHashMap::new(),
-            updated_quad_buffers: AHashSet::new(),
+            prepared_vertex_buffers: AHashMap::new(),
+            updated_vertex_buffers: AHashSet::new(),
+            index_buffer,
             superchunk_side_size: 4,
-            free_quad_buffers: Vec::new(),
+            free_vertex_buffers: Vec::new(),
             block_texture_bind_group,
             target_highlighting: TargetHighlighting::None,
-            target_highlight_quad_buffer,
+            target_highlight_vertex_buffer,
             highlight_texture_index,
             highlight_texture_coords,
         }
@@ -275,11 +264,11 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
 enum TargetHighlighting {
     None,
     Previous,
-    New(Quad),
+    New([Vertex; 4]),
 }
 
-struct QuadBuffer {
-    num_quads: u32,
+struct VertexBuffer {
+    num_vertices: IndexType,
     buffer: GpuVec,
 }
 
@@ -352,16 +341,16 @@ pub struct BlockRenderSystem {
     chunk_queue: VecDeque<Chunk>,
     enqueued_chunks: AHashSet<Chunk>,
     render_pipeline: wgpu::RenderPipeline,
-    chunk_buffer_shards: AHashMap<Chunk, Vec<Quad>>,
-    free_shards: Vec<Vec<Quad>>,
-    prepared_vertex_buffer: wgpu::Buffer,
+    chunk_buffer_shards: AHashMap<Chunk, Vec<Vertex>>,
+    free_shards: Vec<Vec<Vertex>>,
     superchunk_side_size: i32,
-    prepared_quad_buffers: AHashMap<SuperChunk, QuadBuffer>,
-    updated_quad_buffers: AHashSet<SuperChunk>,
-    free_quad_buffers: Vec<QuadBuffer>,
+    prepared_vertex_buffers: AHashMap<SuperChunk, VertexBuffer>,
+    updated_vertex_buffers: AHashSet<SuperChunk>,
+    index_buffer: wgpu::Buffer,
+    free_vertex_buffers: Vec<VertexBuffer>,
     block_texture_bind_group: wgpu::BindGroup,
     target_highlighting: TargetHighlighting,
-    target_highlight_quad_buffer: wgpu::Buffer,
+    target_highlight_vertex_buffer: wgpu::Buffer,
     highlight_texture_index: u32,
     highlight_texture_coords: [[f32; 2]; 4],
 }
@@ -374,7 +363,7 @@ impl BlockRenderSystem {
         builder_bmc: &'a BuilderBlockModelComponent,
         culling_bmc: &'a CullingBlockModelComponent,
         sky_light_bc: &'a SkyLightBlockComponent,
-    ) -> impl ParallelIterator<Item = Quad> + 'a {
+    ) -> impl ParallelIterator<Item = Vertex> + 'a {
         let neighbor_chunk_ids = [
             [-1, 0, 0],
             [1, 0, 0],
@@ -506,10 +495,10 @@ impl BlockRenderSystem {
                 .find(|chunk| self.chunk_buffer_shards.contains_key(chunk))
                 .is_none()
             {
-                if let Some(quad_buffer) = self.prepared_quad_buffers.remove(&superchunk) {
-                    self.free_quad_buffers.push(quad_buffer);
+                if let Some(vertex_buffer) = self.prepared_vertex_buffers.remove(&superchunk) {
+                    self.free_vertex_buffers.push(vertex_buffer);
                 }
-                self.updated_quad_buffers.remove(&superchunk);
+                self.updated_vertex_buffers.remove(&superchunk);
             }
         }
     }
@@ -526,7 +515,7 @@ impl BlockRenderSystem {
             class_bc.get_chunk(chunk).is_some() && sky_light_bc.get_chunk(chunk).is_some()
         };
 
-        let mut get_shard = |chunk: Chunk| -> (Chunk, Vec<Quad>) {
+        let mut get_shard = |chunk: Chunk| -> (Chunk, Vec<Vertex>) {
             let mut shard = self
                 .chunk_buffer_shards
                 .remove(&chunk)
@@ -587,7 +576,7 @@ impl BlockRenderSystem {
 
         for (chunk, _) in selected_chunks.iter() {
             let superchunk = SuperChunk::of_chunk(self.superchunk_side_size, chunk);
-            self.updated_quad_buffers.insert(superchunk);
+            self.updated_vertex_buffers.insert(superchunk);
         }
 
         let par_iter = selected_chunks.into_par_iter().map(|(chunk, mut shard)| {
@@ -659,85 +648,96 @@ impl BlockRenderSystem {
                 result
             });
 
-            let quad = Quad {
-                chunk: chunk.position,
-                texture_index: self.highlight_texture_index,
-                vertices: [0, 1, 2, 3].map(|i| positions[i]),
-                texture_positions: [0, 1, 2, 3].map(|i| self.highlight_texture_coords[i]),
-                light_parameters: [0; 4],
-            };
+            let vertex = [0, 1, 2, 3].map(|i| {
+                Vertex {
+                    chunk: chunk.position,
+                    texture_index: self.highlight_texture_index,
+                    offset: positions[i],
+                    texture_position: self.highlight_texture_coords[i],
+                    light_parameters: 0,
+                }
+            });
 
-            self.target_highlighting = TargetHighlighting::New(quad);
+            self.target_highlighting = TargetHighlighting::New(vertex);
         } else {
             self.target_highlighting = TargetHighlighting::None;
         }
     }
 
     pub fn render(&mut self, renderer: Renderer) {
-        for superchunk in self.updated_quad_buffers.drain() {
-            let mut quads_len = 0;
+        for superchunk in self.updated_vertex_buffers.drain() {
+            let mut vertices_len = 0;
 
             let mut chunk_info = superchunk
                 .chunks(self.superchunk_side_size)
                 .filter_map(|chunk| self.chunk_buffer_shards.get(&chunk))
-                .map(|quads| {
-                    quads_len += quads.len();
+                .map(|vertices| {
+                    vertices_len += vertices.len();
 
                     ChunkInfo {
-                        chunk_shard: quads,
-                        quad_length: quads.len(),
-                        quad_buffer: None,
+                        chunk_shard: vertices,
+                        vertex_length: vertices.len(),
+                        vertex_buffer: None,
                     }
                 })
                 .collect::<Vec<_>>();
 
-            let quad_buffer_byte_size = (quads_len * QUAD_SIZE) as u64;
-            let quads_len: u32 = quads_len.try_into().unwrap();
+            let vertex_buffer_byte_size = vertices_len as u64 * Vertex::size();
+            let vertices_len: IndexType = vertices_len.try_into().unwrap();
 
-            if quads_len == 0 {
-                if let Some(quad_buffer) = self.prepared_quad_buffers.remove(&superchunk) {
-                    self.free_quad_buffers.push(quad_buffer);
+            if vertices_len == 0 {
+                if let Some(vertex_buffer) = self.prepared_vertex_buffers.remove(&superchunk) {
+                    self.free_vertex_buffers.push(vertex_buffer);
                 }
             } else {
-                let quad_buffer =
-                    self.prepared_quad_buffers
-                        .entry(superchunk)
-                        .or_insert_with(|| {
-                            self.free_quad_buffers.pop().unwrap_or_else(|| {
-                                QuadBuffer {
-                                    num_quads: quads_len,
-                                    buffer: GpuVec::new(
-                                        renderer.device,
-                                        wgpu::BufferUsages::VERTEX,
-                                    ),
-                                }
-                            })
-                        });
+                let vertex_buffer = self
+                    .prepared_vertex_buffers
+                    .entry(superchunk)
+                    .or_insert_with(|| {
+                        self.free_vertex_buffers.pop().unwrap_or_else(|| {
+                            VertexBuffer {
+                                num_vertices: vertices_len,
+                                buffer: GpuVec::new(renderer.device, wgpu::BufferUsages::VERTEX),
+                            }
+                        })
+                    });
 
-                let mut writer = quad_buffer.buffer.get_writer(
+                let mut writer = vertex_buffer.buffer.get_writer(
                     renderer.device,
                     renderer.queue,
-                    quad_buffer_byte_size,
+                    vertex_buffer_byte_size,
                 );
 
                 slice_buffers(&mut chunk_info, writer.as_mut());
 
                 chunk_info.par_iter_mut().for_each(|chunk| {
                     chunk
-                        .quad_buffer
+                        .vertex_buffer
                         .as_mut()
                         .unwrap()
                         .copy_from_slice(bytemuck::cast_slice(chunk.chunk_shard));
                 });
 
-                quad_buffer.num_quads = quads_len;
+                let quad_num = vertices_len / 4;
+
+                let required_index_len =
+                    const { INDEX_FORMAT_BYTE_SIZE as u64 * 6 } * quad_num as u64;
+
+                if self.index_buffer.size() < required_index_len {
+                    let size = required_index_len.max(self.index_buffer.size() * 2);
+
+                    self.index_buffer =
+                        new_quad_index_buffer(renderer.device, renderer.queue, size);
+                }
+
+                vertex_buffer.num_vertices = vertices_len;
             }
         }
 
         let queue = renderer.queue;
 
         let buffers_to_render = self
-            .prepared_quad_buffers
+            .prepared_vertex_buffers
             .iter()
             .filter(|(superchunk, _)| {
                 let (chunk, offset) = superchunk.center(self.superchunk_side_size);
@@ -754,27 +754,36 @@ impl BlockRenderSystem {
 
         render_pass.set_bind_group(1, &self.block_texture_bind_group, &[]);
 
-        for quad_buffer in buffers_to_render {
-            render_pass.set_vertex_buffer(0, self.prepared_vertex_buffer.slice(..));
-            render_pass.set_vertex_buffer(1, quad_buffer.buffer.get_slice());
-            render_pass.draw(0 .. 6, 0 .. quad_buffer.num_quads);
+        for vertex_buffer in buffers_to_render {
+            render_pass.set_vertex_buffer(0, vertex_buffer.buffer.get_slice());
+            let num_indices = vertex_buffer.num_vertices / 4 * 6;
+            render_pass.set_index_buffer(
+                self.index_buffer
+                    .slice(.. num_indices as u64 * const { INDEX_FORMAT_BYTE_SIZE as u64 }),
+                INDEX_FORMAT,
+            );
+            render_pass.draw_indexed(0 .. num_indices, 0, 0 .. 1);
         }
 
         let target_highlighting =
             mem::replace(&mut self.target_highlighting, TargetHighlighting::Previous);
 
         if !matches!(target_highlighting, TargetHighlighting::None) {
-            if let TargetHighlighting::New(quad) = target_highlighting {
+            if let TargetHighlighting::New(vertex) = target_highlighting {
                 queue.write_buffer(
-                    &self.target_highlight_quad_buffer,
+                    &self.target_highlight_vertex_buffer,
                     0,
-                    bytemuck::cast_slice(&[quad]),
+                    bytemuck::cast_slice(&vertex),
                 );
             }
 
-            render_pass.set_vertex_buffer(0, self.prepared_vertex_buffer.slice(..));
-            render_pass.set_vertex_buffer(1, self.target_highlight_quad_buffer.slice(..));
-            render_pass.draw(0 .. 6, 0 .. 1);
+            render_pass.set_vertex_buffer(0, self.target_highlight_vertex_buffer.slice(..));
+            render_pass.set_index_buffer(
+                self.index_buffer
+                    .slice(.. 6 * const { INDEX_FORMAT_BYTE_SIZE as u64 }),
+                INDEX_FORMAT,
+            );
+            render_pass.draw_indexed(0 .. 6, 0, 0 .. 1);
         }
     }
 }

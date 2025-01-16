@@ -17,12 +17,18 @@ use camera::{
 use std::{
     iter,
     mem,
+    num::NonZeroU64,
 };
 use voxbrix_common::entity::actor::Actor;
 
 pub mod camera;
 pub mod gpu_vec;
 pub mod primitives;
+
+pub type IndexType = u32;
+pub const INDEX_FORMAT: wgpu::IndexFormat = wgpu::IndexFormat::Uint32;
+pub const INDEX_FORMAT_BYTE_SIZE: IndexType = 4;
+pub const INITIAL_INDEX_BUFFER_LENGTH: u64 = INDEX_FORMAT_BYTE_SIZE as u64 * 6 * 16386;
 
 fn build_depth_texture_view(device: &wgpu::Device, mut size: wgpu::Extent3d) -> wgpu::TextureView {
     size.depth_or_array_layers = 1;
@@ -40,6 +46,42 @@ fn build_depth_texture_view(device: &wgpu::Device, mut size: wgpu::Extent3d) -> 
     let texture = device.create_texture(&desc);
 
     texture.create_view(&wgpu::TextureViewDescriptor::default())
+}
+
+/// Creates an index buffer with topology suitable for rendering lists of quads.
+pub fn new_quad_index_buffer(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    size: u64,
+) -> wgpu::Buffer {
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("quad_index_buffer"),
+        size,
+        usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let mut index_writer = queue
+        .write_buffer_with(
+            &buffer,
+            0,
+            NonZeroU64::new(size).expect("length must be not 0"),
+        )
+        .expect("unable to write index buffer");
+
+    for (quad_idx, chunk) in index_writer
+        .as_mut()
+        .chunks_exact_mut(const { INDEX_FORMAT_BYTE_SIZE as usize * 6 })
+        .enumerate()
+    {
+        let quad_offset = quad_idx as IndexType * 4;
+        let indices = [0, 1, 3, 2, 3, 1].map(|i| quad_offset + i);
+        chunk.copy_from_slice(bytemuck::cast_slice(&indices));
+    }
+
+    drop(index_writer);
+
+    buffer
 }
 
 pub struct RenderSystemDescriptor {

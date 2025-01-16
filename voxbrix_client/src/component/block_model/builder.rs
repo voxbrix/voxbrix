@@ -4,7 +4,7 @@ use crate::{
         texture::location::LocationTextureComponent,
     },
     entity::texture::Texture,
-    system::render::primitives::Quad,
+    system::render::primitives::Vertex,
 };
 use anyhow::Error;
 use bitflags::bitflags;
@@ -186,8 +186,8 @@ impl BlockModelBuilder {
         block: Block,
         cull_mask: CullFlags,
         sky_light_level: [SkyLight; 6],
-    ) -> impl Iterator<Item = Quad> + 'a {
-        let block = block.into_coords();
+    ) -> impl Iterator<Item = Vertex> + 'a {
+        let block = block.into_coords().map(|bi| bi as f32);
 
         self.quads
             .iter()
@@ -202,41 +202,41 @@ impl BlockModelBuilder {
                     CullingNeighbor::PositiveZ => cull_mask.contains(CullFlags::Z1),
                 }
             })
-            .map(move |pb| {
-                Quad {
-                    chunk: chunk.position,
-                    texture_index: pb.texture_index,
-                    vertices: pb
-                        .vertices
-                        .map_ref(|vxb| [0, 1, 2].map(|i| vxb.position[i] + block[i] as f32)),
-                    texture_positions: pb.vertices.map_ref(|vxb| vxb.texture_position),
-                    light_parameters: pb.vertices.map_ref(|_| {
-                        let sky_light_level = match pb.culling_neighbor {
-                            // TODO better lighting for non-cullable quads
-                            CullingNeighbor::None => {
-                                let light_float = sky_light_level
-                                    .iter()
-                                    .map(|side_light| side_light.value() as f32)
-                                    .sum::<f32>()
-                                    / 6.0;
+            .flat_map(move |pb| {
+                pb.vertices.map_ref(|vxb| {
+                    Vertex {
+                        chunk: chunk.position,
+                        texture_index: pb.texture_index,
+                        offset: [0, 1, 2].map(|i| vxb.position[i] + block[i]),
+                        texture_position: vxb.texture_position,
+                        light_parameters: {
+                            let sky_light_level = match pb.culling_neighbor {
+                                // TODO better lighting for non-cullable quads
+                                CullingNeighbor::None => {
+                                    let light_float = sky_light_level
+                                        .iter()
+                                        .map(|side_light| side_light.value() as f32)
+                                        .sum::<f32>()
+                                        / 6.0;
 
-                                SkyLight::from_value(light_float as u8)
-                            },
-                            CullingNeighbor::NegativeX => sky_light_level[0],
-                            CullingNeighbor::PositiveX => sky_light_level[1],
-                            CullingNeighbor::NegativeY => sky_light_level[2],
-                            CullingNeighbor::PositiveY => sky_light_level[3],
-                            CullingNeighbor::NegativeZ => sky_light_level[4],
-                            CullingNeighbor::PositiveZ => sky_light_level[5],
-                        };
+                                    SkyLight::from_value(light_float as u8)
+                                },
+                                CullingNeighbor::NegativeX => sky_light_level[0],
+                                CullingNeighbor::PositiveX => sky_light_level[1],
+                                CullingNeighbor::NegativeY => sky_light_level[2],
+                                CullingNeighbor::PositiveY => sky_light_level[3],
+                                CullingNeighbor::NegativeZ => sky_light_level[4],
+                                CullingNeighbor::PositiveZ => sky_light_level[5],
+                            };
 
-                        let mut light = 0;
+                            let mut light = 0;
 
-                        light = (light & !0xFF) | (sky_light_level.value() as u32);
+                            light = (light & !0xFF) | (sky_light_level.value() as u32);
 
-                        light
-                    }),
-                }
+                            light
+                        },
+                    }
+                })
             })
     }
 }

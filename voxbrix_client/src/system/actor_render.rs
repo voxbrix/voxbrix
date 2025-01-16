@@ -17,12 +17,14 @@ use crate::{
     entity::actor_model::ActorBone,
     system::render::{
         gpu_vec::GpuVec,
-        primitives::{
-            Quad,
-            VertexDescription,
-        },
+        new_quad_index_buffer,
+        primitives::Vertex,
+        IndexType,
         RenderParameters,
         Renderer,
+        INDEX_FORMAT,
+        INDEX_FORMAT_BYTE_SIZE,
+        INITIAL_INDEX_BUFFER_LENGTH,
     },
     window::Window,
 };
@@ -45,9 +47,6 @@ use voxbrix_common::{
         Vec3F32,
     },
 };
-use wgpu::util::DeviceExt;
-
-const QUAD_SIZE: usize = Quad::size() as usize;
 
 pub struct ActorRenderSystemDescriptor<'a> {
     pub render_parameters: RenderParameters<'a>,
@@ -102,7 +101,7 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
                     vertex: wgpu::VertexState {
                         module: &shaders,
                         entry_point: Some("vs_main"),
-                        buffers: &[VertexDescription::desc(), Quad::desc()],
+                        buffers: &[Vertex::desc()],
                         compilation_options: Default::default(),
                     },
                     fragment: Some(wgpu::FragmentState {
@@ -140,30 +139,17 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
                     cache: None,
                 });
 
-        let vertex_buffer = window
-            .device()
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Vertex Buffer"),
-                usage: wgpu::BufferUsages::VERTEX,
-                contents: bytemuck::cast_slice(&[
-                    VertexDescription { index: 0 },
-                    VertexDescription { index: 1 },
-                    VertexDescription { index: 3 },
-                    VertexDescription { index: 2 },
-                    VertexDescription { index: 3 },
-                    VertexDescription { index: 1 },
-                ]),
-            });
-
-        let quad_buffer = GpuVec::new(window.device(), wgpu::BufferUsages::VERTEX);
+        let vertex_buffer = GpuVec::new(window.device(), wgpu::BufferUsages::VERTEX);
+        let index_buffer =
+            new_quad_index_buffer(window.device(), window.queue(), INITIAL_INDEX_BUFFER_LENGTH);
 
         ActorRenderSystem {
             render_pipeline,
             actor_texture_bind_group,
             bone_transformations: IntMap::default(),
-            quads: Vec::new(),
+            vertices: Vec::new(),
             vertex_buffer,
-            quad_buffer,
+            index_buffer,
         }
     }
 }
@@ -172,9 +158,9 @@ pub struct ActorRenderSystem {
     render_pipeline: wgpu::RenderPipeline,
     actor_texture_bind_group: wgpu::BindGroup,
     bone_transformations: IntMap<ActorBone, Mat4F32>,
-    quads: Vec<Quad>,
-    vertex_buffer: wgpu::Buffer,
-    quad_buffer: GpuVec,
+    vertices: Vec<Vertex>,
+    vertex_buffer: GpuVec,
+    index_buffer: wgpu::Buffer,
 }
 
 impl ActorRenderSystem {
@@ -190,7 +176,7 @@ impl ActorRenderSystem {
         sky_light_bc: &SkyLightBlockComponent,
         animation_state_ac: &mut AnimationStateActorComponent,
     ) {
-        self.quads.clear();
+        self.vertices.clear();
 
         for (actor, position, model) in position_ac
             .iter()
@@ -280,7 +266,7 @@ impl ActorRenderSystem {
             .and_then(|(chunk, block)| sky_light_bc.get_chunk(&chunk).map(|c| *c.get(block)))
             .unwrap_or(SkyLight::MAX);
 
-            let quads_start = self.quads.len();
+            let vertices_start = self.vertices.len();
 
             for bone in model_builder.list_bones() {
                 let mut transform = Mat4F32::IDENTITY;
@@ -299,42 +285,57 @@ impl ActorRenderSystem {
 
                 transform = base_transform * transform;
 
-                model_builder.build_bone(bone, &position, &transform, &mut self.quads);
+                model_builder.build_bone(bone, &position, &transform, &mut self.vertices);
             }
 
-            self.quads[quads_start ..]
+            self.vertices[vertices_start ..]
                 .iter_mut()
-                .flat_map(|q| q.light_parameters.iter_mut())
-                .for_each(|light| {
-                    *light = (*light & !0xFF) | (sky_light.value() as u32);
+                .for_each(|vertex| {
+                    vertex.light_parameters =
+                        (vertex.light_parameters & !0xFF) | (sky_light.value() as u32);
                 });
         }
     }
 
     pub fn render(&mut self, renderer: Renderer) {
-        let quads_len = self.quads.len();
+        let vertices_len: IndexType = self.vertices.len().try_into().expect("too many vertices");
 
-        if quads_len == 0 {
+        if vertices_len == 0 {
             return;
         }
 
-        let quad_buffer_byte_size = (quads_len * QUAD_SIZE) as u64;
+        let vertex_buffer_byte_size = vertices_len as u64 * Vertex::size();
 
         let mut writer =
-            self.quad_buffer
-                .get_writer(renderer.device, renderer.queue, quad_buffer_byte_size);
+            self.vertex_buffer
+                .get_writer(renderer.device, renderer.queue, vertex_buffer_byte_size);
 
         writer
             .as_mut()
-            .copy_from_slice(bytemuck::cast_slice(self.quads.as_slice()));
+            .copy_from_slice(bytemuck::cast_slice(self.vertices.as_slice()));
 
         drop(writer);
+
+        let quad_num = vertices_len / 4;
+
+        let required_index_len = const { INDEX_FORMAT_BYTE_SIZE as u64 * 6 } * quad_num as u64;
+
+        if self.index_buffer.size() < required_index_len {
+            let size = required_index_len.max(self.index_buffer.size() * 2);
+
+            self.index_buffer = new_quad_index_buffer(renderer.device, renderer.queue, size);
+        }
 
         let mut render_pass = renderer.with_pipeline(&self.render_pipeline);
 
         render_pass.set_bind_group(1, &self.actor_texture_bind_group, &[]);
-        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        render_pass.set_vertex_buffer(1, self.quad_buffer.get_slice());
-        render_pass.draw(0 .. 6, 0 .. quads_len as u32);
+        render_pass.set_vertex_buffer(0, self.vertex_buffer.get_slice());
+        let num_indices = quad_num * 6;
+        render_pass.set_index_buffer(
+            self.index_buffer
+                .slice(.. num_indices as u64 * const { INDEX_FORMAT_BYTE_SIZE as u64 }),
+            INDEX_FORMAT,
+        );
+        render_pass.draw_indexed(0 .. num_indices, 0, 0 .. 1);
     }
 }
