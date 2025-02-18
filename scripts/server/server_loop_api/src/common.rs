@@ -98,13 +98,13 @@ pub struct GetTargetBlockRequest {
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
-pub struct BlockClass(pub u64);
+pub struct BlockClass(pub u32);
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
-pub struct Actor(pub u64);
+pub struct Actor(pub u32);
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
-pub struct Action(pub u64);
+pub struct Action(pub u32);
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct ActionInput<'a> {

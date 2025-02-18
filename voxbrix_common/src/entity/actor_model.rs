@@ -5,7 +5,7 @@ use serde::{
 };
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
-pub struct ActorModel(pub u64);
+pub struct ActorModel(pub u32);
 
 impl AsFromUsize for ActorModel {
     fn as_usize(&self) -> usize {

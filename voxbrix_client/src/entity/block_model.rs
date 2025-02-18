@@ -1,7 +1,7 @@
 use voxbrix_common::AsFromUsize;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
-pub struct BlockModel(pub u64);
+pub struct BlockModel(pub u32);
 
 impl AsFromUsize for BlockModel {
     fn as_usize(&self) -> usize {
@@ -15,7 +15,7 @@ impl AsFromUsize for BlockModel {
 
 impl std::hash::Hash for BlockModel {
     fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
-        hasher.write_u64(self.0)
+        hasher.write_u32(self.0)
     }
 }
 

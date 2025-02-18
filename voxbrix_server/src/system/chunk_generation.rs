@@ -123,7 +123,7 @@ impl ChunkGenerationSystem {
                 .func_wrap(
                     "env",
                     "get_block_class",
-                    move |mut caller: Caller<'_, GenerationData>, ptr: u32, len: u32| -> u64 {
+                    move |mut caller: Caller<'_, GenerationData>, ptr: u32, len: u32| -> u32 {
                         let ptr = ptr as usize;
                         let len = len as usize;
                         let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
@@ -138,7 +138,7 @@ impl ChunkGenerationSystem {
                 .func_wrap(
                     "env",
                     "push_block",
-                    |mut caller: Caller<'_, GenerationData>, block_class: u64| {
+                    |mut caller: Caller<'_, GenerationData>, block_class: u32| {
                         caller
                             .data_mut()
                             .block_classes

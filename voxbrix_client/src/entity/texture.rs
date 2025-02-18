@@ -5,11 +5,11 @@ pub struct Texture(usize);
 
 impl AsFromUsize for Texture {
     fn as_usize(&self) -> usize {
-        self.0.try_into().unwrap()
+        self.0
     }
 
     fn from_usize(i: usize) -> Self {
-        Self(i.try_into().unwrap())
+        Self(i)
     }
 }
 

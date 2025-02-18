@@ -5,13 +5,13 @@ use serde::{
 };
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Copy, Clone, Debug)]
-pub struct Actor(pub u64);
+pub struct Actor(pub u32);
 
 impl nohash_hasher::IsEnabled for Actor {}
 
 impl MinMax for Actor {
-    const MAX: Self = Actor(u64::MAX);
-    const MIN: Self = Actor(u64::MIN);
+    const MAX: Self = Actor(u32::MAX);
+    const MIN: Self = Actor(u32::MIN);
 }
 
 impl Actor {

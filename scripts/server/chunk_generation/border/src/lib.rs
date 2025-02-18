@@ -1,10 +1,12 @@
 use hash::Hasher64;
 use paste::paste;
 
+type BlockClass = u32;
+
 extern "C" {
     fn get_blocks_in_chunk_edge() -> u32;
-    fn get_block_class(ptr: *const u8, len: u32) -> u64;
-    fn push_block(block_class: u64);
+    fn get_block_class(ptr: *const u8, len: u32) -> BlockClass;
+    fn push_block(block_class: BlockClass);
 }
 
 macro_rules! block_class {
@@ -12,7 +14,7 @@ macro_rules! block_class {
         unsafe {
             paste! {
                 static [<$name:upper _NAME>]: &'static str = stringify!($name);
-                static mut [<$name:upper>]: Option<u64> = None;
+                static mut [<$name:upper>]: Option<BlockClass> = None;
                 if [<$name:upper>].is_none() {
                     [<$name:upper>] = Some(get_block_class(
                         [<$name:upper _NAME>].as_ptr(),
@@ -39,7 +41,7 @@ pub extern "C" fn generate_chunk(seed: u64, phase: u64, chunk_x: i32, chunk_y: i
     let grass = block_class!(grass);
     let stone = block_class!(stone);
 
-    let push_block = |block_class: u64| unsafe {
+    let push_block = |block_class: BlockClass| unsafe {
         push_block(block_class);
     };
 
@@ -325,7 +327,6 @@ mod hash {
 
         #[inline]
         pub fn write(&mut self, mut bytes: &[u8]) {
-            // TODO should we really have `from_ne_bytes` here?
             while bytes.len() >= 8 {
                 self.push(u64::from_le_bytes(bytes[.. 8].try_into().unwrap()));
                 bytes = &bytes[8 ..];
