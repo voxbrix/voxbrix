@@ -11,7 +11,7 @@ use serde::{
 };
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
-pub struct DimensionKind(pub u32);
+pub struct DimensionKind(pub u8);
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct Dimension {
@@ -98,7 +98,7 @@ pub struct GetTargetBlockRequest {
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
-pub struct BlockClass(pub u32);
+pub struct BlockClass(pub u16);
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct Actor(pub u32);

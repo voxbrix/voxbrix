@@ -5,7 +5,7 @@ use serde::{
 };
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Copy, Clone, Debug)]
-pub struct BlockClass(pub u32);
+pub struct BlockClass(pub u16);
 
 impl AsFromUsize for BlockClass {
     fn as_usize(&self) -> usize {

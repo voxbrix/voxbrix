@@ -115,6 +115,10 @@ where
     pub fn get_label(&self, entity: &T) -> Option<&str> {
         self.0.labels.get(entity.as_usize()).map(|l| l.as_ref())
     }
+
+    pub fn len(&self) -> usize {
+        self.0.labels.len()
+    }
 }
 
 impl<T> LabelMap<T>

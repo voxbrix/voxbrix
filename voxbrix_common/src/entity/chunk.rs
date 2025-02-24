@@ -6,7 +6,7 @@ use serde::{
 use std::cmp::Ordering;
 
 #[derive(Serialize, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
-pub struct DimensionKind(pub u32);
+pub struct DimensionKind(pub u8);
 
 impl AsFromUsize for DimensionKind {
     fn as_usize(&self) -> usize {
@@ -25,19 +25,21 @@ pub struct Dimension {
 }
 
 impl Dimension {
-    pub fn to_be_bytes(self) -> [u8; 12] {
-        let mut output = [0u8; 12];
+    pub const BYTES_LEN: usize = 9;
 
-        output[.. 4].copy_from_slice(&self.kind.0.to_be_bytes());
-        output[4 ..].copy_from_slice(&self.phase.to_be_bytes());
+    pub fn to_be_bytes(self) -> [u8; Self::BYTES_LEN] {
+        let mut output = [0u8; Self::BYTES_LEN];
+
+        output[0] = self.kind.0;
+        output[1 ..].copy_from_slice(&self.phase.to_be_bytes());
 
         output
     }
 
-    pub fn from_be_bytes(bytes: [u8; 12]) -> Self {
+    pub fn from_be_bytes(bytes: [u8; Self::BYTES_LEN]) -> Self {
         Self {
-            kind: DimensionKind(u32::from_be_bytes(bytes[.. 4].try_into().unwrap())),
-            phase: u64::from_be_bytes(bytes[4 ..].try_into().unwrap()),
+            kind: DimensionKind(bytes[0]),
+            phase: u64::from_be_bytes(bytes[1 ..].try_into().unwrap()),
         }
     }
 }

@@ -1,12 +1,12 @@
 use hash::Hasher64;
 use paste::paste;
 
-type BlockClass = u32;
+type BlockClass = u16;
 
 extern "C" {
     fn get_blocks_in_chunk_edge() -> u32;
-    fn get_block_class(ptr: *const u8, len: u32) -> BlockClass;
-    fn push_block(block_class: BlockClass);
+    fn get_block_class(ptr: *const u8, len: u32) -> u32;
+    fn push_block(block_class: u32);
 }
 
 macro_rules! block_class {
@@ -19,7 +19,7 @@ macro_rules! block_class {
                     [<$name:upper>] = Some(get_block_class(
                         [<$name:upper _NAME>].as_ptr(),
                         [<$name:upper _NAME>].len() as u32,
-                    ))
+                    ) as BlockClass)
                 }
                 [<$name:upper>].unwrap()
             }
@@ -42,7 +42,7 @@ pub extern "C" fn generate_chunk(seed: u64, phase: u64, chunk_x: i32, chunk_y: i
     let stone = block_class!(stone);
 
     let push_block = |block_class: BlockClass| unsafe {
-        push_block(block_class);
+        push_block(block_class as u32);
     };
 
     let mut hasher = Hasher64::new(seed);

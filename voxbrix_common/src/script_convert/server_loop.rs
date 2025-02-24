@@ -72,7 +72,7 @@ impl From<Chunk> for server_loop_api::Chunk {
 
 impl From<server_loop_api::BlockClass> for BlockClass {
     fn from(value: server_loop_api::BlockClass) -> Self {
-        Self(value.0.into())
+        Self(value.0)
     }
 }
 

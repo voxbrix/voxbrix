@@ -129,7 +129,12 @@ impl ChunkGenerationSystem {
                         let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
                         let label =
                             std::str::from_utf8(&memory.data(&caller)[ptr .. ptr + len]).unwrap();
-                        caller.data().block_class_label_map.get(label).unwrap().0
+                        caller
+                            .data()
+                            .block_class_label_map
+                            .get(label)
+                            .expect("block class label not found")
+                            .0 as u32
                     },
                 )
                 .unwrap();
@@ -139,6 +144,13 @@ impl ChunkGenerationSystem {
                     "env",
                     "push_block",
                     |mut caller: Caller<'_, GenerationData>, block_class: u32| {
+                        let bclm_len = caller.data().block_class_label_map.len();
+                        let block_class: u16 = block_class
+                            .try_into()
+                            .ok()
+                            .filter(|bc| (*bc as usize) < bclm_len)
+                            .expect("incorrect block class generated");
+
                         caller
                             .data_mut()
                             .block_classes
