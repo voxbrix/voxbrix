@@ -1,6 +1,6 @@
 use crate::{
     component::{
-        action::script::ScriptActionComponent,
+        action::handler::HandlerActionComponent,
         actor::{
             chunk_activation::{
                 ActorChunkActivation,
@@ -68,7 +68,10 @@ use std::{
 };
 use voxbrix_common::{
     component::{
-        actor::position::Position,
+        actor::{
+            effect::EffectActorComponent,
+            position::Position,
+        },
         block_class::collision::CollisionBlockClassComponent,
     },
     entity::{
@@ -97,7 +100,7 @@ use voxbrix_common::{
     },
     system::position,
     ChunkData,
-    LabelMap,
+    LabelLibrary,
 };
 use wasmtime::Caller;
 
@@ -182,11 +185,11 @@ impl<T> SendPtr<T> {
 /// 2. Pointers created must not violate borrowing rules.
 pub struct ScriptSharedData {
     pub snapshot: Snapshot,
+    pub label_library: SendPtr<LabelLibrary>,
     pub actor_pc: SendPtr<ActorPlayerComponent>,
     pub actions_packer_pc: SendMutPtr<ActionsPackerPlayerComponent>,
     pub chunk_view_pc: SendPtr<ChunkViewPlayerComponent>,
     pub position_ac: SendPtr<PositionActorComponent>,
-    pub block_class_label_map: SendPtr<LabelMap<BlockClass>>,
     pub class_bc: SendMutPtr<ClassBlockComponent>,
     pub collision_bcc: SendPtr<CollisionBlockClassComponent>,
 }
@@ -308,9 +311,9 @@ pub fn setup_script_registry(
         let (label, _) = pack::decode_from_slice::<&str>(bytes).expect("invalid argument");
 
         let sd = caller.data().shared();
-        let block_class_label_map = unsafe { sd.block_class_label_map.get() };
+        let label_library = unsafe { sd.label_library.get() };
 
-        let response = block_class_label_map.get(label);
+        let response = label_library.get::<BlockClass>(label);
 
         script_registry::write_script_buffer(&mut caller, response);
     }
@@ -390,6 +393,7 @@ pub struct SharedData {
     pub orientation_ac: OrientationActorComponent,
     pub player_ac: PlayerActorComponent,
     pub chunk_activation_ac: ChunkActivationActorComponent,
+    pub effect_ac: EffectActorComponent,
 
     pub model_acc: ModelActorClassComponent,
 
@@ -399,8 +403,7 @@ pub struct SharedData {
     pub status_cc: StatusChunkComponent,
     pub cache_cc: CacheChunkComponent,
 
-    pub actor_class_label_map: LabelMap<ActorClass>,
-    pub block_class_label_map: LabelMap<BlockClass>,
+    pub label_library: LabelLibrary,
 
     pub position_system: PositionSystem,
     pub chunk_activation_system: ChunkActivationSystem,
@@ -408,7 +411,7 @@ pub struct SharedData {
 
     pub script_registry: ScriptRegistry<ScriptSharedData>,
 
-    pub script_action_component: ScriptActionComponent,
+    pub handler_action_component: HandlerActionComponent,
 
     pub storage: StorageThread,
 
@@ -482,7 +485,7 @@ impl SharedData {
 
         self.class_ac.insert(
             actor,
-            self.actor_class_label_map.get("human").unwrap(),
+            self.label_library.get::<ActorClass>("human").unwrap(),
             self.snapshot,
         );
 

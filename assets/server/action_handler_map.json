@@ -1,0 +1,39 @@
+{
+  "remove_block": [
+    {
+      "condition": {
+        "kind": "SourceActorHasNoEffect",
+        "effect": "remove_block_cooldown"
+      },
+      "alterations": [
+        {
+          "kind": "ApplyEffect",
+          "source": { "kind": "World" },
+          "target": { "kind": "Actor" },
+          "effect": "remove_block_cooldown"
+        },
+        {
+          "kind": "Scripted",
+          "script": "remove_block"
+        }
+      ]
+    }
+  ],
+  "place_block": [
+    {
+      "condition": {
+        "kind": "Always"
+      },
+      "alterations": [
+        {
+          "kind": "RemoveSourceActorEffect",
+          "effect": "remove_block_cooldown"
+        },
+        {
+          "kind": "Scripted",
+          "script": "place_block"
+        }
+      ]
+    }
+  ]
+}

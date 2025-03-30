@@ -81,6 +81,7 @@ pub trait Pack {
     const DEFAULT_COMPRESSED: bool;
 }
 
+#[derive(Default)]
 pub struct Packer {
     buffer: Vec<u8>,
 }

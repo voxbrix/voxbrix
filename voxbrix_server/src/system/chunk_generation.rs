@@ -72,7 +72,7 @@ impl ChunkGenerationSystem {
             .expect("unable to load chunk generation script list")
             .into_label_map();
 
-        let dimension_kind_script_map = Map::load(DIMENSION_KIND_GENERATION_MAP)
+        let dimension_kind_script_map = Map::<String>::load(DIMENSION_KIND_GENERATION_MAP)
             .await
             .expect("unable to load dimension kind chunk generation script map");
 

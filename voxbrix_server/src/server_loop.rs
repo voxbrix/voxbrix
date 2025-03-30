@@ -1,13 +1,16 @@
 use crate::{
     assets::{
+        ACTION_HANDLER_MAP,
         ACTION_LIST,
-        ACTION_SCRIPT_MAP,
         DIMENSION_KIND_LIST,
         SERVER_LOOP_SCRIPT_DIR,
         SERVER_LOOP_SCRIPT_LIST,
     },
     component::{
-        action::script::ScriptActionComponent,
+        action::handler::{
+            HandlerActionComponent,
+            HandlerSetDescriptor,
+        },
         actor::{
             chunk_activation::ChunkActivationActorComponent,
             class::ClassActorComponent,
@@ -74,15 +77,21 @@ use tokio::{
 use voxbrix_common::{
     assets::{
         ACTOR_MODEL_LIST_PATH,
+        EFFECT_LIST_PATH,
         STATE_COMPONENTS_PATH,
     },
-    component::block_class::collision::{
-        Collision,
-        CollisionBlockClassComponent,
+    component::{
+        actor::effect::EffectActorComponent,
+        block_class::collision::{
+            Collision,
+            CollisionBlockClassComponent,
+        },
     },
     compute,
     entity::{
+        action::Action,
         chunk::Chunk,
+        effect::Effect,
         snapshot::Snapshot,
     },
     messages::{
@@ -99,6 +108,7 @@ use voxbrix_common::{
         list_loading::List,
     },
     ChunkData,
+    LabelLibrary,
 };
 use voxbrix_protocol::{
     server::Packet,
@@ -154,10 +164,21 @@ impl ServerLoop {
             .await
             .expect("loading block classes");
 
+        let mut label_library = LabelLibrary::new();
+
         let state_components_label_map = List::load(STATE_COMPONENTS_PATH)
             .await
             .expect("state component list not found")
             .into_label_map();
+
+        label_library.add(state_components_label_map.clone());
+
+        let actor_model_label_map = List::load(ACTOR_MODEL_LIST_PATH)
+            .await
+            .expect("loading actor model label map")
+            .into_label_map();
+
+        label_library.add(actor_model_label_map.clone());
 
         let class_ac =
             ClassActorComponent::new(state_components_label_map.get("actor_class").unwrap());
@@ -171,6 +192,13 @@ impl ServerLoop {
         let player_ac = PlayerActorComponent::new();
         let chunk_activation_ac = ChunkActivationActorComponent::new();
 
+        let effect_label_map = List::load(EFFECT_LIST_PATH)
+            .await
+            .expect("effect list not found")
+            .into_label_map::<Effect>();
+
+        label_library.add(effect_label_map);
+
         let mut model_acc =
             ModelActorClassComponent::new(state_components_label_map.get("actor_model").unwrap());
 
@@ -182,11 +210,6 @@ impl ServerLoop {
 
         let position_system = PositionSystem::new();
 
-        let actor_model_label_map = List::load(ACTOR_MODEL_LIST_PATH)
-            .await
-            .expect("loading actor model label map")
-            .into_label_map();
-
         actor_class_loading_system
             .load_component("model", &mut model_acc, |desc: String| {
                 actor_model_label_map.get(&desc).ok_or_else(|| {
@@ -197,17 +220,23 @@ impl ServerLoop {
 
         let actor_class_label_map = actor_class_loading_system.into_label_map();
 
+        label_library.add(actor_class_label_map.clone());
+
         block_class_loading_system
             .load_component("collision", &mut collision_bcc, |desc: Collision| Ok(desc))
             .expect("unable to load collision block class component");
 
         let block_class_label_map = block_class_loading_system.into_label_map();
 
+        label_library.add(block_class_label_map.clone());
+
         // TODO
         let action_label_map = List::load(ACTION_LIST)
             .await
-            .expect("loading actor model label map")
-            .into_label_map();
+            .expect("loading action label map")
+            .into_label_map::<Action>();
+
+        label_library.add(action_label_map.clone());
 
         let mut engine_config = wasmtime::Config::new();
 
@@ -223,21 +252,24 @@ impl ServerLoop {
                 .expect("failed to load scripts"),
         );
 
-        let action_script_map = Map::load(ACTION_SCRIPT_MAP)
+        label_library.add(script_registry.script_label_map().clone());
+
+        let action_handler_map = Map::<HandlerSetDescriptor>::load(ACTION_HANDLER_MAP)
             .await
             .expect("failed to load action-script map");
-
-        let script_action_component = ScriptActionComponent::new(
-            action_script_map.iter(),
-            &action_label_map,
-            script_registry.script_label_map(),
-        )
-        .expect("failed to map actions to scripts");
 
         let dimension_kind_label_map = List::load(DIMENSION_KIND_LIST)
             .await
             .expect("loading dimension kind label map")
             .into_label_map();
+
+        label_library.add(dimension_kind_label_map.clone());
+
+        let handler_action_component =
+            HandlerActionComponent::load_from_descriptor(&label_library, &|label| {
+                action_handler_map.get(label)
+            })
+            .expect("failed to map actions to scripts");
 
         let shared_event_tx_clone = shared_event_tx.clone();
         let chunk_generation_system = ChunkGenerationSystem::new(
@@ -289,6 +321,7 @@ impl ServerLoop {
             orientation_ac,
             player_ac,
             chunk_activation_ac,
+            effect_ac: EffectActorComponent::new(),
 
             model_acc,
 
@@ -299,8 +332,7 @@ impl ServerLoop {
             status_cc,
             cache_cc,
 
-            actor_class_label_map,
-            block_class_label_map,
+            label_library,
 
             position_system,
             chunk_activation_system: ChunkActivationSystem::new(),
@@ -308,7 +340,7 @@ impl ServerLoop {
 
             script_registry,
 
-            script_action_component,
+            handler_action_component,
 
             storage,
 

@@ -10,6 +10,7 @@ pub mod script_registry;
 pub mod sparse_vec;
 pub mod system;
 
+use ahash::AHashMap;
 use anyhow::Context;
 use arrayvec::ArrayVec;
 use component::block::BlocksVec;
@@ -23,7 +24,10 @@ use serde::{
     Serialize,
 };
 use std::{
-    collections::HashMap,
+    any::{
+        Any,
+        TypeId,
+    },
     fs,
     path::Path,
     sync::Arc,
@@ -102,7 +106,7 @@ impl AsFromUsize for u32 {
 #[derive(Debug)]
 struct LabelMapInner<T> {
     labels: Vec<Arc<str>>,
-    entities: HashMap<Arc<str>, T>,
+    entities: AHashMap<Arc<str>, T>,
 }
 
 #[derive(Clone, Debug)]
@@ -152,6 +156,73 @@ where
             .iter()
             .enumerate()
             .map(|(i, l)| (T::from_usize(i), l.as_ref()))
+    }
+}
+
+#[derive(Debug)]
+struct LabelLibraryInner(AHashMap<TypeId, Arc<dyn Any + Send + Sync>>);
+
+#[derive(Clone, Debug)]
+pub struct LabelLibrary(Arc<LabelLibraryInner>);
+
+impl LabelLibrary {
+    pub fn new() -> Self {
+        Self(Arc::new(LabelLibraryInner(AHashMap::new())))
+    }
+
+    pub fn add<T>(&mut self, label_map: LabelMap<T>)
+    where
+        T: Any + Send + Sync,
+    {
+        Arc::get_mut(&mut self.0)
+            .expect("cannot add label map: library was already cloned")
+            .0
+            .insert(TypeId::of::<T>(), label_map.0);
+    }
+
+    pub fn get_label_map_for<T>(&self) -> Option<LabelMap<T>>
+    where
+        T: Send + Sync + 'static,
+    {
+        let map = self
+            .0
+             .0
+            .get(&TypeId::of::<T>())?
+            .clone()
+            .downcast::<LabelMapInner<T>>()
+            .expect("incorrect label map boxing");
+
+        Some(LabelMap(map))
+    }
+
+    pub fn get_label<T>(&self, entity: &T) -> Option<&str>
+    where
+        T: AsFromUsize + 'static,
+    {
+        let map = self
+            .0
+             .0
+            .get(&TypeId::of::<T>())?
+            .downcast_ref::<LabelMapInner<T>>()
+            .expect("incorrect label map boxing");
+
+        map.labels.get(entity.as_usize()).map(|l| l.as_ref())
+    }
+}
+
+impl LabelLibrary {
+    pub fn get<T>(&self, label: &str) -> Option<T>
+    where
+        T: Copy + 'static,
+    {
+        let map = self
+            .0
+             .0
+            .get(&TypeId::of::<T>())?
+            .downcast_ref::<LabelMapInner<T>>()
+            .expect("incorrect label map boxing");
+
+        map.entities.get(label).copied()
     }
 }
 

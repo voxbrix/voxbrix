@@ -2,7 +2,10 @@ use anyhow::{
     Context,
     Error,
 };
-use serde::Deserialize;
+use serde::{
+    de::DeserializeOwned,
+    Deserialize,
+};
 use std::{
     collections::HashMap,
     fmt::Debug,
@@ -12,27 +15,24 @@ use tokio::task;
 use voxbrix_common::read_data_file;
 
 #[derive(Deserialize, Clone, Debug)]
-pub struct Map {
-    pub map: HashMap<String, String>,
-}
+pub struct Map<T>(HashMap<String, T>);
 
-impl Map {
+impl<T> Map<T>
+where
+    T: DeserializeOwned + Send + 'static,
+{
     pub async fn load(
         path: impl 'static + AsRef<Path> + Debug + Send + Clone,
     ) -> Result<Self, Error> {
         let read_path = path.clone();
 
-        task::spawn_blocking(move || read_data_file::<Map>(read_path))
+        task::spawn_blocking(move || read_data_file::<Self>(read_path))
             .await
             .unwrap()
             .with_context(|| format!("unable to load map \"{:?}\"", path))
     }
 
-    pub fn iter<'a>(&'a self) -> impl ExactSizeIterator<Item = (&'a str, &'a str)> {
-        self.map.iter().map(|(a, s)| (a.as_str(), s.as_str()))
-    }
-
-    pub fn get(&self, key: &str) -> Option<&str> {
-        self.map.get(key).map(|s| s.as_str())
+    pub fn get(&self, key: &str) -> Option<&T> {
+        self.0.get(key)
     }
 }

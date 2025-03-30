@@ -1,4 +1,8 @@
 use crate::{
+    assets::{
+        BLOCK_CLASS_DIR,
+        BLOCK_CLASS_LIST_PATH,
+    },
     component::block_class::BlockClassComponent,
     entity::block_class::BlockClass,
     read_data_file,
@@ -15,9 +19,6 @@ use std::{
     path::Path,
 };
 use tokio::task;
-
-const PATH: &str = "assets/common/block_classes";
-const LIST_PATH: &str = "assets/common/block_classes.json";
 
 #[derive(Deserialize, Debug)]
 struct BlockClassList {
@@ -38,7 +39,7 @@ pub struct BlockClassLoadingSystem {
 impl BlockClassLoadingSystem {
     pub async fn load_data() -> Result<Self, Error> {
         task::spawn_blocking(|| {
-            let block_class_list = read_data_file::<BlockClassList>(LIST_PATH)?.list;
+            let block_class_list = read_data_file::<BlockClassList>(BLOCK_CLASS_LIST_PATH)?.list;
 
             let mut components = BTreeMap::new();
 
@@ -46,7 +47,7 @@ impl BlockClassLoadingSystem {
                 let file_name = format!("{}.json", block_class_label);
 
                 let descriptor: BlockClassDescriptior =
-                    read_data_file(Path::new(PATH).join(file_name))?;
+                    read_data_file(Path::new(BLOCK_CLASS_DIR).join(file_name))?;
 
                 if descriptor.label != *block_class_label {
                     return Err(Error::msg(format!(

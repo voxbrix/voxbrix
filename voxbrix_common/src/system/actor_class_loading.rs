@@ -1,4 +1,8 @@
 use crate::{
+    assets::{
+        ACTOR_CLASS_DIR,
+        ACTOR_CLASS_LIST_PATH,
+    },
     entity::actor_class::ActorClass,
     read_data_file,
     LabelMap,
@@ -14,9 +18,6 @@ use std::{
     path::Path,
 };
 use tokio::task;
-
-const PATH: &str = "assets/common/actor_classes";
-const LIST_PATH: &str = "assets/common/actor_classes.json";
 
 pub trait LoadActorClassComponent<T> {
     fn reload_classes(&mut self, data: Vec<Option<T>>);
@@ -41,7 +42,7 @@ pub struct ActorClassLoadingSystem {
 impl ActorClassLoadingSystem {
     pub async fn load_data() -> Result<Self, Error> {
         task::spawn_blocking(|| {
-            let actor_class_list = read_data_file::<ActorClassList>(LIST_PATH)?.list;
+            let actor_class_list = read_data_file::<ActorClassList>(ACTOR_CLASS_LIST_PATH)?.list;
 
             let mut components = BTreeMap::new();
 
@@ -49,7 +50,7 @@ impl ActorClassLoadingSystem {
                 let file_name = format!("{}.json", actor_class_label);
 
                 let descriptor: ActorClassDescriptior =
-                    read_data_file(Path::new(PATH).join(file_name))?;
+                    read_data_file(Path::new(ACTOR_CLASS_DIR).join(file_name))?;
 
                 if descriptor.label != *actor_class_label {
                     return Err(Error::msg(format!(

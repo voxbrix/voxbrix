@@ -60,6 +60,7 @@ impl<'a> Drop for StateUnpacked<'a> {
     }
 }
 
+#[derive(Default)]
 pub struct StateUnpacker {
     buffer: IntMap<StateComponent, &'static [u8]>,
 }
@@ -207,6 +208,7 @@ impl<'a> Drop for ActionsUnpacked<'a> {
     }
 }
 
+#[derive(Default)]
 pub struct ActionsUnpacker {
     buffer: Vec<(Action, Snapshot, &'static [u8])>,
 }
