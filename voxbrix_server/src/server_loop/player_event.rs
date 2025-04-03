@@ -13,9 +13,7 @@ use crate::{
     },
     entity::player::Player,
     server_loop::data::{
-        ScriptSharedData,
-        SendMutPtr,
-        SendPtr,
+        ScriptSharedDataRef,
         SharedData,
     },
 };
@@ -186,16 +184,17 @@ fn handle_actions(
                         panic!("unimplemented projectile creation for {:?}", actor_class);
                     },
                     Alteration::Scripted { script } => {
-                        let script_data = ScriptSharedData {
+                        let script_data = ScriptSharedDataRef {
                             snapshot: sd.snapshot,
-                            actor_pc: SendPtr::new(&sd.actor_pc),
-                            actions_packer_pc: SendMutPtr::new(&mut sd.actions_packer_pc),
-                            chunk_view_pc: SendPtr::new(&sd.chunk_view_pc),
-                            position_ac: SendPtr::new(&sd.position_ac),
-                            label_library: SendPtr::new(&sd.label_library),
-                            class_bc: SendMutPtr::new(&mut sd.class_bc),
-                            collision_bcc: SendPtr::new(&sd.collision_bcc),
-                        };
+                            actor_pc: &sd.actor_pc,
+                            actions_packer_pc: &mut sd.actions_packer_pc,
+                            chunk_view_pc: &sd.chunk_view_pc,
+                            position_ac: &sd.position_ac,
+                            label_library: &sd.label_library,
+                            class_bc: &mut sd.class_bc,
+                            collision_bcc: &sd.collision_bcc,
+                        }
+                        .into_static();
 
                         sd.script_registry.run_script(
                             &script,
