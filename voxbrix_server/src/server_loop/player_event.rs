@@ -1,11 +1,7 @@
 use crate::{
     component::{
-        action::handler::{
-            Alteration,
-            Condition,
-            Source,
-            Target,
-        },
+        action::handler::initial,
+        actor::projectile::Projectile,
         player::chunk_update::{
             ChunkUpdate,
             FullChunkView,
@@ -21,10 +17,15 @@ use log::debug;
 use server_loop_api::ActionInput;
 use std::mem;
 use voxbrix_common::{
+    component::actor::{
+        position::Position,
+        velocity::Velocity,
+    },
     entity::{
         actor::Actor,
         snapshot::Snapshot,
     },
+    math::Vec3F32,
     messages::{
         server::ServerAccept,
         ActionsPacked,
@@ -32,6 +33,7 @@ use voxbrix_common::{
         StatePacked,
         StateUnpacker,
     },
+    pack,
 };
 use voxbrix_protocol::server::Packet;
 
@@ -124,6 +126,13 @@ fn handle_actions(
     actions: ActionsPacked<'_>,
     previous_last_client_snapshot: Snapshot,
 ) {
+    use initial::{
+        Alteration,
+        Condition,
+        Source,
+        Target,
+    };
+
     let actor = *sd
         .actor_pc
         .get(&player)
@@ -172,7 +181,7 @@ fn handle_actions(
                         };
 
                         let target = match target {
-                            Target::Actor => actor,
+                            Target::Source => actor,
                         };
 
                         sd.effect_ac.add(target, *effect, source);
@@ -180,8 +189,40 @@ fn handle_actions(
                     Alteration::RemoveSourceActorEffect { effect } => {
                         sd.effect_ac.remove_any_source(actor, *effect);
                     },
-                    Alteration::CreateProjectile { actor_class } => {
-                        panic!("unimplemented projectile creation for {:?}", actor_class);
+                    Alteration::CreateProjectile {
+                        actor_class,
+                        handler_set,
+                        velocity_magnitude,
+                    } => {
+                        let Some(position) = sd.position_ac.get(&actor).cloned() else {
+                            continue;
+                        };
+
+                        // TODO automatically change orientation for projectiles
+                        let Some(orientation) = sd.orientation_ac.get(&actor).cloned() else {
+                            continue;
+                        };
+
+                        let projectile = sd.actor_registry.add();
+                        sd.class_ac.insert(projectile, *actor_class, sd.snapshot);
+                        sd.projectile_ac.insert(
+                            projectile,
+                            Projectile {
+                                source_actor: Some(actor),
+                                action_data: data.to_vec(),
+                                handler_set: handler_set.clone(),
+                            },
+                        );
+                        sd.position_ac.insert(projectile, position, sd.snapshot);
+                        sd.orientation_ac
+                            .insert(projectile, orientation, sd.snapshot);
+                        sd.velocity_ac.insert(
+                            projectile,
+                            Velocity {
+                                vector: orientation.forward() * *velocity_magnitude,
+                            },
+                            sd.snapshot,
+                        );
                     },
                     Alteration::Scripted { script } => {
                         let script_data = ScriptSharedDataRef {

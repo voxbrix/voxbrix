@@ -10,6 +10,7 @@ use crate::{
             orientation::OrientationActorComponent,
             player::PlayerActorComponent,
             position::PositionActorComponent,
+            projectile::ProjectileActorComponent,
             velocity::VelocityActorComponent,
         },
         actor_class::model::ModelActorClassComponent,
@@ -375,6 +376,7 @@ pub struct SharedData {
     pub player_ac: PlayerActorComponent,
     pub chunk_activation_ac: ChunkActivationActorComponent,
     pub effect_ac: EffectActorComponent,
+    pub projectile_ac: ProjectileActorComponent,
 
     pub model_acc: ModelActorClassComponent,
 
@@ -432,6 +434,8 @@ impl SharedData {
         self.orientation_ac.remove(actor, self.snapshot);
         self.player_ac.remove(actor);
         self.chunk_activation_ac.remove(actor);
+        self.effect_ac.remove_actor(actor);
+        self.projectile_ac.remove(actor);
         self.actor_registry.remove(actor);
     }
 

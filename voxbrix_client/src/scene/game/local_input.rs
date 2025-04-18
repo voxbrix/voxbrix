@@ -62,6 +62,11 @@ impl LocalInput<'_> {
                                     winit::keyboard::KeyCode::KeyI => {
                                         sd.inventory_open = !sd.inventory_open;
                                     },
+                                    winit::keyboard::KeyCode::KeyF => {
+                                        use voxbrix_common::entity::action::Action;
+
+                                        sd.actions_packer.add_action(Action(2), sd.snapshot, ());
+                                    },
                                     _ => {},
                                 }
                             }

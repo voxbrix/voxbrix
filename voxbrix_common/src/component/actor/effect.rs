@@ -36,9 +36,9 @@ impl EffectActorComponent {
         }
     }
 
-    pub fn remove_actor(&mut self, actor: Actor) {
-        while let Some(key) = self.0.range((actor, Effect::MIN, None) ..).next().copied() {
-            if key.0 != actor {
+    pub fn remove_actor(&mut self, actor: &Actor) {
+        while let Some(key) = self.0.range((*actor, Effect::MIN, None) ..).next().copied() {
+            if key.0 != *actor {
                 break;
             }
 

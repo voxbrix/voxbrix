@@ -9,7 +9,7 @@
         {
           "kind": "ApplyEffect",
           "source": { "kind": "World" },
-          "target": { "kind": "Actor" },
+          "target": { "kind": "Source" },
           "effect": "remove_block_cooldown"
         },
         {
@@ -32,6 +32,21 @@
         {
           "kind": "Scripted",
           "script": "place_block"
+        }
+      ]
+    }
+  ],
+  "fireball": [
+    {
+      "condition": {
+        "kind": "Always"
+      },
+      "alterations": [
+        {
+          "kind": "CreateProjectile",
+          "actor_class": "fireball",
+          "handler_set": [],
+          "velocity_magnitude": 10.0
         }
       ]
     }

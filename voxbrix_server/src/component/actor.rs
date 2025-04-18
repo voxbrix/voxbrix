@@ -29,6 +29,7 @@ pub mod class;
 pub mod orientation;
 pub mod player;
 pub mod position;
+pub mod projectile;
 pub mod velocity;
 
 enum LoadedData {
@@ -293,6 +294,12 @@ where
     pub fn remove(&mut self, i: &Actor, snapshot: Snapshot) -> Option<T> {
         self.changes.insert(*i, snapshot);
         self.storage.remove(i)
+    }
+}
+
+impl<T> ActorComponentPackable<T> {
+    pub fn get(&self, i: &Actor) -> Option<&T> {
+        self.storage.get(i)
     }
 }
 

@@ -1,7 +1,6 @@
 use crate::{
     assets::{
         ACTION_HANDLER_MAP,
-        ACTION_LIST,
         DIMENSION_KIND_LIST,
         SERVER_LOOP_SCRIPT_DIR,
         SERVER_LOOP_SCRIPT_LIST,
@@ -17,6 +16,7 @@ use crate::{
             orientation::OrientationActorComponent,
             player::PlayerActorComponent,
             position::PositionActorComponent,
+            projectile::ProjectileActorComponent,
             velocity::VelocityActorComponent,
         },
         actor_class::model::ModelActorClassComponent,
@@ -76,6 +76,7 @@ use tokio::{
 };
 use voxbrix_common::{
     assets::{
+        ACTION_LIST_PATH,
         ACTOR_MODEL_LIST_PATH,
         EFFECT_LIST_PATH,
         STATE_COMPONENTS_PATH,
@@ -231,7 +232,7 @@ impl ServerLoop {
         label_library.add(block_class_label_map.clone());
 
         // TODO
-        let action_label_map = List::load(ACTION_LIST)
+        let action_label_map = List::load(ACTION_LIST_PATH)
             .await
             .expect("loading action label map")
             .into_label_map::<Action>();
@@ -322,6 +323,7 @@ impl ServerLoop {
             player_ac,
             chunk_activation_ac,
             effect_ac: EffectActorComponent::new(),
+            projectile_ac: ProjectileActorComponent::new(),
 
             model_acc,
 

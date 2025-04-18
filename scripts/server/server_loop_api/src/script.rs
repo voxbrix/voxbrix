@@ -31,6 +31,8 @@ pub fn handle_panic(script_name: &'static str) {
         unsafe {
             let shared_buffer = &mut *ptr::addr_of_mut!(SHARED_BUFFER);
 
+            shared_buffer.clear();
+
             let _ = write!(shared_buffer, "script \"{}\": {}", script_name, panic_info);
 
             import::handle_panic(shared_buffer.as_ptr(), shared_buffer.len() as u32);

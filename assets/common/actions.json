@@ -1,6 +1,7 @@
 {
   "list": [
+    "remove_block",
     "place_block",
-    "remove_block"
+    "fireball"
   ]
 }
