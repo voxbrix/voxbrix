@@ -192,7 +192,7 @@ pub enum Error {
     ServerWasDropped,
     /// Returned by the receiver in case the client dropped the connection handles.
     Disconnect,
-    /// Happens if a sender attempts to send a packet on a non-existant connection.
+    /// Happens if a sender attempts to send a packet on a nonexistent connection.
     InvalidConnection,
     /// Currently internal variant, should not be returned.
     Timeout,

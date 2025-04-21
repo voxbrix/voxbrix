@@ -1,13 +1,7 @@
 use crate::component::actor::position::PositionActorComponent;
 use voxbrix_common::{
-    component::{
-        actor::position::Position,
-        chunk::status::StatusChunkComponent,
-    },
-    entity::{
-        actor::Actor,
-        chunk::Chunk,
-    },
+    component::chunk::status::StatusChunkComponent,
+    entity::chunk::Chunk,
 };
 
 pub struct ChunkPresenceSystem;
@@ -20,19 +14,18 @@ impl ChunkPresenceSystem {
     pub fn process(
         &self,
         radius: i32,
-        player: &Actor,
-        gpc: &PositionActorComponent,
+        pac: &PositionActorComponent,
         status_cc: &mut StatusChunkComponent,
         mut delete: impl FnMut(Chunk),
     ) {
-        let Position {
-            chunk: player_chunk,
-            offset: _,
-        } = gpc.get(player).unwrap();
-        let radius = player_chunk.radius(radius);
+        let should_exist = |chunk: &Chunk| {
+            pac.player_chunks()
+                .find(|ctl_chunk| ctl_chunk.radius(radius).is_within(chunk))
+                .is_some()
+        };
 
         status_cc.retain(|chunk, _| {
-            let retain = radius.is_within(chunk);
+            let retain = should_exist(chunk);
             if !retain {
                 delete(*chunk);
             }

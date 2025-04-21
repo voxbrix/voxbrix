@@ -6,7 +6,10 @@ use serde::{
     Deserialize,
     Serialize,
 };
-use std::mem;
+use std::{
+    collections::hash_map,
+    mem,
+};
 use voxbrix_common::{
     entity::{
         actor::Actor,
@@ -270,15 +273,29 @@ where
         self.packer = Some(packer);
     }
 
-    pub fn insert(&mut self, i: Actor, new: T, snapshot: Snapshot) -> Option<T> {
-        if Some(&new) != self.storage.get(&i) {
-            self.changes.insert(i, snapshot);
+    pub fn insert(&mut self, actor: Actor, new: T, snapshot: Snapshot) -> Option<T> {
+        let (changed, prev_value) = match self.storage.entry(actor) {
+            hash_map::Entry::Occupied(mut slot) => {
+                let prev_value = slot.insert(new);
+                let value = slot.get();
+
+                (&prev_value != value, Some(prev_value))
+            },
+            hash_map::Entry::Vacant(slot) => {
+                slot.insert(new);
+
+                (true, None)
+            },
+        };
+
+        if changed {
+            self.changes.insert(actor, snapshot);
         }
 
-        self.storage.insert(i, new)
+        prev_value
     }
 
-    // pub fn get_writable(&mut self, i: &Actor, snapshot: Snapshot) -> Option<Writable<T>> {
+    // pub fn get_writable(&mut self, actor: &Actor, snapshot: Snapshot) -> Option<Writable<T>> {
     // Some(Writable {
     // actor: *i,
     // snapshot,
@@ -291,15 +308,20 @@ where
         self.storage.iter().map(|(k, v)| (*k, v))
     }
 
-    pub fn remove(&mut self, i: &Actor, snapshot: Snapshot) -> Option<T> {
-        self.changes.insert(*i, snapshot);
-        self.storage.remove(i)
+    pub fn remove(&mut self, actor: &Actor, snapshot: Snapshot) -> Option<T> {
+        let removed = self.storage.remove(actor);
+
+        if removed.is_some() {
+            self.changes.insert(*actor, snapshot);
+        }
+
+        removed
     }
 }
 
 impl<T> ActorComponentPackable<T> {
-    pub fn get(&self, i: &Actor) -> Option<&T> {
-        self.storage.get(i)
+    pub fn get(&self, actor: &Actor) -> Option<&T> {
+        self.storage.get(actor)
     }
 }
 
@@ -315,19 +337,19 @@ impl<T> ActorComponent<T> {
         }
     }
 
-    pub fn insert(&mut self, i: Actor, new: T) -> Option<T> {
-        self.storage.insert(i, new)
+    pub fn insert(&mut self, actor: Actor, new: T) -> Option<T> {
+        self.storage.insert(actor, new)
     }
 
-    pub fn get(&self, i: &Actor) -> Option<&T> {
-        self.storage.get(i)
+    pub fn get(&self, actor: &Actor) -> Option<&T> {
+        self.storage.get(actor)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (Actor, &T)> {
         self.storage.iter().map(|(&a, t)| (a, t))
     }
 
-    pub fn remove(&mut self, i: &Actor) -> Option<T> {
-        self.storage.remove(i)
+    pub fn remove(&mut self, actor: &Actor) -> Option<T> {
+        self.storage.remove(actor)
     }
 }

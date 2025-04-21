@@ -1,20 +1,53 @@
-use voxbrix_common::{
-    entity::actor::Actor,
-    sparse_vec::SparseVec,
+use std::collections::VecDeque;
+use voxbrix_common::entity::{
+    actor::Actor,
+    snapshot::{
+        Snapshot,
+        MAX_SNAPSHOT_DIFF,
+    },
 };
 
-pub struct ActorRegistry(SparseVec<()>);
+pub struct ActorRegistry {
+    next_max_id: u32,
+    free_ids: VecDeque<(Snapshot, u32)>,
+}
 
 impl ActorRegistry {
     pub fn new() -> Self {
-        Self(SparseVec::new())
+        Self {
+            next_max_id: 0,
+            free_ids: VecDeque::new(),
+        }
     }
 
-    pub fn add(&mut self) -> Actor {
-        Actor::from_usize(self.0.push(()))
+    pub fn add(&mut self, snapshot: Snapshot) -> Actor {
+        let reuse_id = self
+            .free_ids
+            .front()
+            .map(|(removal_snapshot, _)| {
+                let diff = snapshot
+                    .0
+                    .checked_sub(removal_snapshot.0)
+                    .expect("removal of actor happened before adding");
+
+                // Make sure all removals were already propagated
+                diff > MAX_SNAPSHOT_DIFF
+            })
+            .unwrap_or(false);
+
+        let id = if reuse_id {
+            let (_, id) = self.free_ids.pop_front().unwrap();
+            id
+        } else {
+            let id = self.next_max_id;
+            self.next_max_id += 1;
+            id
+        };
+
+        Actor(id)
     }
 
-    pub fn remove(&mut self, actor: &Actor) -> bool {
-        self.0.remove(actor.into_usize()).is_some()
+    pub fn remove(&mut self, actor: &Actor, snapshot: Snapshot) {
+        self.free_ids.push_back((snapshot, actor.0));
     }
 }

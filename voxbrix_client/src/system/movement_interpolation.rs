@@ -4,7 +4,7 @@ use crate::component::actor::{
     target_orientation::TargetOrientationActorComponent,
     target_position::TargetPositionActorComponent,
     TargetQueue,
-    Writable,
+    WritableTrait,
 };
 use std::time::{
     Duration,
@@ -109,7 +109,7 @@ impl MovementInterpolationSystem {
     /// Returns the next target and the time left to reach it.
     fn find_next_target<T>(
         target_queue: &mut TargetQueue<T>,
-        value: &mut Writable<T>,
+        value: &mut impl WritableTrait<T>,
         current_time: Instant,
     ) -> Option<(T, Duration)>
     where

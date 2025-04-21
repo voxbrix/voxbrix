@@ -5,6 +5,7 @@ use nohash_hasher::{
 };
 use std::{
     collections::{
+        hash_map,
         BTreeSet,
         VecDeque,
     },
@@ -77,10 +78,10 @@ impl<'a, T> Deref for Writable<'a, T> {
     }
 }
 
-struct ActorChunkChange {
-    snapshot: Snapshot,
-    actor: Actor,
-    previous_chunk: Option<Chunk>,
+pub struct ActorChunkChange {
+    pub snapshot: Snapshot,
+    pub actor: Actor,
+    pub previous_chunk: Option<Chunk>,
 }
 
 /// Special container for the position component.
@@ -338,19 +339,27 @@ impl PositionActorComponent {
         &self.actors_full_update
     }
 
-    pub fn insert(&mut self, actor: Actor, value: Position, snapshot: Snapshot) {
-        let prev_value = self.storage.insert(actor, value);
-        let value = self.storage.get(&actor).unwrap();
+    /// Changed of chunks by actors, in "old snapshot to new snapshot" order.
+    pub fn actors_chunk_changes(&self) -> impl DoubleEndedIterator<Item = &ActorChunkChange> {
+        self.chunk_changes.iter()
+    }
 
-        let (changed, chunk_changed, previous_chunk) = match prev_value {
-            Some(prev_value) => {
+    pub fn insert(&mut self, actor: Actor, value: Position, snapshot: Snapshot) {
+        let (changed, chunk_changed, previous_chunk) = match self.storage.entry(actor) {
+            hash_map::Entry::Occupied(mut slot) => {
+                let prev_value = slot.insert(value);
+                let value = slot.get();
+
                 (
                     &prev_value != value,
                     prev_value.chunk != value.chunk,
                     Some(prev_value.chunk),
                 )
             },
-            None => (true, true, None),
+            hash_map::Entry::Vacant(slot) => {
+                slot.insert(value);
+                (true, true, None)
+            },
         };
 
         if changed {
@@ -362,6 +371,9 @@ impl PositionActorComponent {
                     previous_chunk,
                 });
 
+                if let Some(previous_chunk) = previous_chunk {
+                    self.chunk_actor_component.remove(&(previous_chunk, actor));
+                }
                 self.chunk_actor_component.insert((value.chunk, actor));
             }
         }
@@ -394,5 +406,11 @@ impl PositionActorComponent {
 
             self.changes.insert(*actor, snapshot);
         }
+    }
+
+    pub fn get_actors_in_chunk<'a>(&'a self, chunk: Chunk) -> impl Iterator<Item = Actor> + 'a {
+        self.chunk_actor_component
+            .range((chunk, Actor::MIN) ..= (chunk, Actor::MAX))
+            .map(|(_, actor)| (*actor))
     }
 }

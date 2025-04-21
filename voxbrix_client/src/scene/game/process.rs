@@ -33,7 +33,6 @@ impl Process<'_> {
 
         sd.chunk_presence_system.process(
             sd.player_chunk_view_radius,
-            &sd.player_actor,
             &sd.position_ac,
             &mut sd.status_cc,
             |chunk| {

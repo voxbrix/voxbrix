@@ -31,7 +31,10 @@ use crate::{
     },
 };
 use flume::Sender;
-use std::time::Instant;
+use std::{
+    mem,
+    time::Instant,
+};
 use voxbrix_common::{
     component::{
         block::sky_light::SkyLightBlockComponent,
@@ -120,4 +123,29 @@ pub struct GameSharedData {
 
     pub inventory_open: bool,
     pub cursor_visible: bool,
+
+    pub remove_actor_queue: Vec<Actor>,
+}
+
+impl GameSharedData {
+    pub fn remove_actor(&mut self, actor: &Actor) {
+        self.class_ac.remove(actor, self.snapshot);
+        self.position_ac.remove(actor);
+        self.velocity_ac.remove(actor, self.snapshot);
+        self.orientation_ac.remove(actor, self.snapshot);
+        self.animation_state_ac.remove_actor(actor);
+        self.target_position_ac.remove(actor);
+        self.target_orientation_ac.remove(actor);
+    }
+
+    /// Remove entities enqueued for removal
+    pub fn remove_entities(&mut self) {
+        let mut actors_queue = mem::take(&mut self.remove_actor_queue);
+
+        for actor in actors_queue.drain(..) {
+            self.remove_actor(&actor);
+        }
+
+        self.remove_actor_queue = actors_queue;
+    }
 }

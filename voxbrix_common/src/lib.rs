@@ -7,7 +7,6 @@ pub mod messages;
 pub mod pack;
 pub mod script_convert;
 pub mod script_registry;
-pub mod sparse_vec;
 pub mod system;
 
 use ahash::AHashMap;

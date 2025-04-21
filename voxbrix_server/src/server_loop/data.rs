@@ -54,7 +54,6 @@ use crate::{
 };
 use flume::Sender;
 use log::debug;
-use nohash_hasher::IntSet;
 use redb::Database;
 use server_loop_api::{
     ActionInput,
@@ -108,23 +107,24 @@ use wasmtime::Caller;
 pub struct EntityRemoveQueue(Option<EntityRemoveQueueInner>);
 
 struct EntityRemoveQueueInner {
-    is_not_empty: bool,
-    actors: IntSet<Actor>,
-    players: IntSet<Player>,
+    actors: Vec<Actor>,
+    players: Vec<Player>,
 }
 
 impl EntityRemoveQueueInner {
     fn new() -> Option<Self> {
         Some(Self {
-            is_not_empty: false,
-            actors: IntSet::default(),
-            players: IntSet::default(),
+            actors: Vec::new(),
+            players: Vec::new(),
         })
     }
 
     fn remove_player(&mut self, player: &Player) {
-        self.players.insert(*player);
-        self.is_not_empty = true;
+        self.players.push(*player);
+    }
+
+    fn remove_actor(&mut self, actor: &Actor) {
+        self.actors.push(*actor);
     }
 }
 
@@ -138,6 +138,13 @@ impl EntityRemoveQueue {
             .as_mut()
             .expect("EntityRemoveQueue is taken")
             .remove_player(player)
+    }
+
+    pub fn remove_actor(&mut self, actor: &Actor) {
+        self.0
+            .as_mut()
+            .expect("EntityRemoveQueue is taken")
+            .remove_actor(actor)
     }
 
     fn take(&mut self) -> EntityRemoveQueueInner {
@@ -275,7 +282,7 @@ pub fn setup_script_registry(
         let sd = unsafe { caller.data_mut().shared_mut().get_mut() };
 
         let Some(mut classes) = sd.class_bc.get_mut_chunk(&command.chunk.into()) else {
-            debug!("changing non-existant chunk");
+            debug!("changing nonexistent chunk");
             return;
         };
 
@@ -413,15 +420,11 @@ impl SharedData {
     pub fn remove_entities(&mut self) {
         let mut remove_queue = self.remove_queue.take();
 
-        if remove_queue.is_not_empty {
-            for actor in remove_queue.actors.drain() {
-                self.remove_actor(&actor);
-            }
-            for player in remove_queue.players.drain() {
-                self.remove_player(&player);
-            }
-
-            remove_queue.is_not_empty = false;
+        for actor in remove_queue.actors.drain(..) {
+            self.remove_actor(&actor);
+        }
+        for player in remove_queue.players.drain(..) {
+            self.remove_player(&player);
         }
 
         self.remove_queue.return_taken(remove_queue);
@@ -436,7 +439,7 @@ impl SharedData {
         self.chunk_activation_ac.remove(actor);
         self.effect_ac.remove_actor(actor);
         self.projectile_ac.remove(actor);
-        self.actor_registry.remove(actor);
+        self.actor_registry.remove(actor, self.snapshot);
     }
 
     pub fn prune_chunks(&mut self) {
@@ -448,6 +451,18 @@ impl SharedData {
             if !retain {
                 self.cache_cc.remove(chunk);
                 self.class_bc.remove_chunk(chunk);
+
+                // Removing actors on inactivated chunks
+                for actor in self
+                    .position_ac
+                    .get_actors_in_chunk(*chunk)
+                    .filter(|actor| {
+                        // Ignore players to avoid bugs
+                        self.player_ac.get(actor).is_none()
+                    })
+                {
+                    self.remove_queue.remove_actor(&actor);
+                }
             }
 
             retain
@@ -466,7 +481,7 @@ impl SharedData {
 
     pub fn add_player(&mut self, player: Player, tx: Sender<ClientEvent>, session_id: u64) {
         let tx_init = tx.clone();
-        let actor = self.actor_registry.add();
+        let actor = self.actor_registry.add(self.snapshot);
 
         self.class_ac.insert(
             actor,

@@ -359,8 +359,37 @@ impl Process<'_> {
             }
         }
 
+        // Removing non-player actors that are now on inactive (nonexistent) chunk.
+        for actor in sd
+            .position_ac
+            .actors_chunk_changes()
+            // Reverting because the original order is "old snapshot to new snapshot".
+            // We need only the last snapshot.
+            .rev()
+            .take_while(|change| change.snapshot == sd.snapshot)
+            .map(|change| change.actor)
+            .filter_map(|actor| {
+                // Nonexistent position should be impossible in this case
+                let pos = sd.position_ac.get(&actor)?;
+
+                // Ignoring player actors to avoid bugs
+                if sd.player_ac.get(&actor).is_some() {
+                    return None;
+                }
+
+                if sd.chunk_activation_system.is_active(&pos.chunk) {
+                    None
+                } else {
+                    Some(actor)
+                }
+            })
+        {
+            sd.remove_queue.remove_actor(&actor);
+        }
+
         let shared_event_tx = sd.shared_event_tx.clone();
 
+        // Activating previously inactive chunks
         sd.chunk_activation_system.activate(
             &mut sd.database,
             &mut sd.status_cc,

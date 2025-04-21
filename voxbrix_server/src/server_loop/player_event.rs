@@ -17,15 +17,11 @@ use log::debug;
 use server_loop_api::ActionInput;
 use std::mem;
 use voxbrix_common::{
-    component::actor::{
-        position::Position,
-        velocity::Velocity,
-    },
+    component::actor::velocity::Velocity,
     entity::{
         actor::Actor,
         snapshot::Snapshot,
     },
-    math::Vec3F32,
     messages::{
         server::ServerAccept,
         ActionsPacked,
@@ -33,7 +29,6 @@ use voxbrix_common::{
         StatePacked,
         StateUnpacker,
     },
-    pack,
 };
 use voxbrix_protocol::server::Packet;
 
@@ -203,7 +198,7 @@ fn handle_actions(
                             continue;
                         };
 
-                        let projectile = sd.actor_registry.add();
+                        let projectile = sd.actor_registry.add(sd.snapshot);
                         sd.class_ac.insert(projectile, *actor_class, sd.snapshot);
                         sd.projectile_ac.insert(
                             projectile,

@@ -12,6 +12,28 @@ impl SendState<'_> {
     pub fn run(self) -> Transition {
         let SendState { shared_data: sd } = self;
 
+        // Removing out-of-bounds actors
+        let inactive_actors = sd
+            .position_ac
+            .iter()
+            .filter(|(_, position)| {
+                sd.position_ac
+                    .player_chunks()
+                    .find(|player_chunk| {
+                        player_chunk
+                            .radius(sd.player_chunk_view_radius)
+                            .is_within(&position.chunk)
+                    })
+                    .is_none()
+            })
+            .map(|(actor, _)| actor);
+
+        // TODO optimizable by only deleting on chunk inactivation and
+        // actor moving out of scope. Must be very careful with the edge cases.
+        sd.remove_actor_queue.extend(inactive_actors);
+
+        sd.remove_entities();
+
         sd.position_ac
             .pack_player(&mut sd.state_packer, sd.last_client_snapshot);
         sd.velocity_ac

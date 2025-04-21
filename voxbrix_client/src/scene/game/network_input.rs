@@ -104,6 +104,7 @@ impl NetworkInput<'_> {
                 );
 
                 sd.actions_packer.confirm_snapshot(new_lcs);
+                sd.position_ac.confirm_snapshot(new_lcs);
 
                 let actions = match sd.actions_unpacker.unpack_actions(actions) {
                     Ok(m) => m,

@@ -6,7 +6,10 @@ use serde::{
     Serialize,
 };
 use std::{
-    collections::BTreeMap,
+    collections::{
+        hash_map,
+        BTreeMap,
+    },
     ops::Deref,
     time::Instant,
 };
@@ -33,6 +36,11 @@ pub mod target_orientation;
 pub mod target_position;
 pub mod velocity;
 
+pub trait WritableTrait<T>: Deref<Target = T> {
+    /// Only updates value if it is different from the old one.
+    fn update(&mut self, value: T);
+}
+
 pub struct Writable<'a, T> {
     is_player: bool,
     snapshot: Snapshot,
@@ -40,12 +48,11 @@ pub struct Writable<'a, T> {
     data: &'a mut T,
 }
 
-impl<'a, T> Writable<'a, T>
+impl<'a, T> WritableTrait<T> for Writable<'a, T>
 where
     T: PartialEq,
 {
-    /// Only updates value if it is different from the old one.
-    pub fn update(&mut self, value: T) {
+    fn update(&mut self, value: T) {
         let Self {
             snapshot,
             last_change_snapshot,
@@ -69,7 +76,9 @@ impl<'a, T> Deref for Writable<'a, T> {
     }
 }
 
-/// Component that can be packed into State and sent to the server
+/// Component that can be packed into State and sent to the server.
+/// Only the state of actor is packed and send, the rest of the actors
+/// are unpacked from the server.
 #[derive(Debug)]
 pub struct ActorComponentPackable<T>
 where
@@ -84,7 +93,7 @@ where
 
 impl<T> ActorComponentPackable<T>
 where
-    T: 'static,
+    T: PartialEq + 'static,
 {
     pub fn new(
         state_component: StateComponent,
@@ -100,26 +109,49 @@ where
         }
     }
 
-    pub fn insert(&mut self, i: Actor, new: T, snapshot: Snapshot) -> Option<T> {
-        self.last_change_snapshot = snapshot;
-        self.storage.insert(i, new)
+    pub fn insert(&mut self, actor: Actor, new: T, snapshot: Snapshot) -> Option<T> {
+        let entry = self.storage.entry(actor);
+
+        match entry {
+            hash_map::Entry::Occupied(mut prev) => {
+                let changed = prev.get() == &new;
+
+                if changed && actor == self.player_actor {
+                    self.last_change_snapshot = snapshot;
+                }
+
+                Some(prev.insert(new))
+            },
+            hash_map::Entry::Vacant(slot) => {
+                if actor == self.player_actor {
+                    self.last_change_snapshot = snapshot;
+                }
+
+                slot.insert(new);
+
+                None
+            },
+        }
     }
 
-    pub fn get(&self, i: &Actor) -> Option<&T> {
-        self.storage.get(i)
+    pub fn get(&self, actor: &Actor) -> Option<&T> {
+        self.storage.get(actor)
     }
 
-    pub fn get_writable(&mut self, i: &Actor, snapshot: Snapshot) -> Option<Writable<T>> {
+    pub fn get_writable(&mut self, actor: &Actor, snapshot: Snapshot) -> Option<Writable<T>> {
         Some(Writable {
-            is_player: *i == self.player_actor,
+            is_player: *actor == self.player_actor,
             snapshot,
             last_change_snapshot: &mut self.last_change_snapshot,
-            data: self.storage.get_mut(i)?,
+            data: self.storage.get_mut(actor)?,
         })
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (Actor, &T)> {
-        self.storage.iter().map(|(k, v)| (*k, v))
+    pub fn remove(&mut self, actor: &Actor, snapshot: Snapshot) -> Option<T> {
+        if self.player_actor == *actor {
+            self.last_change_snapshot = snapshot;
+        }
+        self.storage.remove(actor)
     }
 }
 
@@ -190,6 +222,10 @@ impl<T> ActorComponentUnpackable<T> {
 
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (Actor, &mut T)> {
         self.storage.iter_mut().map(|(&a, t)| (a, t))
+    }
+
+    pub fn remove(&mut self, actor: &Actor) -> Option<T> {
+        self.storage.remove(actor)
     }
 }
 
@@ -266,15 +302,15 @@ where
         self.data.remove(&(*actor, *key))
     }
 
-    // pub fn remove_actor(&mut self, actor: &Actor) -> BTreeMap<(Actor, K), T> {
-    // let mut removed = self.data.split_off(&(*actor, K::MIN));
-    //
-    // let mut right_part = removed.split_off(&(*actor, K::MAX));
-    //
-    // self.data.append(&mut right_part);
-    //
-    // removed
-    // }
+    pub fn remove_actor(&mut self, actor: &Actor) -> BTreeMap<(Actor, K), T> {
+        let mut removed = self.data.split_off(&(*actor, K::MIN));
+
+        let mut right_part = removed.split_off(&(*actor, K::MAX));
+
+        self.data.append(&mut right_part);
+
+        removed
+    }
 }
 
 const TARGET_QUEUE_LENGTH_EXTRA: usize = TARGET_QUEUE_LENGTH + 1;

@@ -1,6 +1,7 @@
 use crate::component::actor::{
     orientation::OrientationActorComponent,
     velocity::VelocityActorComponent,
+    WritableTrait,
 };
 use std::{
     f32::consts::{

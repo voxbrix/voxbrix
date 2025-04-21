@@ -3,6 +3,7 @@ use crate::component::{
         orientation::OrientationActorComponent,
         position::PositionActorComponent,
         velocity::VelocityActorComponent,
+        WritableTrait,
     },
     block::class::ClassBlockComponent,
 };

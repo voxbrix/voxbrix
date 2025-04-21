@@ -376,7 +376,6 @@ impl GameScene {
         let mut position_ac = PositionActorComponent::new(
             state_components_label_map.get("actor_position").unwrap(),
             player_actor,
-            true,
         );
         let mut velocity_ac = VelocityActorComponent::new(
             state_components_label_map.get("actor_velocity").unwrap(),
@@ -602,6 +601,8 @@ impl GameScene {
 
             inventory_open: false,
             cursor_visible: false,
+
+            remove_actor_queue: Vec::new(),
         };
 
         let mut send_state_interval = time::interval(Duration::from_millis(50));
