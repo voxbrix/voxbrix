@@ -181,15 +181,21 @@ impl Process<'_> {
         sd.chunk_activation_system
             .actor_activations(&sd.chunk_activation_ac, &sd.position_ac);
 
-        sd.position_system.process(
+        sd.position_system.collect_changes(
             elapsed,
             &sd.class_bc,
             &sd.collision_bcc,
-            &mut sd.position_ac,
+            &sd.position_ac,
             &sd.velocity_ac,
             &sd.player_ac,
-            sd.snapshot,
         );
+
+        for change in sd.position_system.changes() {
+            sd.position_ac
+                .insert(change.actor, change.next_position, sd.snapshot);
+            sd.velocity_ac
+                .insert(change.actor, change.next_velocity, sd.snapshot);
+        }
 
         for (player, player_actor, client) in sd
             .actor_pc

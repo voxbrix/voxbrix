@@ -2,6 +2,7 @@ use nohash_hasher::{
     IntMap,
     IntSet,
 };
+use rayon::prelude::*;
 use serde::{
     Deserialize,
     Serialize,
@@ -316,6 +317,15 @@ where
         }
 
         removed
+    }
+}
+
+impl<T> ActorComponentPackable<T>
+where
+    T: 'static + PartialEq + Send + Sync,
+{
+    pub fn par_iter(&self) -> impl ParallelIterator<Item = (Actor, &T)> {
+        self.storage.par_iter().map(|(k, v)| (*k, v))
     }
 }
 

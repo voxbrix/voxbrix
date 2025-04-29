@@ -50,13 +50,15 @@ impl PlayerPositionSystem {
             .get(&self.player_actor)
             .zip(position_ac.get_writable(&self.player_actor, snapshot))
         {
-            let new_pos = position::process_actor(
+            let (new_pos, _new_vel) = position::process_actor(
                 dt,
                 class_bc,
                 collision_bcc,
-                &writable_position,
+                &*writable_position,
                 velocity,
                 &radius,
+                |_, _| {},
+                |_, _| {},
             );
 
             writable_position.update(new_pos);

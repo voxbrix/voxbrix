@@ -80,16 +80,18 @@ pub fn process_actor<C>(
     position: &Position,
     velocity: &Velocity,
     radius: &[f32; 3],
-) -> Position
+    mut traverse_block_callback: impl FnMut(&Chunk, Block),
+    mut collide_block_callback: impl FnMut(&Chunk, Block),
+) -> (Position, Velocity)
 where
     C: BlockComponent<BlockClass>,
 {
     let Position {
         chunk: mut center_chunk,
-        offset: mut start_position,
+        offset: start_position,
     } = position;
 
-    let calc_pass = |finish_position: Vec3F32, axis_set: [usize; 3]| {
+    let mut calc_pass = |finish_position: Vec3F32, axis_set: [usize; 3]| {
         let [a0, a1, a2] = axis_set;
 
         let travel_a0 = finish_position[a0] - start_position[a0];
@@ -127,6 +129,7 @@ where
             MoveDirection::Positive => BlockAxisRange::Positive(block_start + 1 ..= block_finish),
         };
 
+        // Going into block space, layer by layer:
         for block_a0 in block_range {
             let t = ((block_a0 + block_offset) as f32 - actor_start) / velocity.vector[a0];
 
@@ -143,6 +146,10 @@ where
             let block_a1m = (actor_a1 - radius[a1]).round_down();
             let block_a1p = (actor_a1 + radius[a1]).round_down();
 
+            // Minimal distance for any colliding block:
+            let mut min_collision_dist: Option<f32> = None;
+
+            // Checking next layer of blocks for any colliders:
             for block_a1 in block_a1m ..= block_a1p {
                 let actor_a2 = match velocity.vector[a2].total_cmp(&0.0) {
                     Ordering::Less => {
@@ -170,27 +177,23 @@ where
                             if let Some(collision) = collision_bcc.get(block_class) {
                                 match collision {
                                     Collision::SolidCube => {
-                                        return Some(MoveLimit {
-                                            axis_set,
-                                            collider_distance: (block_a0 as f32 + 0.5
-                                                - start_position[a0])
-                                                .powi(2)
-                                                + (block_a1 as f32 + 0.5 - start_position[a1])
-                                                    .powi(2)
-                                                + (block_a2 as f32 + 0.5 - start_position[a2])
-                                                    .powi(2),
-                                            max_movement: (block_a0 + block_offset) as f32
-                                                + match move_dir {
-                                                    MoveDirection::Negative => {
-                                                        radius[a0] + COLLISION_PUSHBACK
-                                                    },
-                                                    MoveDirection::Positive => {
-                                                        -radius[a0] - COLLISION_PUSHBACK
-                                                    },
-                                                },
-                                        });
+                                        collide_block_callback(&chunk, block);
+
+                                        let collision_dist = (block_a0 as f32 + 0.5
+                                            - start_position[a0])
+                                            .powi(2)
+                                            + (block_a1 as f32 + 0.5 - start_position[a1]).powi(2)
+                                            + (block_a2 as f32 + 0.5 - start_position[a2]).powi(2);
+
+                                        min_collision_dist = Some(
+                                            min_collision_dist
+                                                .map(|mcd| mcd.min(collision_dist))
+                                                .unwrap_or(collision_dist),
+                                        );
                                     },
                                 }
+                            } else {
+                                traverse_block_callback(&chunk, block);
                             }
                         } else {
                             // TODO chunk not loaded
@@ -199,6 +202,18 @@ where
                         // TODO chunk out of boundaries
                     }
                 }
+            }
+
+            if let Some(collider_distance) = min_collision_dist {
+                return Some(MoveLimit {
+                    axis_set,
+                    collider_distance,
+                    max_movement: (block_a0 + block_offset) as f32
+                        + match move_dir {
+                            MoveDirection::Negative => radius[a0] + COLLISION_PUSHBACK,
+                            MoveDirection::Positive => -radius[a0] - COLLISION_PUSHBACK,
+                        },
+                });
             }
         }
 
@@ -218,6 +233,8 @@ where
         }
     }
 
+    let mut velocity = velocity.clone();
+
     // Re-calculation in case some colliding blocks are actually unreachable
     // behind other colliding blocks on different axis, priority is defined
     // by the distance from initial actor position to the colliding block
@@ -229,6 +246,8 @@ where
 
         if let Some(move_limit) = move_limits_iter.next() {
             finish_position[move_limit.axis_set[0]] = move_limit.max_movement;
+            // TODO bounce back here
+            velocity.vector[move_limit.axis_set[0]] = 0.0;
         }
 
         let mut next_move_limits = ArrayVec::new();
@@ -244,6 +263,8 @@ where
 
     if let Some(move_limit) = move_limits.first() {
         finish_position[move_limit.axis_set[0]] = move_limit.max_movement;
+        // TODO bounce back here
+        velocity.vector[move_limit.axis_set[0]] = 0.0;
     }
 
     // If we need to "move" actor to other chunk
@@ -269,12 +290,12 @@ where
         finish_position = finish_position - actor_diff_vec;
     }
 
-    start_position = finish_position;
-
-    Position {
+    let new_pos = Position {
         chunk: center_chunk,
-        offset: start_position,
-    }
+        offset: finish_position,
+    };
+
+    (new_pos, velocity)
 }
 
 pub fn get_target_block(
