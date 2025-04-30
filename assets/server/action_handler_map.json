@@ -45,7 +45,15 @@
         {
           "kind": "CreateProjectile",
           "actor_class": "fireball",
-          "handler_set": [],
+          "handler_set": [
+            {
+              "trigger": "AnyCollision",
+              "condition": { "kind": "Always" },
+              "alterations": [
+                { "kind": "RemoveSelf" }
+              ]
+            }
+          ],
           "velocity_magnitude": 10.0
         }
       ]

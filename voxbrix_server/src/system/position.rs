@@ -7,7 +7,10 @@ use crate::component::{
     block::class::ClassBlockComponent,
 };
 use rayon::prelude::*;
-use std::time::Duration;
+use std::{
+    mem,
+    time::Duration,
+};
 use voxbrix_common::{
     component::{
         actor::{
@@ -93,7 +96,7 @@ impl PositionSystem {
         self.position_changes.par_extend(par_iter);
     }
 
-    pub fn changes(&self) -> impl ExactSizeIterator<Item = &Change> {
-        self.position_changes.iter()
+    pub fn take_changes(&mut self) -> Vec<Change> {
+        mem::take(&mut self.position_changes)
     }
 }

@@ -190,11 +190,15 @@ impl Process<'_> {
             &sd.player_ac,
         );
 
-        for change in sd.position_system.changes() {
+        for change in sd.position_system.take_changes() {
             sd.position_ac
                 .insert(change.actor, change.next_position, sd.snapshot);
             sd.velocity_ac
                 .insert(change.actor, change.next_velocity, sd.snapshot);
+
+            if change.collides_with_block {
+                sd.handle_block_collision(change.actor);
+            }
         }
 
         for (player, player_actor, client) in sd

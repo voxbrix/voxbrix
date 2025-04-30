@@ -204,6 +204,41 @@ where
             }
         }
     }
+
+    /// Special version of the "unpack_state" to sync state for interpolatable actor components,
+    /// like orientation or position.
+    /// Should be used together with the "target" version of the component - "target" uses
+    /// [`unpack_state`] and the component itself uses [`unpack_state_target`].
+    /// Internally does not directly set the component unless the change is a full update or
+    /// a removal.
+    pub fn unpack_state_target(&mut self, state: &StateUnpacked<'a>) {
+        if let Some((changes, _)) = state
+            .get_component(&self.state_component)
+            .and_then(|buffer| pack::decode_from_slice::<ActorStateUnpack<T>>(buffer))
+        {
+            match changes {
+                ActorStateUnpack::Change(changes) => {
+                    for (actor, change) in changes {
+                        if change.is_none() {
+                            self.storage.remove(&actor);
+                        }
+                    }
+                },
+                ActorStateUnpack::Full(full) => {
+                    let player_value = self.storage.remove(&self.player_actor);
+
+                    self.storage.clear();
+                    self.storage.extend(full.into_iter());
+
+                    if let Some(player_value) = player_value {
+                        if self.is_client_controlled {
+                            self.storage.insert(self.player_actor, player_value);
+                        }
+                    }
+                },
+            }
+        }
+    }
 }
 
 /// Internal component that is received from the server.

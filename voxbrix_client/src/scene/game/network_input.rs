@@ -64,6 +64,7 @@ impl NetworkInput<'_> {
                 sd.class_ac.unpack_state(&state);
                 sd.model_acc.unpack_state(&state);
                 sd.velocity_ac.unpack_state(&state);
+                sd.orientation_ac.unpack_state_target(&state);
                 sd.target_orientation_ac.unpack_state_convert(
                     &state,
                     |actor, previous, orientation: Orientation| {
@@ -83,6 +84,7 @@ impl NetworkInput<'_> {
                         )
                     },
                 );
+                sd.position_ac.unpack_state_target(&state);
                 sd.target_position_ac.unpack_state_convert(
                     &state,
                     |actor, previous, position: Position| {

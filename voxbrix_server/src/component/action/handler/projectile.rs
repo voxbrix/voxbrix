@@ -40,9 +40,7 @@ pub enum Alteration {
     RemoveSourceActorEffect {
         effect: Effect,
     },
-    Scripted {
-        script: Script,
-    },
+    RemoveSelf,
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -152,9 +150,7 @@ pub enum AlterationDescriptor {
     RemoveSourceActorEffect {
         effect: String,
     },
-    Scripted {
-        script: String,
-    },
+    RemoveSelf,
 }
 
 impl AlterationDescriptor {
@@ -180,13 +176,7 @@ impl AlterationDescriptor {
                         .ok_or_else(|| anyhow::anyhow!("effect \"{}\" is undefined", effect))?,
                 }
             },
-            Self::Scripted { script } => {
-                Alteration::Scripted {
-                    script: label_lib
-                        .get(&script)
-                        .ok_or_else(|| anyhow::anyhow!("script \"{}\" is undefined", script))?,
-                }
-            },
+            Self::RemoveSelf => Alteration::RemoveSelf,
         })
     }
 }

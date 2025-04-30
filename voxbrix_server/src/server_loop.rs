@@ -116,6 +116,7 @@ use voxbrix_protocol::{
     Channel,
 };
 
+mod actor_collision;
 mod data;
 mod player_event;
 mod process;
