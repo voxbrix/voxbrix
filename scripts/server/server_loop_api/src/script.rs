@@ -6,12 +6,15 @@ use serde::{
     Serialize,
 };
 use std::{
+    cell::RefCell,
     io::Write,
     panic,
     ptr,
 };
 
-static mut SHARED_BUFFER: Vec<u8> = Vec::new();
+thread_local! {
+    static SHARED_BUFFER: RefCell<Vec<u8>> = RefCell::new(Vec::new());
+}
 
 mod import {
     extern "C" {
@@ -28,15 +31,15 @@ mod import {
 
 pub fn handle_panic(script_name: &'static str) {
     panic::set_hook(Box::new(move |panic_info| {
-        unsafe {
-            let shared_buffer = &mut *ptr::addr_of_mut!(SHARED_BUFFER);
-
+        SHARED_BUFFER.with_borrow_mut(|shared_buffer| {
             shared_buffer.clear();
 
             let _ = write!(shared_buffer, "script \"{}\": {}", script_name, panic_info);
 
-            import::handle_panic(shared_buffer.as_ptr(), shared_buffer.len() as u32);
-        }
+            unsafe {
+                import::handle_panic(shared_buffer.as_ptr(), shared_buffer.len() as u32);
+            }
+        });
     }));
 }
 
@@ -60,21 +63,23 @@ macro_rules! wrap_func {
 }
 
 /// Get pointer to the shared buffer of given length. Will reallocate the buffer if required.
+/// Only use this for writing into the buffer. Existing data inside will be garbage.
 // TODO: must not accept 0 length
 #[no_mangle]
 pub extern "C" fn get_buffer(len: u32) -> *mut u8 {
     let len = len as usize;
 
-    unsafe {
-        let shared_buffer = &mut *ptr::addr_of_mut!(SHARED_BUFFER);
-
+    SHARED_BUFFER.with_borrow_mut(|shared_buffer| {
         if shared_buffer.capacity() < len {
             shared_buffer.reserve(len - shared_buffer.capacity());
         }
 
-        shared_buffer.set_len(len);
+        // SAFETY: we set capacity on the previous step.
+        unsafe {
+            shared_buffer.set_len(len);
+        }
         shared_buffer.as_mut_ptr()
-    }
+    })
 }
 
 /// Deserialize value from the shared buffer.
@@ -82,12 +87,7 @@ pub fn read_buffer<T>() -> Option<T>
 where
     T: DeserializeOwned,
 {
-    // Safety: no reference must escape the block
-    unsafe {
-        let shared_buffer = &mut *ptr::addr_of_mut!(SHARED_BUFFER);
-
-        postcard::from_bytes(shared_buffer.as_slice()).ok()
-    }
+    SHARED_BUFFER.with_borrow(|shared_buffer| postcard::from_bytes(shared_buffer.as_slice()).ok())
 }
 
 pub struct ActionInputParsed<T> {
@@ -101,10 +101,7 @@ pub fn read_action_input<T>() -> Option<ActionInputParsed<T>>
 where
     T: DeserializeOwned,
 {
-    // Safety: no reference must escape the block
-    unsafe {
-        let shared_buffer = &mut *ptr::addr_of_mut!(SHARED_BUFFER);
-
+    SHARED_BUFFER.with_borrow(|shared_buffer| {
         let input = postcard::from_bytes::<ActionInput>(shared_buffer.as_slice()).ok()?;
 
         let data = postcard::from_bytes::<T>(input.data).ok()?;
@@ -114,7 +111,7 @@ where
             actor: input.actor,
             data,
         })
-    }
+    })
 }
 
 // TODO instead of None optionally have a possibility to pass a position.
@@ -190,10 +187,7 @@ pub fn write_buffer<T>(value: T) -> (*const u8, usize)
 where
     T: Serialize,
 {
-    // Safety: no reference must escape the block
-    unsafe {
-        let shared_buffer = &mut *ptr::addr_of_mut!(SHARED_BUFFER);
-
+    SHARED_BUFFER.with_borrow_mut(|shared_buffer| {
         shared_buffer.clear();
 
         postcard::serialize_with_flavor(
@@ -208,7 +202,7 @@ where
         let slice = shared_buffer.as_slice();
 
         (slice.as_ptr(), slice.len())
-    }
+    })
 }
 
 static mut BLOCKS_IN_CHUNK_EDGE: usize = 0;
