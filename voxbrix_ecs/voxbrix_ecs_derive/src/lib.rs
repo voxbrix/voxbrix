@@ -19,7 +19,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
     assert_eq!(
         input.generics.lifetimes().count(),
         1,
-        "only system arguments with single lifetime parameter are supported"
+        "only system arguments with exactly single lifetime parameter are supported"
     );
 
     let mut field_list = vec![];
@@ -66,7 +66,11 @@ pub fn derive(input: TokenStream) -> TokenStream {
                     panic!("only reference fields of the struct are supported");
                 }
             }
+        } else {
+            panic!("only structs with named fields are supported");
         }
+    } else {
+        panic!("only structs are supported");
     }
 
     let expanded = quote! {
