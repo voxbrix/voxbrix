@@ -32,7 +32,7 @@ impl World {
         }
     }
 
-    pub fn insert<T>(&mut self, resource: T)
+    pub fn add<T>(&mut self, resource: T)
     where
         T: Send + Sync + 'static,
     {
@@ -108,7 +108,7 @@ impl World {
             None => {
                 let compiled = self.compile::<S>();
 
-                self.insert(compiled);
+                self.add(compiled);
 
                 *self.type_map.get(&type_id).unwrap()
             },
