@@ -10,7 +10,7 @@ use syn::{
     parse_macro_input,
 };
 
-#[proc_macro_derive(SystemArgs, attributes(my_trait))]
+#[proc_macro_derive(SystemData, attributes(my_trait))]
 pub fn derive(input: TokenStream) -> TokenStream {
     let input: DeriveInput = parse_macro_input!(input);
 
@@ -19,7 +19,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
     assert_eq!(
         input.generics.lifetimes().count(),
         1,
-        "only system arguments with exactly single lifetime parameter are supported"
+        "only system data with exactly single lifetime parameter are supported"
     );
 
     let mut field_list = vec![];
@@ -74,7 +74,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
     }
 
     let expanded = quote! {
-        impl<'a> ::voxbrix_world::SystemArgs<'a> for #type_name<'a> {
+        impl<'a> ::voxbrix_world::SystemData<'a> for #type_name<'a> {
             fn required_resources() -> impl Iterator<Item = ::voxbrix_world::Request<::core::any::TypeId>> {
                 [
                     #(#field_list)*

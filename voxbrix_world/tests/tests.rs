@@ -6,7 +6,7 @@ use voxbrix_world::{
     Access,
     Request,
     System,
-    SystemArgs,
+    SystemData,
     World,
 };
 
@@ -18,15 +18,15 @@ fn test_positive() {
     struct Sys;
 
     impl System for Sys {
-        type Args<'a> = Args<'a>;
+        type Data<'a> = Data<'a>;
     }
 
-    struct Args<'a> {
+    struct Data<'a> {
         res_1: &'a Res1,
         res_2: &'a mut Res2,
     }
 
-    impl<'a> SystemArgs<'a> for Args<'a> {
+    impl<'a> SystemData<'a> for Data<'a> {
         fn required_resources() -> impl Iterator<Item = Request<TypeId>> {
             [
                 Request::Read(TypeId::of::<Res1>()),
@@ -56,7 +56,7 @@ fn test_positive() {
     world.add(Res1);
     world.add(Res2);
 
-    let Args { res_1, res_2 } = world.get_args::<Sys>();
+    let Data { res_1, res_2 } = world.get_data::<Sys>();
 
     let _ = res_1;
     let _ = res_2;
@@ -69,15 +69,15 @@ fn test_negative_conflict() {
     struct Sys;
 
     impl System for Sys {
-        type Args<'a> = Args<'a>;
+        type Data<'a> = Data<'a>;
     }
 
-    struct Args<'a> {
+    struct Data<'a> {
         res_1: &'a Res1,
         res_2: &'a mut Res1,
     }
 
-    impl<'a> SystemArgs<'a> for Args<'a> {
+    impl<'a> SystemData<'a> for Data<'a> {
         fn required_resources() -> impl Iterator<Item = Request<TypeId>> {
             [
                 Request::Read(TypeId::of::<Res1>()),
@@ -107,7 +107,7 @@ fn test_negative_conflict() {
 
         world.add(Res1);
 
-        let Args { res_1, res_2 } = world.get_args::<Sys>();
+        let Data { res_1, res_2 } = world.get_data::<Sys>();
 
         let (_, _) = (res_1, res_2);
     });
@@ -123,11 +123,11 @@ fn test_negative_missing_resource() {
     struct Sys;
 
     impl System for Sys {
-        type Args<'a> = Args<'a>;
+        type Data<'a> = Data<'a>;
     }
 
-    #[derive(SystemArgs)]
-    struct Args<'a> {
+    #[derive(SystemData)]
+    struct Data<'a> {
         res_1: &'a Res1,
         res_2: &'a mut Res2,
     }
@@ -142,7 +142,7 @@ fn test_negative_missing_resource() {
 
         world.add(Res1);
 
-        let Args { res_1, res_2 } = world.get_args::<Sys>();
+        let Data { res_1, res_2 } = world.get_data::<Sys>();
 
         let (_, _) = (res_1, res_2);
     });
@@ -163,34 +163,34 @@ fn test_system_tuples() {
     struct Sys2;
     struct Sys3;
 
-    #[derive(SystemArgs)]
-    struct Args1<'a> {
+    #[derive(SystemData)]
+    struct Data1<'a> {
         res_1: &'a Res1,
         res_2: &'a mut Res2,
     }
 
-    #[derive(SystemArgs)]
-    struct Args2<'a> {
+    #[derive(SystemData)]
+    struct Data2<'a> {
         res_1: &'a Res3,
         res_2: &'a mut Res4,
     }
 
-    #[derive(SystemArgs)]
-    struct Args3<'a> {
+    #[derive(SystemData)]
+    struct Data3<'a> {
         res_1: &'a Res5,
         res_2: &'a mut Res6,
     }
 
     impl System for Sys1 {
-        type Args<'a> = Args1<'a>;
+        type Data<'a> = Data1<'a>;
     }
 
     impl System for Sys2 {
-        type Args<'a> = Args2<'a>;
+        type Data<'a> = Data2<'a>;
     }
 
     impl System for Sys3 {
-        type Args<'a> = Args3<'a>;
+        type Data<'a> = Data3<'a>;
     }
 
     let mut world = World::new();
@@ -202,32 +202,32 @@ fn test_system_tuples() {
     world.add(Res5);
     world.add(Res6);
 
-    let (args1, args2, args3) = world.get_args::<(Sys1, Sys2, Sys3)>();
+    let (data1, data2, data3) = world.get_data::<(Sys1, Sys2, Sys3)>();
 
-    let Args1 { res_1, res_2 } = args1;
+    let Data1 { res_1, res_2 } = data1;
     let _: &Res1 = res_1;
     let _: &mut Res2 = res_2;
-    let Args2 { res_1, res_2 } = args2;
+    let Data2 { res_1, res_2 } = data2;
     let _: &Res3 = res_1;
     let _: &mut Res4 = res_2;
-    let Args3 { res_1, res_2 } = args3;
+    let Data3 { res_1, res_2 } = data3;
     let _: &Res5 = res_1;
     let _: &mut Res6 = res_2;
 }
 
 #[test]
-fn test_system_as_arg() {
+fn test_system_as_data() {
     struct Res1;
     struct Res2;
 
     struct Sys;
 
     impl System for Sys {
-        type Args<'a> = Args<'a>;
+        type Data<'a> = Data<'a>;
     }
 
-    #[derive(SystemArgs)]
-    struct Args<'a> {
+    #[derive(SystemData)]
+    struct Data<'a> {
         sys: &'a mut Sys,
         res_1: &'a Res1,
         res_2: &'a mut Res2,
@@ -239,7 +239,7 @@ fn test_system_as_arg() {
     world.add(Res2);
     world.add(Sys);
 
-    let Args { sys, res_1, res_2 } = world.get_args::<Sys>();
+    let Data { sys, res_1, res_2 } = world.get_data::<Sys>();
 
     let (_, _, _) = (sys, res_1, res_2);
 }

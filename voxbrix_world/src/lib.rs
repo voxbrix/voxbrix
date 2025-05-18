@@ -10,11 +10,11 @@ use std::{
     marker::PhantomData,
 };
 #[cfg(feature = "derive")]
-pub use voxbrix_world_derive::SystemArgs;
+pub use voxbrix_world_derive::SystemData;
 
 struct Compiled<T> {
-    args: Vec<Request<usize>>,
-    args_type: PhantomData<T>,
+    data: Vec<Request<usize>>,
+    data_type: PhantomData<T>,
 }
 
 /// Main storage for all resources.
@@ -62,7 +62,7 @@ impl World {
         self.borrowed.clear();
         self.borrowed_mut.clear();
 
-        let args = S::Args::required_resources()
+        let data = S::Data::required_resources()
             .map(|req| {
                 match req {
                     Request::Read(type_id) => {
@@ -100,22 +100,22 @@ impl World {
             .collect();
 
         Compiled {
-            args,
-            args_type: Default::default(),
+            data,
+            data_type: Default::default(),
         }
     }
 
-    /// Get arguments for a [`System`].
+    /// Get data for a [`System`].
     ///
     /// To get access to the system struct itself:
     ///   1. Add the system into the [`World`].
-    ///   2. Add system itself as an argument into the [`System::Args`].
+    ///   2. Add system itself as an data into the [`System::Data`].
     ///
     /// To use multiple systems in parallel [`System`] is also implemented
     /// for tuples of systems.
     ///
     /// Panic: will panic if resource borrowing rules are violated.
-    pub fn get_args<'a, S>(&'a mut self) -> S::Args<'a>
+    pub fn get_data<'a, S>(&'a mut self) -> S::Data<'a>
     where
         S: System + Send + Sync + 'static,
     {
@@ -140,7 +140,7 @@ impl World {
 
         let cmpd = bx.downcast_ref::<Compiled<S>>().unwrap();
 
-        let access_iter = cmpd.args.iter().map(|req| {
+        let access_iter = cmpd.data.iter().map(|req| {
             match req {
                 Request::Read(idx) => {
                     let ptr = self.storage.get(*idx).unwrap().get();
@@ -169,7 +169,7 @@ impl World {
             }
         });
 
-        S::Args::from_resources(access_iter)
+        S::Data::from_resources(access_iter)
     }
 }
 
@@ -214,17 +214,17 @@ impl<'a> Access<'a, dyn Any + Send + Sync> {
 }
 
 /// Only [`System`] can extract data from the world.
-/// Data access is done through [`System::Args`]
-/// that must implement [`SystemArgs`].
+/// Data access is done through [`System::Data`]
+/// that must implement [`SystemData`].
 pub trait System {
-    type Args<'a>: SystemArgs<'a>;
+    type Data<'a>: SystemData<'a>;
 }
 
-/// Describes arguments required for a [`System`].
+/// Describes data required for a [`System`].
 ///
 /// If `derive` feature is enabled this trait can be derived for a simple,
 /// non-generic struct with only references or mutable references for fields.
-pub trait SystemArgs<'a> {
+pub trait SystemData<'a> {
     fn required_resources() -> impl Iterator<Item = Request<TypeId>>;
 
     /// Order of resources is the same as requested by [`required_resources()'].
@@ -233,9 +233,9 @@ pub trait SystemArgs<'a> {
 
 macro_rules! impl_system {
     ($($name:ident),+) => {
-        impl<'a, $($name),+> SystemArgs<'a> for ($($name),+)
+        impl<'a, $($name),+> SystemData<'a> for ($($name),+)
         where
-            $($name: SystemArgs<'a>),+
+            $($name: SystemData<'a>),+
         {
             fn required_resources() -> impl Iterator<Item = Request<TypeId>> {
                 std::iter::empty()
@@ -255,7 +255,7 @@ macro_rules! impl_system {
         where
             $($name: System),+
         {
-            type Args<'a> = ($($name::Args<'a>),+);
+            type Data<'a> = ($($name::Data<'a>),+);
         }
     };
 }

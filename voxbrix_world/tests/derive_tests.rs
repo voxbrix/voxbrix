@@ -8,11 +8,11 @@ fn test_derive_positive() {
     struct Sys;
 
     impl voxbrix_world::System for Sys {
-        type Args<'a> = Args<'a>;
+        type Data<'a> = Data<'a>;
     }
 
-    #[derive(voxbrix_world::SystemArgs)]
-    struct Args<'a> {
+    #[derive(voxbrix_world::SystemData)]
+    struct Data<'a> {
         res_1: &'a Res1,
         res_2: &'a mut Res2,
     }
@@ -22,7 +22,7 @@ fn test_derive_positive() {
     world.add(Res1);
     world.add(Res2);
 
-    let Args { res_1, res_2 } = world.get_args::<Sys>();
+    let Data { res_1, res_2 } = world.get_data::<Sys>();
 
     let _ = res_1;
     let _ = res_2;
