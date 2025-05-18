@@ -33,11 +33,11 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
                     if reference.mutability.is_some() {
                         field_list.push(quote! {
-                            ::voxbrix_ecs::Request::Write(::core::any::TypeId::of::<#ref_type>()),
+                            ::voxbrix_world::Request::Write(::core::any::TypeId::of::<#ref_type>()),
                         });
                     } else {
                         field_list.push(quote! {
-                            ::voxbrix_ecs::Request::Read(::core::any::TypeId::of::<#ref_type>()),
+                            ::voxbrix_world::Request::Read(::core::any::TypeId::of::<#ref_type>()),
                         });
                     }
                 } else {
@@ -74,15 +74,15 @@ pub fn derive(input: TokenStream) -> TokenStream {
     }
 
     let expanded = quote! {
-        impl<'a> ::voxbrix_ecs::SystemArgs<'a> for #type_name<'a> {
-            fn required_resources() -> impl Iterator<Item = ::voxbrix_ecs::Request<::core::any::TypeId>> {
+        impl<'a> ::voxbrix_world::SystemArgs<'a> for #type_name<'a> {
+            fn required_resources() -> impl Iterator<Item = ::voxbrix_world::Request<::core::any::TypeId>> {
                 [
                     #(#field_list)*
                 ].into_iter()
             }
 
             fn from_resources(
-                mut resources: impl Iterator<Item = ::voxbrix_ecs::Access<'a, dyn ::core::any::Any + Send + Sync>>,
+                mut resources: impl Iterator<Item = ::voxbrix_world::Access<'a, dyn ::core::any::Any + Send + Sync>>,
             ) -> Self {
                 Self {
                     #(#field_assigns)*

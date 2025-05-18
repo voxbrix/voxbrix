@@ -7,17 +7,17 @@ fn test_derive_positive() {
 
     struct Sys;
 
-    impl voxbrix_ecs::System for Sys {
+    impl voxbrix_world::System for Sys {
         type Args<'a> = Args<'a>;
     }
 
-    #[derive(voxbrix_ecs::SystemArgs)]
+    #[derive(voxbrix_world::SystemArgs)]
     struct Args<'a> {
         res_1: &'a Res1,
         res_2: &'a mut Res2,
     }
 
-    let mut world = voxbrix_ecs::World::new();
+    let mut world = voxbrix_world::World::new();
 
     world.add(Res1);
     world.add(Res2);

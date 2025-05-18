@@ -2872,22 +2872,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "voxbrix_ecs"
-version = "0.1.0"
-dependencies = [
- "voxbrix_ecs_derive",
-]
-
-[[package]]
-name = "voxbrix_ecs_derive"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "voxbrix_protocol"
 version = "0.1.0"
 dependencies = [
@@ -2928,6 +2912,22 @@ dependencies = [
  "voxbrix_common",
  "voxbrix_protocol",
  "wasmtime",
+]
+
+[[package]]
+name = "voxbrix_world"
+version = "0.1.0"
+dependencies = [
+ "voxbrix_world_derive",
+]
+
+[[package]]
+name = "voxbrix_world_derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

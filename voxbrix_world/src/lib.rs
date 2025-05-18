@@ -8,7 +8,7 @@ use std::{
     marker::PhantomData,
 };
 #[cfg(feature = "derive")]
-pub use voxbrix_ecs_derive::SystemArgs;
+pub use voxbrix_world_derive::SystemArgs;
 
 struct Compiled<T> {
     args: Vec<Request<usize>>,

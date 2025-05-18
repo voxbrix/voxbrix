@@ -9,7 +9,7 @@ edition = "2021"
 members = [
     "voxbrix_client",
     "voxbrix_common",
-    "voxbrix_ecs",
+    "voxbrix_world",
     "voxbrix_protocol",
     "voxbrix_server",
     "local_channel"

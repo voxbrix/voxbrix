@@ -1,0 +1,11 @@
+[package]
+name = "voxbrix_world"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+voxbrix_world_derive = { version = "0.1.0", path = "voxbrix_world_derive", optional = true }
+
+[features]
+default = [ "derive" ]
+derive = [ "voxbrix_world_derive" ]

@@ -2,7 +2,7 @@ use std::any::{
     Any,
     TypeId,
 };
-use voxbrix_ecs::{
+use voxbrix_world::{
     Access,
     Request,
     System,
