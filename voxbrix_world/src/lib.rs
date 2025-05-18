@@ -1,3 +1,5 @@
+//! A very simple resource storage and sharing library.
+
 use std::{
     any::{
         Any,
@@ -15,6 +17,7 @@ struct Compiled<T> {
     args_type: PhantomData<T>,
 }
 
+/// Main storage for all resources.
 pub struct World {
     storage: Vec<UnsafeCell<Option<Box<dyn Any + Send + Sync>>>>,
     borrowed: Vec<TypeId>,
@@ -23,6 +26,7 @@ pub struct World {
 }
 
 impl World {
+    /// Create new, empty world.
     pub fn new() -> Self {
         Self {
             storage: Vec::new(),
@@ -32,6 +36,9 @@ impl World {
         }
     }
 
+    /// Add a resource to the world.
+    /// Resources are discriminated by type.
+    /// Only one resource for each type is allowed.
     pub fn add<T>(&mut self, resource: T)
     where
         T: Send + Sync + 'static,
@@ -47,6 +54,7 @@ impl World {
         self.storage.push(UnsafeCell::new(Some(Box::new(resource))));
     }
 
+    // Access to the resources is checked and then compiled for reuse.
     fn compile<'a, S>(&mut self) -> Compiled<S>
     where
         S: System + Send + Sync,
@@ -97,6 +105,16 @@ impl World {
         }
     }
 
+    /// Get arguments for a [`System`].
+    ///
+    /// To get access to the system struct itself:
+    ///   1. Add the system into the [`World`].
+    ///   2. Add system itself as an argument into the [`System::Args`].
+    ///
+    /// To use multiple systems in parallel [`System`] is also implemented
+    /// for tuples of systems.
+    ///
+    /// Panic: will panic if resource borrowing rules are violated.
     pub fn get_args<'a, S>(&'a mut self) -> S::Args<'a>
     where
         S: System + Send + Sync + 'static,
@@ -166,6 +184,9 @@ pub enum Access<'a, T: ?Sized> {
 }
 
 impl<'a> Access<'a, dyn Any + Send + Sync> {
+    /// Shortcut to cast into a reference of a concrete type.
+    ///
+    /// Panic: will panic if casting fails or if used on a `Write` access.
     pub fn downcast_ref<T>(self) -> &'a T
     where
         T: 'static,
@@ -177,6 +198,9 @@ impl<'a> Access<'a, dyn Any + Send + Sync> {
         r.downcast_ref::<T>().expect("incorrect type in access")
     }
 
+    /// Shortcut to cast into a mutable reference of a concrete type.
+    ///
+    /// Panic: will panic if casting fails or if used on a `Read` access.
     pub fn downcast_mut<T>(self) -> &'a mut T
     where
         T: 'static,
@@ -189,13 +213,21 @@ impl<'a> Access<'a, dyn Any + Send + Sync> {
     }
 }
 
+/// Only [`System`] can extract data from the world.
+/// Data access is done through [`System::Args`]
+/// that must implement [`SystemArgs`].
 pub trait System {
     type Args<'a>: SystemArgs<'a>;
 }
 
+/// Describes arguments required for a [`System`].
+///
+/// If `derive` feature is enabled this trait can be derived for a simple,
+/// non-generic struct with only references or mutable references for fields.
 pub trait SystemArgs<'a> {
     fn required_resources() -> impl Iterator<Item = Request<TypeId>>;
 
+    /// Order of resources is the same as requested by [`required_resources()'].
     fn from_resources(resources: impl Iterator<Item = Access<'a, dyn Any + Send + Sync>>) -> Self;
 }
 
