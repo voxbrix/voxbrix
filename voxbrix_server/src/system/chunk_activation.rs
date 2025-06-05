@@ -19,7 +19,6 @@ use crate::{
     },
     resource::{
         chunk_generation_request::ChunkGenerationRequest,
-        removal_queue::RemovalQueue,
         shared_event::SharedEvent,
     },
     storage::IntoDataSized,
@@ -37,6 +36,7 @@ use voxbrix_common::{
     },
     messages::client::ClientAccept,
     pack::Packer,
+    resource::removal_queue::RemovalQueue,
     ChunkData,
 };
 use voxbrix_world::{

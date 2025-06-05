@@ -15,16 +15,19 @@ use crate::{
         actor_model::builder::BuilderActorModelComponent,
     },
     entity::actor_model::ActorBone,
-    system::render::{
-        gpu_vec::GpuVec,
-        new_quad_index_buffer,
-        primitives::Vertex,
-        IndexType,
-        RenderParameters,
-        Renderer,
-        INDEX_FORMAT,
-        INDEX_FORMAT_BYTE_SIZE,
-        INITIAL_INDEX_BUFFER_LENGTH,
+    resource::{
+        player_actor::PlayerActor,
+        render_pool::{
+            gpu_vec::GpuVec,
+            new_quad_index_buffer,
+            primitives::Vertex,
+            IndexType,
+            RenderParameters,
+            Renderer,
+            INDEX_FORMAT,
+            INDEX_FORMAT_BYTE_SIZE,
+            INITIAL_INDEX_BUFFER_LENGTH,
+        },
     },
     window::Window,
 };
@@ -35,10 +38,7 @@ use voxbrix_common::{
         SkyLight,
         SkyLightBlockComponent,
     },
-    entity::{
-        actor::Actor,
-        block::Block,
-    },
+    entity::block::Block,
     math::{
         Directions,
         Mat4F32,
@@ -46,6 +46,10 @@ use voxbrix_common::{
         Round,
         Vec3F32,
     },
+};
+use voxbrix_world::{
+    System,
+    SystemData,
 };
 
 pub struct ActorRenderSystemDescriptor<'a> {
@@ -163,33 +167,41 @@ pub struct ActorRenderSystem {
     index_buffer: wgpu::Buffer,
 }
 
-impl ActorRenderSystem {
-    pub fn update(
-        &mut self,
-        player_actor: Actor,
-        class_ac: &ClassActorComponent,
-        position_ac: &PositionActorComponent,
-        velocity_ac: &VelocityActorComponent,
-        orientation_ac: &OrientationActorComponent,
-        model_acc: &ModelActorClassComponent,
-        builder_amc: &BuilderActorModelComponent,
-        sky_light_bc: &SkyLightBlockComponent,
-        animation_state_ac: &mut AnimationStateActorComponent,
-    ) {
-        self.vertices.clear();
+impl System for ActorRenderSystem {
+    type Data<'a> = ActorRenderSystemData<'a>;
+}
 
-        for (actor, position, model) in position_ac
+#[derive(SystemData)]
+pub struct ActorRenderSystemData<'a> {
+    system: &'a mut ActorRenderSystem,
+    player_actor: &'a PlayerActor,
+    class_ac: &'a ClassActorComponent,
+    position_ac: &'a PositionActorComponent,
+    velocity_ac: &'a VelocityActorComponent,
+    orientation_ac: &'a OrientationActorComponent,
+    model_acc: &'a ModelActorClassComponent,
+    builder_amc: &'a BuilderActorModelComponent,
+    sky_light_bc: &'a SkyLightBlockComponent,
+    animation_state_ac: &'a mut AnimationStateActorComponent,
+}
+
+impl ActorRenderSystemData<'_> {
+    pub fn run(&mut self, renderer: Renderer) {
+        self.system.vertices.clear();
+
+        for (actor, position, model) in self
+            .position_ac
             .iter()
-            .filter(|(actor, _)| *actor != player_actor)
+            .filter(|(actor, _)| *actor != self.player_actor.0)
             .filter_map(|(actor, position)| {
-                let class = class_ac.get(&actor)?;
-                let model = model_acc.get(&actor, class)?;
+                let class = self.class_ac.get(&actor)?;
+                let model = self.model_acc.get(&actor, class)?;
                 Some((actor, position, model))
             })
         {
-            self.bone_transformations.clear();
+            self.system.bone_transformations.clear();
 
-            let model_builder = match builder_amc.get(model) {
+            let model_builder = match self.builder_amc.get(model) {
                 Some(s) => s,
                 None => continue,
             };
@@ -197,7 +209,7 @@ impl ActorRenderSystem {
             // Orientation
             // TODO swimming / wallclimbing / etc.
             let base_transform = if let Some(body_orient) =
-                orientation_ac.get(&actor).and_then(|ori| {
+                self.orientation_ac.get(&actor).and_then(|ori| {
                     let mut direction = ori.forward();
                     direction.z = 0.0;
                     let direction = direction.normalize();
@@ -216,24 +228,27 @@ impl ActorRenderSystem {
             // TODO better walking detection
             let walking_animation = crate::entity::actor_model::ActorAnimation(0);
             let walking_animation_duration_ms = 500;
-            if velocity_ac
+            if self
+                .velocity_ac
                 .get(&actor)
                 .filter(|vel| vel.vector.length() > f32::EPSILON)
                 .is_some()
             {
                 if model_builder.has_animation(&walking_animation) {
-                    let state = match animation_state_ac.get(&actor, &walking_animation) {
+                    let state = match self.animation_state_ac.get(&actor, &walking_animation) {
                         Some(s) => s,
                         None => {
                             // TODO have common Instant::now()
-                            animation_state_ac.insert(
+                            self.animation_state_ac.insert(
                                 actor,
                                 walking_animation,
                                 AnimationState {
                                     start: Instant::now(),
                                 },
                             );
-                            animation_state_ac.get(&actor, &walking_animation).unwrap()
+                            self.animation_state_ac
+                                .get(&actor, &walking_animation)
+                                .unwrap()
                         },
                     };
 
@@ -247,26 +262,27 @@ impl ActorRenderSystem {
 
                         Some((bp, transform))
                     }) {
-                        if let Some(prev_state) = self.bone_transformations.get_mut(&bone) {
+                        if let Some(prev_state) = self.system.bone_transformations.get_mut(&bone) {
                             *prev_state = new_transform.to_matrix() * *prev_state;
                         } else {
-                            self.bone_transformations
+                            self.system
+                                .bone_transformations
                                 .insert(*bone, new_transform.to_matrix());
                         }
                     }
                 }
             } else {
-                animation_state_ac.remove(&actor, &walking_animation);
+                self.animation_state_ac.remove(&actor, &walking_animation);
             }
 
             let sky_light = Block::from_chunk_offset(
                 position.chunk,
                 position.offset.to_array().map(|f| f.round_down()),
             )
-            .and_then(|(chunk, block)| sky_light_bc.get_chunk(&chunk).map(|c| *c.get(block)))
+            .and_then(|(chunk, block)| self.sky_light_bc.get_chunk(&chunk).map(|c| *c.get(block)))
             .unwrap_or(SkyLight::MAX);
 
-            let vertices_start = self.vertices.len();
+            let vertices_start = self.system.vertices.len();
 
             for bone in model_builder.list_bones() {
                 let mut transform = Mat4F32::IDENTITY;
@@ -274,7 +290,9 @@ impl ActorRenderSystem {
 
                 // Walt up through all parents and apply their transformations
                 while let Some(param) = model_builder.get_bone_parameters(&curr_bone) {
-                    if let Some(animation_transform) = self.bone_transformations.get(&curr_bone) {
+                    if let Some(animation_transform) =
+                        self.system.bone_transformations.get(&curr_bone)
+                    {
                         transform = *animation_transform * transform;
                     }
 
@@ -285,20 +303,24 @@ impl ActorRenderSystem {
 
                 transform = base_transform * transform;
 
-                model_builder.build_bone(bone, &position, &transform, &mut self.vertices);
+                model_builder.build_bone(bone, &position, &transform, &mut self.system.vertices);
             }
 
-            self.vertices[vertices_start ..]
+            self.system.vertices[vertices_start ..]
                 .iter_mut()
                 .for_each(|vertex| {
                     vertex.light_parameters =
                         (vertex.light_parameters & !0xFF) | (sky_light.value() as u32);
                 });
         }
-    }
 
-    pub fn render(&mut self, renderer: Renderer) {
-        let vertices_len: IndexType = self.vertices.len().try_into().expect("too many vertices");
+        // Actual rendering starts here
+        let vertices_len: IndexType = self
+            .system
+            .vertices
+            .len()
+            .try_into()
+            .expect("too many vertices");
 
         if vertices_len == 0 {
             return;
@@ -306,13 +328,15 @@ impl ActorRenderSystem {
 
         let vertex_buffer_byte_size = vertices_len as u64 * Vertex::size();
 
-        let mut writer =
-            self.vertex_buffer
-                .get_writer(renderer.device, renderer.queue, vertex_buffer_byte_size);
+        let mut writer = self.system.vertex_buffer.get_writer(
+            renderer.device,
+            renderer.queue,
+            vertex_buffer_byte_size,
+        );
 
         writer
             .as_mut()
-            .copy_from_slice(bytemuck::cast_slice(self.vertices.as_slice()));
+            .copy_from_slice(bytemuck::cast_slice(self.system.vertices.as_slice()));
 
         drop(writer);
 
@@ -320,19 +344,20 @@ impl ActorRenderSystem {
 
         let required_index_len = const { INDEX_FORMAT_BYTE_SIZE as u64 * 6 } * quad_num as u64;
 
-        if self.index_buffer.size() < required_index_len {
-            let size = required_index_len.max(self.index_buffer.size() * 2);
+        if self.system.index_buffer.size() < required_index_len {
+            let size = required_index_len.max(self.system.index_buffer.size() * 2);
 
-            self.index_buffer = new_quad_index_buffer(renderer.device, renderer.queue, size);
+            self.system.index_buffer = new_quad_index_buffer(renderer.device, renderer.queue, size);
         }
 
-        let mut render_pass = renderer.with_pipeline(&self.render_pipeline);
+        let mut render_pass = renderer.with_pipeline(&self.system.render_pipeline);
 
-        render_pass.set_bind_group(1, &self.actor_texture_bind_group, &[]);
-        render_pass.set_vertex_buffer(0, self.vertex_buffer.get_slice());
+        render_pass.set_bind_group(1, &self.system.actor_texture_bind_group, &[]);
+        render_pass.set_vertex_buffer(0, self.system.vertex_buffer.get_slice());
         let num_indices = quad_num * 6;
         render_pass.set_index_buffer(
-            self.index_buffer
+            self.system
+                .index_buffer
                 .slice(.. num_indices as u64 * const { INDEX_FORMAT_BYTE_SIZE as u64 }),
             INDEX_FORMAT,
         );

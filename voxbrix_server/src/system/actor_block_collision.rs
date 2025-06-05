@@ -1,22 +1,20 @@
-use crate::{
-    component::{
-        action::handler::projectile::{
-            Alteration,
-            Condition,
-            Source,
-            Target,
-            Trigger,
-        },
-        actor::{
-            position::PositionChanges,
-            projectile::ProjectileActorComponent,
-        },
+use crate::component::{
+    action::handler::projectile::{
+        Alteration,
+        Condition,
+        Source,
+        Target,
+        Trigger,
     },
-    resource::removal_queue::RemovalQueue,
+    actor::{
+        position::PositionChanges,
+        projectile::ProjectileActorComponent,
+    },
 };
 use voxbrix_common::{
     component::actor::effect::EffectActorComponent,
     entity::actor::Actor,
+    resource::removal_queue::RemovalQueue,
 };
 use voxbrix_world::{
     System,

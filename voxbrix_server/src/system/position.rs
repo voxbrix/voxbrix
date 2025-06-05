@@ -1,22 +1,20 @@
-use crate::{
-    component::{
-        actor::{
-            player::PlayerActorComponent,
-            position::{
-                Change,
-                PositionActorComponent,
-                PositionChanges,
-            },
-            velocity::VelocityActorComponent,
+use crate::component::{
+    actor::{
+        player::PlayerActorComponent,
+        position::{
+            Change,
+            PositionActorComponent,
+            PositionChanges,
         },
-        block::class::ClassBlockComponent,
+        velocity::VelocityActorComponent,
     },
-    resource::process_timer::ProcessTimer,
+    block::class::ClassBlockComponent,
 };
 use rayon::prelude::*;
 use voxbrix_common::{
     component::block_class::collision::CollisionBlockClassComponent,
     entity::snapshot::Snapshot,
+    resource::process_timer::ProcessTimer,
     system::position,
 };
 use voxbrix_world::{

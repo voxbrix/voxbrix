@@ -21,6 +21,11 @@ use voxbrix_common::{
         snapshot::Snapshot,
     },
     math::Vec3F32,
+    resource::process_timer::ProcessTimer,
+};
+use voxbrix_world::{
+    System,
+    SystemData,
 };
 
 const SERVER_TICK_INTERVAL: Duration = Duration::from_millis(50);
@@ -29,29 +34,35 @@ pub const TARGET_QUEUE_LENGTH_U32: u32 = TARGET_QUEUE_LENGTH as u32;
 
 pub struct MovementInterpolationSystem;
 
-impl MovementInterpolationSystem {
-    pub fn new() -> Self {
-        Self
-    }
+impl System for MovementInterpolationSystem {
+    type Data<'a> = MovementInterpolationSystemData<'a>;
+}
 
-    pub fn process(
-        &mut self,
-        target_position_ac: &mut TargetPositionActorComponent,
-        target_orientation_ac: &mut TargetOrientationActorComponent,
-        position_ac: &mut PositionActorComponent,
-        orientation_ac: &mut OrientationActorComponent,
-        snapshot: Snapshot,
-    ) {
-        let current_time = Instant::now() - SERVER_TICK_INTERVAL * TARGET_QUEUE_LENGTH_U32;
+#[derive(SystemData)]
+pub struct MovementInterpolationSystemData<'a> {
+    snapshot: &'a Snapshot,
+    process_timer: &'a ProcessTimer,
+    target_position_ac: &'a mut TargetPositionActorComponent,
+    target_orientation_ac: &'a mut TargetOrientationActorComponent,
+    position_ac: &'a mut PositionActorComponent,
+    orientation_ac: &'a mut OrientationActorComponent,
+}
 
-        for (actor, target_queue) in target_position_ac.iter_mut() {
-            let mut position = match position_ac.get_writable(&actor, snapshot) {
+impl MovementInterpolationSystemData<'_> {
+    pub fn run(self) {
+        let current_time =
+            self.process_timer.now() - SERVER_TICK_INTERVAL * TARGET_QUEUE_LENGTH_U32;
+
+        let snapshot = *self.snapshot;
+
+        for (actor, target_queue) in self.target_position_ac.iter_mut() {
+            let mut position = match self.position_ac.get_writable(&actor, snapshot) {
                 Some(v) => v,
                 None => continue,
             };
 
             if let Some((target_position, time_left)) =
-                Self::find_next_target(target_queue, &mut position, current_time)
+                find_next_target(target_queue, &mut position, current_time)
             {
                 let completion = (SERVER_TICK_INTERVAL - time_left).as_secs_f32()
                     / SERVER_TICK_INTERVAL.as_secs_f32();
@@ -84,14 +95,14 @@ impl MovementInterpolationSystem {
             }
         }
 
-        for (actor, target_queue) in target_orientation_ac.iter_mut() {
-            let mut orientation = match orientation_ac.get_writable(&actor, snapshot) {
+        for (actor, target_queue) in self.target_orientation_ac.iter_mut() {
+            let mut orientation = match self.orientation_ac.get_writable(&actor, snapshot) {
                 Some(v) => v,
                 None => continue,
             };
 
             if let Some((target_orientation, time_left)) =
-                Self::find_next_target(target_queue, &mut orientation, current_time)
+                find_next_target(target_queue, &mut orientation, current_time)
             {
                 let completion = (SERVER_TICK_INTERVAL - time_left).as_secs_f32()
                     / SERVER_TICK_INTERVAL.as_secs_f32();
@@ -105,41 +116,41 @@ impl MovementInterpolationSystem {
             }
         }
     }
+}
 
-    /// Returns the next target and the time left to reach it.
-    fn find_next_target<T>(
-        target_queue: &mut TargetQueue<T>,
-        value: &mut impl WritableTrait<T>,
-        current_time: Instant,
-    ) -> Option<(T, Duration)>
-    where
-        T: PartialEq + Copy,
-    {
-        let TargetQueue {
-            starting,
-            target_queue,
-        } = target_queue;
+/// Returns the next target and the time left to reach it.
+fn find_next_target<T>(
+    target_queue: &mut TargetQueue<T>,
+    value: &mut impl WritableTrait<T>,
+    current_time: Instant,
+) -> Option<(T, Duration)>
+where
+    T: PartialEq + Copy,
+{
+    let TargetQueue {
+        starting,
+        target_queue,
+    } = target_queue;
 
-        while let Some(target_orientation) = target_queue.first().copied() {
-            let time_left = target_orientation
-                .reach_time
-                .saturating_duration_since(current_time);
+    while let Some(target_orientation) = target_queue.first().copied() {
+        let time_left = target_orientation
+            .reach_time
+            .saturating_duration_since(current_time);
 
-            if !time_left.is_zero() {
-                if time_left <= SERVER_TICK_INTERVAL {
-                    // This target is NOT too far in the future
-                    return Some((target_orientation.value, time_left));
-                }
-
-                break;
+        if !time_left.is_zero() {
+            if time_left <= SERVER_TICK_INTERVAL {
+                // This target is NOT too far in the future
+                return Some((target_orientation.value, time_left));
             }
 
-            // This target is already reached
-            *starting = target_orientation.value;
-            value.update(*starting);
-            target_queue.pop_at(0);
+            break;
         }
 
-        None
+        // This target is already reached
+        *starting = target_orientation.value;
+        value.update(*starting);
+        target_queue.pop_at(0);
     }
+
+    None
 }

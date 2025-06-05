@@ -39,7 +39,26 @@ use crate::{
                 CullingBlockModelComponent,
             },
         },
+        chunk::{
+            render_data::RenderDataChunkComponent,
+            sky_light_data::SkyLightDataChunkComponent,
+        },
         texture::location::LocationTextureComponent,
+    },
+    resource::{
+        chunk_calculation_data::ChunkCalculationData,
+        confirmed_snapshots::ConfirmedSnapshots,
+        interface::Interface,
+        interface_state::InterfaceState,
+        player_actor::PlayerActor,
+        player_chunk_view_radius::PlayerChunkViewRadius,
+        player_input::PlayerInput,
+        render_pool::{
+            camera::CameraParameters,
+            RenderPool,
+            RenderPoolDescriptor,
+        },
+        server_sender::ServerSender,
     },
     scene::{
         menu::MenuSceneParameters,
@@ -48,16 +67,14 @@ use crate::{
     system::{
         actor_render::ActorRenderSystemDescriptor,
         block_render::BlockRenderSystemDescriptor,
-        chunk_presence::ChunkPresenceSystem,
-        controller::DirectControl,
-        interface::InterfaceSystem,
-        model_loading::ModelLoadingSystem,
-        movement_interpolation::MovementInterpolationSystem,
-        player_position::PlayerPositionSystem,
-        render::{
-            camera::CameraParameters,
-            RenderSystemDescriptor,
+        entity_removal::{
+            EntityRemovalCheckSystem,
+            EntityRemovalSystem,
         },
+        model_loading::ModelLoadingSystem,
+        send_changes::SendChangesSystem,
+        sky_light::SkyLightSystem,
+        target_block_highlight::TargetBlockHightlightSystemDescriptor,
         texture_loading::TextureLoadingSystem,
     },
     window::{
@@ -71,7 +88,7 @@ use anyhow::{
     Context,
     Result,
 };
-use data::GameSharedData;
+use chunk_calculation::ChunkCalculation;
 use futures_lite::{
     future::{
         self,
@@ -85,14 +102,10 @@ use futures_lite::{
 use local_input::LocalInput;
 use network_input::NetworkInput;
 use process::Process;
-use send_state::SendState;
 use std::{
     io::ErrorKind as StdIoErrorKind,
     task::Poll,
-    time::{
-        Duration,
-        Instant,
-    },
+    time::Duration,
 };
 use tokio::time::{
     self,
@@ -143,24 +156,32 @@ use voxbrix_common::{
         StateUnpacker,
     },
     pack::Packer,
+    resource::{
+        process_timer::ProcessTimer,
+        removal_queue::RemovalQueue,
+    },
     system::{
         actor_class_loading::ActorClassLoadingSystem,
         block_class_loading::BlockClassLoadingSystem,
         list_loading::List,
-        sky_light::SkyLightSystem,
     },
+    LabelLibrary,
 };
 use voxbrix_protocol::client::{
     Error as ClientError,
     Receiver,
     Sender,
 };
+use voxbrix_world::{
+    System,
+    SystemData,
+    World,
+};
 
-mod data;
+mod chunk_calculation;
 mod local_input;
 mod network_input;
 mod process;
-mod send_state;
 
 enum Event {
     Process(Frame),
@@ -200,7 +221,7 @@ impl GameScene {
                 },
         } = self;
 
-        let (reliable_tx, reliable_rx) = flume::unbounded::<Vec<u8>>();
+        let (_reliable_tx, reliable_rx) = flume::unbounded::<Vec<u8>>();
         let (unreliable_tx, unreliable_rx) = flume::unbounded::<Vec<u8>>();
         let (event_tx, event_rx) = flume::unbounded::<Event>();
 
@@ -349,12 +370,7 @@ impl GameScene {
 
         let block_class_label_map = block_class_loading_system.into_label_map();
 
-        let last_process_time = Instant::now();
-
-        let player_position_system = PlayerPositionSystem::new(player_actor);
-        let movement_interpolation_system = MovementInterpolationSystem::new();
-        let direct_control_system = DirectControl::new(player_actor, 10.0, 0.4);
-        let chunk_presence_system = ChunkPresenceSystem::new();
+        let player_input = PlayerInput::new(10.0, 0.4);
         let sky_light_system = SkyLightSystem::new();
 
         let mut actor_location_tc = LocationTextureComponent::new();
@@ -491,7 +507,7 @@ impl GameScene {
                 .await
                 .context("unable to prepare actor texture buffer")?;
 
-        let interface_system = InterfaceSystem::new();
+        let interface = Interface::new();
 
         let player_position = position_ac
             .get(&player_actor)
@@ -501,8 +517,7 @@ impl GameScene {
             .get(&player_actor)
             .expect("player orientation is undefined");
 
-        let render_system = RenderSystemDescriptor {
-            camera_actor: player_actor,
+        let render_pool = RenderPoolDescriptor {
             // TODO hide?
             camera_parameters: CameraParameters {
                 chunk: player_position.chunk.position,
@@ -515,11 +530,19 @@ impl GameScene {
         }
         .build();
 
-        let window = render_system.window();
+        let window = render_pool.window();
 
-        let render_parameters = render_system.get_render_parameters();
+        let render_parameters = render_pool.get_render_parameters();
 
         let block_render_system = BlockRenderSystemDescriptor {
+            render_parameters,
+            block_texture_bind_group_layout: block_texture_bind_group_layout.clone(),
+            block_texture_bind_group: block_texture_bind_group.clone(),
+        }
+        .build(window)
+        .await;
+
+        let target_block_highlight_system = TargetBlockHightlightSystemDescriptor {
             render_parameters,
             block_texture_bind_group_layout,
             block_texture_bind_group,
@@ -537,73 +560,80 @@ impl GameScene {
         .build(window)
         .await;
 
+        let mut label_library = LabelLibrary::new();
+        label_library.add(block_class_label_map);
+
         let frame_source = window.get_frame_source();
         let input_source = window.get_input_source();
 
-        let mut chunk_calc_phase = 0;
+        let mut world = World::new();
 
-        let mut sd = GameSharedData {
-            packer,
+        world.add(packer);
 
-            class_ac,
-            position_ac,
-            velocity_ac,
-            orientation_ac,
-            animation_state_ac,
-            target_position_ac,
-            target_orientation_ac,
+        world.add(label_library);
 
-            builder_amc,
+        world.add(class_ac);
+        world.add(position_ac);
+        world.add(velocity_ac);
+        world.add(orientation_ac);
+        world.add(animation_state_ac);
+        world.add(target_position_ac);
+        world.add(target_orientation_ac);
 
-            model_acc,
+        world.add(builder_amc);
 
-            class_bc,
-            sky_light_bc,
+        world.add(model_acc);
 
-            collision_bcc,
-            model_bcc,
-            opacity_bcc,
+        world.add(class_bc);
+        world.add(sky_light_bc);
 
-            status_cc,
+        world.add(collision_bcc);
+        world.add(model_bcc);
+        world.add(opacity_bcc);
 
-            builder_bmc,
-            culling_bmc,
+        world.add(status_cc);
+        world.add(RenderDataChunkComponent::new());
+        world.add(SkyLightDataChunkComponent::new());
 
-            player_position_system,
-            movement_interpolation_system,
-            direct_control_system,
-            chunk_presence_system,
-            sky_light_system,
-            interface_system,
-            render_system,
-            actor_render_system,
-            block_render_system,
+        world.add(builder_bmc);
+        world.add(culling_bmc);
 
-            block_class_label_map,
+        world.add(player_input);
+        world.add(sky_light_system);
+        world.add(interface);
+        world.add(render_pool);
+        world.add(actor_render_system);
+        world.add(block_render_system);
+        world.add(target_block_highlight_system);
 
-            player_actor,
-            player_chunk_view_radius,
+        world.add(PlayerActor(player_actor));
+        world.add(PlayerChunkViewRadius(player_chunk_view_radius));
 
-            snapshot,
+        world.add(snapshot);
+        world.add(ConfirmedSnapshots {
             last_client_snapshot,
             last_server_snapshot,
+        });
 
-            unreliable_tx,
-            reliable_tx,
-            event_tx,
+        world.add(ServerSender {
+            unreliable: unreliable_tx,
+        });
 
-            state_packer,
-            state_unpacker: StateUnpacker::new(),
-            actions_packer: ActionsPacker::new(),
-            actions_unpacker: ActionsUnpacker::new(),
+        world.add(state_packer);
+        world.add(StateUnpacker::new());
+        world.add(ActionsPacker::new());
+        world.add(ActionsUnpacker::new());
 
-            last_process_time,
+        world.add(ProcessTimer::new());
 
+        world.add(ChunkCalculationData { turn: 0 });
+
+        world.add(InterfaceState {
             inventory_open: false,
             cursor_visible: false,
+        });
 
-            remove_actor_queue: Vec::new(),
-        };
+        world.add(RemovalQueue::<Actor>::new());
 
         let mut send_state_interval = time::interval(Duration::from_millis(50));
         send_state_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -624,9 +654,23 @@ impl GameScene {
         while let Some(event) = stream
             .next()
             .or(future::poll_fn(|_| {
+                struct ChunkCalculationCheck;
+
+                impl System for ChunkCalculationCheck {
+                    type Data<'a> = ChunkCalculationCheckData<'a>;
+                }
+
+                #[derive(SystemData)]
+                struct ChunkCalculationCheckData<'a> {
+                    sky_light_data_cc: &'a SkyLightDataChunkComponent,
+                    render_data_cc: &'a RenderDataChunkComponent,
+                }
+
+                let data = world.get_data::<ChunkCalculationCheck>();
+
                 // This works because the only update can come from the previous iteration of the
                 // loop
-                if sd.sky_light_system.is_queue_empty() && sd.block_render_system.is_queue_empty() {
+                if data.sky_light_data_cc.is_queue_empty() && data.render_data_cc.is_queue_empty() {
                     return Poll::Pending;
                 }
 
@@ -634,65 +678,37 @@ impl GameScene {
             }))
             .await
         {
+            if world.get_data::<EntityRemovalCheckSystem>().run() {
+                world.get_data::<EntityRemovalSystem>().run();
+            }
+
             let transition = match event {
                 Event::Process(frame) => {
-                    compute!((sd) Process {
-                    shared_data: &mut sd,
+                    compute!((world) Process {
+                    world: &mut world,
                     frame,
                 }.run())
                 },
                 Event::SendState => {
-                    SendState {
-                        shared_data: &mut sd,
-                    }
-                    .run()
+                    world.get_data::<SendChangesSystem>().run();
+
+                    Transition::None
                 },
                 Event::LocalInput(event) => {
                     LocalInput {
-                        shared_data: &mut sd,
+                        world: &mut world,
                         event,
                     }
                     .run()
                 },
                 Event::NetworkInput(event) => {
                     NetworkInput {
-                        shared_data: &mut sd,
+                        world: &mut world,
                         event,
                     }
                     .run()
                 },
-                Event::ChunkCalculation => {
-                    chunk_calc_phase = match chunk_calc_phase {
-                        0 => {
-                            let changed_chunks = sd.sky_light_system.process(
-                                voxbrix_common::entity::block::BLOCKS_IN_CHUNK,
-                                &sd.class_bc,
-                                &sd.opacity_bcc,
-                                &mut sd.sky_light_bc,
-                            );
-
-                            for chunk in changed_chunks {
-                                sd.block_render_system.enqueue_chunk(chunk);
-                            }
-
-                            1
-                        },
-                        1 => {
-                            sd.block_render_system.process(
-                                &sd.class_bc,
-                                &sd.model_bcc,
-                                &sd.builder_bmc,
-                                &sd.culling_bmc,
-                                &sd.sky_light_bc,
-                            );
-
-                            0
-                        },
-                        _ => unreachable!(),
-                    };
-
-                    Transition::None
-                },
+                Event::ChunkCalculation => ChunkCalculation { world: &mut world }.run(),
             };
 
             match transition {
@@ -703,7 +719,7 @@ impl GameScene {
                 Transition::Menu => {
                     return Ok(SceneSwitch::Menu {
                         parameters: MenuSceneParameters {
-                            window: sd.render_system.into_window(),
+                            window: world.take_resource::<RenderPool>().into_window(),
                         },
                     });
                 },
@@ -712,7 +728,7 @@ impl GameScene {
 
         Ok(SceneSwitch::Menu {
             parameters: MenuSceneParameters {
-                window: sd.render_system.into_window(),
+                window: world.take_resource::<RenderPool>().into_window(),
             },
         })
     }

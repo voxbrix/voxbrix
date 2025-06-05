@@ -19,7 +19,6 @@ use crate::{
         },
     },
     entity::player::Player,
-    resource::removal_queue::RemovalQueue,
     BASE_CHANNEL,
 };
 use voxbrix_common::{
@@ -31,10 +30,14 @@ use voxbrix_common::{
         },
     },
     messages::{
-        client::ClientAccept,
+        client::{
+            ClientAccept,
+            ServerState,
+        },
         StatePacker,
     },
     pack::Packer,
+    resource::removal_queue::RemovalQueue,
 };
 use voxbrix_world::{
     System,
@@ -219,12 +222,12 @@ impl ActorSyncSystemData<'_> {
                 .expect("no actions packer found for a player")
                 .pack_actions();
 
-            let data = self.packer.pack_to_vec(&ClientAccept::State {
+            let data = self.packer.pack_to_vec(&ClientAccept::State(ServerState {
                 snapshot: *self.snapshot,
                 last_client_snapshot: client.last_client_snapshot,
                 state,
                 actions,
-            });
+            }));
 
             if client
                 .tx

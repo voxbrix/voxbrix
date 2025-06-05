@@ -22,11 +22,13 @@ use crate::{
         },
     },
     entity::player::Player,
-    resource::removal_queue::RemovalQueue,
     BASE_CHANNEL,
 };
 use std::sync::Arc;
-use voxbrix_common::ChunkData;
+use voxbrix_common::{
+    resource::removal_queue::RemovalQueue,
+    ChunkData,
+};
 use voxbrix_world::{
     System,
     SystemData,

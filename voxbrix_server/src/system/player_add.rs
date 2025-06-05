@@ -26,7 +26,6 @@ use crate::{
         actor::ActorRegistry,
         player::Player,
     },
-    resource::removal_queue::RemovalQueue,
     PLAYER_CHUNK_VIEW_RADIUS,
 };
 use flume::Sender;
@@ -36,6 +35,7 @@ use voxbrix_common::{
         snapshot::Snapshot,
     },
     messages::ActionsPacker,
+    resource::removal_queue::RemovalQueue,
     LabelLibrary,
 };
 use voxbrix_world::{

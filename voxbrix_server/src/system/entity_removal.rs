@@ -21,7 +21,6 @@ use crate::{
         actor::ActorRegistry,
         player::Player,
     },
-    resource::removal_queue::RemovalQueue,
 };
 use voxbrix_common::{
     component::actor::effect::EffectActorComponent,
@@ -29,6 +28,7 @@ use voxbrix_common::{
         actor::Actor,
         snapshot::Snapshot,
     },
+    resource::removal_queue::RemovalQueue,
 };
 use voxbrix_world::{
     System,

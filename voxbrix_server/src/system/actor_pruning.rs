@@ -1,19 +1,19 @@
-use crate::{
-    component::{
-        actor::{
-            player::PlayerActorComponent,
-            position::PositionActorComponent,
-        },
-        chunk::status::{
-            ChunkStatus,
-            StatusChunkComponent,
-        },
+use crate::component::{
+    actor::{
+        player::PlayerActorComponent,
+        position::PositionActorComponent,
+    },
+    chunk::status::{
+        ChunkStatus,
+        StatusChunkComponent,
+    },
+};
+use voxbrix_common::{
+    entity::{
+        actor::Actor,
+        snapshot::Snapshot,
     },
     resource::removal_queue::RemovalQueue,
-};
-use voxbrix_common::entity::{
-    actor::Actor,
-    snapshot::Snapshot,
 };
 use voxbrix_world::{
     System,

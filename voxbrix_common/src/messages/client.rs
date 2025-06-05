@@ -209,16 +209,19 @@ impl<'a> ChunkChangesChunkEncoder<'a> {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct ServerState<'a> {
+    pub snapshot: Snapshot,
+    // last server's snapshot received by this client
+    pub last_client_snapshot: Snapshot,
+    #[serde(borrow)]
+    pub state: StatePacked<'a>,
+    #[serde(borrow)]
+    pub actions: ActionsPacked<'a>,
+}
+
+#[derive(Serialize, Deserialize)]
 pub enum ClientAccept<'a> {
-    State {
-        snapshot: Snapshot,
-        // last client's snapshot received by the server
-        last_client_snapshot: Snapshot,
-        #[serde(borrow)]
-        state: StatePacked<'a>,
-        #[serde(borrow)]
-        actions: ActionsPacked<'a>,
-    },
+    State(ServerState<'a>),
     ChunkData(ChunkData),
     ChunkChanges(#[serde(borrow)] ChunkChanges<'a>),
 }

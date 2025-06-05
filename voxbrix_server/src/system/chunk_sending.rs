@@ -14,9 +14,9 @@ use crate::{
         },
     },
     entity::player::Player,
-    resource::removal_queue::RemovalQueue,
     BASE_CHANNEL,
 };
+use voxbrix_common::resource::removal_queue::RemovalQueue;
 use voxbrix_world::{
     System,
     SystemData,

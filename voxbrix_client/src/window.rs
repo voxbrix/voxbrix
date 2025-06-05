@@ -84,11 +84,9 @@ impl ApplicationHandler<Frame> for App {
                     .expect("unable to create window"),
             );
 
-            let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
                 backends: wgpu::Backends::all(),
-                flags: wgpu::InstanceFlags::default(),
-                dx12_shader_compiler: wgpu::Dx12Compiler::default(),
-                gles_minor_version: wgpu::Gles3MinorVersion::Automatic,
+                ..Default::default()
             });
 
             let surface = instance

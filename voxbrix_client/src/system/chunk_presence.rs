@@ -1,33 +1,59 @@
-use crate::component::actor::position::PositionActorComponent;
+use crate::{
+    component::{
+        actor::position::PositionActorComponent,
+        block::class::ClassBlockComponent,
+        chunk::{
+            render_data::RenderDataChunkComponent,
+            sky_light_data::SkyLightDataChunkComponent,
+        },
+    },
+    resource::player_chunk_view_radius::PlayerChunkViewRadius,
+};
 use voxbrix_common::{
-    component::chunk::status::StatusChunkComponent,
+    component::{
+        block::sky_light::SkyLightBlockComponent,
+        chunk::status::StatusChunkComponent,
+    },
     entity::chunk::Chunk,
+};
+use voxbrix_world::{
+    System,
+    SystemData,
 };
 
 pub struct ChunkPresenceSystem;
 
-impl ChunkPresenceSystem {
-    pub fn new() -> Self {
-        Self
-    }
+impl System for ChunkPresenceSystem {
+    type Data<'a> = ChunkPresenceSystemData<'a>;
+}
 
-    pub fn process(
-        &self,
-        radius: i32,
-        pac: &PositionActorComponent,
-        status_cc: &mut StatusChunkComponent,
-        mut delete: impl FnMut(Chunk),
-    ) {
+#[derive(SystemData)]
+pub struct ChunkPresenceSystemData<'a> {
+    radius: &'a PlayerChunkViewRadius,
+    position_ac: &'a PositionActorComponent,
+    status_cc: &'a mut StatusChunkComponent,
+    class_bc: &'a mut ClassBlockComponent,
+    sky_light_bc: &'a mut SkyLightBlockComponent,
+    render_data_cc: &'a mut RenderDataChunkComponent,
+    sky_light_data_cc: &'a mut SkyLightDataChunkComponent,
+}
+
+impl ChunkPresenceSystemData<'_> {
+    pub fn run(self) {
         let should_exist = |chunk: &Chunk| {
-            pac.player_chunks()
-                .find(|ctl_chunk| ctl_chunk.radius(radius).is_within(chunk))
+            self.position_ac
+                .player_chunks()
+                .find(|ctl_chunk| ctl_chunk.radius(self.radius.0).is_within(chunk))
                 .is_some()
         };
 
-        status_cc.retain(|chunk, _| {
+        self.status_cc.retain(|chunk, _| {
             let retain = should_exist(chunk);
             if !retain {
-                delete(*chunk);
+                self.class_bc.remove_chunk(&chunk);
+                self.sky_light_bc.remove_chunk(&chunk);
+                self.render_data_cc.remove_chunk(&chunk);
+                self.sky_light_data_cc.remove_chunk(&chunk);
             }
             retain
         });

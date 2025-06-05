@@ -1,16 +1,16 @@
-use crate::{
-    resource::process_timer::ProcessTimer,
-    system::{
-        actor_block_collision::ActorBlockCollisionSystem,
-        actor_pruning::ActorPruningSystem,
-        actor_sync::ActorSyncSystem,
-        block_sync::BlockSyncSystem,
-        chunk_activation::ChunkActivationSystem,
-        chunk_sending::ChunkSendingSystem,
-        position::PositionSystem,
-    },
+use crate::system::{
+    actor_block_collision::ActorBlockCollisionSystem,
+    actor_pruning::ActorPruningSystem,
+    actor_sync::ActorSyncSystem,
+    block_sync::BlockSyncSystem,
+    chunk_activation::ChunkActivationSystem,
+    chunk_sending::ChunkSendingSystem,
+    position::PositionSystem,
 };
-use voxbrix_common::entity::snapshot::Snapshot;
+use voxbrix_common::{
+    entity::snapshot::Snapshot,
+    resource::process_timer::ProcessTimer,
+};
 use voxbrix_world::World;
 
 pub struct Process<'a> {

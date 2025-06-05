@@ -1,13 +1,7 @@
-use crate::{
-    component::actor::{
-        orientation::OrientationActorComponent,
-        position::PositionActorComponent,
-    },
-    window::{
-        Frame,
-        UiRenderer,
-        Window,
-    },
+use crate::window::{
+    Frame,
+    UiRenderer,
+    Window,
 };
 use arrayvec::ArrayVec;
 use camera::{
@@ -19,7 +13,6 @@ use std::{
     mem,
     num::NonZeroU64,
 };
-use voxbrix_common::entity::actor::Actor;
 
 pub mod camera;
 pub mod gpu_vec;
@@ -84,16 +77,14 @@ pub fn new_quad_index_buffer(
     buffer
 }
 
-pub struct RenderSystemDescriptor {
-    pub camera_actor: Actor,
+pub struct RenderPoolDescriptor {
     pub camera_parameters: CameraParameters,
     pub window: Window,
 }
 
-impl RenderSystemDescriptor {
-    pub fn build(self) -> RenderSystem {
+impl RenderPoolDescriptor {
+    pub fn build(self) -> RenderPool {
         let Self {
-            camera_actor,
             camera_parameters,
             window,
         } = self;
@@ -108,8 +99,7 @@ impl RenderSystemDescriptor {
 
         let depth_texture_view = build_depth_texture_view(&window.device(), depth_texture_size);
 
-        RenderSystem {
-            camera_actor,
+        RenderPool {
             camera,
             texture_format: window.texture_format(),
             depth_texture_view,
@@ -193,8 +183,7 @@ pub struct RenderParameters<'a> {
     pub texture_format: wgpu::TextureFormat,
 }
 
-pub struct RenderSystem {
-    camera_actor: Actor,
+pub struct RenderPool {
     camera: Camera,
     texture_format: wgpu::TextureFormat,
     depth_texture_view: wgpu::TextureView,
@@ -203,32 +192,12 @@ pub struct RenderSystem {
     frame: Option<Frame>,
 }
 
-impl RenderSystem {
+impl RenderPool {
     pub fn get_render_parameters(&self) -> RenderParameters {
         RenderParameters {
             camera_bind_group_layout: self.camera.get_bind_group_layout(),
             texture_format: self.texture_format,
         }
-    }
-
-    pub fn update(
-        &mut self,
-        position_ac: &PositionActorComponent,
-        orientation_ac: &OrientationActorComponent,
-    ) {
-        let player_position = position_ac
-            .get(&self.camera_actor)
-            .expect("player position is undefined");
-
-        let player_orientation = orientation_ac
-            .get(&self.camera_actor)
-            .expect("player orientation is undefined");
-
-        self.camera.update_position(
-            player_position.chunk.position,
-            player_position.offset.into(),
-            player_orientation.forward().into(),
-        );
     }
 
     pub fn start_render(&mut self, frame: Frame) {
@@ -305,5 +274,9 @@ impl RenderSystem {
 
     pub fn window(&self) -> &Window {
         &self.window
+    }
+
+    pub fn camera_mut(&mut self) -> &mut Camera {
+        &mut self.camera
     }
 }

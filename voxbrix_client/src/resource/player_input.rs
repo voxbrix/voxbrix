@@ -1,8 +1,3 @@
-use crate::component::actor::{
-    orientation::OrientationActorComponent,
-    velocity::VelocityActorComponent,
-    WritableTrait,
-};
 use std::{
     f32::consts::{
         FRAC_PI_2,
@@ -11,14 +6,7 @@ use std::{
     time::Duration,
 };
 use voxbrix_common::{
-    component::actor::{
-        orientation::Orientation,
-        velocity::Velocity,
-    },
-    entity::{
-        actor::Actor,
-        snapshot::Snapshot,
-    },
+    component::actor::orientation::Orientation,
     math::{
         Directions,
         Vec3F32,
@@ -38,8 +26,7 @@ use winit::{
 const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 const PI_2: f32 = PI * 2.0;
 
-pub struct DirectControl {
-    actor: Actor,
+pub struct PlayerInput {
     move_left: f32,
     move_right: f32,
     move_forward: f32,
@@ -54,10 +41,9 @@ pub struct DirectControl {
     sensitivity: f32,
 }
 
-impl DirectControl {
-    pub fn new(actor: Actor, speed: f32, sensitivity: f32) -> Self {
+impl PlayerInput {
+    pub fn new(speed: f32, sensitivity: f32) -> Self {
         Self {
-            actor,
             move_left: 0.0,
             move_right: 0.0,
             move_forward: 0.0,
@@ -125,21 +111,8 @@ impl DirectControl {
         self.rotate_vertical = vertical;
     }
 
-    pub fn process(
-        &mut self,
-        dt: Duration,
-        velocity_component: &mut VelocityActorComponent,
-        orientation_component: &mut OrientationActorComponent,
-        snapshot: Snapshot,
-    ) {
-        // TODO add actor instead?
-        let mut actor_orientation = orientation_component
-            .get_writable(&self.actor, snapshot)
-            .unwrap();
-        let mut actor_velocity = velocity_component
-            .get_writable(&self.actor, snapshot)
-            .unwrap();
-
+    /// Take accumulated rotation as Orientation.
+    pub fn take_orientation(&mut self, dt: Duration) -> Orientation {
         let dt = dt.as_secs_f32();
         self.yaw += self.rotate_horizontal * self.sensitivity * dt;
         self.pitch += -self.rotate_vertical * self.sensitivity * dt;
@@ -159,8 +132,10 @@ impl DirectControl {
             self.yaw += PI_2;
         }
 
-        actor_orientation.update(Orientation::from_yaw_pitch(self.yaw, self.pitch));
+        Orientation::from_yaw_pitch(self.yaw, self.pitch)
+    }
 
+    pub fn velocity(&self, actor_orientation: Orientation) -> Vec3F32 {
         let mut forward = actor_orientation.forward();
         forward[2] = 0.0;
 
@@ -176,12 +151,9 @@ impl DirectControl {
                 + Vec3F32::UP * (self.move_up - self.move_down)
         };
 
-        actor_velocity.update(Velocity {
-            vector: Some(direction)
-                .map(|d| d.normalize())
-                .filter(|d| !d.is_nan())
-                .map(|d| d * self.speed)
-                .unwrap_or(Vec3F32::new(0.0, 0.0, 0.0)),
-        });
+        Some(direction.normalize())
+            .filter(|n| !n.is_nan())
+            .map(|d| d * self.speed)
+            .unwrap_or(Vec3F32::ZERO)
     }
 }

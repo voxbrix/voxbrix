@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+ahash = { workspace = true }
 voxbrix_world_derive = { version = "0.1.0", path = "voxbrix_world_derive", optional = true }
 
 [features]

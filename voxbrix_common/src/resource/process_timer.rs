@@ -28,4 +28,8 @@ impl ProcessTimer {
     pub fn elapsed(&self) -> Duration {
         self.elapsed
     }
+
+    pub fn now(&self) -> Instant {
+        self.last
+    }
 }

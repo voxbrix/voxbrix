@@ -1,14 +1,38 @@
 use crate::{
-    scene::game::{
-        data::GameSharedData,
-        Transition,
+    component::{
+        actor::{
+            orientation::OrientationActorComponent,
+            position::PositionActorComponent,
+        },
+        block::class::ClassBlockComponent,
     },
+    resource::{
+        interface_state::InterfaceState,
+        player_actor::PlayerActor,
+        player_input::PlayerInput,
+    },
+    scene::game::Transition,
     window::{
         InputEvent,
         WindowEvent,
     },
 };
-use voxbrix_common::entity::block::Block;
+use voxbrix_common::{
+    component::block_class::collision::CollisionBlockClassComponent,
+    entity::{
+        action::Action,
+        block::Block,
+        snapshot::Snapshot,
+    },
+    messages::ActionsPacker,
+    system::position::get_target_block,
+    LabelLibrary,
+};
+use voxbrix_world::{
+    System,
+    SystemData,
+    World,
+};
 use winit::event::{
     DeviceEvent,
     ElementState,
@@ -16,18 +40,15 @@ use winit::event::{
 };
 
 pub struct LocalInput<'a> {
-    pub shared_data: &'a mut GameSharedData,
+    pub world: &'a mut World,
     pub event: InputEvent,
 }
 
 impl LocalInput<'_> {
     pub fn run(self) -> Transition {
-        let LocalInput {
-            shared_data: sd,
-            event,
-        } = self;
+        let LocalInput { world, event } = self;
 
-        if sd.inventory_open {
+        if world.get_resource_ref::<InterfaceState>().inventory_open {
             return Transition::None;
         }
 
@@ -37,7 +58,8 @@ impl LocalInput<'_> {
                     DeviceEvent::MouseMotion {
                         delta: (horizontal, vertical),
                     } => {
-                        sd.direct_control_system
+                        world
+                            .get_resource_mut::<PlayerInput>()
                             .process_mouse(horizontal as f32, vertical as f32);
                     },
                     _ => {},
@@ -60,40 +82,71 @@ impl LocalInput<'_> {
                                         return Transition::Menu;
                                     },
                                     winit::keyboard::KeyCode::KeyI => {
-                                        sd.inventory_open = !sd.inventory_open;
+                                        let int_st = world.get_resource_mut::<InterfaceState>();
+                                        int_st.inventory_open = !int_st.inventory_open;
                                     },
                                     winit::keyboard::KeyCode::KeyF => {
-                                        use voxbrix_common::entity::action::Action;
+                                        let snapshot = *world.get_resource_ref::<Snapshot>();
+                                        let actions_packer =
+                                            world.get_resource_mut::<ActionsPacker>();
 
-                                        sd.actions_packer.add_action(Action(2), sd.snapshot, ());
+                                        actions_packer.add_action(Action(2), snapshot, ());
                                     },
                                     _ => {},
                                 }
                             }
                         }
-                        sd.direct_control_system.process_keyboard(&event);
+                        world
+                            .get_resource_mut::<PlayerInput>()
+                            .process_keyboard(&event);
                     },
                     WindowEvent::MouseInput { state, button, .. } => {
                         if state == ElementState::Pressed {
+                            struct GetTargetBlockSystem;
+
+                            impl System for GetTargetBlockSystem {
+                                type Data<'a> = GetTargetBlockSystemData<'a>;
+                            }
+
+                            #[derive(SystemData)]
+                            struct GetTargetBlockSystemData<'a> {
+                                snapshot: &'a Snapshot,
+                                player_actor: &'a PlayerActor,
+                                position_ac: &'a PositionActorComponent,
+                                orientation_ac: &'a OrientationActorComponent,
+                                class_bc: &'a ClassBlockComponent,
+                                collision_bcc: &'a CollisionBlockClassComponent,
+                                actions_packer: &'a mut ActionsPacker,
+                                label_library: &'a LabelLibrary,
+                            }
+
+                            let sd = world.get_data::<GetTargetBlockSystem>();
+
+                            let func = || {
+                                let actor = sd.player_actor.0;
+                                let position = sd.position_ac.get(&actor)?;
+                                let orientation = sd.orientation_ac.get(&actor)?;
+
+                                let target = get_target_block(
+                                    &position,
+                                    orientation.forward(),
+                                    |chunk, block| {
+                                        sd.class_bc
+                                            .get_chunk(&chunk)
+                                            .map(|blocks| {
+                                                let class = blocks.get(block);
+                                                sd.collision_bcc.get(class).is_some()
+                                            })
+                                            .unwrap_or(false)
+                                    },
+                                )?;
+
+                                Some((position, orientation, target))
+                            };
+
                             match button {
                                 MouseButton::Left => {
-                                    if sd
-                                        .player_position_system
-                                        .get_target_block(
-                                            &sd.position_ac,
-                                            &sd.orientation_ac,
-                                            |chunk, block| {
-                                                sd.class_bc
-                                                    .get_chunk(&chunk)
-                                                    .map(|blocks| {
-                                                        let class = blocks.get(block);
-                                                        sd.collision_bcc.get(class).is_some()
-                                                    })
-                                                    .unwrap_or(false)
-                                            },
-                                        )
-                                        .is_some()
-                                    {
+                                    if let Some((position, orientation, _)) = func() {
                                         // TODO Handle with script
                                         use serde::{
                                             Deserialize,
@@ -104,11 +157,7 @@ impl LocalInput<'_> {
                                             chunk::Chunk,
                                         };
 
-                                        let (position, direction) =
-                                            sd.player_position_system.position_direction(
-                                                &sd.position_ac,
-                                                &sd.orientation_ac,
-                                            );
+                                        let direction = orientation.forward();
 
                                         #[derive(Serialize, Deserialize)]
                                         pub struct RemoveBlock {
@@ -119,7 +168,7 @@ impl LocalInput<'_> {
 
                                         sd.actions_packer.add_action(
                                             Action(0),
-                                            sd.snapshot,
+                                            *sd.snapshot,
                                             RemoveBlock {
                                                 chunk: position.chunk,
                                                 offset: position.offset.into(),
@@ -129,20 +178,8 @@ impl LocalInput<'_> {
                                     }
                                 },
                                 MouseButton::Right => {
-                                    if let Some((chunk, block, side)) =
-                                        sd.player_position_system.get_target_block(
-                                            &sd.position_ac,
-                                            &sd.orientation_ac,
-                                            |chunk, block| {
-                                                sd.class_bc
-                                                    .get_chunk(&chunk)
-                                                    .map(|blocks| {
-                                                        let class = blocks.get(block);
-                                                        sd.collision_bcc.get(class).is_some()
-                                                    })
-                                                    .unwrap_or(false)
-                                            },
-                                        )
+                                    if let Some((position, orientation, (chunk, block, side))) =
+                                        func()
                                     {
                                         let axis = side / 2;
                                         let direction = match side % 2 {
@@ -165,11 +202,7 @@ impl LocalInput<'_> {
                                                 chunk::Chunk,
                                             };
 
-                                            let (position, direction) =
-                                                sd.player_position_system.position_direction(
-                                                    &sd.position_ac,
-                                                    &sd.orientation_ac,
-                                                );
+                                            let direction = orientation.forward();
 
                                             #[derive(Serialize, Deserialize)]
                                             pub struct PlaceBlock {
@@ -181,14 +214,14 @@ impl LocalInput<'_> {
 
                                             sd.actions_packer.add_action(
                                                 Action(1),
-                                                sd.snapshot,
+                                                *sd.snapshot,
                                                 PlaceBlock {
                                                     chunk: position.chunk,
                                                     offset: position.offset.into(),
                                                     direction: direction.into(),
                                                     block_class: sd
-                                                        .block_class_label_map
-                                                        .get("grass")
+                                                        .label_library
+                                                        .get::<BlockClass>("grass")
                                                         .unwrap(),
                                                 },
                                             );

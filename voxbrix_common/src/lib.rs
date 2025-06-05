@@ -5,6 +5,7 @@ pub mod entity;
 pub mod math;
 pub mod messages;
 pub mod pack;
+pub mod resource;
 pub mod script_convert;
 pub mod script_registry;
 pub mod system;

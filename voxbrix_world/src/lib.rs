@@ -1,12 +1,15 @@
 //! A very simple resource storage and sharing library.
 
+use ahash::{
+    HashMap,
+    HashMapExt,
+};
 use std::{
     any::{
         Any,
         TypeId,
     },
     cell::UnsafeCell,
-    collections::HashMap,
     marker::PhantomData,
 };
 #[cfg(feature = "derive")]
@@ -146,6 +149,45 @@ impl World {
             })
             .downcast_mut::<T>()
             .unwrap()
+    }
+
+    /// Extracts resource from storage.
+    /// Trying to get taken resource will cause panic, similar to undefined resource.
+    pub fn take_resource<T>(&mut self) -> Box<T>
+    where
+        T: 'static,
+    {
+        let type_id = TypeId::of::<T>();
+
+        let idx = self.type_map.get(&type_id).copied().unwrap_or_else(|| {
+            panic!("resource of type \"{:?}\" is undefined", type_id);
+        });
+
+        self.storage
+            .get_mut(idx)
+            .unwrap()
+            .get_mut()
+            .take()
+            .unwrap_or_else(|| {
+                panic!("resource of type \"{:?}\" is taken", type_id);
+            })
+            .downcast::<T>()
+            .unwrap()
+    }
+
+    /// Returns resource into the storage.
+    /// Resource must be previously added, otherwise calling this will cause panic.
+    pub fn return_resource<T>(&mut self, resource: Box<T>)
+    where
+        T: Send + Sync + 'static,
+    {
+        let type_id = TypeId::of::<T>();
+
+        let idx = self.type_map.get(&type_id).copied().unwrap_or_else(|| {
+            panic!("resource of type \"{:?}\" is undefined", type_id);
+        });
+
+        *self.storage.get_mut(idx).unwrap().get_mut() = Some(resource);
     }
 
     /// Get data for a [`System`].

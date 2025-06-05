@@ -209,7 +209,7 @@ impl TextureLoadingSystem {
             }
 
             queue.write_texture(
-                wgpu::ImageCopyTexture {
+                wgpu::TexelCopyTextureInfo {
                     texture: &texture,
                     mip_level: 0,
                     origin: wgpu::Origin3d {
@@ -220,7 +220,7 @@ impl TextureLoadingSystem {
                     aspect: wgpu::TextureAspect::All,
                 },
                 &texture_bytes,
-                wgpu::ImageDataLayout {
+                wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(TEXTURE_BYTES_PER_PIXEL * location.size[0]),
                     rows_per_image: Some(location.size[1]),

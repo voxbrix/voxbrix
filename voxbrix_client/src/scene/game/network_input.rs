@@ -1,38 +1,37 @@
 use crate::{
-    component::actor::TargetQueue,
-    scene::game::{
-        GameSharedData,
-        Transition,
+    component::{
+        block::class::ClassBlockComponent,
+        chunk::sky_light_data::SkyLightDataChunkComponent,
+    },
+    resource::confirmed_snapshots::ConfirmedSnapshots,
+    scene::game::Transition,
+    system::{
+        chunk_changes_accept::ChunkChangesAcceptSystem,
+        server_actions::ServerActionsSystem,
+        server_state::ServerStateSystem,
     },
 };
 use log::error;
-use std::time::Instant;
 use voxbrix_common::{
-    component::{
-        actor::{
-            orientation::Orientation,
-            position::Position,
-        },
-        chunk::status::ChunkStatus,
+    component::chunk::status::{
+        ChunkStatus,
+        StatusChunkComponent,
     },
-    entity::actor::Actor,
     messages::client::ClientAccept,
-    pack,
+    pack::Packer,
     ChunkData,
 };
 use voxbrix_protocol::client::Error as ClientError;
+use voxbrix_world::World;
 
 pub struct NetworkInput<'a> {
-    pub shared_data: &'a mut GameSharedData,
+    pub world: &'a mut World,
     pub event: Result<Vec<u8>, ClientError>,
 }
 
 impl NetworkInput<'_> {
     pub fn run(self) -> Transition {
-        let NetworkInput {
-            shared_data: sd,
-            event,
-        } = self;
+        let NetworkInput { world, event } = self;
 
         let message = match event {
             Ok(m) => m,
@@ -43,138 +42,61 @@ impl NetworkInput<'_> {
             },
         };
 
-        let message = match sd.packer.unpack::<ClientAccept>(&message) {
-            Ok(m) => m,
-            Err(_) => return Transition::None,
+        let mut packer = world.take_resource::<Packer>();
+
+        let transition = match packer.unpack::<ClientAccept>(&message) {
+            Ok(message) => {
+                match message {
+                    ClientAccept::State(state) => {
+                        if world.get_data::<ServerStateSystem>().run(&state).is_err() {
+                            error!("unable to decode server state");
+                            return Transition::Menu;
+                        }
+
+                        if world.get_data::<ServerActionsSystem>().run(&state).is_err() {
+                            error!("unable to decode server actions");
+                            return Transition::Menu;
+                        }
+
+                        let confirmed_snapshots = world.get_resource_mut::<ConfirmedSnapshots>();
+
+                        confirmed_snapshots.last_client_snapshot = state.last_client_snapshot;
+                        confirmed_snapshots.last_server_snapshot = state.snapshot;
+                    },
+                    ClientAccept::ChunkData(ChunkData {
+                        chunk,
+                        block_classes,
+                    }) => {
+                        world
+                            .get_resource_mut::<ClassBlockComponent>()
+                            .insert_chunk(chunk, block_classes);
+                        world
+                            .get_resource_mut::<StatusChunkComponent>()
+                            .insert(chunk, ChunkStatus::Active);
+
+                        world
+                            .get_resource_mut::<SkyLightDataChunkComponent>()
+                            .enqueue_chunk(chunk);
+                    },
+                    ClientAccept::ChunkChanges(changes) => {
+                        if world
+                            .get_data::<ChunkChangesAcceptSystem>()
+                            .run(changes)
+                            .is_err()
+                        {
+                            error!("unable to decode chunk changes");
+                            return Transition::Menu;
+                        }
+                    },
+                }
+
+                Transition::None
+            },
+            Err(_) => Transition::None,
         };
 
-        match message {
-            ClientAccept::State {
-                snapshot: new_lss,
-                last_client_snapshot: new_lcs,
-                state,
-                actions,
-            } => {
-                let current_time = Instant::now();
+        world.return_resource(packer);
 
-                let Ok(state) = sd.state_unpacker.unpack_state(&state) else {
-                    return Transition::None;
-                };
-
-                sd.class_ac.unpack_state(&state);
-                sd.model_acc.unpack_state(&state);
-                sd.velocity_ac.unpack_state(&state);
-                sd.orientation_ac.unpack_state_target(&state);
-                sd.target_orientation_ac.unpack_state_convert(
-                    &state,
-                    |actor, previous, orientation: Orientation| {
-                        let current_value = if let Some(p) = sd.orientation_ac.get(&actor) {
-                            *p
-                        } else {
-                            sd.orientation_ac.insert(actor, orientation, sd.snapshot);
-                            orientation
-                        };
-
-                        TargetQueue::from_previous(
-                            previous,
-                            current_value,
-                            orientation,
-                            current_time,
-                            new_lss,
-                        )
-                    },
-                );
-                sd.position_ac.unpack_state_target(&state);
-                sd.target_position_ac.unpack_state_convert(
-                    &state,
-                    |actor, previous, position: Position| {
-                        let current_value = if let Some(p) = sd.position_ac.get(&actor) {
-                            *p
-                        } else {
-                            sd.position_ac.insert(actor, position, sd.snapshot);
-                            position
-                        };
-
-                        TargetQueue::from_previous(
-                            previous,
-                            current_value,
-                            position,
-                            current_time,
-                            new_lss,
-                        )
-                    },
-                );
-
-                sd.actions_packer.confirm_snapshot(new_lcs);
-                sd.position_ac.confirm_snapshot(new_lcs);
-
-                let actions = match sd.actions_unpacker.unpack_actions(&actions) {
-                    Ok(m) => m,
-                    Err(_) => return Transition::Menu,
-                };
-
-                // Filtering out already handled actions
-                for (action, _, data) in actions
-                    .data()
-                    .iter()
-                    .filter(|(_, snapshot, _)| *snapshot > sd.last_server_snapshot)
-                {
-                    let (actor_opt, action_data): (Option<Actor>, &[u8]) =
-                        pack::decode_from_slice(data)
-                            .expect("unable to unpack server answer")
-                            .0;
-                    error!(
-                        "received action {:?} of {:?} with data len {}",
-                        action,
-                        actor_opt,
-                        action_data.len()
-                    );
-                }
-
-                sd.last_client_snapshot = new_lcs;
-                sd.last_server_snapshot = new_lss;
-            },
-            ClientAccept::ChunkData(ChunkData {
-                chunk,
-                block_classes,
-            }) => {
-                sd.class_bc.insert_chunk(chunk, block_classes);
-                sd.status_cc.insert(chunk, ChunkStatus::Active);
-
-                sd.sky_light_system.enqueue_chunk(chunk);
-            },
-            ClientAccept::ChunkChanges(changes) => {
-                let Ok(mut chunk_decoder) = changes.decode_chunks() else {
-                    error!("unable to decode chunk changes");
-                    return Transition::Menu;
-                };
-
-                while let Some(chunk_change) = chunk_decoder.decode_chunk() {
-                    let Ok(mut chunk_change) = chunk_change else {
-                        error!("unable to decode chunk change");
-                        return Transition::Menu;
-                    };
-
-                    let chunk = chunk_change.chunk();
-
-                    let mut chunk_classes = sd.class_bc.get_mut_chunk(&chunk);
-
-                    while let Some(block_change) = chunk_change.decode_block() {
-                        let Ok((block, block_class)) = block_change else {
-                            error!("unable to decode block changes");
-                            return Transition::Menu;
-                        };
-
-                        if let Some(ref mut chunk_classes) = chunk_classes {
-                            *chunk_classes.get_mut(block) = block_class;
-                            sd.sky_light_system.block_change(&chunk, block);
-                            sd.block_render_system.block_change(&chunk, block);
-                        }
-                    }
-                }
-            },
-        }
-
-        Transition::None
+        transition
     }
 }

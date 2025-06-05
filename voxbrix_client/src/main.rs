@@ -35,6 +35,7 @@ use window::Window;
 mod assets;
 mod component;
 mod entity;
+mod resource;
 mod scene;
 mod system;
 mod window;

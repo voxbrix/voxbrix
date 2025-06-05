@@ -4,7 +4,7 @@ use crate::{
         texture::location::LocationTextureComponent,
     },
     entity::texture::Texture,
-    system::render::primitives::Vertex,
+    resource::render_pool::primitives::Vertex,
 };
 use anyhow::Error;
 use bitflags::bitflags;

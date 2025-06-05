@@ -17,7 +17,6 @@ use crate::{
         },
     },
     entity::player::Player,
-    resource::removal_queue::RemovalQueue,
     storage::{
         IntoData,
         IntoDataSized,
@@ -34,6 +33,7 @@ use voxbrix_common::{
         ClientAccept,
     },
     pack::Packer,
+    resource::removal_queue::RemovalQueue,
     ChunkData,
 };
 use voxbrix_world::{
