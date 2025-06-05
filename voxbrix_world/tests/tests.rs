@@ -27,10 +27,10 @@ fn test_positive() {
     }
 
     impl<'a> SystemData<'a> for Data<'a> {
-        fn required_resources() -> impl Iterator<Item = Request<TypeId>> {
+        fn required_resources() -> impl Iterator<Item = (Request<TypeId>, &'static str)> {
             [
-                Request::Read(TypeId::of::<Res1>()),
-                Request::Write(TypeId::of::<Res2>()),
+                (Request::Read(TypeId::of::<Res1>()), "Res1"),
+                (Request::Write(TypeId::of::<Res2>()), "Res2"),
             ]
             .into_iter()
         }
@@ -78,10 +78,10 @@ fn test_negative_conflict() {
     }
 
     impl<'a> SystemData<'a> for Data<'a> {
-        fn required_resources() -> impl Iterator<Item = Request<TypeId>> {
+        fn required_resources() -> impl Iterator<Item = (Request<TypeId>, &'static str)> {
             [
-                Request::Read(TypeId::of::<Res1>()),
-                Request::Write(TypeId::of::<Res1>()),
+                (Request::Read(TypeId::of::<Res1>()), "Res1"),
+                (Request::Write(TypeId::of::<Res1>()), "Res2"),
             ]
             .into_iter()
         }

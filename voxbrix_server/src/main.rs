@@ -58,6 +58,7 @@ mod assets;
 mod client_loop;
 mod component;
 mod entity;
+mod resource;
 mod server_loop;
 mod storage;
 mod system;

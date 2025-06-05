@@ -57,7 +57,7 @@ impl NetworkInput<'_> {
             } => {
                 let current_time = Instant::now();
 
-                let Ok(state) = sd.state_unpacker.unpack_state(state) else {
+                let Ok(state) = sd.state_unpacker.unpack_state(&state) else {
                     return Transition::None;
                 };
 
@@ -108,7 +108,7 @@ impl NetworkInput<'_> {
                 sd.actions_packer.confirm_snapshot(new_lcs);
                 sd.position_ac.confirm_snapshot(new_lcs);
 
-                let actions = match sd.actions_unpacker.unpack_actions(actions) {
+                let actions = match sd.actions_unpacker.unpack_actions(&actions) {
                     Ok(m) => m,
                     Err(_) => return Transition::Menu,
                 };

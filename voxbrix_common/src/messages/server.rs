@@ -12,16 +12,19 @@ use serde::{
 };
 
 #[derive(Serialize, Deserialize)]
+pub struct ClientState<'a> {
+    pub snapshot: Snapshot,
+    // last server's snapshot received by this client
+    pub last_server_snapshot: Snapshot,
+    #[serde(borrow)]
+    pub state: StatePacked<'a>,
+    #[serde(borrow)]
+    pub actions: ActionsPacked<'a>,
+}
+
+#[derive(Serialize, Deserialize)]
 pub enum ServerAccept<'a> {
-    State {
-        snapshot: Snapshot,
-        // last server's snapshot received by this client
-        last_server_snapshot: Snapshot,
-        #[serde(borrow)]
-        state: StatePacked<'a>,
-        #[serde(borrow)]
-        actions: ActionsPacked<'a>,
-    },
+    State(#[serde(borrow)] ClientState<'a>),
 }
 
 impl Pack for ServerAccept<'_> {

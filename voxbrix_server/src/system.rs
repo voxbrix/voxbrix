@@ -1,4 +1,14 @@
+pub mod actor_block_collision;
+pub mod actor_pruning;
+pub mod actor_sync;
+pub mod block_sync;
 pub mod chunk_activation;
+pub mod chunk_add;
 pub mod chunk_generation;
+pub mod chunk_sending;
+pub mod entity_removal;
 pub mod map_loading;
+pub mod player_actions;
+pub mod player_add;
+pub mod player_state;
 pub mod position;

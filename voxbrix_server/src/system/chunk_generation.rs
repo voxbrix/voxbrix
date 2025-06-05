@@ -4,6 +4,7 @@ use crate::{
         CHUNK_GENERATION_SCRIPT_LIST,
         DIMENSION_KIND_GENERATION_MAP,
     },
+    resource::chunk_generation_request::ChunkGenerationRequest,
     storage::{
         IntoData,
         IntoDataSized,
@@ -38,7 +39,12 @@ use voxbrix_common::{
     pack::Packer,
     system::list_loading::List,
     AsFromUsize,
+    LabelLibrary,
     LabelMap,
+};
+use voxbrix_world::{
+    System,
+    SystemData,
 };
 use wasmtime::{
     Caller,
@@ -49,8 +55,16 @@ use wasmtime::{
     Store,
 };
 
-pub struct ChunkGenerationSystem {
-    new_chunks_tx: Sender<Chunk>,
+#[derive(SystemData)]
+pub struct ChunkGenerationSystemData<'a> {
+    database: &'a Arc<Database>,
+    label_library: &'a LabelLibrary,
+}
+
+pub struct ChunkGenerationSystem;
+
+impl System for ChunkGenerationSystem {
+    type Data<'a> = ChunkGenerationSystemData<'a>;
 }
 
 struct GenerationData {
@@ -58,13 +72,22 @@ struct GenerationData {
     block_classes: BlocksVecBuilder<BlockClass>,
 }
 
-impl ChunkGenerationSystem {
-    pub async fn new(
-        database: Arc<Database>,
-        block_class_label_map: LabelMap<BlockClass>,
-        dimension_kind_label_map: LabelMap<DimensionKind>,
+impl ChunkGenerationSystemData<'_> {
+    #[must_use]
+    pub async fn spawn(
+        self,
         send_chunk_data: impl Fn(Chunk, BlocksVec<BlockClass>, &mut Packer) + Send + 'static,
-    ) -> Self {
+    ) -> Sender<ChunkGenerationRequest> {
+        let database = self.database.clone();
+        let block_class_label_map = self
+            .label_library
+            .get_label_map_for::<BlockClass>()
+            .expect("block class label map not found");
+        let dimension_kind_label_map = self
+            .label_library
+            .get_label_map_for::<DimensionKind>()
+            .expect("dimension kind label map not found");
+
         let (new_chunks_tx, new_chunks_rx) = flume::unbounded();
 
         let script_labels: LabelMap<Script> = List::load(CHUNK_GENERATION_SCRIPT_LIST)
@@ -181,7 +204,8 @@ impl ChunkGenerationSystem {
 
             let seed = 0;
 
-            while let Ok(chunk) = new_chunks_rx.recv() {
+            while let Ok(request) = new_chunks_rx.recv() {
+                let ChunkGenerationRequest { chunk } = request;
                 let Chunk {
                     position,
                     dimension: Dimension { kind, phase },
@@ -238,10 +262,6 @@ impl ChunkGenerationSystem {
             }
         });
 
-        Self { new_chunks_tx }
-    }
-
-    pub fn generate_chunk(&self, chunk: Chunk) {
-        let _ = self.new_chunks_tx.send(chunk);
+        new_chunks_tx
     }
 }

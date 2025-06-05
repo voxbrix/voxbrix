@@ -3,6 +3,7 @@ use nohash_hasher::{
     IntMap,
     IntSet,
 };
+use rayon::prelude::*;
 use std::{
     collections::{
         hash_map,
@@ -12,7 +13,10 @@ use std::{
     ops::Deref,
 };
 use voxbrix_common::{
-    component::actor::position::Position,
+    component::actor::{
+        position::Position,
+        velocity::Velocity,
+    },
     entity::{
         actor::Actor,
         chunk::Chunk,
@@ -30,53 +34,85 @@ use voxbrix_common::{
     pack,
 };
 
-pub struct Writable<'a, T> {
-    actor: Actor,
-    snapshot: Snapshot,
-    changes: &'a mut IntMap<Actor, Snapshot>,
-    chunk_changes: &'a mut VecDeque<ActorChunkChange>,
-    chunk_actor_component: &'a mut BTreeSet<(Chunk, Actor)>,
-    data: &'a mut T,
+pub struct Change {
+    pub actor: Actor,
+    #[allow(dead_code)]
+    pub prev_position: Position,
+    pub next_position: Position,
+    #[allow(dead_code)]
+    pub prev_velocity: Velocity,
+    pub next_velocity: Velocity,
+    pub collides_with_block: bool,
 }
 
-impl Writable<'_, Position> {
-    /// Only updates value if it is different from the old one.
-    pub fn update(&mut self, value: Position) {
-        let Self {
-            snapshot,
-            changes,
-            chunk_changes,
-            chunk_actor_component,
-            actor,
-            data,
-        } = self;
+pub struct PositionChanges(Vec<Change>);
 
-        if value != **data {
-            if value.chunk != data.chunk {
-                chunk_changes.push_back(ActorChunkChange {
-                    snapshot: *snapshot,
-                    actor: *actor,
-                    previous_chunk: Some(data.chunk),
-                });
+impl PositionChanges {
+    pub fn new() -> PositionChanges {
+        PositionChanges(Vec::new())
+    }
 
-                chunk_actor_component.remove(&(data.chunk, *actor));
-                chunk_actor_component.insert((value.chunk, *actor));
-            }
-
-            **data = value;
-
-            changes.insert(*actor, *snapshot);
-        }
+    pub fn from_par_iter(&mut self, iter: impl ParallelIterator<Item = Change>) {
+        self.0.clear();
+        self.0.par_extend(iter);
     }
 }
 
-impl<'a, T> Deref for Writable<'a, T> {
-    type Target = T;
+impl Deref for PositionChanges {
+    type Target = [Change];
 
-    fn deref(&self) -> &T {
-        self.data
+    fn deref(&self) -> &Self::Target {
+        self.0.as_slice()
     }
 }
+
+// pub struct Writable<'a, T> {
+// actor: Actor,
+// snapshot: Snapshot,
+// changes: &'a mut IntMap<Actor, Snapshot>,
+// chunk_changes: &'a mut VecDeque<ActorChunkChange>,
+// chunk_actor_component: &'a mut BTreeSet<(Chunk, Actor)>,
+// data: &'a mut T,
+// }
+//
+// impl Writable<'_, Position> {
+// Only updates value if it is different from the old one.
+// pub fn update(&mut self, value: Position) {
+// let Self {
+// snapshot,
+// changes,
+// chunk_changes,
+// chunk_actor_component,
+// actor,
+// data,
+// } = self;
+//
+// if value != **data {
+// if value.chunk != data.chunk {
+// chunk_changes.push_back(ActorChunkChange {
+// snapshot: *snapshot,
+// actor: *actor,
+// previous_chunk: Some(data.chunk),
+// });
+//
+// chunk_actor_component.remove(&(data.chunk, *actor));
+// chunk_actor_component.insert((value.chunk, *actor));
+// }
+//
+// data = value;
+//
+// changes.insert(*actor, *snapshot);
+// }
+// }
+// }
+//
+// impl<'a, T> Deref for Writable<'a, T> {
+// type Target = T;
+//
+// fn deref(&self) -> &T {
+// self.data
+// }
+// }
 
 pub struct ActorChunkChange {
     pub snapshot: Snapshot,
@@ -383,16 +419,16 @@ impl PositionActorComponent {
         self.storage.get(i)
     }
 
-    pub fn get_writable(&mut self, i: &Actor, snapshot: Snapshot) -> Option<Writable<Position>> {
-        Some(Writable {
-            actor: *i,
-            snapshot,
-            changes: &mut self.changes,
-            chunk_changes: &mut self.chunk_changes,
-            chunk_actor_component: &mut self.chunk_actor_component,
-            data: self.storage.get_mut(i)?,
-        })
-    }
+    // pub fn get_writable(&mut self, i: &Actor, snapshot: Snapshot) -> Option<Writable<Position>> {
+    // Some(Writable {
+    // actor: *i,
+    // snapshot,
+    // changes: &mut self.changes,
+    // chunk_changes: &mut self.chunk_changes,
+    // chunk_actor_component: &mut self.chunk_actor_component,
+    // data: self.storage.get_mut(i)?,
+    // })
+    // }
 
     pub fn remove(&mut self, actor: &Actor, snapshot: Snapshot) {
         if let Some(value) = self.storage.remove(actor) {

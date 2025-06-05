@@ -305,9 +305,9 @@ where
     // })
     // }
 
-    pub fn iter(&self) -> impl Iterator<Item = (Actor, &T)> {
-        self.storage.iter().map(|(k, v)| (*k, v))
-    }
+    // pub fn iter(&self) -> impl Iterator<Item = (Actor, &T)> {
+    // self.storage.iter().map(|(k, v)| (*k, v))
+    // }
 
     pub fn remove(&mut self, actor: &Actor, snapshot: Snapshot) -> Option<T> {
         let removed = self.storage.remove(actor);

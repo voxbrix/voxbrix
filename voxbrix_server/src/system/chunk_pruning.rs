@@ -2,75 +2,67 @@ use crate::{
     component::{
         actor::{
             chunk_activation::{
-                ActorChunkActivation,
-                ChunkActivationActorComponent,
+                ActorChunkPruning,
+                ChunkPruningActorComponent,
             },
-            player::PlayerActorComponent,
             position::PositionActorComponent,
         },
-        block::class::ClassBlockComponent,
-        chunk::{
-            cache::CacheChunkComponent,
-            status::{
-                ChunkStatus,
-                StatusChunkComponent,
-            },
+        chunk::status::{
+            ChunkStatus,
+            StatusChunkComponent,
         },
-    },
-    resource::{
-        chunk_generation_request::ChunkGenerationRequest,
-        removal_queue::RemovalQueue,
-        shared_event::SharedEvent,
     },
     storage::IntoDataSized,
     BLOCK_CLASS_TABLE,
+    resource::{
+        shared_event::SharedEvent,
+        chunk_generation_request::ChunkGenerationRequest,
+    },
 };
 use ahash::AHashMap;
-use flume::Sender;
 use redb::Database;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use voxbrix_common::{
+    component::block::BlocksVec,
     entity::{
-        actor::Actor,
+        block_class::BlockClass,
         chunk::Chunk,
     },
     messages::client::ClientAccept,
     pack::Packer,
     ChunkData,
 };
-use voxbrix_world::{
-    System,
-    SystemData,
-};
+use voxbrix_world::{System, SystemData};
+use flume::Sender;
+
+pub enum ChunkPruningOutcome {
+    ChunkActivated(BlocksVec<BlockClass>),
+    ChunkNeedsGeneration,
+}
 
 #[derive(SystemData)]
-pub struct ChunkActivationSystemData<'a> {
-    system: &'a mut ChunkActivationSystem,
-    chunk_activation_ac: &'a ChunkActivationActorComponent,
+pub struct ChunkPruningSystemData<'a> {
+    system: &'a mut ChunkPruningSystem,
+    chunk_activation_ac: &'a ChunkPruningActorComponent,
     position_ac: &'a PositionActorComponent,
     database: &'a Arc<Database>,
     status_cc: &'a mut StatusChunkComponent,
     rt_handle: &'a Handle,
     shared_event_tx: &'a Sender<SharedEvent>,
     chunk_generation_tx: &'a Sender<ChunkGenerationRequest>,
-
-    class_bc: &'a mut ClassBlockComponent,
-    cache_cc: &'a mut CacheChunkComponent,
-    player_ac: &'a PlayerActorComponent,
-    actor_rq: &'a mut RemovalQueue<Actor>,
 }
 
-pub struct ChunkActivationSystem {
+pub struct ChunkPruningSystem {
     target: AHashMap<Chunk, f64>,
     missing: Vec<(Chunk, f64)>,
 }
 
-impl System for ChunkActivationSystem {
-    type Data<'a> = ChunkActivationSystemData<'a>;
+impl System for ChunkPruningSystem {
+    type Data<'a> = ChunkPruningSystemData<'a>;
 }
 
-impl ChunkActivationSystem {
+impl ChunkPruningSystem {
     pub fn new() -> Self {
         Self {
             target: AHashMap::new(),
@@ -79,18 +71,17 @@ impl ChunkActivationSystem {
     }
 }
 
-impl ChunkActivationSystemData<'_> {
+impl ChunkPruningSystemData<'_> {
     pub fn run(self) {
         // Calculating target:
         self.system.target.clear();
-        let iter = self
-            .chunk_activation_ac
+        let iter = self.chunk_activation_ac
             .iter()
             .filter_map(|(actor, chunk_activation)| {
                 Some((self.position_ac.get(&actor)?.chunk, chunk_activation))
             })
             .flat_map(|(actor_chunk, chunk_activation)| {
-                let ActorChunkActivation { radius } = chunk_activation;
+                let ActorChunkPruning { radius } = chunk_activation;
                 let chunk_radius = actor_chunk.radius(*radius);
                 chunk_radius.into_iter_simple().map(move |chunk| {
                     let reverse_priority: f64 = actor_chunk
@@ -119,8 +110,7 @@ impl ChunkActivationSystemData<'_> {
         // Activation:
         self.system.missing.clear();
         self.system.missing.extend(
-            self.system
-                .target
+            self.system.target
                 .iter()
                 .filter(|(chunk, _)| {
                     let is_new = self.status_cc.get(chunk).is_none();
@@ -134,8 +124,7 @@ impl ChunkActivationSystemData<'_> {
                 .map(|(chunk, priority)| (*chunk, *priority)),
         );
 
-        self.system
-            .missing
+        self.system.missing
             .sort_unstable_by(|(_, priority1), (_, priority2)| {
                 priority2.partial_cmp(priority1).unwrap()
             });
@@ -163,41 +152,14 @@ impl ChunkActivationSystemData<'_> {
                         block_classes,
                     };
 
-                    let data_encoded = packer
-                        .pack_to_vec(&ClientAccept::ChunkData(data.clone()))
-                        .into();
+                    let data_encoded =packer.pack_to_vec(&ClientAccept::ChunkData(data.clone())).into();
 
-                    let _ = shared_event_tx.send(SharedEvent::ChunkLoaded { data, data_encoded });
+                    let _ =
+                        shared_event_tx.send(SharedEvent::ChunkLoaded { data, data_encoded });
                 } else {
                     let _ = chunk_generation_tx.send(ChunkGenerationRequest { chunk });
                 }
             });
         }
-
-        // Deactivating chunks
-        let retain = |chunk: &Chunk| self.system.target.contains_key(chunk);
-
-        self.status_cc.retain(|chunk, status| {
-            let retain = retain(chunk) || *status == ChunkStatus::Loading;
-
-            if !retain {
-                self.cache_cc.remove(chunk);
-                self.class_bc.remove_chunk(chunk);
-
-                // Removing actors on inactivated chunks
-                for actor in self
-                    .position_ac
-                    .get_actors_in_chunk(*chunk)
-                    .filter(|actor| {
-                        // Ignore players to avoid bugs
-                        self.player_ac.get(actor).is_none()
-                    })
-                {
-                    self.actor_rq.enqueue(actor);
-                }
-            }
-
-            retain
-        });
     }
 }

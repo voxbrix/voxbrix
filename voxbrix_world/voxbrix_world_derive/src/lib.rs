@@ -32,13 +32,17 @@ pub fn derive(input: TokenStream) -> TokenStream {
                     let ref_type = &reference.elem;
 
                     if reference.mutability.is_some() {
-                        field_list.push(quote! {
-                            ::voxbrix_world::Request::Write(::core::any::TypeId::of::<#ref_type>()),
-                        });
+                        field_list.push(quote! {{
+                            let req = ::voxbrix_world::Request::Write(::core::any::TypeId::of::<#ref_type>());
+                            let name = ::core::stringify!(#ref_type);
+                            (req, name)
+                        },});
                     } else {
-                        field_list.push(quote! {
-                            ::voxbrix_world::Request::Read(::core::any::TypeId::of::<#ref_type>()),
-                        });
+                        field_list.push(quote! {{
+                            let req = ::voxbrix_world::Request::Read(::core::any::TypeId::of::<#ref_type>());
+                            let name = ::core::stringify!(#ref_type);
+                            (req, name)
+                        },});
                     }
                 } else {
                     panic!("only reference fields of the struct are supported");
@@ -75,7 +79,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
     let expanded = quote! {
         impl<'a> ::voxbrix_world::SystemData<'a> for #type_name<'a> {
-            fn required_resources() -> impl Iterator<Item = ::voxbrix_world::Request<::core::any::TypeId>> {
+            fn required_resources() -> impl Iterator<Item = (::voxbrix_world::Request<::core::any::TypeId>, &'static str)> {
                 [
                     #(#field_list)*
                 ].into_iter()

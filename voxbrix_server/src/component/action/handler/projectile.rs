@@ -2,10 +2,7 @@ use anyhow::Error;
 use serde::Deserialize;
 use std::sync::Arc;
 use voxbrix_common::{
-    entity::{
-        effect::Effect,
-        script::Script,
-    },
+    entity::effect::Effect,
     LabelLibrary,
 };
 

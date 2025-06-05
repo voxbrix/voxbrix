@@ -12,14 +12,14 @@ pub type ClientPlayerComponent = PlayerComponent<Client>;
 
 pub enum SendData {
     Owned(Vec<u8>),
-    Arc(Arc<Vec<u8>>),
+    Arc(Arc<[u8]>),
 }
 
 impl SendData {
     pub fn as_slice(&self) -> &[u8] {
         match self {
             Self::Owned(v) => v.as_slice(),
-            Self::Arc(v) => v.as_slice(),
+            Self::Arc(v) => v.as_ref(),
         }
     }
 }

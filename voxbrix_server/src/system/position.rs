@@ -1,76 +1,68 @@
-use crate::component::{
-    actor::{
-        player::PlayerActorComponent,
-        position::PositionActorComponent,
-        velocity::VelocityActorComponent,
-    },
-    block::class::ClassBlockComponent,
-};
-use rayon::prelude::*;
-use std::{
-    mem,
-    time::Duration,
-};
-use voxbrix_common::{
+use crate::{
     component::{
         actor::{
-            position::Position,
-            velocity::Velocity,
+            player::PlayerActorComponent,
+            position::{
+                Change,
+                PositionActorComponent,
+                PositionChanges,
+            },
+            velocity::VelocityActorComponent,
         },
-        block_class::collision::CollisionBlockClassComponent,
+        block::class::ClassBlockComponent,
     },
-    entity::actor::Actor,
+    resource::process_timer::ProcessTimer,
+};
+use rayon::prelude::*;
+use voxbrix_common::{
+    component::block_class::collision::CollisionBlockClassComponent,
+    entity::snapshot::Snapshot,
     system::position,
 };
+use voxbrix_world::{
+    System,
+    SystemData,
+};
 
-pub struct Change {
-    pub actor: Actor,
-    pub prev_position: Position,
-    pub next_position: Position,
-    pub prev_velocity: Velocity,
-    pub next_velocity: Velocity,
-    pub collides_with_block: bool,
+pub struct PositionSystem;
+
+impl System for PositionSystem {
+    type Data<'a> = PositionSystemData<'a>;
 }
 
-pub struct PositionSystem {
-    position_changes: Vec<Change>,
+#[derive(SystemData)]
+pub struct PositionSystemData<'a> {
+    snapshot: &'a Snapshot,
+    process_timer: &'a ProcessTimer,
+    class_bc: &'a ClassBlockComponent,
+    collision_bcc: &'a CollisionBlockClassComponent,
+    position_ac: &'a mut PositionActorComponent,
+    velocity_ac: &'a mut VelocityActorComponent,
+    player_ac: &'a PlayerActorComponent,
+    position_changes: &'a mut PositionChanges,
 }
 
-impl PositionSystem {
-    pub fn new() -> Self {
-        Self {
-            position_changes: Vec::new(),
-        }
-    }
-
-    pub fn collect_changes(
-        &mut self,
-        dt: Duration,
-        class_bc: &ClassBlockComponent,
-        collision_bcc: &CollisionBlockClassComponent,
-        position_ac: &PositionActorComponent,
-        velocity_ac: &VelocityActorComponent,
-        player_ac: &PlayerActorComponent,
-    ) {
+impl PositionSystemData<'_> {
+    pub fn run(self) {
+        let dt = self.process_timer.elapsed();
         // TODO: replace
         let h_radius = 0.45;
         let v_radius = 0.95;
         let radius = [h_radius, h_radius, v_radius];
 
-        self.position_changes.clear();
-
-        let par_iter = velocity_ac
+        let par_iter = self
+            .velocity_ac
             .par_iter()
-            .filter(|(actor, _)| player_ac.get(actor).is_none())
+            .filter(|(actor, _)| self.player_ac.get(actor).is_none())
             .filter_map(|(actor, velocity)| {
-                let position = position_ac.get(&actor)?;
+                let position = self.position_ac.get(&actor)?;
 
                 let mut collides_with_block = false;
 
                 let (next_pos, next_vel) = position::process_actor(
                     dt,
-                    class_bc,
-                    collision_bcc,
+                    self.class_bc,
+                    self.collision_bcc,
                     &position,
                     velocity,
                     &radius,
@@ -93,10 +85,13 @@ impl PositionSystem {
                 })
             });
 
-        self.position_changes.par_extend(par_iter);
-    }
+        self.position_changes.from_par_iter(par_iter);
 
-    pub fn take_changes(&mut self) -> Vec<Change> {
-        mem::take(&mut self.position_changes)
+        for change in self.position_changes.iter() {
+            self.position_ac
+                .insert(change.actor, change.next_position, *self.snapshot);
+            self.velocity_ac
+                .insert(change.actor, change.next_velocity, *self.snapshot);
+        }
     }
 }

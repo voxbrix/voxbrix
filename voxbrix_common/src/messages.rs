@@ -76,7 +76,7 @@ impl StateUnpacker {
 impl StateUnpacker {
     pub fn unpack_state<'a>(
         &'a mut self,
-        state: StatePacked<'a>,
+        state: &'a StatePacked<'a>,
     ) -> Result<StateUnpacked<'a>, UnpackError> {
         let mut buffer = mem::take(&mut self.buffer);
 
@@ -222,7 +222,7 @@ impl ActionsUnpacker {
 impl ActionsUnpacker {
     pub fn unpack_actions<'a>(
         &'a mut self,
-        actions: ActionsPacked<'a>,
+        actions: &'a ActionsPacked<'a>,
     ) -> Result<ActionsUnpacked<'a>, UnpackError> {
         let mut buffer = mem::take(&mut self.buffer);
 

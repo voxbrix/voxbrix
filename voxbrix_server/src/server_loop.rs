@@ -15,7 +15,10 @@ use crate::{
             class::ClassActorComponent,
             orientation::OrientationActorComponent,
             player::PlayerActorComponent,
-            position::PositionActorComponent,
+            position::{
+                PositionActorComponent,
+                PositionChanges,
+            },
             projectile::ProjectileActorComponent,
             velocity::VelocityActorComponent,
         },
@@ -40,19 +43,30 @@ use crate::{
         actor::ActorRegistry,
         player::Player,
     },
+    resource::{
+        process_timer::ProcessTimer,
+        removal_queue::RemovalQueue,
+        script_shared_data,
+        shared_event::SharedEvent,
+    },
     storage::StorageThread,
     system::{
         chunk_activation::ChunkActivationSystem,
+        chunk_add::ChunkAddSystem,
         chunk_generation::ChunkGenerationSystem,
+        entity_removal::{
+            EntityRemovalCheckSystem,
+            EntityRemovalSystem,
+        },
         map_loading::Map,
+        player_add::{
+            PlayerAddData,
+            PlayerAddSystem,
+        },
         position::PositionSystem,
     },
     BASE_CHANNEL,
     PROCESS_INTERVAL,
-};
-use data::{
-    EntityRemoveQueue,
-    SharedData,
 };
 use flume::Sender as SharedSender;
 use futures_lite::stream::{
@@ -63,10 +77,7 @@ use local_channel::mpsc::Receiver;
 use player_event::PlayerEvent;
 use process::Process;
 use redb::Database;
-use std::{
-    sync::Arc,
-    time::Instant,
-};
+use std::sync::Arc;
 use tokio::{
     runtime::Handle,
     time::{
@@ -91,7 +102,8 @@ use voxbrix_common::{
     compute,
     entity::{
         action::Action,
-        chunk::Chunk,
+        actor::Actor,
+        chunk::DimensionKind,
         effect::Effect,
         snapshot::Snapshot,
     },
@@ -110,24 +122,16 @@ use voxbrix_common::{
     },
     ChunkData,
     LabelLibrary,
+    LabelMap,
 };
 use voxbrix_protocol::{
     server::Packet,
     Channel,
 };
+use voxbrix_world::World;
 
-mod actor_collision;
-mod data;
 mod player_event;
 mod process;
-
-pub enum SharedEvent {
-    ChunkLoaded {
-        data: ChunkData,
-        data_encoded: Arc<Vec<u8>>,
-    },
-    ChunkGeneration(Chunk),
-}
 
 // Server loop input
 pub enum ServerEvent {
@@ -155,6 +159,8 @@ pub struct ServerLoop {
 impl ServerLoop {
     pub async fn run(self) {
         let Self { database, event_rx } = self;
+
+        let mut world = World::new();
 
         let (shared_event_tx, shared_event_rx) = flume::unbounded();
 
@@ -210,8 +216,6 @@ impl ServerLoop {
         let class_bc = ClassBlockComponent::new();
         let mut collision_bcc = CollisionBlockClassComponent::new();
 
-        let position_system = PositionSystem::new();
-
         actor_class_loading_system
             .load_component("model", &mut model_acc, |desc: String| {
                 actor_model_label_map.get(&desc).ok_or_else(|| {
@@ -248,7 +252,7 @@ impl ServerLoop {
 
         let engine = wasmtime::Engine::new(&engine_config).expect("wasm engine failed to start");
 
-        let script_registry = data::setup_script_registry(
+        let script_registry = script_shared_data::setup_script_registry(
             ScriptRegistryBuilder::load(engine, SERVER_LOOP_SCRIPT_LIST, SERVER_LOOP_SCRIPT_DIR)
                 .await
                 .expect("failed to load scripts"),
@@ -260,7 +264,7 @@ impl ServerLoop {
             .await
             .expect("failed to load action-script map");
 
-        let dimension_kind_label_map = List::load(DIMENSION_KIND_LIST)
+        let dimension_kind_label_map: LabelMap<DimensionKind> = List::load(DIMENSION_KIND_LIST)
             .await
             .expect("loading dimension kind label map")
             .into_label_map();
@@ -274,23 +278,6 @@ impl ServerLoop {
             .expect("failed to map actions to scripts");
 
         let shared_event_tx_clone = shared_event_tx.clone();
-        let chunk_generation_system = ChunkGenerationSystem::new(
-            database.clone(),
-            block_class_label_map.clone(),
-            dimension_kind_label_map,
-            move |chunk, block_classes, packer| {
-                let data = ChunkData {
-                    chunk,
-                    block_classes,
-                };
-
-                let data_encoded =
-                    Arc::new(packer.pack_to_vec(&ClientAccept::ChunkData(data.clone())));
-
-                let _ = shared_event_tx_clone.send(SharedEvent::ChunkLoaded { data, data_encoded });
-            },
-        )
-        .await;
 
         let mut send_status_interval = time::interval(PROCESS_INTERVAL);
         send_status_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -305,68 +292,86 @@ impl ServerLoop {
 
         let storage = StorageThread::new();
 
-        let mut shared_data = SharedData {
-            database,
-            shared_event_tx,
-            packer: Packer::new(),
-            actor_registry: ActorRegistry::new(),
+        world.add(database);
+        world.add(shared_event_tx);
+        world.add(Packer::new());
+        world.add(ActorRegistry::new());
 
-            client_pc: ClientPlayerComponent::new(),
-            actions_packer_pc: ActionsPackerPlayerComponent::new(),
-            actor_pc: ActorPlayerComponent::new(),
-            chunk_update_pc: ChunkUpdatePlayerComponent::new(),
-            chunk_view_pc: ChunkViewPlayerComponent::new(),
+        world.add(ClientPlayerComponent::new());
+        world.add(ActionsPackerPlayerComponent::new());
+        world.add(ActorPlayerComponent::new());
+        world.add(ChunkUpdatePlayerComponent::new());
+        world.add(ChunkViewPlayerComponent::new());
 
-            class_ac,
-            position_ac,
-            velocity_ac,
-            orientation_ac,
-            player_ac,
-            chunk_activation_ac,
-            effect_ac: EffectActorComponent::new(),
-            projectile_ac: ProjectileActorComponent::new(),
+        world.add(class_ac);
+        world.add(position_ac);
+        world.add(PositionChanges::new());
+        world.add(velocity_ac);
+        world.add(orientation_ac);
+        world.add(player_ac);
+        world.add(chunk_activation_ac);
+        world.add(EffectActorComponent::new());
+        world.add(ProjectileActorComponent::new());
 
-            model_acc,
+        world.add(model_acc);
 
-            class_bc,
+        world.add(class_bc);
 
-            collision_bcc,
+        world.add(collision_bcc);
 
-            status_cc,
-            cache_cc,
+        world.add(status_cc);
+        world.add(cache_cc);
 
-            label_library,
+        world.add(label_library);
 
-            position_system,
-            chunk_activation_system: ChunkActivationSystem::new(),
-            chunk_generation_system,
+        let chunk_generation_system = world
+            .get_data::<ChunkGenerationSystem>()
+            .spawn(move |chunk, block_classes, packer| {
+                let data = ChunkData {
+                    chunk,
+                    block_classes,
+                };
 
-            script_registry,
+                let data_encoded = packer
+                    .pack_to_vec(&ClientAccept::ChunkData(data.clone()))
+                    .into();
 
-            handler_action_component,
+                let _ = shared_event_tx_clone.send(SharedEvent::ChunkLoaded { data, data_encoded });
+            })
+            .await;
 
-            storage,
+        world.add(chunk_generation_system);
 
-            snapshot: Snapshot(1),
+        world.add(PositionSystem);
+        world.add(ChunkActivationSystem::new());
 
-            state_packer: StatePacker::new(),
-            state_unpacker: StateUnpacker::new(),
-            actions_unpacker: ActionsUnpacker::new(),
+        world.add(script_registry);
 
-            last_process_time: Instant::now(),
+        world.add(handler_action_component);
 
-            remove_queue: EntityRemoveQueue::new(),
-        };
+        world.add(storage);
+
+        world.add(Snapshot(1));
+
+        world.add(StatePacker::new());
+        world.add(StateUnpacker::new());
+        world.add(ActionsUnpacker::new());
+
+        world.add(ProcessTimer::new());
+
+        world.add(RemovalQueue::<Actor>::new());
+        world.add(RemovalQueue::<Player>::new());
+        world.add(Handle::current());
 
         while let Some(event) = stream.next().await {
-            shared_data.remove_entities();
+            if world.get_data::<EntityRemovalCheckSystem>().run() {
+                world.get_data::<EntityRemovalSystem>().run();
+            }
 
             match event {
                 ServerEvent::Process => {
-                    let rt_handle = Handle::current();
-                    compute!((shared_data) Process {
-                        shared_data: &mut shared_data,
-                        rt_handle,
+                    compute!((world) Process {
+                        world: &mut world,
                     }.run());
                 },
                 ServerEvent::AddPlayer {
@@ -374,8 +379,12 @@ impl ServerLoop {
                     client_tx,
                     session_id,
                 } => {
-                    shared_data.remove_player(&player);
-                    shared_data.add_player(player, client_tx, session_id);
+                    // TODO remove player
+                    world.get_data::<PlayerAddSystem>().run(PlayerAddData {
+                        player,
+                        tx: client_tx,
+                        session_id,
+                    });
                 },
                 ServerEvent::PlayerEvent {
                     player,
@@ -385,15 +394,15 @@ impl ServerLoop {
                 } => {
                     // Filter out outdated messages
                     // and other channels
-                    if shared_data
-                        .client_pc
+                    if world
+                        .get_resource_ref::<ClientPlayerComponent>()
                         .get(&player)
                         .map(|c| c.session_id == session_id)
                         .unwrap_or(false)
                         && channel == BASE_CHANNEL
                     {
                         PlayerEvent {
-                            shared_data: &mut shared_data,
+                            world: &mut world,
                             player,
                             data,
                         }
@@ -405,9 +414,10 @@ impl ServerLoop {
                         SharedEvent::ChunkLoaded {
                             data: chunk_data,
                             data_encoded,
-                        } => shared_data.chunk_loaded(chunk_data, data_encoded),
-                        SharedEvent::ChunkGeneration(chunk) => {
-                            shared_data.chunk_generation_system.generate_chunk(chunk);
+                        } => {
+                            world
+                                .get_data::<ChunkAddSystem>()
+                                .run(chunk_data, data_encoded);
                         },
                     }
                 },

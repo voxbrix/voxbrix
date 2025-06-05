@@ -13,7 +13,7 @@ use std::{
 pub use voxbrix_world_derive::SystemData;
 
 struct Compiled<T> {
-    data: Vec<Request<usize>>,
+    data: Vec<(Request<usize>, &'static str)>,
     data_type: PhantomData<T>,
 }
 
@@ -48,7 +48,7 @@ impl World {
         let type_id = TypeId::of::<T>();
 
         if self.type_map.insert(type_id, idx).is_some() {
-            panic!("resouce \"{:?}\" is already defined", type_id);
+            panic!("resource of type \"{:?}\" is already defined", type_id);
         }
 
         self.storage.push(UnsafeCell::new(Some(Box::new(resource))));
@@ -63,15 +63,15 @@ impl World {
         self.borrowed_mut.clear();
 
         let data = S::Data::required_resources()
-            .map(|req| {
-                match req {
+            .map(|(req, name)| {
+                let req = match req {
                     Request::Read(type_id) => {
                         if self.borrowed_mut.contains(&type_id) {
-                            panic!("resource \"{:?}\" already mutably borrowed", type_id);
+                            panic!("resource \"{}\" already mutably borrowed", name);
                         }
 
                         let idx = self.type_map.get(&type_id).unwrap_or_else(|| {
-                            panic!("resource \"{:?}\" is undefined", type_id);
+                            panic!("resource \"{}\" is undefined", name);
                         });
 
                         self.borrowed.push(type_id);
@@ -80,22 +80,24 @@ impl World {
                     },
                     Request::Write(type_id) => {
                         if self.borrowed.contains(&type_id) {
-                            panic!("resource \"{:?}\" already borrowed", type_id);
+                            panic!("resource \"{}\" already borrowed", name);
                         }
 
                         if self.borrowed_mut.contains(&type_id) {
-                            panic!("resource \"{:?}\" already mutably borrowed", type_id);
+                            panic!("resource \"{}\" already mutably borrowed", name);
                         }
 
                         let idx = self.type_map.get(&type_id).unwrap_or_else(|| {
-                            panic!("resource \"{:?}\" is undefined", type_id);
+                            panic!("resource \"{}\" is undefined", name);
                         });
 
                         self.borrowed_mut.push(type_id);
 
                         Request::Write(*idx)
                     },
-                }
+                };
+
+                (req, name)
             })
             .collect();
 
@@ -103,6 +105,47 @@ impl World {
             data,
             data_type: Default::default(),
         }
+    }
+
+    pub fn get_resource_ref<'a, T>(&'a self) -> &'a T
+    where
+        T: 'static,
+    {
+        let type_id = TypeId::of::<T>();
+
+        let idx = self.type_map.get(&type_id).copied().unwrap_or_else(|| {
+            panic!("resource \"{:?}\" is undefined", type_id);
+        });
+
+        let ptr = self.storage.get(idx).unwrap().get();
+
+        let bx = unsafe { &*ptr }.as_ref().unwrap_or_else(|| {
+            panic!("resource of type \"{:?}\" is taken", type_id);
+        });
+
+        bx.downcast_ref::<T>().unwrap()
+    }
+
+    pub fn get_resource_mut<'a, T>(&'a mut self) -> &'a mut T
+    where
+        T: 'static,
+    {
+        let type_id = TypeId::of::<T>();
+
+        let idx = self.type_map.get(&type_id).copied().unwrap_or_else(|| {
+            panic!("resource of type \"{:?}\" is undefined", type_id);
+        });
+
+        self.storage
+            .get_mut(idx)
+            .unwrap()
+            .get_mut()
+            .as_mut()
+            .unwrap_or_else(|| {
+                panic!("resource of type \"{:?}\" is taken", type_id);
+            })
+            .downcast_mut::<T>()
+            .unwrap()
     }
 
     /// Get data for a [`System`].
@@ -132,35 +175,36 @@ impl World {
             },
         };
 
+        // Compiled above.
         let ptr = self.storage.get(idx).unwrap().get();
 
-        let bx = unsafe { &*ptr }.as_ref().unwrap_or_else(|| {
-            panic!("resource \"{:?}\" is taken", type_id);
-        });
+        let bx = unsafe { &*ptr }.as_ref().unwrap();
 
         let cmpd = bx.downcast_ref::<Compiled<S>>().unwrap();
 
-        let access_iter = cmpd.data.iter().map(|req| {
+        let access_iter = cmpd.data.iter().map(|(req, name)| {
             match req {
                 Request::Read(idx) => {
+                    // Is checked during compilation.
                     let ptr = self.storage.get(*idx).unwrap().get();
 
                     let bx = unsafe { &*ptr }
                         .as_ref()
                         .unwrap_or_else(|| {
-                            panic!("resource \"{:?}\" is taken", type_id);
+                            panic!("resource \"{}\" is taken", name);
                         })
                         .as_ref();
 
                     Access::Read(bx)
                 },
                 Request::Write(idx) => {
+                    // Is checked during compilation.
                     let ptr = self.storage.get(*idx).unwrap().get();
 
                     let bx = unsafe { &mut *ptr }
                         .as_mut()
                         .unwrap_or_else(|| {
-                            panic!("resource \"{:?}\" is taken", type_id);
+                            panic!("resource \"{}\" is taken", name);
                         })
                         .as_mut();
 
@@ -225,7 +269,7 @@ pub trait System {
 /// If `derive` feature is enabled this trait can be derived for a simple,
 /// non-generic struct with only references or mutable references for fields.
 pub trait SystemData<'a> {
-    fn required_resources() -> impl Iterator<Item = Request<TypeId>>;
+    fn required_resources() -> impl Iterator<Item = (Request<TypeId>, &'static str)>;
 
     /// Order of resources is the same as requested by [`required_resources()'].
     fn from_resources(resources: impl Iterator<Item = Access<'a, dyn Any + Send + Sync>>) -> Self;
@@ -237,7 +281,7 @@ macro_rules! impl_system {
         where
             $($name: SystemData<'a>),+
         {
-            fn required_resources() -> impl Iterator<Item = Request<TypeId>> {
+            fn required_resources() -> impl Iterator<Item = (Request<TypeId>, &'static str)> {
                 std::iter::empty()
                     $(
                         .chain($name::required_resources())
