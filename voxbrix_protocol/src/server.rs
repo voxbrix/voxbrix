@@ -89,7 +89,6 @@ use flume::{
     Sender as ChannelTx,
     TryRecvError as TryReceiveError,
 };
-use futures_lite::future::FutureExt;
 use integer_encoding::{
     VarIntReader,
     VarIntWriter,
@@ -117,6 +116,7 @@ use std::sync::Arc as Rc;
 use std::{
     collections::VecDeque,
     fmt,
+    future::Future,
     io::{
         Cursor,
         Error as StdIoError,
@@ -125,7 +125,9 @@ use std::{
     },
     mem,
     net::SocketAddr,
+    pin::pin,
     slice,
+    task::Poll,
     time::Instant,
 };
 use tokio::{
@@ -1065,6 +1067,7 @@ impl ServerParameters {
             out_queue_sender,
             receive_buffer: WriteBuffer::new(),
             transport,
+            send_first: true,
         })
     }
 }
@@ -1075,6 +1078,7 @@ pub struct Server {
     out_queue_sender: ChannelTx<Out>,
     receive_buffer: WriteBuffer,
     transport: UdpSocket,
+    send_first: bool,
 }
 
 impl Server {
@@ -1085,28 +1089,52 @@ impl Server {
     /// constantly for the existing connections to work.**
     pub async fn accept(&mut self) -> Result<Connection, Error> {
         loop {
-            let next: Result<_, StdIoError> = async {
-                // Server struct exists (because &mut self), the following will never panic,
-                // since we have one sender kept in the struct
+            let next = {
+                let send_future = async {
+                    // Server struct exists (because &mut self), the following will never panic,
+                    // since we have one sender kept in the struct
 
-                #[cfg(feature = "single")]
-                let out_packet = self.out_queue.recv().await.unwrap();
+                    #[cfg(feature = "single")]
+                    let out_packet = self.out_queue.recv().await.unwrap();
 
-                #[cfg(feature = "multi")]
-                let out_packet = self.out_queue.recv_async().await.unwrap();
+                    #[cfg(feature = "multi")]
+                    let out_packet = self.out_queue.recv_async().await.unwrap();
 
-                Ok(ServerPacket::Out(out_packet))
-            }
-            .or(async {
-                Ok(ServerPacket::In(
-                    self.transport
-                        .recv_from(self.receive_buffer.as_mut())
-                        .await?,
-                ))
-            })
-            .await;
+                    Ok::<_, StdIoError>(ServerPacket::Out(out_packet))
+                };
 
-            match next? {
+                let mut send_future = pin!(send_future);
+
+                let recv_future = async {
+                    Ok::<_, StdIoError>(ServerPacket::In(
+                        self.transport
+                            .recv_from(self.receive_buffer.as_mut())
+                            .await?,
+                    ))
+                };
+
+                let mut recv_future = pin!(recv_future);
+
+                let combined = std::future::poll_fn(|ctx| {
+                    if self.send_first {
+                        self.send_first = false;
+                        match send_future.as_mut().poll(ctx) {
+                            o @ Poll::Ready(_) => return o,
+                            Poll::Pending => recv_future.as_mut().poll(ctx),
+                        }
+                    } else {
+                        self.send_first = true;
+                        match recv_future.as_mut().poll(ctx) {
+                            o @ Poll::Ready(_) => return o,
+                            Poll::Pending => send_future.as_mut().poll(ctx),
+                        }
+                    }
+                });
+
+                combined.await
+            }?;
+
+            match next {
                 ServerPacket::In((len, addr)) => {
                     let mut read_cursor = Cursor::new(self.receive_buffer.as_ref());
                     let sender: usize = seek_read!(read_cursor.read_varint(), "sender");
