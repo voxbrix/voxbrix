@@ -428,10 +428,10 @@ mod tests {
                                 .await
                                 .expect("server sent packet");
 
-                            let (channel, result) = rx.recv().await.unwrap();
+                            let msg = rx.recv().await.unwrap();
 
-                            assert_eq!(result.as_ref(), b"2HelloWorld2");
-                            assert_eq!(channel, 1);
+                            assert_eq!(msg.data().as_ref(), b"2HelloWorld2");
+                            assert_eq!(msg.channel(), 1);
                         }));
                     }
                 });
@@ -451,10 +451,10 @@ mod tests {
                     .await
                     .expect("client connection");
 
-                let (channel, result) = rx.recv().await.expect("client message receive");
+                let msg = rx.recv().await.expect("client message receive");
 
-                assert_eq!(result.as_ref(), b"1HelloWorld1");
-                assert_eq!(channel, 0);
+                assert_eq!(msg.data().as_ref(), b"1HelloWorld1");
+                assert_eq!(msg.channel(), 0);
 
                 tx.send_unreliable(1, b"2HelloWorld2")
                     .await
@@ -515,10 +515,10 @@ mod tests {
                     .await
                     .expect("client connection");
 
-                let (channel, result) = rx.recv().await.expect("client message receive");
+                let msg = rx.recv().await.expect("client message receive");
 
-                assert_eq!(result.as_ref(), data.as_slice());
-                assert_eq!(channel, 0);
+                assert_eq!(msg.data().as_ref(), data.as_slice());
+                assert_eq!(msg.channel(), 0);
             })
             .await;
     }
@@ -555,10 +555,10 @@ mod tests {
                         } = server.accept().await.expect("connection accepted");
 
                         *task.borrow_mut() = Some(task::spawn_local(async move {
-                            let (channel, result) = rx.recv().await.expect("server received data");
+                            let msg = rx.recv().await.expect("server received data");
 
-                            assert_eq!(result.as_ref(), data.as_slice());
-                            assert_eq!(channel, 1);
+                            assert_eq!(msg.data().as_ref(), data.as_slice());
+                            assert_eq!(msg.channel(), 1);
                         }));
                     }
                 });
@@ -616,11 +616,10 @@ mod tests {
 
                         *task.borrow_mut() = Some(task::spawn_local(async move {
                             for i in 0 .. 10 {
-                                let (channel, result) =
-                                    rx.recv().await.expect("server received data");
+                                let msg = rx.recv().await.expect("server received data");
 
                                 assert_eq!(
-                                    result.as_ref(),
+                                    msg.data().as_ref(),
                                     [data.as_slice(), &[i]]
                                         .into_iter()
                                         .flatten()
@@ -628,7 +627,7 @@ mod tests {
                                         .collect::<Vec<u8>>()
                                         .as_slice()
                                 );
-                                assert_eq!(channel, 2);
+                                assert_eq!(msg.channel(), 2);
                             }
                         }));
                     }
@@ -725,11 +724,10 @@ mod tests {
                                 .expect("server sent data");
                             }
                             for i in 0 .. 10 {
-                                let (channel, result) =
-                                    rx.recv().await.expect("server received data");
+                                let msg = rx.recv().await.expect("server received data");
 
                                 assert_eq!(
-                                    result.as_ref(),
+                                    msg.data().as_ref(),
                                     [data.as_slice(), &[i]]
                                         .into_iter()
                                         .flatten()
@@ -737,14 +735,13 @@ mod tests {
                                         .collect::<Vec<u8>>()
                                         .as_slice()
                                 );
-                                assert_eq!(channel, 7);
+                                assert_eq!(msg.channel(), 7);
                             }
                             for i in 90 .. 100 {
-                                let (channel, result) =
-                                    rx.recv().await.expect("server received data");
+                                let msg = rx.recv().await.expect("server received data");
 
                                 assert_eq!(
-                                    result.as_ref(),
+                                    msg.data().as_ref(),
                                     [data.as_slice(), &[i]]
                                         .into_iter()
                                         .flatten()
@@ -752,7 +749,7 @@ mod tests {
                                         .collect::<Vec<u8>>()
                                         .as_slice()
                                 );
-                                assert_eq!(channel, 7);
+                                assert_eq!(msg.channel(), 7);
                             }
                         }));
                     }
@@ -774,10 +771,10 @@ mod tests {
                     .expect("client connection");
 
                 for i in 20 .. 30 {
-                    let (channel, result) = rx.recv().await.expect("client received data");
+                    let msg = rx.recv().await.expect("client received data");
 
                     assert_eq!(
-                        result.as_ref(),
+                        msg.data().as_ref(),
                         [data.as_slice(), &[i]]
                             .into_iter()
                             .flatten()
@@ -785,14 +782,14 @@ mod tests {
                             .collect::<Vec<u8>>()
                             .as_slice()
                     );
-                    assert_eq!(channel, 5);
+                    assert_eq!(msg.channel(), 5);
                 }
 
                 for i in 50 .. 60 {
-                    let (channel, result) = rx.recv().await.expect("client received data");
+                    let msg = rx.recv().await.expect("client received data");
 
                     assert_eq!(
-                        result.as_ref(),
+                        msg.data().as_ref(),
                         [data.as_slice(), &[i]]
                             .into_iter()
                             .flatten()
@@ -800,7 +797,7 @@ mod tests {
                             .collect::<Vec<u8>>()
                             .as_slice()
                     );
-                    assert_eq!(channel, 5);
+                    assert_eq!(msg.channel(), 5);
                 }
 
                 for i in 0 .. 10 {
@@ -883,10 +880,10 @@ mod tests {
                     .await
                     .expect("client connection");
 
-                let (channel, result) = rx.recv().await.expect("client message receive");
+                let msg = rx.recv().await.expect("client message receive");
 
-                assert_eq!(result, b"HelloWorld");
-                assert_eq!(channel, 0);
+                assert_eq!(msg.data(), b"HelloWorld");
+                assert_eq!(msg.channel(), 0);
 
                 task.borrow_mut().take().unwrap().await.unwrap();
             })
@@ -935,10 +932,10 @@ mod tests {
                     .await
                     .expect("client connection");
 
-                let (channel, result) = rx.recv().await.expect("client message receive");
+                let msg = rx.recv().await.expect("client message receive");
 
-                assert_eq!(result, b"HelloWorld");
-                assert_eq!(channel, 0);
+                assert_eq!(msg.data(), b"HelloWorld");
+                assert_eq!(msg.channel(), 0);
 
                 task.borrow_mut().take().unwrap().await.unwrap();
             })
@@ -990,9 +987,9 @@ mod tests {
                     .expect("client connection");
 
                 for i in 0 .. 1000 {
-                    let (channel, result) = rx.recv().await.expect("client message receive");
-                    assert_eq!(result, format!("HelloWorld{}", i).as_bytes());
-                    assert_eq!(channel, 0);
+                    let msg = rx.recv().await.expect("client message receive");
+                    assert_eq!(msg.data(), format!("HelloWorld{}", i).as_bytes());
+                    assert_eq!(msg.channel(), 0);
                 }
 
                 task.borrow_mut().take().unwrap().await.unwrap();
@@ -1033,10 +1030,12 @@ mod tests {
                             }
 
                             for i in 0 .. 1000 {
-                                let (channel, result) =
-                                    rx.recv().await.expect("client message receive");
-                                assert_eq!(result.as_ref(), format!("HelloWorld{}", i).as_bytes());
-                                assert_eq!(channel, 0);
+                                let msg = rx.recv().await.expect("client message receive");
+                                assert_eq!(
+                                    msg.data().as_ref(),
+                                    format!("HelloWorld{}", i).as_bytes()
+                                );
+                                assert_eq!(msg.channel(), 0);
                             }
                         }));
                     }
@@ -1058,9 +1057,9 @@ mod tests {
                     .expect("client connection");
 
                 for i in 0 .. 1000 {
-                    let (channel, result) = rx.recv().await.expect("client message receive");
-                    assert_eq!(result, format!("HelloWorld{}", i).as_bytes());
-                    assert_eq!(channel, 0);
+                    let msg = rx.recv().await.expect("client message receive");
+                    assert_eq!(msg.data(), format!("HelloWorld{}", i).as_bytes());
+                    assert_eq!(msg.channel(), 0);
                 }
 
                 task::spawn_local(async move { while let Ok(_) = rx.recv().await {} });
@@ -1114,10 +1113,9 @@ mod tests {
                                 .await
                                 .expect("server sent packet");
 
-                            let (channel, result) =
-                                rx.recv().await.expect("client message receive");
-                            assert_eq!(result.as_ref(), data.as_slice());
-                            assert_eq!(channel, 0);
+                            let msg = rx.recv().await.expect("client message receive");
+                            assert_eq!(msg.data().as_ref(), data.as_slice());
+                            assert_eq!(msg.channel(), 0);
                         }));
                     }
                 });
@@ -1137,9 +1135,9 @@ mod tests {
                     .await
                     .expect("client connection");
 
-                let (channel, result) = rx.recv().await.expect("client message receive");
-                assert_eq!(result.as_ref(), data.as_slice());
-                assert_eq!(channel, 0);
+                let msg = rx.recv().await.expect("client message receive");
+                assert_eq!(msg.data().as_ref(), data.as_slice());
+                assert_eq!(msg.channel(), 0);
 
                 task::spawn_local(async move { while let Ok(_) = rx.recv().await {} });
 
@@ -1195,8 +1193,7 @@ mod tests {
                             }
 
                             for i in 0 .. 10 {
-                                let (channel, result) =
-                                    rx.recv().await.expect("client message receive");
+                                let msg = rx.recv().await.expect("client message receive");
 
                                 let data: &_ = Box::leak(Box::new({
                                     let data_slice = &[i + 1, i + 2, i + 3, i + 4, i + 5];
@@ -1207,8 +1204,8 @@ mod tests {
                                         .collect::<Vec<_>>()
                                 }));
 
-                                assert_eq!(result.as_ref(), data.as_slice());
-                                assert_eq!(channel, 0);
+                                assert_eq!(msg.data().as_ref(), data.as_slice());
+                                assert_eq!(msg.channel(), 0);
                             }
                         }));
                     }
@@ -1230,7 +1227,7 @@ mod tests {
                     .expect("client connection");
 
                 for i in 0 .. 10 {
-                    let (channel, result) = rx.recv().await.expect("client message receive");
+                    let msg = rx.recv().await.expect("client message receive");
 
                     let data: &_ = Box::leak(Box::new({
                         let data_slice = &[i + 1, i + 2, i + 3, i + 4, i + 5];
@@ -1241,8 +1238,8 @@ mod tests {
                             .collect::<Vec<_>>()
                     }));
 
-                    assert_eq!(result.as_ref(), data.as_slice());
-                    assert_eq!(channel, 0);
+                    assert_eq!(msg.data().as_ref(), data.as_slice());
+                    assert_eq!(msg.channel(), 0);
                 }
 
                 task::spawn_local(async move { while let Ok(_) = rx.recv().await {} });
@@ -1323,10 +1320,12 @@ mod tests {
                             });
 
                             for i in 0 .. amount {
-                                let (channel, result) =
-                                    rx.recv().await.expect("client message receive");
-                                assert_eq!(result.as_ref(), format!("HelloWorld{}", i).as_bytes());
-                                assert_eq!(channel, 0);
+                                let msg = rx.recv().await.expect("client message receive");
+                                assert_eq!(
+                                    msg.data().as_ref(),
+                                    format!("HelloWorld{}", i).as_bytes()
+                                );
+                                assert_eq!(msg.channel(), 0);
                             }
                         }));
                     }
@@ -1343,9 +1342,9 @@ mod tests {
                 } = client.connect(proxy_addr).await.expect("client connection");
 
                 for i in 0 .. amount {
-                    let (channel, result) = rx.recv().await.expect("client message receive");
-                    assert_eq!(result, format!("HelloWorld{}", i).as_bytes());
-                    assert_eq!(channel, 0);
+                    let msg = rx.recv().await.expect("client message receive");
+                    assert_eq!(msg.data(), format!("HelloWorld{}", i).as_bytes());
+                    assert_eq!(msg.channel(), 0);
                 }
 
                 task::spawn_local(async move { while let Ok(_) = rx.recv().await {} });
@@ -1432,10 +1431,12 @@ mod tests {
                             task::spawn_local(async move { tx.wait_complete().await });
 
                             for i in 0 .. amount {
-                                let (channel, result) =
-                                    rx.recv().await.expect("client message receive");
-                                assert_eq!(result.as_ref(), format!("HelloWorld{}", i).as_bytes());
-                                assert_eq!(channel, 0);
+                                let msg = rx.recv().await.expect("client message receive");
+                                assert_eq!(
+                                    msg.data().as_ref(),
+                                    format!("HelloWorld{}", i).as_bytes()
+                                );
+                                assert_eq!(msg.channel(), 0);
                             }
                         }));
                     }
@@ -1452,9 +1453,9 @@ mod tests {
                 } = client.connect(proxy_addr).await.expect("client connection");
 
                 for i in 0 .. amount {
-                    let (channel, result) = rx.recv().await.expect("client message receive");
-                    assert_eq!(result, format!("HelloWorld{}", i).as_bytes());
-                    assert_eq!(channel, 0);
+                    let msg = rx.recv().await.expect("client message receive");
+                    assert_eq!(msg.data(), format!("HelloWorld{}", i).as_bytes());
+                    assert_eq!(msg.channel(), 0);
                 }
 
                 task::spawn_local(async move { while let Ok(_) = rx.recv().await {} });
@@ -1526,10 +1527,12 @@ mod tests {
                             tx.wait_complete().await.expect("waiting for delivery");
 
                             for i in 0 .. amount {
-                                let (channel, result) =
-                                    rx.recv().await.expect("client message receive");
-                                assert_eq!(result.as_ref(), format!("HelloWorld{}", i).as_bytes());
-                                assert_eq!(channel, 0);
+                                let msg = rx.recv().await.expect("client message receive");
+                                assert_eq!(
+                                    msg.data().as_ref(),
+                                    format!("HelloWorld{}", i).as_bytes()
+                                );
+                                assert_eq!(msg.channel(), 0);
                             }
 
                             task::spawn_local(async move { while let Ok(_) = rx.recv().await {} });
@@ -1548,9 +1551,9 @@ mod tests {
                 } = client.connect(proxy_addr).await.expect("client connection");
 
                 for i in 0 .. amount {
-                    let (channel, result) = rx.recv().await.expect("client message receive");
-                    assert_eq!(result, format!("HelloWorld{}", i).as_bytes());
-                    assert_eq!(channel, 0);
+                    let msg = rx.recv().await.expect("client message receive");
+                    assert_eq!(msg.data(), format!("HelloWorld{}", i).as_bytes());
+                    assert_eq!(msg.channel(), 0);
                 }
 
                 task::spawn_local(async move { while let Ok(_) = rx.recv().await {} });
@@ -1605,9 +1608,9 @@ mod tests {
                     }
 
                     for i in 0 .. 200000 {
-                        let (channel, result) = rx.recv().await.expect("client message receive");
-                        assert_eq!(result.as_ref(), format!("HelloWorld{}", i).as_bytes());
-                        assert_eq!(channel, 0);
+                        let msg = rx.recv().await.expect("client message receive");
+                        assert_eq!(msg.data().as_ref(), format!("HelloWorld{}", i).as_bytes());
+                        assert_eq!(msg.channel(), 0);
                     }
                 };
 
@@ -1643,9 +1646,9 @@ mod tests {
                 .expect("client connection");
 
             for i in 0 .. 200000 {
-                let (channel, result) = rx.recv().await.expect("client message receive");
-                assert_eq!(result, format!("HelloWorld{}", i).as_bytes());
-                assert_eq!(channel, 0);
+                let msg = rx.recv().await.expect("client message receive");
+                assert_eq!(msg.data(), format!("HelloWorld{}", i).as_bytes());
+                assert_eq!(msg.channel(), 0);
             }
 
             task::spawn_local(async move {

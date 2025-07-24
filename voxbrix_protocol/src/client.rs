@@ -28,7 +28,7 @@
 //!     let recv_future = async {
 //!         // For reliable messages to work, the future from recv() method must always be
 //!         // polled in loop, even if you do not actually use the incoming messages.
-//!         while let Ok((_channel, _data)) = receiver.recv().await {
+//!         while let Ok(_msg) = receiver.recv().await {
 //!             // Do something with the data
 //!         }
 //!     };
@@ -365,6 +365,30 @@ struct QueueEntry {
     is_split: bool,
 }
 
+/// Received message with metadata.
+pub struct ReceivedData<'a> {
+    channel: Channel,
+    is_reliable: bool,
+    data: &'a [u8],
+}
+
+impl ReceivedData<'_> {
+    /// Get channel of this message.
+    pub fn channel(&self) -> Channel {
+        self.channel
+    }
+
+    /// If this data was sent as a reliable or unreliable message.
+    pub fn is_reliable(&self) -> bool {
+        self.is_reliable
+    }
+
+    /// Access message data.
+    pub fn data(&self) -> &[u8] {
+        self.data
+    }
+}
+
 /// Message-receiving part of the connection.
 pub struct Receiver {
     shared: Rc<Shared>,
@@ -380,11 +404,11 @@ pub struct Receiver {
 }
 
 impl Receiver {
-    /// Receive a message. Returns a channel id and a byte slice in tuple on success.
+    /// Receive a message.
     ///
     /// **Futures returned must be constantly polled in loop in order to send reliable messages
     /// using `Sender`!**
-    pub async fn recv(&mut self) -> Result<(Channel, &[u8]), Error> {
+    pub async fn recv(&mut self) -> Result<ReceivedData, Error> {
         loop {
             // Firstly, we check the reliable message queue
             // in case we have messages ready, handle these first
@@ -457,7 +481,11 @@ impl Receiver {
                         &self.recv_buffer[start .. stop]
                     };
 
-                    return Ok((channel, buf));
+                    return Ok(ReceivedData {
+                        channel,
+                        is_reliable: true,
+                        data: buf,
+                    });
                 }
             }
 
@@ -506,7 +534,11 @@ impl Receiver {
                 Type::UNRELIABLE => {
                     let channel: Channel = seek_read!(read_cursor.read_varint(), "channel");
                     let start = read_cursor.position() as usize;
-                    return Ok((channel, &self.recv_buffer[start .. len]));
+                    return Ok(ReceivedData {
+                        channel,
+                        is_reliable: false,
+                        data: &self.recv_buffer[start .. len],
+                    });
                 },
                 Type::UNRELIABLE_SPLIT_START => {
                     let channel: Channel = seek_read!(read_cursor.read_varint(), "channel");
@@ -611,7 +643,11 @@ impl Receiver {
                         // TODO: also check CRC and if it's incorrect restore buf length to
                         // MAX_PACKET_SIZE before continuing
 
-                        return Ok((channel, self.unreliable_split_buffer.as_slice()));
+                        return Ok(ReceivedData {
+                            channel,
+                            is_reliable: false,
+                            data: self.unreliable_split_buffer.as_slice(),
+                        });
                     }
                 },
                 Type::RELIABLE | Type::RELIABLE_SPLIT => {
