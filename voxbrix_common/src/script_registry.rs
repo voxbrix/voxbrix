@@ -108,7 +108,7 @@ impl<T> ScriptData<T> {
 
 /// Calls `get_buffer(len: 32) -> *const u8` in the script and
 /// writes at the pointer the whatever you put in the buffer.
-pub fn write_script_buffer<T>(
+pub fn write_script_buffer<T: 'static>(
     mut store: impl AsContextMut<Data = ScriptData<T>>,
     value: impl Serialize,
 ) {
@@ -136,7 +136,7 @@ pub fn write_script_buffer<T>(
     *store.as_context_mut().data_mut().buffer() = buffer;
 }
 
-pub struct ScriptRegistryBuilder<T> {
+pub struct ScriptRegistryBuilder<T: 'static> {
     engine: Engine,
     label_map: LabelMap<Script>,
     modules: Vec<Module>,
@@ -257,7 +257,7 @@ struct CacheEntry {
     run_func: TypedFunc<(), ()>,
 }
 
-pub struct ScriptRegistry<T> {
+pub struct ScriptRegistry<T: 'static> {
     engine: Engine,
     label_map: LabelMap<Script>,
     store: Store<ScriptData<T>>,
@@ -265,7 +265,7 @@ pub struct ScriptRegistry<T> {
     buffer: Vec<u8>,
 }
 
-impl<T> ScriptRegistry<T> {
+impl<T: 'static> ScriptRegistry<T> {
     pub fn get_script_by_label(&self, label: &str) -> Option<Script> {
         self.label_map.get(label)
     }

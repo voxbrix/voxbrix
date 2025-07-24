@@ -27,4 +27,4 @@ voxbrix_common = { path = "../voxbrix_common", features = ["server"] }
 voxbrix_world = { path = "../voxbrix_world" }
 local_channel = { path = "../local_channel" }
 server_loop_api = { path = "../scripts/server/server_loop_api", default-features = false, features = ["host"] }
-redb = "2.3"
+redb = "2.6"

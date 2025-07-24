@@ -104,16 +104,15 @@ impl ApplicationHandler<Frame> for App {
                 })
                 .expect("no supported GPU adapters present");
 
-            let (device, queue) = pollster::block_on(adapter.request_device(
-                &wgpu::DeviceDescriptor {
+            let (device, queue) =
+                pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
                     required_features: wgpu::Features::empty(),
                     required_limits: wgpu::Limits::default(),
                     label: None,
                     memory_hints: Default::default(),
-                },
-                None,
-            ))
-            .expect("unable to get requested device");
+                    trace: wgpu::Trace::Off,
+                }))
+                .expect("unable to get requested device");
 
             let capabilities = surface.get_capabilities(&adapter);
 
