@@ -107,9 +107,12 @@ use std::{
     task::Poll,
     time::Duration,
 };
-use tokio::time::{
-    self,
-    MissedTickBehavior,
+use tokio::{
+    task,
+    time::{
+        self,
+        MissedTickBehavior,
+    },
 };
 use voxbrix_common::{
     assets::{
@@ -223,7 +226,8 @@ impl GameScene {
 
         let (_reliable_tx, reliable_rx) = flume::unbounded::<Vec<u8>>();
         let (unreliable_tx, unreliable_rx) = flume::unbounded::<Vec<u8>>();
-        let (event_tx, event_rx) = flume::unbounded::<Event>();
+        let (event_high_prio_tx, event_high_prio_rx) = flume::unbounded::<Event>();
+        let (event_low_prio_tx, event_low_prio_rx) = flume::unbounded::<Event>();
 
         let state_packer = StatePacker::new();
 
@@ -238,65 +242,86 @@ impl GameScene {
 
         let (mut unreliable, mut reliable) = tx.split();
 
-        let _send_unrel_task = async_ext::spawn_scoped(async move {
-            while let Ok(msg) = unreliable_rx.recv_async().await {
-                unreliable
-                    .send_unreliable(0, &msg)
-                    .await
-                    .expect("send_unreliable should not fail");
-            }
-        });
+        let _send_unrel_task = {
+            let event_high_prio_tx = event_high_prio_tx.clone();
 
-        let event_tx_network = event_tx.clone();
+            async_ext::spawn_scoped(async move {
+                while let Ok(msg) = unreliable_rx.recv_async().await {
+                    let result = unreliable.send_unreliable(0, &msg).await;
 
-        let _send_rel_task = async_ext::spawn_scoped(async move {
-            while let Ok(msg) = reliable_rx
-                .recv_async()
-                .or(async {
-                    let _ = future::zip(reliable.wait_complete(), future::pending::<()>()).await;
-                    unreachable!();
-                })
-                .await
-            {
-                // https://github.com/rust-lang/rust/issues/70142
-                let result =
-                    match time::timeout(CONNECTION_TIMEOUT, reliable.send_reliable(0, &msg))
-                        .await
-                        .map_err(|_| ClientError::Io(StdIoErrorKind::TimedOut.into()))
-                    {
-                        Ok(Ok(ok)) => Ok(ok),
-                        Ok(Err(err)) => Err(err),
-                        Err(err) => Err(err),
-                    };
+                    if let Err(err) = result {
+                        let _ = event_high_prio_tx.send(Event::NetworkInput(Err(err)));
+                        break;
+                    }
 
-                if let Err(err) = result {
-                    let _ = event_tx_network.send(Event::NetworkInput(Err(err)));
-                    break;
+                    task::yield_now().await;
                 }
-            }
-        });
+            })
+        };
 
-        let event_tx_network = event_tx.clone();
+        let _send_rel_task = {
+            let event_high_prio_tx = event_high_prio_tx.clone();
+
+            async_ext::spawn_scoped(async move {
+                while let Ok(msg) = reliable_rx
+                    .recv_async()
+                    .or(async {
+                        let _ =
+                            future::zip(reliable.wait_complete(), future::pending::<()>()).await;
+                        unreachable!();
+                    })
+                    .await
+                {
+                    // https://github.com/rust-lang/rust/issues/70142
+                    let result =
+                        match time::timeout(CONNECTION_TIMEOUT, reliable.send_reliable(0, &msg))
+                            .await
+                            .map_err(|_| ClientError::Io(StdIoErrorKind::TimedOut.into()))
+                        {
+                            Ok(Ok(ok)) => Ok(ok),
+                            Ok(Err(err)) => Err(err),
+                            Err(err) => Err(err),
+                        };
+
+                    if let Err(err) = result {
+                        let _ = event_high_prio_tx.send(Event::NetworkInput(Err(err)));
+                        break;
+                    }
+
+                    task::yield_now().await;
+                }
+            })
+        };
 
         // Must be dropped when the loop ends
-        let _recv_task = async_ext::spawn_scoped(async move {
-            loop {
-                let data = match rx.recv().await {
-                    Ok((_channel, data)) => data,
-                    Err(err) => {
-                        let _ = event_tx_network.send(Event::NetworkInput(Err(err)));
-                        break;
-                    },
-                };
+        let _recv_task = {
+            let event_high_prio_tx = event_high_prio_tx.clone();
+            let event_low_prio_tx = event_low_prio_tx.clone();
 
-                if event_tx_network
-                    .send(Event::NetworkInput(Ok(data.to_vec())))
-                    .is_err()
-                {
-                    break;
-                };
-            }
-        });
+            async_ext::spawn_scoped(async move {
+                loop {
+                    let msg = match rx.recv().await {
+                        Ok(m) => m,
+                        Err(err) => {
+                            let _ = event_high_prio_tx.send(Event::NetworkInput(Err(err)));
+                            break;
+                        },
+                    };
+
+                    let result = if msg.is_reliable() {
+                        event_low_prio_tx.send(Event::NetworkInput(Ok(msg.data().to_vec())))
+                    } else {
+                        event_high_prio_tx.send(Event::NetworkInput(Ok(msg.data().to_vec())))
+                    };
+
+                    if result.is_err() {
+                        break;
+                    };
+
+                    task::yield_now().await;
+                }
+            })
+        };
 
         let mut block_location_tc = LocationTextureComponent::new();
 
@@ -643,12 +668,13 @@ impl GameScene {
                 .poll_tick(cx)
                 .map(|_| Some(Event::SendState))
         })
+        .or_ff(event_high_prio_rx.stream())
         .or_ff(input_source.stream().map(Event::LocalInput))
         .or_ff(
             frame_source
                 .stream()
                 .map(|frame| Event::Process(frame))
-                .rr_ff(event_rx.stream()),
+                .rr_ff(event_low_prio_rx.stream()),
         );
 
         while let Some(event) = stream
@@ -724,6 +750,8 @@ impl GameScene {
                     });
                 },
             }
+
+            task::yield_now().await;
         }
 
         Ok(SceneSwitch::Menu {

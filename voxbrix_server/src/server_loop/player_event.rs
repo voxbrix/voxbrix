@@ -15,13 +15,13 @@ use voxbrix_common::{
     messages::server::ServerAccept,
     pack::Packer,
 };
-use voxbrix_protocol::server::Packet;
+use voxbrix_protocol::server::ReceivedData;
 use voxbrix_world::World;
 
 pub struct PlayerEvent<'a> {
     pub world: &'a mut World,
     pub player: Player,
-    pub data: Packet,
+    pub message: ReceivedData,
 }
 
 impl PlayerEvent<'_> {
@@ -29,12 +29,12 @@ impl PlayerEvent<'_> {
         let Self {
             world,
             player,
-            data,
+            message,
         } = self;
 
         let mut packer = mem::take(world.get_resource_mut::<Packer>());
 
-        match packer.unpack::<ServerAccept>(data.as_ref()) {
+        match packer.unpack::<ServerAccept>(message.data().as_ref()) {
             Ok(event) => {
                 match event {
                     ServerAccept::State(state) => {

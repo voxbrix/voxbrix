@@ -254,12 +254,12 @@ where
             },
             async {
                 loop {
-                    let (_channel, bytes) = rx
+                    let msg = rx
                         .recv()
                         .await
                         .map_err(|_| "Unable to get initialization response")?;
 
-                    if let Ok(res) = packer.unpack::<R>(bytes) {
+                    if let Ok(res) = packer.unpack::<R>(msg.data()) {
                         return Ok(res);
                     } else {
                         warn!("unknown message, skipping");

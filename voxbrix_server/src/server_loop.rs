@@ -63,7 +63,6 @@ use crate::{
         },
         position::PositionSystem,
     },
-    BASE_CHANNEL,
     PROCESS_INTERVAL,
 };
 use flume::Sender as SharedSender;
@@ -126,10 +125,7 @@ use voxbrix_common::{
     LabelLibrary,
     LabelMap,
 };
-use voxbrix_protocol::{
-    server::Packet,
-    Channel,
-};
+use voxbrix_protocol::server::ReceivedData;
 use voxbrix_world::World;
 
 mod player_event;
@@ -145,8 +141,7 @@ pub enum ServerEvent {
     },
     PlayerEvent {
         player: Player,
-        channel: Channel,
-        data: Packet,
+        message: ReceivedData,
         session_id: u64,
     },
     SharedEvent(SharedEvent),
@@ -390,8 +385,7 @@ impl ServerLoop {
                 },
                 ServerEvent::PlayerEvent {
                     player,
-                    channel,
-                    data,
+                    message,
                     session_id,
                 } => {
                     // Filter out outdated messages
@@ -401,12 +395,11 @@ impl ServerLoop {
                         .get(&player)
                         .map(|c| c.session_id == session_id)
                         .unwrap_or(false)
-                        && channel == BASE_CHANNEL
                     {
                         PlayerEvent {
                             world: &mut world,
                             player,
-                            data,
+                            message,
                         }
                         .run();
                     }

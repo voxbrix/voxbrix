@@ -68,14 +68,14 @@ use voxbrix_common::{
 use voxbrix_protocol::{
     server::{
         Connection,
-        Packet,
+        ReceivedData,
     },
     Channel,
 };
 
 enum LoopEvent {
     ServerLoop(ClientEvent),
-    PeerMessage { channel: usize, data: Packet },
+    PeerMessage(ReceivedData),
     Exit,
 }
 
@@ -126,9 +126,9 @@ impl ClientLoop {
         })
         .await
         .map_err(|_| Error::InitializationTimeout)?
-        .and_then(|(_channel, data)| {
+        .and_then(|msg| {
             packer
-                .unpack::<InitRequest>(data.as_ref())
+                .unpack::<InitRequest>(msg.data().as_ref())
                 .map_err(|_| Error::UnexpectedMessage)
         })?;
 
@@ -170,9 +170,9 @@ impl ClientLoop {
                 })
                 .await
                 .map_err(|_| Error::InitializationTimeout)?
-                .and_then(|(_channel, data)| {
+                .and_then(|msg| {
                     packer
-                        .unpack::<LoginRequest>(data.as_ref())
+                        .unpack::<LoginRequest>(msg.data().as_ref())
                         .map_err(|_| Error::UnexpectedMessage)
                 })?;
 
@@ -247,9 +247,9 @@ impl ClientLoop {
                 })
                 .await
                 .map_err(|_| Error::InitializationTimeout)?
-                .and_then(|(_channel, data)| {
+                .and_then(|msg| {
                     packer
-                        .unpack::<RegisterRequest>(data.as_ref())
+                        .unpack::<RegisterRequest>(msg.data().as_ref())
                         .map_err(|_| Error::UnexpectedMessage)
                 })?;
 
@@ -355,6 +355,8 @@ impl ClientLoop {
                         warn!("client_loop: send_unreliable error {:?}", err);
                         Error::SendError
                     })?;
+
+                task::yield_now().await;
             }
 
             Ok(LoopEvent::Exit)
@@ -387,19 +389,17 @@ impl ClientLoop {
                         warn!("client_loop: send_reliable error {:?}", err);
                         Error::SendError
                     })?;
+
+                task::yield_now().await;
             }
         });
 
         let recv_stream = stream::unfold(rx, |mut rx| {
             async move {
-                let value = rx
-                    .recv()
-                    .await
-                    .map(|(channel, data)| LoopEvent::PeerMessage { channel, data })
-                    .map_err(|err| {
-                        warn!("client_loop: connection interrupted: {:?}", err);
-                        Error::ReceiveError
-                    });
+                let value = rx.recv().await.map(LoopEvent::PeerMessage).map_err(|err| {
+                    warn!("client_loop: connection interrupted: {:?}", err);
+                    Error::ReceiveError
+                });
 
                 Some((value, rx))
             }
@@ -410,8 +410,7 @@ impl ClientLoop {
                 .stream()
                 .map(|e| Ok(LoopEvent::ServerLoop(e)))
                 .rr_ff(recv_stream)
-                .rr_ff(rel_send_task)
-                .rr_ff(unrel_send_task),
+                .rr_ff(unrel_send_task.or_ff(rel_send_task)),
         );
 
         let init_data_response = match request {
@@ -450,13 +449,12 @@ impl ClientLoop {
                         _ => {},
                     }
                 },
-                LoopEvent::PeerMessage { channel, data } => {
+                LoopEvent::PeerMessage(message) => {
                     // Server loop is down
                     if event_tx
                         .send(ServerEvent::PlayerEvent {
                             player,
-                            channel,
-                            data,
+                            message,
                             session_id,
                         })
                         .is_err()
@@ -466,6 +464,8 @@ impl ClientLoop {
                 },
                 LoopEvent::Exit => break,
             }
+
+            task::yield_now().await;
         }
 
         Ok(())
