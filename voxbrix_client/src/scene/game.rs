@@ -43,7 +43,6 @@ use crate::{
             render_data::RenderDataChunkComponent,
             sky_light_data::SkyLightDataChunkComponent,
         },
-        texture::location::LocationTextureComponent,
     },
     resource::{
         chunk_calculation_data::ChunkCalculationData,
@@ -84,10 +83,7 @@ use crate::{
     },
     CONNECTION_TIMEOUT,
 };
-use anyhow::{
-    Context,
-    Result,
-};
+use anyhow::Result;
 use chunk_calculation::ChunkCalculation;
 use futures_lite::{
     future::{
@@ -323,14 +319,12 @@ impl GameScene {
             })
         };
 
-        let mut block_location_tc = LocationTextureComponent::new();
-
         let block_class_loading_system = BlockClassLoadingSystem::load_data().await?;
         let block_texture_loading_system = TextureLoadingSystem::load_data(
             window.device(),
+            window.queue(),
             BLOCK_TEXTURE_LIST_PATH,
             BLOCK_TEXTURE_PATH_PREFIX,
-            &mut block_location_tc,
         )
         .await?;
 
@@ -341,8 +335,7 @@ impl GameScene {
             ModelLoadingSystem::load_data(BLOCK_MODEL_LIST_PATH, BLOCK_MODEL_PATH_PREFIX).await?;
 
         let block_model_context = BlockModelContext {
-            texture_label_map: block_texture_loading_system.label_map(),
-            location_tc: &block_location_tc,
+            texture_label_map: &block_texture_loading_system.label_map(),
         };
 
         block_model_loading_system.load_component(
@@ -398,12 +391,11 @@ impl GameScene {
         let player_input = PlayerInput::new(10.0, 0.4);
         let sky_light_system = SkyLightSystem::new();
 
-        let mut actor_location_tc = LocationTextureComponent::new();
         let actor_texture_loading_system = TextureLoadingSystem::load_data(
             window.device(),
+            window.queue(),
             ACTOR_TEXTURE_LIST_PATH,
             ACTOR_TEXTURE_PATH_PREFIX,
-            &mut actor_location_tc,
         )
         .await?;
 
@@ -455,8 +447,7 @@ impl GameScene {
             .into_label_map();
 
         let ctx = ActorModelBuilderContext {
-            texture_label_map: actor_texture_loading_system.label_map(),
-            location_tc: &actor_location_tc,
+            texture_label_map: &actor_texture_loading_system.label_map(),
             actor_bone_label_map: &actor_bone_label_map,
             actor_animation_label_map: &actor_animation_label_map,
         };
@@ -510,28 +501,6 @@ impl GameScene {
 
         window.cursor_visible = false;
 
-        let (block_texture_bind_group_layout, block_texture_bind_group) =
-            block_texture_loading_system
-                .prepare_buffer(
-                    window.device(),
-                    window.queue(),
-                    BLOCK_TEXTURE_PATH_PREFIX,
-                    &block_location_tc,
-                )
-                .await
-                .context("unable to prepare block texture buffer")?;
-
-        let (actor_texture_bind_group_layout, actor_texture_bind_group) =
-            actor_texture_loading_system
-                .prepare_buffer(
-                    window.device(),
-                    window.queue(),
-                    ACTOR_TEXTURE_PATH_PREFIX,
-                    &actor_location_tc,
-                )
-                .await
-                .context("unable to prepare actor texture buffer")?;
-
         let interface = Interface::new();
 
         let player_position = position_ac
@@ -561,26 +530,25 @@ impl GameScene {
 
         let block_render_system = BlockRenderSystemDescriptor {
             render_parameters,
-            block_texture_bind_group_layout: block_texture_bind_group_layout.clone(),
-            block_texture_bind_group: block_texture_bind_group.clone(),
+            block_texture_bind_group_layout: block_texture_loading_system.bind_group_layout(),
+            block_texture_bind_group: block_texture_loading_system.bind_group(),
         }
         .build(window)
         .await;
 
         let target_block_highlight_system = TargetBlockHightlightSystemDescriptor {
             render_parameters,
-            block_texture_bind_group_layout,
-            block_texture_bind_group,
+            block_texture_bind_group_layout: block_texture_loading_system.bind_group_layout(),
+            block_texture_bind_group: block_texture_loading_system.bind_group(),
             block_texture_label_map: block_texture_loading_system.label_map(),
-            location_tc: &block_location_tc,
         }
         .build(window)
         .await;
 
         let actor_render_system = ActorRenderSystemDescriptor {
             render_parameters,
-            actor_texture_bind_group_layout,
-            actor_texture_bind_group,
+            actor_texture_bind_group_layout: actor_texture_loading_system.bind_group_layout(),
+            actor_texture_bind_group: actor_texture_loading_system.bind_group(),
         }
         .build(window)
         .await;

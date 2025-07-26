@@ -1,8 +1,5 @@
 use crate::{
-    component::{
-        actor_model::ActorModelComponent,
-        texture::location::LocationTextureComponent,
-    },
+    component::actor_model::ActorModelComponent,
     entity::{
         actor_model::{
             ActorAnimation,
@@ -29,6 +26,7 @@ use voxbrix_common::{
 };
 
 pub const BASE_BONE: ActorBone = ActorBone(0);
+const VERTEX_TEXTURE_POSITION_OFFSET: f32 = 0.00001;
 
 pub type BuilderActorModelComponent = ActorModelComponent<ActorModelBuilder>;
 
@@ -135,8 +133,7 @@ impl ActorModelBuilder {
 }
 
 pub struct ActorModelBuilderContext<'a> {
-    pub texture_label_map: LabelMap<Texture>,
-    pub location_tc: &'a LocationTextureComponent,
+    pub texture_label_map: &'a LabelMap<Texture>,
     pub actor_bone_label_map: &'a LabelMap<ActorBone>,
     pub actor_animation_label_map: &'a LabelMap<ActorAnimation>,
 }
@@ -235,8 +232,6 @@ impl ActorModelBuilderDescriptor {
                                     / (self.texture_grid_size[i] as f32)
                             });
 
-                            let coords = ctx.location_tc.get_coords(texture, coords);
-
                             [0, 1].map(|i| coords[i] + sum[i])
                         });
 
@@ -252,16 +247,11 @@ impl ActorModelBuilderDescriptor {
                                 (texture_position[i] as f32) / self.texture_grid_size[i] as f32
                             });
 
-                            let texture_position =
-                                ctx.location_tc.get_coords(texture, texture_position);
-
-                            let correction_amplitude = ctx.location_tc.get_edge_correction(texture);
-
                             let texture_position = [0, 1].map(|i| {
                                 let correction_sign = quad_texture_center[i] - texture_position[i];
 
                                 texture_position[i]
-                                    + correction_amplitude[i].copysign(correction_sign)
+                                    + VERTEX_TEXTURE_POSITION_OFFSET.copysign(correction_sign)
                             });
 
                             ActorModelPartVertex {
@@ -340,7 +330,7 @@ impl ActorModelBuilderDescriptor {
 
         Ok(ActorModelBuilder {
             default_scale,
-            texture: ctx.location_tc.get_index(texture),
+            texture: texture.as_u32(),
             skeleton,
             model_parts,
             animations,

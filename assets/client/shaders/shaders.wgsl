@@ -55,18 +55,19 @@ fn vs_main(
 
 
 @group(1) @binding(0)
-var textures: texture_2d_array<u32>;
+var textures: binding_array<texture_2d_array<u32>>;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    var dimensions = textureDimensions(textures);
+    var dimensions = textureDimensions(textures[in.texture_index]);
 
     var texture_position = vec2<u32>(vec2<f32>(dimensions) * in.texture_position);
 
     var uint_output = textureLoad(
-        textures,
+        textures[in.texture_index],
         texture_position,
-        in.texture_index,
+	// Layer index:
+        0,
         0
     );
 

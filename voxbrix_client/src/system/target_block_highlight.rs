@@ -6,7 +6,6 @@ use crate::{
             position::PositionActorComponent,
         },
         block::class::ClassBlockComponent,
-        texture::location::LocationTextureComponent,
     },
     entity::texture::Texture,
     resource::{
@@ -38,7 +37,6 @@ pub struct TargetBlockHightlightSystemDescriptor<'a> {
     pub block_texture_bind_group_layout: wgpu::BindGroupLayout,
     pub block_texture_bind_group: wgpu::BindGroup,
     pub block_texture_label_map: LabelMap<Texture>,
-    pub location_tc: &'a LocationTextureComponent,
 }
 
 impl<'a> TargetBlockHightlightSystemDescriptor<'a> {
@@ -52,7 +50,6 @@ impl<'a> TargetBlockHightlightSystemDescriptor<'a> {
             block_texture_bind_group_layout,
             block_texture_bind_group,
             block_texture_label_map,
-            location_tc,
         } = self;
 
         let shaders = voxbrix_common::read_file_async(SHADERS_PATH)
@@ -140,9 +137,7 @@ impl<'a> TargetBlockHightlightSystemDescriptor<'a> {
         let highlight_texture = block_texture_label_map
             .get("highlight")
             .expect("highlight texture is missing");
-        let highlight_texture_index = location_tc.get_index(highlight_texture);
-        let highlight_texture_coords = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
-            .map(|coords| location_tc.get_coords(highlight_texture, coords));
+        let highlight_texture_coords = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
 
         let index_buffer =
             new_quad_index_buffer(window.device(), window.queue(), INITIAL_INDEX_BUFFER_LENGTH);
@@ -152,7 +147,7 @@ impl<'a> TargetBlockHightlightSystemDescriptor<'a> {
             index_buffer,
             block_texture_bind_group,
             target_highlight_vertex_buffer,
-            highlight_texture_index,
+            highlight_texture_index: highlight_texture.as_u32(),
             highlight_texture_coords,
         }
     }

@@ -1,8 +1,5 @@
 use crate::{
-    component::{
-        block_model::BlockModelComponent,
-        texture::location::LocationTextureComponent,
-    },
+    component::block_model::BlockModelComponent,
     entity::texture::Texture,
     resource::render_pool::primitives::Vertex,
 };
@@ -20,6 +17,7 @@ use voxbrix_common::{
 };
 
 pub type BuilderBlockModelComponent = BlockModelComponent<BlockModelBuilder>;
+const VERTEX_TEXTURE_POSITION_OFFSET: f32 = 0.00001;
 
 #[derive(Deserialize, Debug, Clone, Copy)]
 #[serde(tag = "type")]
@@ -47,8 +45,7 @@ struct BlockModelDescriptorQuad {
 }
 
 pub struct BlockModelContext<'a> {
-    pub texture_label_map: LabelMap<Texture>,
-    pub location_tc: &'a LocationTextureComponent,
+    pub texture_label_map: &'a LabelMap<Texture>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -91,8 +88,6 @@ impl BlockModelBuilderDescriptor {
                                     / (self.texture_grid_size[i] as f32)
                             });
 
-                            let coords = context.location_tc.get_coords(texture, coords);
-
                             [0, 1].map(|i| coords[i] + sum[i])
                         });
 
@@ -100,7 +95,7 @@ impl BlockModelBuilderDescriptor {
 
                     Ok::<_, Error>(QuadBuilder {
                         culling_neighbor: desc.culling_neighbor,
-                        texture_index: context.location_tc.get_index(texture),
+                        texture_index: texture.as_u32(),
                         vertices: desc.vertices.map_ref(
                             |BlockModelDescriptorVertex {
                                  position,
@@ -110,18 +105,12 @@ impl BlockModelBuilderDescriptor {
                                     (texture_position[i] as f32) / self.texture_grid_size[i] as f32
                                 });
 
-                                let texture_position =
-                                    context.location_tc.get_coords(texture, texture_position);
-
-                                let correction_amplitude =
-                                    context.location_tc.get_edge_correction(texture);
-
                                 let texture_position = [0, 1].map(|i| {
                                     let correction_sign =
                                         side_texture_center[i] - texture_position[i];
 
                                     texture_position[i]
-                                        + correction_amplitude[i].copysign(correction_sign)
+                                        + VERTEX_TEXTURE_POSITION_OFFSET.copysign(correction_sign)
                                 });
 
                                 VertexBuilder {

@@ -104,10 +104,16 @@ impl ApplicationHandler<Frame> for App {
                 })
                 .expect("no supported GPU adapters present");
 
+            let required_features = wgpu::Features::TEXTURE_BINDING_ARRAY
+                | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING;
+
+            let mut required_limits = wgpu::Limits::default();
+            required_limits.max_binding_array_elements_per_shader_stage = 500000;
+
             let (device, queue) =
                 pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
+                    required_features,
+                    required_limits,
                     label: None,
                     memory_hints: Default::default(),
                     trace: wgpu::Trace::Off,
