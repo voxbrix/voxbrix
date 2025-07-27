@@ -58,5 +58,28 @@
         }
       ]
     }
+  ],
+  "lightning": [
+    {
+      "condition": {
+        "kind": "Always"
+      },
+      "alterations": [
+        {
+          "kind": "CreateProjectile",
+          "actor_class": "lightning",
+          "handler_set": [
+            {
+              "trigger": "AnyCollision",
+              "condition": { "kind": "Always" },
+              "alterations": [
+                { "kind": "RemoveSelf" }
+              ]
+            }
+          ],
+          "velocity_magnitude": 10.0
+        }
+      ]
+    }
   ]
 }

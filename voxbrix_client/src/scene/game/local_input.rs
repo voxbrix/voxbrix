@@ -92,6 +92,13 @@ impl LocalInput<'_> {
 
                                         actions_packer.add_action(Action(2), snapshot, ());
                                     },
+                                    winit::keyboard::KeyCode::KeyL => {
+                                        let snapshot = *world.get_resource_ref::<Snapshot>();
+                                        let actions_packer =
+                                            world.get_resource_mut::<ActionsPacker>();
+
+                                        actions_packer.add_action(Action(3), snapshot, ());
+                                    },
                                     _ => {},
                                 }
                             }

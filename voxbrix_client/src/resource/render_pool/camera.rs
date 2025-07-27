@@ -1,3 +1,4 @@
+use std::time::Duration;
 use voxbrix_common::{
     entity::block::BLOCKS_IN_CHUNK_EDGE_F32,
     math::{
@@ -23,7 +24,7 @@ pub struct CameraParameters {
 }
 
 impl CameraParameters {
-    fn calc_uniform(&self) -> CameraUniform {
+    fn calc_uniform(&self, animation_timer: u32) -> CameraUniform {
         let look_to =
             Mat4F32::look_to_lh(self.offset.into(), self.view_direction.into(), Vec3F32::UP);
 
@@ -31,7 +32,7 @@ impl CameraParameters {
 
         CameraUniform {
             chunk: self.chunk,
-            _padding: 0,
+            animation_timer,
             // offset converted to homogeneous
             view_position: [self.offset[0], self.offset[1], self.offset[2], 1.0],
             view_projection: (perspective * look_to).to_cols_array(),
@@ -47,7 +48,7 @@ impl CameraParameters {
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct CameraUniform {
     chunk: [i32; 3],
-    _padding: u32,
+    animation_timer: u32,
     view_position: [f32; 4],
     view_projection: [f32; 16],
 }
@@ -61,11 +62,12 @@ pub struct Camera {
     buffer: wgpu::Buffer,
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
+    animation_timer: u32,
 }
 
 impl Camera {
     pub fn new(device: &wgpu::Device, parameters: CameraParameters) -> Self {
-        let uniform = parameters.calc_uniform();
+        let uniform = parameters.calc_uniform(0);
 
         let buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Camera Buffer"),
@@ -76,7 +78,7 @@ impl Camera {
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -104,6 +106,7 @@ impl Camera {
             buffer,
             bind_group_layout,
             bind_group,
+            animation_timer: 0,
         }
     }
 
@@ -135,7 +138,14 @@ impl Camera {
         self.parameters.aspect = (width as f32) / (height as f32);
     }
 
-    pub fn update_position(&mut self, chunk: [i32; 3], offset: [f32; 3], view_direction: [f32; 3]) {
+    pub fn update(
+        &mut self,
+        chunk: [i32; 3],
+        offset: [f32; 3],
+        view_direction: [f32; 3],
+        dt: Duration,
+    ) {
+        self.animation_timer = self.animation_timer.wrapping_add(dt.as_millis() as u32);
         self.parameters.chunk = chunk;
         self.parameters.offset = offset;
         self.parameters.view_direction = view_direction;
@@ -143,7 +153,7 @@ impl Camera {
 
     pub fn update_buffers(&mut self, queue: &wgpu::Queue) {
         self.max_visible_angle = self.parameters.max_visible_angle();
-        let uniform = self.parameters.calc_uniform();
+        let uniform = self.parameters.calc_uniform(self.animation_timer);
         queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[uniform]));
     }
 

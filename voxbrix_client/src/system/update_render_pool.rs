@@ -6,10 +6,14 @@ use crate::{
     resource::{
         interface_state::InterfaceState,
         player_actor::PlayerActor,
-        render_pool::RenderPool,
+        render_pool::{
+            CameraUpdate,
+            RenderPool,
+        },
     },
     window::Frame,
 };
+use voxbrix_common::resource::process_timer::ProcessTimer;
 use voxbrix_world::{
     System,
     SystemData,
@@ -24,6 +28,7 @@ impl System for UpdateRenderPoolSystem {
 #[derive(SystemData)]
 pub struct UpdateRenderPoolSystemData<'a> {
     render_pool: &'a mut RenderPool,
+    process_timer: &'a ProcessTimer,
     player_actor: &'a PlayerActor,
     position_ac: &'a PositionActorComponent,
     orientation_ac: &'a OrientationActorComponent,
@@ -50,11 +55,12 @@ impl UpdateRenderPoolSystemData<'_> {
             .get(&self.player_actor.0)
             .expect("player orientation is undefined");
 
-        self.render_pool.camera_mut().update_position(
-            player_position.chunk.position,
-            player_position.offset.into(),
-            player_orientation.forward().into(),
-        );
+        self.render_pool.update_camera(CameraUpdate {
+            chunk: player_position.chunk.position,
+            offset: player_position.offset.into(),
+            view_direction: player_orientation.forward().into(),
+            dt: self.process_timer.elapsed(),
+        });
 
         self.render_pool.start_render(frame);
     }

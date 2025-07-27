@@ -53,7 +53,7 @@ use crate::{
         player_chunk_view_radius::PlayerChunkViewRadius,
         player_input::PlayerInput,
         render_pool::{
-            camera::CameraParameters,
+            CameraParameters,
             RenderPool,
             RenderPoolDescriptor,
         },

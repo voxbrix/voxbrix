@@ -4,17 +4,16 @@ use crate::window::{
     Window,
 };
 use arrayvec::ArrayVec;
-use camera::{
-    Camera,
-    CameraParameters,
-};
+use camera::Camera;
+pub use camera::CameraParameters;
 use std::{
     iter,
     mem,
     num::NonZeroU64,
+    time::Duration,
 };
 
-pub mod camera;
+mod camera;
 pub mod gpu_vec;
 pub mod primitives;
 
@@ -177,6 +176,13 @@ impl<'a> Renderer<'a> {
     }
 }
 
+pub struct CameraUpdate {
+    pub chunk: [i32; 3],
+    pub offset: [f32; 3],
+    pub view_direction: [f32; 3],
+    pub dt: Duration,
+}
+
 #[derive(Clone, Copy)]
 pub struct RenderParameters<'a> {
     pub camera_bind_group_layout: &'a wgpu::BindGroupLayout,
@@ -276,7 +282,14 @@ impl RenderPool {
         &self.window
     }
 
-    pub fn camera_mut(&mut self) -> &mut Camera {
-        &mut self.camera
+    pub fn update_camera(&mut self, camera_update: CameraUpdate) {
+        let CameraUpdate {
+            chunk,
+            offset,
+            view_direction,
+            dt,
+        } = camera_update;
+
+        self.camera.update(chunk, offset, view_direction, dt);
     }
 }

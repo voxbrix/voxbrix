@@ -73,7 +73,8 @@ impl TextureLoadingSystem {
                         let image = image::load_from_memory(&image_file)
                             .with_context(|| format!("reading image from {:?}", &file_path))?;
 
-                        let layers = 1;
+                        // FIXME
+                        let layers = if texture_label == "lightning" { 3 } else { 1 };
 
                         load_texture(&device, &queue, &image, &texture_label, layers)
                             .with_context(|| format!("loading texture {:?}", &file_path))

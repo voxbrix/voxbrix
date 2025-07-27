@@ -2,6 +2,7 @@
   "list": [
     "remove_block",
     "place_block",
-    "fireball"
+    "fireball",
+    "lightning"
   ]
 }

@@ -3,7 +3,7 @@ const MAX_LIGHT_LEVEL_F32: f32 = 16.0;
 
 struct CameraUniform {
     chunk: vec3<i32>,
-    _padding: u32,
+    animation_timer: u32,
     view_position: vec4<f32>,
     view_projection: mat4x4<f32>,
 };
@@ -60,14 +60,16 @@ var textures: binding_array<texture_2d_array<u32>>;
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var dimensions = textureDimensions(textures[in.texture_index]);
+    var layers = textureNumLayers(textures[in.texture_index]);
 
     var texture_position = vec2<u32>(vec2<f32>(dimensions) * in.texture_position);
+
+    let layer_index = camera.animation_timer / 100 % layers;
 
     var uint_output = textureLoad(
         textures[in.texture_index],
         texture_position,
-	// Layer index:
-        0,
+        layer_index,
         0
     );
 
