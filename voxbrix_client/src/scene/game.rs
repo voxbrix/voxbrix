@@ -3,10 +3,12 @@ use crate::{
         ACTOR_MODEL_ANIMATION_LIST_PATH,
         ACTOR_MODEL_BONE_LIST_PATH,
         ACTOR_MODEL_PATH_PREFIX,
+        ACTOR_TEXTURE_ANIMATION_PATH,
         ACTOR_TEXTURE_LIST_PATH,
         ACTOR_TEXTURE_PATH_PREFIX,
         BLOCK_MODEL_LIST_PATH,
         BLOCK_MODEL_PATH_PREFIX,
+        BLOCK_TEXTURE_ANIMATION_PATH,
         BLOCK_TEXTURE_LIST_PATH,
         BLOCK_TEXTURE_PATH_PREFIX,
     },
@@ -325,6 +327,7 @@ impl GameScene {
             window.queue(),
             BLOCK_TEXTURE_LIST_PATH,
             BLOCK_TEXTURE_PATH_PREFIX,
+            BLOCK_TEXTURE_ANIMATION_PATH,
         )
         .await?;
 
@@ -396,6 +399,7 @@ impl GameScene {
             window.queue(),
             ACTOR_TEXTURE_LIST_PATH,
             ACTOR_TEXTURE_PATH_PREFIX,
+            ACTOR_TEXTURE_ANIMATION_PATH,
         )
         .await?;
 

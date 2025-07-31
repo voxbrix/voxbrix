@@ -54,41 +54,77 @@ fn vs_main(
 }
 
 
+struct TextureParameters {
+    mpf_interp: u32,
+};
+
 @group(1) @binding(0)
 var textures: binding_array<texture_2d_array<u32>>;
 
+@group(1) @binding(1)
+var<storage, read> texture_parameters: array<TextureParameters>;
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    var dimensions = textureDimensions(textures[in.texture_index]);
-    var layers = textureNumLayers(textures[in.texture_index]);
+    let dimensions = textureDimensions(textures[in.texture_index]);
+    let layers = textureNumLayers(textures[in.texture_index]);
 
-    var texture_position = vec2<u32>(vec2<f32>(dimensions) * in.texture_position);
+    let texture_position = vec2<u32>(vec2<f32>(dimensions) * in.texture_position);
 
-    let layer_index = camera.animation_timer / 100 % layers;
+    let parameters = texture_parameters[in.texture_index];
 
-    var uint_output = textureLoad(
+    let ms_per_frame = (parameters.mpf_interp >> 1) & 0xFFFF;
+
+    // 0.0 or 1.0 for false or true
+    let interpolate = f32(parameters.mpf_interp & 0x1);
+
+    let layer_index = camera.animation_timer / ms_per_frame % layers;
+    let layer_index_next = (layer_index + 1) % layers;
+
+    let interp_coef_next = interpolate * f32(camera.animation_timer % ms_per_frame) / f32(ms_per_frame);
+    let interp_coef = 1.0 - interp_coef_next;
+
+    let uint_output = textureLoad(
         textures[in.texture_index],
         texture_position,
         layer_index,
         0
     );
 
+    let uint_output_next = textureLoad(
+        textures[in.texture_index],
+        texture_position,
+        layer_index_next,
+        0
+    );
+
+    var output = vec3<f32>(uint_output.xyz) * interp_coef;
+    let output_next = vec3<f32>(uint_output_next.xyz) * interp_coef_next;
+
+    output += output_next;
+    output /= 255.0;
+
     // Alpha channel is divided in two:
     //   * Lower 4 bits define opacity;
     //   * Higher 4 bits define how much the pixel is affected by shadow:
     //     0 - not affected (max glowing), 15 - fully affected (not glowing).
-    var alpha = uint_output[3];
 
-    var emission_coef: f32 = 1.0 - f32(alpha >> 4 & 15) / 15.0;
+    var shadiness = f32(uint_output[3] >> 4 & 15) * interp_coef;
+    let shadiness_next = f32(uint_output_next[3] >> 4 & 15) * interp_coef_next;
 
-    let sky_light_coef = min(emission_coef + in.sky_light_level, 1.0);
+    shadiness += shadiness_next;
+    shadiness /= 15.0;
 
-    var output: vec4<f32> = vec4<f32>(uint_output) / 255.0;
+    var opacity = f32(uint_output[3] & 15) * interp_coef;
+    let opacity_next = f32(uint_output_next[3] & 15) * interp_coef_next;
 
-    output[0] *= sky_light_coef;
-    output[1] *= sky_light_coef;
-    output[2] *= sky_light_coef;
-    output[3] = f32(alpha & 15) / 15.0;
+    opacity += opacity_next;
+    opacity /= 15.0;
 
-    return output;
+    let sky_light_coef = min(1.0 - shadiness + in.sky_light_level, 1.0);
+
+    output *= sky_light_coef;
+    output *= opacity;
+
+    return vec4<f32>(output, opacity);
 }
