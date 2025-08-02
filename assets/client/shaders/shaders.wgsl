@@ -75,14 +75,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let ms_per_frame = (parameters.mpf_interp >> 1) & 0xFFFF;
 
-    // 0.0 or 1.0 for false or true
-    let interpolate = f32(parameters.mpf_interp & 0x1);
-
     let layer_index = camera.animation_timer / ms_per_frame % layers;
-    let layer_index_next = (layer_index + 1) % layers;
-
-    let interp_coef_next = interpolate * f32(camera.animation_timer % ms_per_frame) / f32(ms_per_frame);
-    let interp_coef = 1.0 - interp_coef_next;
 
     let uint_output = textureLoad(
         textures[in.texture_index],
@@ -90,6 +83,18 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         layer_index,
         0
     );
+
+    if uint_output[3] == 0 {
+        discard;
+    }
+
+    // 0.0 or 1.0 for false or true
+    let interpolate = f32(parameters.mpf_interp & 0x1);
+
+    let layer_index_next = (layer_index + 1) % layers;
+
+    let interp_coef_next = interpolate * f32(camera.animation_timer % ms_per_frame) / f32(ms_per_frame);
+    let interp_coef = 1.0 - interp_coef_next;
 
     let uint_output_next = textureLoad(
         textures[in.texture_index],
@@ -104,27 +109,17 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     output += output_next;
     output /= 255.0;
 
-    // Alpha channel is divided in two:
-    //   * Lower 4 bits define opacity;
-    //   * Higher 4 bits define how much the pixel is affected by shadow:
-    //     0 - not affected (max glowing), 15 - fully affected (not glowing).
+    // Alpha channel of texture has 2 special values:
+    // * 0 for fully transparent pixel that is discarded above; 
+    // * 255 for fully opaque non-emissive texture.
+    // All other alpha values mean emissive texture:
+    // * 1 for minimal emission;
+    // * 254 for maximum emission.
+    let emission = f32(uint_output[3] % 255) / 254.0;
 
-    var shadiness = f32(uint_output[3] >> 4 & 15) * interp_coef;
-    let shadiness_next = f32(uint_output_next[3] >> 4 & 15) * interp_coef_next;
-
-    shadiness += shadiness_next;
-    shadiness /= 15.0;
-
-    var opacity = f32(uint_output[3] & 15) * interp_coef;
-    let opacity_next = f32(uint_output_next[3] & 15) * interp_coef_next;
-
-    opacity += opacity_next;
-    opacity /= 15.0;
-
-    let sky_light_coef = min(1.0 - shadiness + in.sky_light_level, 1.0);
+    let sky_light_coef = min(emission + in.sky_light_level, 1.0);
 
     output *= sky_light_coef;
-    output *= opacity;
 
-    return vec4<f32>(output, opacity);
+    return vec4<f32>(output, 1.0);
 }
