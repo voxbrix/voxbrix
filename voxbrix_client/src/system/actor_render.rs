@@ -187,6 +187,12 @@ pub struct ActorRenderSystemData<'a> {
 
 impl ActorRenderSystemData<'_> {
     pub fn run(&mut self, renderer: Renderer) {
+        // TODO can be different from player actor:
+        let camera_orientation = self
+            .orientation_ac
+            .get(&self.player_actor.0)
+            .expect("player actor orientation is undefined");
+
         self.system.vertices.clear();
 
         for (actor, position, model) in self
@@ -303,7 +309,13 @@ impl ActorRenderSystemData<'_> {
 
                 transform = base_transform * transform;
 
-                model_builder.build_bone(bone, &position, &transform, &mut self.system.vertices);
+                model_builder.build_bone(
+                    bone,
+                    &position,
+                    &transform,
+                    &camera_orientation,
+                    &mut self.system.vertices,
+                );
             }
 
             self.system.vertices[vertices_start ..]

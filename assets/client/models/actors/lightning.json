@@ -16,12 +16,13 @@
       },
       "model_parts": {
         "head": {
+          "rotate_with_camera": true,
           "transformations": [],
           "quads": [
             [
               {
                 "position": [
-                  -1,
+                  0,
                   -1,
                   1
                 ],
@@ -32,65 +33,19 @@
               },
               {
                 "position": [
-                  -1,
-                  1,
-                  1
-                ],
-                "texture_position": [
-                  1,
-                  0
-                ]
-              },
-              {
-                "position": [
-                  -1,
-                  1,
-                  -1
-                ],
-                "texture_position": [
-                  1,
-                  1
-                ]
-              },
-              {
-                "position": [
-                  -1,
-                  -1,
-                  -1
-                ],
-                "texture_position": [
                   0,
-                  1
-                ]
-              }
-            ],
-            [
-              {
-                "position": [
-                  1,
                   1,
                   1
                 ],
                 "texture_position": [
+                  1,
+                  0
+                ]
+              },
+              {
+                "position": [
                   0,
-                  0
-                ]
-              },
-              {
-                "position": [
                   1,
-                  -1,
-                  1
-                ],
-                "texture_position": [
-                  1,
-                  0
-                ]
-              },
-              {
-                "position": [
-                  1,
-                  -1,
                   -1
                 ],
                 "texture_position": [
@@ -100,193 +55,9 @@
               },
               {
                 "position": [
-                  1,
-                  1,
-                  -1
-                ],
-                "texture_position": [
                   0,
-                  1
-                ]
-              }
-            ],
-            [
-              {
-                "position": [
-                  1,
-                  -1,
-                  1
-                ],
-                "texture_position": [
-                  0,
-                  0
-                ]
-              },
-              {
-                "position": [
-                  -1,
-                  -1,
-                  1
-                ],
-                "texture_position": [
-                  1,
-                  0
-                ]
-              },
-              {
-                "position": [
-                  -1,
                   -1,
                   -1
-                ],
-                "texture_position": [
-                  1,
-                  1
-                ]
-              },
-              {
-                "position": [
-                  1,
-                  -1,
-                  -1
-                ],
-                "texture_position": [
-                  0,
-                  1
-                ]
-              }
-            ],
-            [
-              {
-                "position": [
-                  -1,
-                  1,
-                  1
-                ],
-                "texture_position": [
-                  0,
-                  0
-                ]
-              },
-              {
-                "position": [
-                  1,
-                  1,
-                  1
-                ],
-                "texture_position": [
-                  1,
-                  0
-                ]
-              },
-              {
-                "position": [
-                  1,
-                  1,
-                  -1
-                ],
-                "texture_position": [
-                  1,
-                  1
-                ]
-              },
-              {
-                "position": [
-                  -1,
-                  1,
-                  -1
-                ],
-                "texture_position": [
-                  0,
-                  1
-                ]
-              }
-            ],
-            [
-              {
-                "position": [
-                  -1,
-                  -1,
-                  -1
-                ],
-                "texture_position": [
-                  0,
-                  0
-                ]
-              },
-              {
-                "position": [
-                  -1,
-                  1,
-                  -1
-                ],
-                "texture_position": [
-                  1,
-                  0
-                ]
-              },
-              {
-                "position": [
-                  1,
-                  1,
-                  -1
-                ],
-                "texture_position": [
-                  1,
-                  1
-                ]
-              },
-              {
-                "position": [
-                  1,
-                  -1,
-                  -1
-                ],
-                "texture_position": [
-                  0,
-                  1
-                ]
-              }
-            ],
-            [
-              {
-                "position": [
-                  1,
-                  -1,
-                  1
-                ],
-                "texture_position": [
-                  0,
-                  0
-                ]
-              },
-              {
-                "position": [
-                  1,
-                  1,
-                  1
-                ],
-                "texture_position": [
-                  1,
-                  0
-                ]
-              },
-              {
-                "position": [
-                  -1,
-                  1,
-                  1
-                ],
-                "texture_position": [
-                  1,
-                  1
-                ]
-              },
-              {
-                "position": [
-                  -1,
-                  -1,
-                  1
                 ],
                 "texture_position": [
                   0,

@@ -14,7 +14,10 @@ use nohash_hasher::IntMap;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use voxbrix_common::{
-    component::actor::position::Position,
+    component::actor::{
+        orientation::Orientation,
+        position::Position,
+    },
     math::{
         Mat4F32,
         QuatF32,
@@ -48,6 +51,7 @@ impl ActorModelBuilder {
         bone: &ActorBone,
         position: &Position,
         transform: &Mat4F32,
+        camera_orientation: &Orientation,
         vertices: &mut Vec<Vertex>,
     ) {
         if self.skeleton.get(bone).is_none() {
@@ -62,7 +66,19 @@ impl ActorModelBuilder {
             },
         };
 
-        let transform = *transform * model_part_builder.transformation;
+        let transform = if model_part_builder.rotate_with_camera {
+            let (scale, _, translation) = transform.to_scale_rotation_translation();
+
+            Mat4F32::from_scale_rotation_translation(
+                scale,
+                camera_orientation.rotation,
+                translation,
+            )
+        } else {
+            *transform
+        };
+
+        let transform = transform * model_part_builder.transformation;
 
         vertices.extend(model_part_builder.quads.iter().flat_map(|vertices| {
             vertices.map_ref(|vertex| {
@@ -271,6 +287,7 @@ impl ActorModelBuilderDescriptor {
                 let builder = ActorModelPartBuilder {
                     quads,
                     transformation,
+                    rotate_with_camera: desc.rotate_with_camera,
                 };
 
                 Ok((bone, builder))
@@ -352,6 +369,7 @@ pub struct BoneParameters {
 struct ActorModelPartBuilder {
     quads: Vec<[ActorModelPartVertex; 4]>,
     transformation: Mat4F32,
+    rotate_with_camera: bool,
 }
 
 #[derive(Deserialize, Debug)]
@@ -370,6 +388,8 @@ pub struct ActorBoneDescriptor {
 pub struct ActorModelPartDescriptor {
     quads: Vec<[ActorModelPartDescriptorVertex; 4]>,
     transformations: Vec<Operation>,
+    #[serde(default)]
+    rotate_with_camera: bool,
 }
 
 type Time = u32;
