@@ -24,7 +24,7 @@ use voxbrix_common::{
         actor::Actor,
         block::BLOCKS_IN_CHUNK_EDGE,
         block_class::BlockClass,
-        snapshot::Snapshot,
+        snapshot::ServerSnapshot,
     },
     pack::{
         self,
@@ -41,7 +41,7 @@ use voxbrix_common::{
 use wasmtime::Caller;
 
 pub struct ScriptSharedDataRef<'a> {
-    pub snapshot: Snapshot,
+    pub snapshot: ServerSnapshot,
     pub label_library: &'a LabelLibrary,
     pub actor_pc: &'a ActorPlayerComponent,
     pub actions_packer_pc: &'a mut ActionsPackerPlayerComponent,

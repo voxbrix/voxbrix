@@ -16,7 +16,10 @@ use std::{
 use voxbrix_common::{
     entity::{
         actor::Actor,
-        snapshot::Snapshot,
+        snapshot::{
+            ClientSnapshot,
+            ServerSnapshot,
+        },
         state_component::StateComponent,
     },
     math::MinMax,
@@ -43,8 +46,8 @@ pub trait WritableTrait<T>: Deref<Target = T> {
 
 pub struct Writable<'a, T> {
     is_player: bool,
-    snapshot: Snapshot,
-    last_change_snapshot: &'a mut Snapshot,
+    snapshot: ClientSnapshot,
+    last_change_snapshot: &'a mut ClientSnapshot,
     data: &'a mut T,
 }
 
@@ -87,7 +90,7 @@ where
     state_component: StateComponent,
     is_client_controlled: bool,
     player_actor: Actor,
-    last_change_snapshot: Snapshot,
+    last_change_snapshot: ClientSnapshot,
     storage: IntMap<Actor, T>,
 }
 
@@ -104,12 +107,12 @@ where
             state_component,
             player_actor,
             is_client_controlled,
-            last_change_snapshot: Snapshot(0),
+            last_change_snapshot: ClientSnapshot(0),
             storage: IntMap::default(),
         }
     }
 
-    pub fn insert(&mut self, actor: Actor, new: T, snapshot: Snapshot) -> Option<T> {
+    pub fn insert(&mut self, actor: Actor, new: T, snapshot: ClientSnapshot) -> Option<T> {
         let entry = self.storage.entry(actor);
 
         match entry {
@@ -138,7 +141,7 @@ where
         self.storage.get(actor)
     }
 
-    pub fn get_writable(&mut self, actor: &Actor, snapshot: Snapshot) -> Option<Writable<T>> {
+    pub fn get_writable(&mut self, actor: &Actor, snapshot: ClientSnapshot) -> Option<Writable<T>> {
         Some(Writable {
             is_player: *actor == self.player_actor,
             snapshot,
@@ -147,7 +150,7 @@ where
         })
     }
 
-    pub fn remove(&mut self, actor: &Actor, snapshot: Snapshot) -> Option<T> {
+    pub fn remove(&mut self, actor: &Actor, snapshot: ClientSnapshot) -> Option<T> {
         if self.player_actor == *actor {
             self.last_change_snapshot = snapshot;
         }
@@ -159,7 +162,7 @@ impl<T> ActorComponentPackable<T>
 where
     T: 'static + Serialize,
 {
-    pub fn pack_player(&mut self, state: &mut StatePacker, last_client_snapshot: Snapshot) {
+    pub fn pack_player(&mut self, state: &mut StatePacker, last_client_snapshot: ClientSnapshot) {
         if last_client_snapshot < self.last_change_snapshot {
             let change = self.storage.get(&self.player_actor);
 
@@ -352,7 +355,7 @@ const TARGET_QUEUE_LENGTH_EXTRA: usize = TARGET_QUEUE_LENGTH + 1;
 
 #[derive(Clone, Copy)]
 pub struct Target<T> {
-    pub server_snapshot: Snapshot,
+    pub server_snapshot: ServerSnapshot,
     pub value: T,
     pub reach_time: Instant,
 }
@@ -368,7 +371,7 @@ impl<T> TargetQueue<T> {
         current_value: T,
         new_target: T,
         current_time: Instant,
-        server_snapshot: Snapshot,
+        server_snapshot: ServerSnapshot,
     ) -> Self
     where
         T: Copy,

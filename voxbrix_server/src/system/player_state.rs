@@ -20,7 +20,7 @@ use crate::{
 };
 use log::debug;
 use voxbrix_common::{
-    entity::snapshot::Snapshot,
+    entity::snapshot::ServerSnapshot,
     messages::{
         server::ClientState,
         StateUnpacker,
@@ -39,7 +39,7 @@ impl System for PlayerStateSystem {
 
 #[derive(SystemData)]
 pub struct PlayerStateSystemData<'a> {
-    snapshot: &'a Snapshot,
+    snapshot: &'a ServerSnapshot,
     actor_pc: &'a ActorPlayerComponent,
     client_pc: &'a mut ClientPlayerComponent,
     chunk_update_pc: &'a mut ChunkUpdatePlayerComponent,

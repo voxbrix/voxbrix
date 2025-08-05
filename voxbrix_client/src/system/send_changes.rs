@@ -13,14 +13,14 @@ use crate::{
 use voxbrix_common::{
     entity::{
         actor::Actor,
-        snapshot::Snapshot,
+        snapshot::ClientSnapshot,
     },
     messages::{
         server::{
             ClientState,
             ServerAccept,
         },
-        ActionsPacker,
+        ClientActionsPacker,
         StatePacker,
     },
     pack::Packer,
@@ -39,13 +39,13 @@ impl System for SendChangesSystem {
 
 #[derive(SystemData)]
 pub struct SendChangesSystemData<'a> {
-    snapshot: &'a mut Snapshot,
+    snapshot: &'a mut ClientSnapshot,
     position_ac: &'a mut PositionActorComponent,
     orientation_ac: &'a mut OrientationActorComponent,
     velocity_ac: &'a mut VelocityActorComponent,
     packer: &'a mut Packer,
     state_packer: &'a mut StatePacker,
-    actions_packer: &'a mut ActionsPacker,
+    actions_packer: &'a mut ClientActionsPacker,
     player_chunk_view_radius: &'a PlayerChunkViewRadius,
     confirmed_snapshots: &'a ConfirmedSnapshots,
     server_sender: &'a ServerSender,

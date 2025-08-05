@@ -32,7 +32,10 @@ use flume::Sender;
 use voxbrix_common::{
     entity::{
         actor_class::ActorClass,
-        snapshot::Snapshot,
+        snapshot::{
+            ClientSnapshot,
+            ServerSnapshot,
+        },
     },
     messages::ActionsPacker,
     resource::removal_queue::RemovalQueue,
@@ -57,7 +60,7 @@ pub struct PlayerAddData {
 
 #[derive(SystemData)]
 pub struct PlayerAddSystemData<'a> {
-    snapshot: &'a Snapshot,
+    snapshot: &'a ServerSnapshot,
 
     label_library: &'a LabelLibrary,
 
@@ -104,8 +107,8 @@ impl PlayerAddSystemData<'_> {
             player,
             Client {
                 tx,
-                last_server_snapshot: Snapshot(0),
-                last_client_snapshot: Snapshot(0),
+                last_server_snapshot: ServerSnapshot(0),
+                last_client_snapshot: ClientSnapshot(0),
                 last_confirmed_chunk: None,
                 session_id,
             },

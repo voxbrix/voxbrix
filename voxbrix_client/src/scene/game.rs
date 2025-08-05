@@ -147,12 +147,15 @@ use voxbrix_common::{
             Chunk,
             Dimension,
         },
-        snapshot::Snapshot,
+        snapshot::{
+            ClientSnapshot,
+            ServerSnapshot,
+        },
     },
     math::Vec3F32,
     messages::{
-        ActionsPacker,
-        ActionsUnpacker,
+        ClientActionsPacker,
+        ServerActionsUnpacker,
         StatePacker,
         StateUnpacker,
     },
@@ -229,10 +232,10 @@ impl GameScene {
 
         let state_packer = StatePacker::new();
 
-        let snapshot = Snapshot(1);
+        let snapshot = ClientSnapshot(1);
         // Last client's snapshot received by the server
-        let last_client_snapshot = Snapshot(0);
-        let last_server_snapshot = Snapshot(0);
+        let last_client_snapshot = ClientSnapshot(0);
+        let last_server_snapshot = ServerSnapshot(0);
 
         let packer = Packer::new();
 
@@ -618,8 +621,8 @@ impl GameScene {
 
         world.add(state_packer);
         world.add(StateUnpacker::new());
-        world.add(ActionsPacker::new());
-        world.add(ActionsUnpacker::new());
+        world.add(ClientActionsPacker::new());
+        world.add(ServerActionsUnpacker::new());
 
         world.add(ProcessTimer::new());
 

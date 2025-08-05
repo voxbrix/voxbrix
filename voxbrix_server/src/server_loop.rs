@@ -102,11 +102,11 @@ use voxbrix_common::{
         actor::Actor,
         chunk::DimensionKind,
         effect::Effect,
-        snapshot::Snapshot,
+        snapshot::ServerSnapshot,
     },
     messages::{
         client::ClientAccept,
-        ActionsUnpacker,
+        ClientActionsUnpacker,
         StatePacker,
         StateUnpacker,
     },
@@ -348,11 +348,11 @@ impl ServerLoop {
 
         world.add(storage);
 
-        world.add(Snapshot(1));
+        world.add(ServerSnapshot(1));
 
         world.add(StatePacker::new());
         world.add(StateUnpacker::new());
-        world.add(ActionsUnpacker::new());
+        world.add(ClientActionsUnpacker::new());
 
         world.add(ProcessTimer::new());
 

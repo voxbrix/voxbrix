@@ -10,7 +10,7 @@ use crate::component::actor::{
 use voxbrix_common::{
     entity::{
         actor::Actor,
-        snapshot::Snapshot,
+        snapshot::ClientSnapshot,
     },
     resource::removal_queue::RemovalQueue,
 };
@@ -44,7 +44,7 @@ impl System for EntityRemovalSystem {
 
 #[derive(SystemData)]
 pub struct EntityRemovalSystemData<'a> {
-    snapshot: &'a Snapshot,
+    snapshot: &'a ClientSnapshot,
 
     actor_rq: &'a mut RemovalQueue<Actor>,
     class_ac: &'a mut ClassActorComponent,

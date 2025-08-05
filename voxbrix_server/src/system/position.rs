@@ -13,7 +13,7 @@ use crate::component::{
 use rayon::prelude::*;
 use voxbrix_common::{
     component::block_class::collision::CollisionBlockClassComponent,
-    entity::snapshot::Snapshot,
+    entity::snapshot::ServerSnapshot,
     resource::process_timer::ProcessTimer,
     system::position,
 };
@@ -30,7 +30,7 @@ impl System for PositionSystem {
 
 #[derive(SystemData)]
 pub struct PositionSystemData<'a> {
-    snapshot: &'a Snapshot,
+    snapshot: &'a ServerSnapshot,
     process_timer: &'a ProcessTimer,
     class_bc: &'a ClassBlockComponent,
     collision_bcc: &'a CollisionBlockClassComponent,

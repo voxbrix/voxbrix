@@ -11,7 +11,7 @@ use crate::component::{
 use voxbrix_common::{
     entity::{
         actor::Actor,
-        snapshot::Snapshot,
+        snapshot::ServerSnapshot,
     },
     resource::removal_queue::RemovalQueue,
 };
@@ -28,7 +28,7 @@ impl System for ActorPruningSystem {
 
 #[derive(SystemData)]
 pub struct ActorPruningSystemData<'a> {
-    snapshot: &'a Snapshot,
+    snapshot: &'a ServerSnapshot,
 
     player_ac: &'a PlayerActorComponent,
     position_ac: &'a PositionActorComponent,

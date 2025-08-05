@@ -4,7 +4,7 @@ use serde::Serialize;
 use voxbrix_common::{
     entity::{
         actor::Actor,
-        snapshot::Snapshot,
+        snapshot::ServerSnapshot,
         state_component::StateComponent,
     },
     messages::StatePacker,
@@ -47,8 +47,8 @@ where
     pub fn pack_changes(
         &mut self,
         state: &mut StatePacker,
-        snapshot: Snapshot,
-        client_last_snapshot: Snapshot,
+        snapshot: ServerSnapshot,
+        client_last_snapshot: ServerSnapshot,
         player_actor: Option<&Actor>,
         actors_full_update: &IntSet<Actor>,
         actors_partial_update: &IntSet<Actor>,

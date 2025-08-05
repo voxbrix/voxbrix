@@ -16,10 +16,10 @@ use voxbrix_common::{
         orientation::Orientation,
         position::Position,
     },
-    entity::snapshot::Snapshot,
+    entity::snapshot::ClientSnapshot,
     messages::{
         client::ServerState,
-        ActionsPacker,
+        ClientActionsPacker,
         StateUnpacker,
     },
 };
@@ -41,7 +41,7 @@ impl System for ServerStateSystem {
 
 #[derive(SystemData)]
 pub struct ServerStateSystemData<'a> {
-    snapshot: &'a Snapshot,
+    snapshot: &'a ClientSnapshot,
     class_ac: &'a mut ClassActorComponent,
     model_acc: &'a mut ModelActorClassComponent,
     position_ac: &'a mut PositionActorComponent,
@@ -49,7 +49,7 @@ pub struct ServerStateSystemData<'a> {
     orientation_ac: &'a mut OrientationActorComponent,
     target_orientation_ac: &'a mut TargetOrientationActorComponent,
     velocity_ac: &'a mut VelocityActorComponent,
-    actions_packer: &'a mut ActionsPacker,
+    actions_packer: &'a mut ClientActionsPacker,
     state_unpacker: &'a mut StateUnpacker,
 }
 

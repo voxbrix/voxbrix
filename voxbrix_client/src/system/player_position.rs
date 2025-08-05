@@ -11,7 +11,7 @@ use crate::{
 };
 use voxbrix_common::{
     component::block_class::collision::CollisionBlockClassComponent,
-    entity::snapshot::Snapshot,
+    entity::snapshot::ClientSnapshot,
     resource::process_timer::ProcessTimer,
     system::position,
 };
@@ -28,7 +28,7 @@ impl System for PlayerPositionSystem {
 
 #[derive(SystemData)]
 pub struct PlayerPositionSystemData<'a> {
-    snapshot: &'a Snapshot,
+    snapshot: &'a ClientSnapshot,
     process_timer: &'a ProcessTimer,
     player_actor: &'a PlayerActor,
     class_bc: &'a ClassBlockComponent,
@@ -64,34 +64,4 @@ impl PlayerPositionSystemData<'_> {
             writable_position.update(new_pos);
         }
     }
-
-    // pub fn get_target_block(
-    // &self,
-    // position_ac: &PositionActorComponent,
-    // orientation_ac: &OrientationActorComponent,
-    // targeting: impl FnMut(Chunk, Block) -> bool,
-    // ) -> Option<(Chunk, Block, usize)> {
-    // position_ac
-    // .get(&self.player_actor)
-    // .zip(orientation_ac.get(&self.player_actor))
-    // .and_then(|(position, orientation)| {
-    // position::get_target_block(position, orientation.forward(), targeting)
-    // })
-    // }
-    //
-    // pub fn position_direction(
-    // &self,
-    // position_ac: &PositionActorComponent,
-    // orientation_ac: &OrientationActorComponent,
-    // ) -> (Position, Vec3F32) {
-    // position_ac
-    // .get(&self.player_actor)
-    // .copied()
-    // .zip(
-    // orientation_ac
-    // .get(&self.player_actor)
-    // .map(|ori| ori.forward()),
-    // )
-    // .expect("unable to get player orientation")
-    // }
 }

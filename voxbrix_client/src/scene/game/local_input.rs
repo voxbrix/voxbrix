@@ -22,9 +22,9 @@ use voxbrix_common::{
     entity::{
         action::Action,
         block::Block,
-        snapshot::Snapshot,
+        snapshot::ClientSnapshot,
     },
-    messages::ActionsPacker,
+    messages::ClientActionsPacker,
     system::position::get_target_block,
     LabelLibrary,
 };
@@ -86,16 +86,16 @@ impl LocalInput<'_> {
                                         int_st.inventory_open = !int_st.inventory_open;
                                     },
                                     winit::keyboard::KeyCode::KeyF => {
-                                        let snapshot = *world.get_resource_ref::<Snapshot>();
+                                        let snapshot = *world.get_resource_ref::<ClientSnapshot>();
                                         let actions_packer =
-                                            world.get_resource_mut::<ActionsPacker>();
+                                            world.get_resource_mut::<ClientActionsPacker>();
 
                                         actions_packer.add_action(Action(2), snapshot, ());
                                     },
                                     winit::keyboard::KeyCode::KeyL => {
-                                        let snapshot = *world.get_resource_ref::<Snapshot>();
+                                        let snapshot = *world.get_resource_ref::<ClientSnapshot>();
                                         let actions_packer =
-                                            world.get_resource_mut::<ActionsPacker>();
+                                            world.get_resource_mut::<ClientActionsPacker>();
 
                                         actions_packer.add_action(Action(3), snapshot, ());
                                     },
@@ -117,13 +117,13 @@ impl LocalInput<'_> {
 
                             #[derive(SystemData)]
                             struct GetTargetBlockSystemData<'a> {
-                                snapshot: &'a Snapshot,
+                                snapshot: &'a ClientSnapshot,
                                 player_actor: &'a PlayerActor,
                                 position_ac: &'a PositionActorComponent,
                                 orientation_ac: &'a OrientationActorComponent,
                                 class_bc: &'a ClassBlockComponent,
                                 collision_bcc: &'a CollisionBlockClassComponent,
-                                actions_packer: &'a mut ActionsPacker,
+                                actions_packer: &'a mut ClientActionsPacker,
                                 label_library: &'a LabelLibrary,
                             }
 

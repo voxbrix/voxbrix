@@ -2,7 +2,10 @@ use crate::{
     entity::{
         action::Action,
         actor::Actor,
-        snapshot::Snapshot,
+        snapshot::{
+            ClientSnapshot,
+            ServerSnapshot,
+        },
         state_component::StateComponent,
     },
     pack::{
@@ -15,16 +18,30 @@ use nohash_hasher::{
     IntSet,
 };
 use serde::{
+    de::DeserializeOwned,
     Deserialize,
     Serialize,
 };
 use std::{
     collections::VecDeque,
+    marker::PhantomData,
     mem,
 };
 
 pub mod client;
 pub mod server;
+
+pub type ClientActionsPacker = ActionsPacker<ClientSnapshot>;
+pub type ServerActionsPacker = ActionsPacker<ServerSnapshot>;
+
+pub type ClientActionsUnpacker = ActionsUnpacker<ClientSnapshot>;
+pub type ServerActionsUnpacker = ActionsUnpacker<ServerSnapshot>;
+
+pub type ClientActionsPacked<'a> = ActionsPacked<'a, ClientSnapshot>;
+pub type ServerActionsPacked<'a> = ActionsPacked<'a, ServerSnapshot>;
+
+pub type ClientActionsUnpacked<'a> = ActionsUnpacked<'a, ClientSnapshot>;
+pub type ServerActionsUnpacked<'a> = ActionsUnpacked<'a, ServerSnapshot>;
 
 /// State container.
 /// The components supposed to be transfered in delta manner,
@@ -177,20 +194,23 @@ pub enum ActorStatePack<'a, T> {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct ActionsPacked<'a>(&'a [u8]);
-
-pub struct ActionsUnpacked<'a> {
-    origin: &'a mut ActionsUnpacker,
-    data: Vec<(Action, Snapshot, &'a [u8])>,
+pub struct ActionsPacked<'a, S> {
+    data: &'a [u8],
+    _snapshot: PhantomData<S>,
 }
 
-impl<'a> ActionsUnpacked<'a> {
-    pub fn data(&self) -> &[(Action, Snapshot, &'a [u8])] {
+pub struct ActionsUnpacked<'a, S> {
+    origin: &'a mut ActionsUnpacker<S>,
+    data: Vec<(Action, S, &'a [u8])>,
+}
+
+impl<'a, S> ActionsUnpacked<'a, S> {
+    pub fn data(&self) -> &[(Action, S, &'a [u8])] {
         self.data.as_slice()
     }
 }
 
-impl<'a> Drop for ActionsUnpacked<'a> {
+impl<'a, S> Drop for ActionsUnpacked<'a, S> {
     fn drop(&mut self) {
         let mut buffer = mem::take(&mut self.data);
 
@@ -198,10 +218,7 @@ impl<'a> Drop for ActionsUnpacked<'a> {
 
         // Safety: all references are removed in the previous step.
         let buffer = unsafe {
-            mem::transmute::<
-                Vec<(Action, Snapshot, &'a [u8])>,
-                Vec<(Action, Snapshot, &'static [u8])>,
-            >(buffer)
+            mem::transmute::<Vec<(Action, S, &'a [u8])>, Vec<(Action, S, &'static [u8])>>(buffer)
         };
 
         self.origin.buffer = buffer;
@@ -209,24 +226,27 @@ impl<'a> Drop for ActionsUnpacked<'a> {
 }
 
 #[derive(Default)]
-pub struct ActionsUnpacker {
-    buffer: Vec<(Action, Snapshot, &'static [u8])>,
+pub struct ActionsUnpacker<S> {
+    buffer: Vec<(Action, S, &'static [u8])>,
 }
 
-impl ActionsUnpacker {
+impl<S> ActionsUnpacker<S> {
     pub fn new() -> Self {
         Self { buffer: Vec::new() }
     }
 }
 
-impl ActionsUnpacker {
+impl<S> ActionsUnpacker<S>
+where
+    S: DeserializeOwned,
+{
     pub fn unpack_actions<'a>(
         &'a mut self,
-        actions: &'a ActionsPacked<'a>,
-    ) -> Result<ActionsUnpacked<'a>, UnpackError> {
+        actions: &'a ActionsPacked<'a, S>,
+    ) -> Result<ActionsUnpacked<'a, S>, UnpackError> {
         let mut buffer = mem::take(&mut self.buffer);
 
-        let (size, mut offset) = pack::decode_from_slice::<u64>(actions.0).ok_or(UnpackError)?;
+        let (size, mut offset) = pack::decode_from_slice::<u64>(actions.data).ok_or(UnpackError)?;
 
         let size: usize = size.try_into().map_err(|_| UnpackError)?;
 
@@ -234,7 +254,7 @@ impl ActionsUnpacker {
 
         for _ in 0 .. size {
             let ((action, snapshot, data), new_offset) =
-                pack::decode_from_slice::<(Action, Snapshot, &[u8])>(&actions.0[offset ..])
+                pack::decode_from_slice::<(Action, S, &[u8])>(&actions.data[offset ..])
                     .ok_or(UnpackError)?;
 
             offset += new_offset;
@@ -251,13 +271,16 @@ impl ActionsUnpacker {
     }
 }
 
-pub struct ActionsPacker {
+pub struct ActionsPacker<S> {
     buffer: Vec<u8>,
-    actions: VecDeque<(Snapshot, Action, usize)>,
+    actions: VecDeque<(S, Action, usize)>,
     data: VecDeque<u8>,
 }
 
-impl ActionsPacker {
+impl<S> ActionsPacker<S>
+where
+    S: Serialize + Copy + Ord,
+{
     pub fn new() -> Self {
         Self {
             buffer: Vec::new(),
@@ -266,7 +289,7 @@ impl ActionsPacker {
         }
     }
 
-    pub fn add_action(&mut self, action: Action, snapshot: Snapshot, data: impl Serialize) {
+    pub fn add_action(&mut self, action: Action, snapshot: S, data: impl Serialize) {
         let size = pack::encode_write(&data, &mut self.data);
 
         self.actions.push_back((snapshot, action, size));
@@ -278,7 +301,7 @@ impl ActionsPacker {
         }
     }
 
-    pub fn confirm_snapshot(&mut self, snapshot: Snapshot) {
+    pub fn confirm_snapshot(&mut self, snapshot: S) {
         loop {
             match self.actions.front() {
                 Some((action_snapshot, _, _)) if *action_snapshot <= snapshot => {
@@ -289,7 +312,7 @@ impl ActionsPacker {
         }
     }
 
-    pub fn pack_actions<'a>(&'a mut self) -> ActionsPacked<'a> {
+    pub fn pack_actions<'a>(&'a mut self) -> ActionsPacked<'a, S> {
         let mut data_cursor = 0;
 
         let data_slice: &_ = self.data.make_contiguous();
@@ -314,7 +337,10 @@ impl ActionsPacker {
             pack::encode_write(&element, &mut self.buffer);
         }
 
-        ActionsPacked(self.buffer.as_slice())
+        ActionsPacked {
+            data: self.buffer.as_slice(),
+            _snapshot: PhantomData,
+        }
     }
 }
 

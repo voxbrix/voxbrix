@@ -4,7 +4,10 @@ use crate::{
         block::Block,
         block_class::BlockClass,
         chunk::Chunk,
-        snapshot::Snapshot,
+        snapshot::{
+            ClientSnapshot,
+            ServerSnapshot,
+        },
     },
     messages::{
         ActionsPacked,
@@ -210,13 +213,13 @@ impl<'a> ChunkChangesChunkEncoder<'a> {
 
 #[derive(Serialize, Deserialize)]
 pub struct ServerState<'a> {
-    pub snapshot: Snapshot,
+    pub snapshot: ServerSnapshot,
     // last server's snapshot received by this client
-    pub last_client_snapshot: Snapshot,
+    pub last_client_snapshot: ClientSnapshot,
     #[serde(borrow)]
     pub state: StatePacked<'a>,
     #[serde(borrow)]
-    pub actions: ActionsPacked<'a>,
+    pub actions: ActionsPacked<'a, ServerSnapshot>,
 }
 
 #[derive(Serialize, Deserialize)]

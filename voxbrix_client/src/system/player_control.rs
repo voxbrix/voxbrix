@@ -11,7 +11,7 @@ use crate::{
 };
 use voxbrix_common::{
     component::actor::velocity::Velocity,
-    entity::snapshot::Snapshot,
+    entity::snapshot::ClientSnapshot,
     resource::process_timer::ProcessTimer,
 };
 use voxbrix_world::{
@@ -27,7 +27,7 @@ impl System for PlayerControlSystem {
 
 #[derive(SystemData)]
 pub struct PlayerControlSystemData<'a> {
-    snapshot: &'a Snapshot,
+    snapshot: &'a ClientSnapshot,
     process_timer: &'a ProcessTimer,
     player_actor: &'a PlayerActor,
     player_movement: &'a mut PlayerInput,

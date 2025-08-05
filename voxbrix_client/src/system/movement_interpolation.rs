@@ -18,7 +18,7 @@ use voxbrix_common::{
     entity::{
         block::BLOCKS_IN_CHUNK_EDGE_F32,
         chunk::ChunkPositionOperations,
-        snapshot::Snapshot,
+        snapshot::ClientSnapshot,
     },
     math::Vec3F32,
     resource::process_timer::ProcessTimer,
@@ -40,7 +40,7 @@ impl System for MovementInterpolationSystem {
 
 #[derive(SystemData)]
 pub struct MovementInterpolationSystemData<'a> {
-    snapshot: &'a Snapshot,
+    snapshot: &'a ClientSnapshot,
     process_timer: &'a ProcessTimer,
     target_position_ac: &'a mut TargetPositionActorComponent,
     target_orientation_ac: &'a mut TargetOrientationActorComponent,

@@ -2,14 +2,14 @@ use std::collections::VecDeque;
 use voxbrix_common::entity::{
     actor::Actor,
     snapshot::{
-        Snapshot,
+        ServerSnapshot,
         MAX_SNAPSHOT_DIFF,
     },
 };
 
 pub struct ActorRegistry {
     next_max_id: u32,
-    free_ids: VecDeque<(Snapshot, u32)>,
+    free_ids: VecDeque<(ServerSnapshot, u32)>,
 }
 
 impl ActorRegistry {
@@ -20,7 +20,7 @@ impl ActorRegistry {
         }
     }
 
-    pub fn add(&mut self, snapshot: Snapshot) -> Actor {
+    pub fn add(&mut self, snapshot: ServerSnapshot) -> Actor {
         let reuse_id = self
             .free_ids
             .front()
@@ -47,7 +47,7 @@ impl ActorRegistry {
         Actor(id)
     }
 
-    pub fn remove(&mut self, actor: &Actor, snapshot: Snapshot) {
+    pub fn remove(&mut self, actor: &Actor, snapshot: ServerSnapshot) {
         self.free_ids.push_back((snapshot, actor.0));
     }
 }

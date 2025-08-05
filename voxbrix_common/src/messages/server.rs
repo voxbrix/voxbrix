@@ -1,5 +1,8 @@
 use crate::{
-    entity::snapshot::Snapshot,
+    entity::snapshot::{
+        ClientSnapshot,
+        ServerSnapshot,
+    },
     messages::{
         ActionsPacked,
         StatePacked,
@@ -13,13 +16,13 @@ use serde::{
 
 #[derive(Serialize, Deserialize)]
 pub struct ClientState<'a> {
-    pub snapshot: Snapshot,
+    pub snapshot: ClientSnapshot,
     // last server's snapshot received by this client
-    pub last_server_snapshot: Snapshot,
+    pub last_server_snapshot: ServerSnapshot,
     #[serde(borrow)]
     pub state: StatePacked<'a>,
     #[serde(borrow)]
-    pub actions: ActionsPacked<'a>,
+    pub actions: ActionsPacked<'a, ClientSnapshot>,
 }
 
 #[derive(Serialize, Deserialize)]

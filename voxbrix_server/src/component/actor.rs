@@ -15,7 +15,7 @@ use voxbrix_common::{
     entity::{
         actor::Actor,
         snapshot::{
-            Snapshot,
+            ServerSnapshot,
             MAX_SNAPSHOT_DIFF,
         },
         state_component::StateComponent,
@@ -154,8 +154,8 @@ where
     T: 'static,
 {
     state_component: StateComponent,
-    last_packed_snapshot: Snapshot,
-    changes: IntMap<Actor, Snapshot>,
+    last_packed_snapshot: ServerSnapshot,
+    changes: IntMap<Actor, ServerSnapshot>,
     packer: Option<ActorComponentPacker<'static, T>>,
     storage: IntMap<Actor, T>,
 }
@@ -168,7 +168,7 @@ where
         &mut self,
         player_actor: &Actor,
         state: &StateUnpacked<'a>,
-        snapshot: Snapshot,
+        snapshot: ServerSnapshot,
     ) {
         if let Some((change, _)) = state
             .get_component(&self.state_component)
@@ -197,7 +197,7 @@ where
     pub fn new(state_component: StateComponent) -> Self {
         Self {
             state_component,
-            last_packed_snapshot: Snapshot(0),
+            last_packed_snapshot: ServerSnapshot(0),
             changes: IntMap::default(),
             packer: Some(ActorComponentPacker::new()),
             storage: IntMap::default(),
@@ -235,8 +235,8 @@ where
     pub fn pack_changes(
         &mut self,
         state: &mut StatePacker,
-        snapshot: Snapshot,
-        client_last_snapshot: Snapshot,
+        snapshot: ServerSnapshot,
+        client_last_snapshot: ServerSnapshot,
         player_actor: Option<&Actor>,
         actors_full_update: &IntSet<Actor>,
         actors_partial_update: &IntSet<Actor>,
@@ -274,7 +274,7 @@ where
         self.packer = Some(packer);
     }
 
-    pub fn insert(&mut self, actor: Actor, new: T, snapshot: Snapshot) -> Option<T> {
+    pub fn insert(&mut self, actor: Actor, new: T, snapshot: ServerSnapshot) -> Option<T> {
         let (changed, prev_value) = match self.storage.entry(actor) {
             hash_map::Entry::Occupied(mut slot) => {
                 let prev_value = slot.insert(new);
@@ -309,7 +309,7 @@ where
     // self.storage.iter().map(|(k, v)| (*k, v))
     // }
 
-    pub fn remove(&mut self, actor: &Actor, snapshot: Snapshot) -> Option<T> {
+    pub fn remove(&mut self, actor: &Actor, snapshot: ServerSnapshot) -> Option<T> {
         let removed = self.storage.remove(actor);
 
         if removed.is_some() {

@@ -8,7 +8,7 @@ use crate::system::{
     position::PositionSystem,
 };
 use voxbrix_common::{
-    entity::snapshot::Snapshot,
+    entity::snapshot::ServerSnapshot,
     resource::process_timer::ProcessTimer,
 };
 use voxbrix_world::World;
@@ -37,7 +37,7 @@ impl Process<'_> {
 
         world.get_data::<ActorPruningSystem>().run();
 
-        let snapshot = world.get_resource_mut::<Snapshot>();
+        let snapshot = world.get_resource_mut::<ServerSnapshot>();
 
         *snapshot = snapshot.next();
     }

@@ -25,7 +25,7 @@ use voxbrix_common::{
     entity::{
         chunk::Chunk,
         snapshot::{
-            Snapshot,
+            ServerSnapshot,
             MAX_SNAPSHOT_DIFF,
         },
     },
@@ -52,7 +52,7 @@ impl System for ActorSyncSystem {
 
 #[derive(SystemData)]
 pub struct ActorSyncSystemData<'a> {
-    snapshot: &'a Snapshot,
+    snapshot: &'a ServerSnapshot,
 
     actions_packer_pc: &'a mut ActionsPackerPlayerComponent,
     actor_pc: &'a ActorPlayerComponent,
@@ -82,7 +82,7 @@ impl ActorSyncSystemData<'_> {
             // or if the client loop has been dropped
             if self.snapshot.0 - client.last_server_snapshot.0 > MAX_SNAPSHOT_DIFF
                 // TODO after several seconds disconnect Snapshot(0) ones anyway:
-                && client.last_server_snapshot != Snapshot(0)
+                && client.last_server_snapshot != ServerSnapshot(0)
                 || client.tx.is_disconnected()
             {
                 self.player_rq.enqueue(*player);
@@ -101,7 +101,7 @@ impl ActorSyncSystemData<'_> {
 
             let chunk_radius = position_chunk.radius(chunk_view_radius);
 
-            let client_is_outdated = client.last_server_snapshot == Snapshot(0)
+            let client_is_outdated = client.last_server_snapshot == ServerSnapshot(0)
                 || self.snapshot.0 - client.last_server_snapshot.0 > MAX_SNAPSHOT_DIFF;
 
             if let Some(previous_chunk_radius) = client

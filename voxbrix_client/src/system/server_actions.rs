@@ -4,7 +4,7 @@ use voxbrix_common::{
     entity::actor::Actor,
     messages::{
         client::ServerState,
-        ActionsUnpacker,
+        ServerActionsUnpacker,
     },
     pack,
 };
@@ -27,7 +27,7 @@ impl System for ServerActionsSystem {
 #[derive(SystemData)]
 pub struct ServerActionsSystemData<'a> {
     confirmed_snapshots: &'a ConfirmedSnapshots,
-    actions_unpacker: &'a mut ActionsUnpacker,
+    actions_unpacker: &'a mut ServerActionsUnpacker,
 }
 
 impl ServerActionsSystemData<'_> {

@@ -52,11 +52,11 @@ use voxbrix_common::{
     },
     entity::{
         actor::Actor,
-        snapshot::Snapshot,
+        snapshot::ServerSnapshot,
     },
     messages::{
         server::ClientState,
-        ActionsUnpacker,
+        ClientActionsUnpacker,
     },
     script_registry::ScriptRegistry,
     LabelLibrary,
@@ -91,10 +91,10 @@ impl ConditionCheck<'_> {
 
 #[derive(SystemData)]
 pub struct PlayerActionsSystemData<'a> {
-    snapshot: &'a Snapshot,
+    snapshot: &'a ServerSnapshot,
     actor_pc: &'a ActorPlayerComponent,
     client_pc: &'a ClientPlayerComponent,
-    actions_unpacker: &'a mut ActionsUnpacker,
+    actions_unpacker: &'a mut ClientActionsUnpacker,
 
     script_registry: &'a mut ScriptRegistry<ScriptSharedData>,
 

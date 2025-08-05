@@ -4,7 +4,10 @@ use std::sync::Arc;
 use voxbrix_common::entity::{
     actor::Actor,
     chunk::Chunk,
-    snapshot::Snapshot,
+    snapshot::{
+        ClientSnapshot,
+        ServerSnapshot,
+    },
 };
 use voxbrix_protocol::Channel;
 
@@ -34,9 +37,9 @@ pub enum ClientEvent {
 pub struct Client {
     pub tx: Sender<ClientEvent>,
     // The last server snapshot received by the client
-    pub last_server_snapshot: Snapshot,
+    pub last_server_snapshot: ServerSnapshot,
     // The last client snapshot received from the client
-    pub last_client_snapshot: Snapshot,
+    pub last_client_snapshot: ClientSnapshot,
     pub last_confirmed_chunk: Option<Chunk>,
     pub session_id: u64,
 }

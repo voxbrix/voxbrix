@@ -12,7 +12,7 @@ use voxbrix_common::{
     entity::{
         actor::Actor,
         chunk::Chunk,
-        snapshot::Snapshot,
+        snapshot::ClientSnapshot,
         state_component::StateComponent,
     },
     math::MinMax,
@@ -27,10 +27,10 @@ use voxbrix_common::{
 pub struct Writable<'a> {
     is_player: bool,
     actor: Actor,
-    snapshot: Snapshot,
-    last_change_snapshot: &'a mut Snapshot,
+    snapshot: ClientSnapshot,
+    last_change_snapshot: &'a mut ClientSnapshot,
     data: &'a mut Position,
-    player_chunk_changes: &'a mut VecDeque<(Snapshot, Chunk)>,
+    player_chunk_changes: &'a mut VecDeque<(ClientSnapshot, Chunk)>,
     chunk_actor_component: &'a mut BTreeSet<(Chunk, Actor)>,
 }
 
@@ -74,10 +74,10 @@ impl<'a> Deref for Writable<'a> {
 pub struct PositionActorComponent {
     state_component: StateComponent,
     player_actor: Actor,
-    last_change_snapshot: Snapshot,
+    last_change_snapshot: ClientSnapshot,
     storage: IntMap<Actor, Position>,
     chunk_actor_component: BTreeSet<(Chunk, Actor)>,
-    player_chunk_changes: VecDeque<(Snapshot, Chunk)>,
+    player_chunk_changes: VecDeque<(ClientSnapshot, Chunk)>,
 }
 
 impl PositionActorComponent {
@@ -85,14 +85,19 @@ impl PositionActorComponent {
         Self {
             state_component,
             player_actor,
-            last_change_snapshot: Snapshot(0),
+            last_change_snapshot: ClientSnapshot(0),
             storage: IntMap::default(),
             chunk_actor_component: BTreeSet::new(),
             player_chunk_changes: VecDeque::new(),
         }
     }
 
-    pub fn insert(&mut self, actor: Actor, new: Position, snapshot: Snapshot) -> Option<Position> {
+    pub fn insert(
+        &mut self,
+        actor: Actor,
+        new: Position,
+        snapshot: ClientSnapshot,
+    ) -> Option<Position> {
         self.last_change_snapshot = snapshot;
         if actor == self.player_actor {
             self.player_chunk_changes.push_back((snapshot, new.chunk));
@@ -113,7 +118,7 @@ impl PositionActorComponent {
         self.storage.get(i)
     }
 
-    pub fn get_writable(&mut self, actor: &Actor, snapshot: Snapshot) -> Option<Writable> {
+    pub fn get_writable(&mut self, actor: &Actor, snapshot: ClientSnapshot) -> Option<Writable> {
         Some(Writable {
             is_player: *actor == self.player_actor,
             actor: *actor,
@@ -129,7 +134,7 @@ impl PositionActorComponent {
         self.storage.iter().map(|(k, v)| (*k, v))
     }
 
-    pub fn pack_player(&mut self, state: &mut StatePacker, last_client_snapshot: Snapshot) {
+    pub fn pack_player(&mut self, state: &mut StatePacker, last_client_snapshot: ClientSnapshot) {
         if last_client_snapshot < self.last_change_snapshot {
             let change = self.storage.get(&self.player_actor);
 
@@ -140,7 +145,7 @@ impl PositionActorComponent {
     }
 
     /// Must be done whenever the server confirms snapshot reception.
-    pub fn confirm_snapshot(&mut self, curr_snapshot: Snapshot) {
+    pub fn confirm_snapshot(&mut self, curr_snapshot: ClientSnapshot) {
         while let Some((snapshot, _)) = self.player_chunk_changes.front() {
             if *snapshot > curr_snapshot || self.player_chunk_changes.len() <= 1 {
                 break;

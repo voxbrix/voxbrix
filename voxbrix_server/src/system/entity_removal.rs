@@ -26,7 +26,7 @@ use voxbrix_common::{
     component::actor::effect::EffectActorComponent,
     entity::{
         actor::Actor,
-        snapshot::Snapshot,
+        snapshot::ServerSnapshot,
     },
     resource::removal_queue::RemovalQueue,
 };
@@ -61,7 +61,7 @@ impl System for EntityRemovalSystem {
 
 #[derive(SystemData)]
 pub struct EntityRemovalSystemData<'a> {
-    snapshot: &'a Snapshot,
+    snapshot: &'a ServerSnapshot,
 
     class_ac: &'a mut ClassActorComponent,
     position_ac: &'a mut PositionActorComponent,

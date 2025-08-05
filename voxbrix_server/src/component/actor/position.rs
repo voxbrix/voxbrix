@@ -21,7 +21,7 @@ use voxbrix_common::{
         actor::Actor,
         chunk::Chunk,
         snapshot::{
-            Snapshot,
+            ServerSnapshot,
             MAX_SNAPSHOT_DIFF,
         },
         state_component::StateComponent,
@@ -115,7 +115,7 @@ impl Deref for PositionChanges {
 // }
 
 pub struct ActorChunkChange {
-    pub snapshot: Snapshot,
+    pub snapshot: ServerSnapshot,
     pub actor: Actor,
     pub previous_chunk: Option<Chunk>,
 }
@@ -125,8 +125,8 @@ pub struct ActorChunkChange {
 /// determine if and how (complete/change-only) the Actor should be sent to the client.
 pub struct PositionActorComponent {
     state_component: StateComponent,
-    last_packed_snapshot: Snapshot,
-    changes: IntMap<Actor, Snapshot>,
+    last_packed_snapshot: ServerSnapshot,
+    changes: IntMap<Actor, ServerSnapshot>,
     chunk_changes: VecDeque<ActorChunkChange>,
     packer: Option<ActorComponentPacker<'static, Position>>,
     storage: IntMap<Actor, Position>,
@@ -147,7 +147,7 @@ impl PositionActorComponent {
         &mut self,
         player_actor: &Actor,
         state: &StateUnpacked,
-        snapshot: Snapshot,
+        snapshot: ServerSnapshot,
         mut func: impl FnMut(Option<&Position>, Option<&Position>) -> U,
     ) -> U {
         let prev_value = self.storage.get(player_actor);
@@ -176,7 +176,7 @@ impl PositionActorComponent {
     pub fn new(state_component: StateComponent) -> Self {
         Self {
             state_component,
-            last_packed_snapshot: Snapshot(0),
+            last_packed_snapshot: ServerSnapshot(0),
             changes: IntMap::default(),
             chunk_changes: VecDeque::new(),
             packer: Some(ActorComponentPacker::new()),
@@ -231,8 +231,8 @@ impl PositionActorComponent {
     pub fn pack_changes(
         &mut self,
         state: &mut StatePacker,
-        snapshot: Snapshot,
-        last_server_snapshot: Snapshot,
+        snapshot: ServerSnapshot,
+        last_server_snapshot: ServerSnapshot,
         player_actor: &Actor,
         // Checks should include:
         //     The Actor is within the territory that persists within player's view field
@@ -380,7 +380,7 @@ impl PositionActorComponent {
         self.chunk_changes.iter()
     }
 
-    pub fn insert(&mut self, actor: Actor, value: Position, snapshot: Snapshot) {
+    pub fn insert(&mut self, actor: Actor, value: Position, snapshot: ServerSnapshot) {
         let (changed, chunk_changed, previous_chunk) = match self.storage.entry(actor) {
             hash_map::Entry::Occupied(mut slot) => {
                 let prev_value = slot.insert(value);
@@ -430,7 +430,7 @@ impl PositionActorComponent {
     // })
     // }
 
-    pub fn remove(&mut self, actor: &Actor, snapshot: Snapshot) {
+    pub fn remove(&mut self, actor: &Actor, snapshot: ServerSnapshot) {
         if let Some(value) = self.storage.remove(actor) {
             self.chunk_changes.push_back(ActorChunkChange {
                 snapshot,
