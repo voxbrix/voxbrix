@@ -8,7 +8,6 @@ use crate::{
         },
         actor_class::model::ModelActorClassComponent,
         player::{
-            actions_packer::ActionsPackerPlayerComponent,
             actor::ActorPlayerComponent,
             chunk_view::ChunkViewPlayerComponent,
             client::{
@@ -16,6 +15,7 @@ use crate::{
                 ClientPlayerComponent,
                 SendData,
             },
+            dispatches_packer::DispatchesPackerPlayerComponent,
         },
     },
     entity::player::Player,
@@ -34,7 +34,7 @@ use voxbrix_common::{
             ClientAccept,
             ServerState,
         },
-        StatePacker,
+        UpdatesPacker,
     },
     pack::Packer,
     resource::removal_queue::RemovalQueue,
@@ -54,7 +54,7 @@ impl System for ActorSyncSystem {
 pub struct ActorSyncSystemData<'a> {
     snapshot: &'a ServerSnapshot,
 
-    actions_packer_pc: &'a mut ActionsPackerPlayerComponent,
+    dispatches_packer_pc: &'a mut DispatchesPackerPlayerComponent,
     actor_pc: &'a ActorPlayerComponent,
     chunk_view_pc: &'a ChunkViewPlayerComponent,
     player_rq: &'a mut RemovalQueue<Player>,
@@ -68,7 +68,7 @@ pub struct ActorSyncSystemData<'a> {
     model_acc: &'a mut ModelActorClassComponent,
 
     packer: &'a mut Packer,
-    state_packer: &'a mut StatePacker,
+    updates_packer: &'a mut UpdatesPacker,
 }
 
 impl ActorSyncSystemData<'_> {
@@ -131,7 +131,7 @@ impl ActorSyncSystemData<'_> {
                     .filter(|c| previous_chunk_radius.is_within(c));
 
                 self.position_ac.pack_changes(
-                    &mut self.state_packer,
+                    &mut self.updates_packer,
                     *self.snapshot,
                     client.last_server_snapshot,
                     player_actor,
@@ -143,7 +143,7 @@ impl ActorSyncSystemData<'_> {
                 // Server-controlled components, we pass `None` instead of `player_actor`.
                 // These components will not filter out player's own components.
                 self.class_ac.pack_changes(
-                    &mut self.state_packer,
+                    &mut self.updates_packer,
                     *self.snapshot,
                     client.last_server_snapshot,
                     None,
@@ -152,7 +152,7 @@ impl ActorSyncSystemData<'_> {
                 );
 
                 self.model_acc.pack_changes(
-                    &mut self.state_packer,
+                    &mut self.updates_packer,
                     *self.snapshot,
                     client.last_server_snapshot,
                     Some(player_actor),
@@ -163,7 +163,7 @@ impl ActorSyncSystemData<'_> {
                 // Client-conrolled components, we pass `Some(player_actor)`.
                 // These components will filter out player's own components.
                 self.velocity_ac.pack_changes(
-                    &mut self.state_packer,
+                    &mut self.updates_packer,
                     *self.snapshot,
                     client.last_server_snapshot,
                     Some(player_actor),
@@ -172,7 +172,7 @@ impl ActorSyncSystemData<'_> {
                 );
 
                 self.orientation_ac.pack_changes(
-                    &mut self.state_packer,
+                    &mut self.updates_packer,
                     *self.snapshot,
                     client.last_server_snapshot,
                     Some(player_actor),
@@ -184,18 +184,18 @@ impl ActorSyncSystemData<'_> {
                 let new_chunks = chunk_radius.into_iter_simple();
 
                 self.position_ac
-                    .pack_full(&mut self.state_packer, player_actor, new_chunks);
+                    .pack_full(&mut self.updates_packer, player_actor, new_chunks);
 
                 // Server-controlled components, we pass `None` instead of `player_actor`.
                 // These components will not filter out player's own components.
                 self.class_ac.pack_full(
-                    &mut self.state_packer,
+                    &mut self.updates_packer,
                     None,
                     self.position_ac.actors_full_update(),
                 );
 
                 self.model_acc.pack_full(
-                    &mut self.state_packer,
+                    &mut self.updates_packer,
                     None,
                     self.position_ac.actors_full_update(),
                 );
@@ -203,30 +203,30 @@ impl ActorSyncSystemData<'_> {
                 // Client-conrolled components, we pass `Some(player_actor)`.
                 // These components will filter out player's own components.
                 self.velocity_ac.pack_full(
-                    &mut self.state_packer,
+                    &mut self.updates_packer,
                     Some(player_actor),
                     self.position_ac.actors_full_update(),
                 );
 
                 self.orientation_ac.pack_full(
-                    &mut self.state_packer,
+                    &mut self.updates_packer,
                     Some(player_actor),
                     self.position_ac.actors_full_update(),
                 );
             }
 
-            let state = self.state_packer.pack_state();
-            let actions = self
-                .actions_packer_pc
+            let updates = self.updates_packer.pack();
+            let dispatches = self
+                .dispatches_packer_pc
                 .get_mut(player)
-                .expect("no actions packer found for a player")
-                .pack_actions();
+                .expect("no dispatches packer found for a player")
+                .pack();
 
             let data = self.packer.pack_to_vec(&ClientAccept::State(ServerState {
                 snapshot: *self.snapshot,
                 last_client_snapshot: client.last_client_snapshot,
-                state,
-                actions,
+                updates,
+                dispatches,
             }));
 
             if client

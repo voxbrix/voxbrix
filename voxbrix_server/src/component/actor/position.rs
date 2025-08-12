@@ -24,12 +24,12 @@ use voxbrix_common::{
             ServerSnapshot,
             MAX_SNAPSHOT_DIFF,
         },
-        state_component::StateComponent,
+        update::Update,
     },
     math::MinMax,
     messages::{
-        StatePacker,
-        StateUnpacked,
+        UpdatesPacker,
+        UpdatesUnpacked,
     },
     pack,
 };
@@ -124,7 +124,7 @@ pub struct ActorChunkChange {
 /// There are some specifics related to position being main factor to
 /// determine if and how (complete/change-only) the Actor should be sent to the client.
 pub struct PositionActorComponent {
-    state_component: StateComponent,
+    update: Update,
     last_packed_snapshot: ServerSnapshot,
     changes: IntMap<Actor, ServerSnapshot>,
     chunk_changes: VecDeque<ActorChunkChange>,
@@ -146,14 +146,14 @@ impl PositionActorComponent {
     pub fn unpack_player_with<U>(
         &mut self,
         player_actor: &Actor,
-        state: &StateUnpacked,
+        updates: &UpdatesUnpacked,
         snapshot: ServerSnapshot,
         mut func: impl FnMut(Option<&Position>, Option<&Position>) -> U,
     ) -> U {
         let prev_value = self.storage.get(player_actor);
 
-        if let Some(change) = state
-            .get_component(&self.state_component)
+        if let Some(change) = updates
+            .get(&self.update)
             .and_then(|buf| pack::decode_from_slice::<Option<Position>>(buf))
             .map(|tup| tup.0)
         {
@@ -173,9 +173,9 @@ impl PositionActorComponent {
 }
 
 impl PositionActorComponent {
-    pub fn new(state_component: StateComponent) -> Self {
+    pub fn new(update: Update) -> Self {
         Self {
-            state_component,
+            update,
             last_packed_snapshot: ServerSnapshot(0),
             changes: IntMap::default(),
             chunk_changes: VecDeque::new(),
@@ -191,7 +191,7 @@ impl PositionActorComponent {
     /// Saves the list of actors, so other components could do the same.
     pub fn pack_full(
         &mut self,
-        state: &mut StatePacker,
+        updates: &mut UpdatesPacker,
         player_actor: &Actor,
         // Those will have to have all components packed:
         full_update_chunks: impl Iterator<Item = Chunk>,
@@ -221,7 +221,7 @@ impl PositionActorComponent {
 
         let mut packer = self.packer.take().unwrap();
 
-        let buffer = state.get_component_buffer(self.state_component);
+        let buffer = updates.get_buffer(self.update);
 
         packer = packer.load_full(change_iter).pack(buffer);
 
@@ -230,7 +230,7 @@ impl PositionActorComponent {
 
     pub fn pack_changes(
         &mut self,
-        state: &mut StatePacker,
+        updates: &mut UpdatesPacker,
         snapshot: ServerSnapshot,
         last_server_snapshot: ServerSnapshot,
         player_actor: &Actor,
@@ -356,7 +356,7 @@ impl PositionActorComponent {
 
         let mut packer = self.packer.take().unwrap();
 
-        let buffer = state.get_component_buffer(self.state_component);
+        let buffer = updates.get_buffer(self.update);
 
         packer = packer.load_changes(change_iter).pack(buffer);
 

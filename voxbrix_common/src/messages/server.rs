@@ -4,8 +4,8 @@ use crate::{
         ServerSnapshot,
     },
     messages::{
-        ActionsPacked,
-        StatePacked,
+        ClientActionsPacked,
+        UpdatesPacked,
     },
     pack::Pack,
 };
@@ -20,9 +20,9 @@ pub struct ClientState<'a> {
     // last server's snapshot received by this client
     pub last_server_snapshot: ServerSnapshot,
     #[serde(borrow)]
-    pub state: StatePacked<'a>,
+    pub updates: UpdatesPacked<'a>,
     #[serde(borrow)]
-    pub actions: ActionsPacked<'a, ClientSnapshot>,
+    pub actions: ClientActionsPacked<'a>,
 }
 
 #[derive(Serialize, Deserialize)]

@@ -2,14 +2,14 @@ use crate::component::{
     actor::position::PositionActorComponent,
     block::class::ClassBlockComponent,
     player::{
-        actions_packer::ActionsPackerPlayerComponent,
         actor::ActorPlayerComponent,
         chunk_view::ChunkViewPlayerComponent,
+        dispatches_packer::DispatchesPackerPlayerComponent,
     },
 };
 use log::debug;
 use server_loop_api::{
-    ActionInput,
+    BroadcastDispatchLocalRequest,
     GetTargetBlockRequest,
     GetTargetBlockResponse,
     SetClassOfBlockRequest,
@@ -44,7 +44,7 @@ pub struct ScriptSharedDataRef<'a> {
     pub snapshot: ServerSnapshot,
     pub label_library: &'a LabelLibrary,
     pub actor_pc: &'a ActorPlayerComponent,
-    pub actions_packer_pc: &'a mut ActionsPackerPlayerComponent,
+    pub dispatches_packer_pc: &'a mut DispatchesPackerPlayerComponent,
     pub chunk_view_pc: &'a ChunkViewPlayerComponent,
     pub position_ac: &'a PositionActorComponent,
     pub class_bc: &'a mut ClassBlockComponent,
@@ -196,7 +196,7 @@ pub fn setup_script_registry(
 
     registry.func_wrap("env", "get_block_class_by_label", get_block_class_by_label);
 
-    fn broadcast_action_local(
+    fn broadcast_dispatch_local(
         mut caller: Caller<ScriptData<ScriptSharedData>>,
         buf_ptr: u32,
         buf_len: u32,
@@ -211,15 +211,15 @@ pub fn setup_script_registry(
 
         // TODO Instead of option, in the future we should have either actor or "acting position"
         // directly as an enum.
-        let input: ActionInput = pack::decode_from_slice(&bytes)
+        let input: BroadcastDispatchLocalRequest = pack::decode_from_slice(&bytes)
             .expect("unable to decode action data")
             .0;
 
-        let action_actor: Option<Actor> = input.actor.map(Into::into);
+        let action_actor: Actor = input.actor.into();
 
         let acting_position = sd
             .position_ac
-            .get(&action_actor.expect("actor was not passed by the script"))
+            .get(&action_actor)
             .expect("acting actor has no position");
 
         for player in sd.chunk_view_pc.iter().filter_map(|(player, chunk_view)| {
@@ -233,16 +233,20 @@ pub fn setup_script_registry(
 
             Some(player)
         }) {
-            sd.actions_packer_pc
+            sd.dispatches_packer_pc
                 .get_mut(&player)
                 .expect("no action packer found for a player")
-                .add_action(input.action.into(), sd.snapshot, (action_actor, input.data));
+                .add(
+                    input.dispatch.into(),
+                    sd.snapshot,
+                    (action_actor, input.data),
+                );
         }
 
         *caller.data_mut().buffer() = bytes;
     }
 
-    registry.func_wrap("env", "broadcast_action_local", broadcast_action_local);
+    registry.func_wrap("env", "broadcast_dispatch_local", broadcast_dispatch_local);
 
     registry.build()
 }

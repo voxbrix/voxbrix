@@ -115,7 +115,7 @@ use tokio::{
 use voxbrix_common::{
     assets::{
         ACTOR_MODEL_LIST_PATH,
-        STATE_COMPONENTS_PATH,
+        UPDATE_LIST_PATH,
     },
     async_ext::{
         self,
@@ -155,9 +155,9 @@ use voxbrix_common::{
     math::Vec3F32,
     messages::{
         ClientActionsPacker,
-        ServerActionsUnpacker,
-        StatePacker,
-        StateUnpacker,
+        DispatchesUnpacker,
+        UpdatesPacker,
+        UpdatesUnpacker,
     },
     pack::Packer,
     resource::{
@@ -230,7 +230,7 @@ impl GameScene {
         let (event_high_prio_tx, event_high_prio_rx) = flume::unbounded::<Event>();
         let (event_low_prio_tx, event_low_prio_rx) = flume::unbounded::<Event>();
 
-        let state_packer = StatePacker::new();
+        let updates_packer = UpdatesPacker::new();
 
         let snapshot = ClientSnapshot(1);
         // Last client's snapshot received by the server
@@ -406,37 +406,36 @@ impl GameScene {
         )
         .await?;
 
-        let state_components_label_map = List::load(STATE_COMPONENTS_PATH).await?.into_label_map();
+        let updates_label_map = List::load(UPDATE_LIST_PATH).await?.into_label_map();
 
         let class_ac = ClassActorComponent::new(
-            state_components_label_map.get("actor_class").unwrap(),
+            updates_label_map.get("actor_class").unwrap(),
             player_actor,
             false,
         );
         let mut position_ac = PositionActorComponent::new(
-            state_components_label_map.get("actor_position").unwrap(),
+            updates_label_map.get("actor_position").unwrap(),
             player_actor,
         );
         let mut velocity_ac = VelocityActorComponent::new(
-            state_components_label_map.get("actor_velocity").unwrap(),
+            updates_label_map.get("actor_velocity").unwrap(),
             player_actor,
             true,
         );
         let mut orientation_ac = OrientationActorComponent::new(
-            state_components_label_map.get("actor_orientation").unwrap(),
+            updates_label_map.get("actor_orientation").unwrap(),
             player_actor,
             true,
         );
         let animation_state_ac = AnimationStateActorComponent::new();
         let target_orientation_ac = TargetOrientationActorComponent::new(
-            state_components_label_map.get("actor_orientation").unwrap(),
+            updates_label_map.get("actor_orientation").unwrap(),
         );
-        let target_position_ac = TargetPositionActorComponent::new(
-            state_components_label_map.get("actor_position").unwrap(),
-        );
+        let target_position_ac =
+            TargetPositionActorComponent::new(updates_label_map.get("actor_position").unwrap());
 
         let mut model_acc = ModelActorClassComponent::new(
-            state_components_label_map.get("actor_model").unwrap(),
+            updates_label_map.get("actor_model").unwrap(),
             player_actor,
             false,
         );
@@ -619,10 +618,10 @@ impl GameScene {
             unreliable: unreliable_tx,
         });
 
-        world.add(state_packer);
-        world.add(StateUnpacker::new());
+        world.add(updates_packer);
+        world.add(UpdatesUnpacker::new());
         world.add(ClientActionsPacker::new());
-        world.add(ServerActionsUnpacker::new());
+        world.add(DispatchesUnpacker::new());
 
         world.add(ProcessTimer::new());
 

@@ -8,6 +8,7 @@ use server_loop_api::{
     Block,
     BlockClass,
     Chunk,
+    Dispatch,
     GetTargetBlockRequest,
     SetClassOfBlockRequest,
 };
@@ -29,7 +30,10 @@ pub extern "C" fn run() {
 
     let input = api::read_action_input::<PlaceBlock>().expect("incorrect input");
 
-    api::broadcast_action(input.action, input.actor, ());
+    // FIXME use label map to get correct dispatch.
+    if let Some(actor) = input.actor {
+        api::broadcast_dispatch_local(Dispatch(0), actor, ());
+    }
 
     let Some(target) = api::get_target_block(GetTargetBlockRequest {
         chunk: input.data.chunk,

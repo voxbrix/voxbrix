@@ -20,13 +20,13 @@ use voxbrix_common::{
             ClientSnapshot,
             ServerSnapshot,
         },
-        state_component::StateComponent,
+        update::Update,
     },
     math::MinMax,
     messages::{
-        ActorStateUnpack,
-        StatePacker,
-        StateUnpacked,
+        ActorUpdateUnpack,
+        UpdatesPacker,
+        UpdatesUnpacked,
     },
     pack,
 };
@@ -87,7 +87,7 @@ pub struct ActorComponentPackable<T>
 where
     T: 'static,
 {
-    state_component: StateComponent,
+    update: Update,
     is_client_controlled: bool,
     player_actor: Actor,
     last_change_snapshot: ClientSnapshot,
@@ -98,13 +98,9 @@ impl<T> ActorComponentPackable<T>
 where
     T: PartialEq + 'static,
 {
-    pub fn new(
-        state_component: StateComponent,
-        player_actor: Actor,
-        is_client_controlled: bool,
-    ) -> Self {
+    pub fn new(update: Update, player_actor: Actor, is_client_controlled: bool) -> Self {
         Self {
-            state_component,
+            update,
             player_actor,
             is_client_controlled,
             last_change_snapshot: ClientSnapshot(0),
@@ -162,11 +158,15 @@ impl<T> ActorComponentPackable<T>
 where
     T: 'static + Serialize,
 {
-    pub fn pack_player(&mut self, state: &mut StatePacker, last_client_snapshot: ClientSnapshot) {
+    pub fn pack_player(
+        &mut self,
+        updates_packer: &mut UpdatesPacker,
+        last_client_snapshot: ClientSnapshot,
+    ) {
         if last_client_snapshot < self.last_change_snapshot {
             let change = self.storage.get(&self.player_actor);
 
-            let buffer = state.get_component_buffer(self.state_component);
+            let buffer = updates_packer.get_buffer(self.update);
 
             pack::encode_into(&change, buffer);
         }
@@ -177,13 +177,13 @@ impl<'a, T> ActorComponentPackable<T>
 where
     T: Deserialize<'a>,
 {
-    pub fn unpack_state(&mut self, state: &StateUnpacked<'a>) {
-        if let Some((changes, _)) = state
-            .get_component(&self.state_component)
-            .and_then(|buffer| pack::decode_from_slice::<ActorStateUnpack<T>>(buffer))
+    pub fn unpack(&mut self, updates: &UpdatesUnpacked<'a>) {
+        if let Some((changes, _)) = updates
+            .get(&self.update)
+            .and_then(|buffer| pack::decode_from_slice::<ActorUpdateUnpack<T>>(buffer))
         {
             match changes {
-                ActorStateUnpack::Change(changes) => {
+                ActorUpdateUnpack::Change(changes) => {
                     for (actor, change) in changes {
                         if let Some(component) = change {
                             self.storage.insert(actor, component);
@@ -192,7 +192,7 @@ where
                         }
                     }
                 },
-                ActorStateUnpack::Full(full) => {
+                ActorUpdateUnpack::Full(full) => {
                     let player_value = self.storage.remove(&self.player_actor);
 
                     self.storage.clear();
@@ -208,26 +208,26 @@ where
         }
     }
 
-    /// Special version of the "unpack_state" to sync state for interpolatable actor components,
+    /// Special version of the "unpack" to sync state for interpolatable actor components,
     /// like orientation or position.
     /// Should be used together with the "target" version of the component - "target" uses
-    /// [`unpack_state`] and the component itself uses [`unpack_state_target`].
+    /// [`unpack`] and the component itself uses [`unpack_target`].
     /// Internally does not directly set the component unless the change is a full update or
     /// a removal.
-    pub fn unpack_state_target(&mut self, state: &StateUnpacked<'a>) {
-        if let Some((changes, _)) = state
-            .get_component(&self.state_component)
-            .and_then(|buffer| pack::decode_from_slice::<ActorStateUnpack<T>>(buffer))
+    pub fn unpack_target(&mut self, updates: &UpdatesUnpacked<'a>) {
+        if let Some((changes, _)) = updates
+            .get(&self.update)
+            .and_then(|buffer| pack::decode_from_slice::<ActorUpdateUnpack<T>>(buffer))
         {
             match changes {
-                ActorStateUnpack::Change(changes) => {
+                ActorUpdateUnpack::Change(changes) => {
                     for (actor, change) in changes {
                         if change.is_none() {
                             self.storage.remove(&actor);
                         }
                     }
                 },
-                ActorStateUnpack::Full(full) => {
+                ActorUpdateUnpack::Full(full) => {
                     let player_value = self.storage.remove(&self.player_actor);
 
                     self.storage.clear();
@@ -246,14 +246,14 @@ where
 
 /// Internal component that is received from the server.
 pub struct ActorComponentUnpackable<T> {
-    state_component: StateComponent,
+    update: Update,
     storage: IntMap<Actor, T>,
 }
 
 impl<T> ActorComponentUnpackable<T> {
-    pub fn new(state_component: StateComponent) -> Self {
+    pub fn new(update: Update) -> Self {
         Self {
-            state_component,
+            update,
             storage: IntMap::default(),
         }
     }
@@ -268,19 +268,19 @@ impl<T> ActorComponentUnpackable<T> {
 }
 
 impl<T> ActorComponentUnpackable<T> {
-    pub fn unpack_state_convert<'a, U>(
+    pub fn unpack_convert<'a, U>(
         &mut self,
-        state: &StateUnpacked<'a>,
+        updates: &UpdatesUnpacked<'a>,
         mut convert: impl FnMut(Actor, Option<T>, U) -> T,
     ) where
         U: Deserialize<'a>,
     {
-        if let Some((changes, _)) = state
-            .get_component(&self.state_component)
-            .and_then(|buffer| pack::decode_from_slice::<ActorStateUnpack<U>>(buffer))
+        if let Some((changes, _)) = updates
+            .get(&self.update)
+            .and_then(|buffer| pack::decode_from_slice::<ActorUpdateUnpack<U>>(buffer))
         {
             match changes {
-                ActorStateUnpack::Change(changes) => {
+                ActorUpdateUnpack::Change(changes) => {
                     for (actor, change) in changes {
                         if let Some(component) = change {
                             let previous = self.storage.remove(&actor);
@@ -291,7 +291,7 @@ impl<T> ActorComponentUnpackable<T> {
                         }
                     }
                 },
-                ActorStateUnpack::Full(full) => {
+                ActorUpdateUnpack::Full(full) => {
                     let full = full
                         .into_iter()
                         .map(|(actor, component)| {

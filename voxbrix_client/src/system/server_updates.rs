@@ -20,7 +20,7 @@ use voxbrix_common::{
     messages::{
         client::ServerState,
         ClientActionsPacker,
-        StateUnpacker,
+        UpdatesUnpacker,
     },
 };
 use voxbrix_world::{
@@ -29,18 +29,18 @@ use voxbrix_world::{
 };
 
 pub enum Error {
-    /// Unable to unpack state.
+    /// Unable to unpack updates.
     UnpackError,
 }
 
-pub struct ServerStateSystem;
+pub struct ServerUpdatesSystem;
 
-impl System for ServerStateSystem {
-    type Data<'a> = ServerStateSystemData<'a>;
+impl System for ServerUpdatesSystem {
+    type Data<'a> = ServerUpdatesSystemData<'a>;
 }
 
 #[derive(SystemData)]
-pub struct ServerStateSystemData<'a> {
+pub struct ServerUpdatesSystemData<'a> {
     snapshot: &'a ClientSnapshot,
     class_ac: &'a mut ClassActorComponent,
     model_acc: &'a mut ModelActorClassComponent,
@@ -50,24 +50,24 @@ pub struct ServerStateSystemData<'a> {
     target_orientation_ac: &'a mut TargetOrientationActorComponent,
     velocity_ac: &'a mut VelocityActorComponent,
     actions_packer: &'a mut ClientActionsPacker,
-    state_unpacker: &'a mut StateUnpacker,
+    updates_unpacker: &'a mut UpdatesUnpacker,
 }
 
-impl ServerStateSystemData<'_> {
+impl ServerUpdatesSystemData<'_> {
     pub fn run(&mut self, data: &ServerState) -> Result<(), Error> {
         let current_time = Instant::now();
         let new_lss = data.snapshot;
-        let state = self
-            .state_unpacker
-            .unpack_state(&data.state)
+        let updates = self
+            .updates_unpacker
+            .unpack(&data.updates)
             .map_err(|_| Error::UnpackError)?;
 
-        self.class_ac.unpack_state(&state);
-        self.model_acc.unpack_state(&state);
-        self.velocity_ac.unpack_state(&state);
-        self.orientation_ac.unpack_state_target(&state);
-        self.target_orientation_ac.unpack_state_convert(
-            &state,
+        self.class_ac.unpack(&updates);
+        self.model_acc.unpack(&updates);
+        self.velocity_ac.unpack(&updates);
+        self.orientation_ac.unpack_target(&updates);
+        self.target_orientation_ac.unpack_convert(
+            &updates,
             |actor, previous, orientation: Orientation| {
                 let current_value = if let Some(p) = self.orientation_ac.get(&actor) {
                     *p
@@ -86,10 +86,9 @@ impl ServerStateSystemData<'_> {
                 )
             },
         );
-        self.position_ac.unpack_state_target(&state);
-        self.target_position_ac.unpack_state_convert(
-            &state,
-            |actor, previous, position: Position| {
+        self.position_ac.unpack_target(&updates);
+        self.target_position_ac
+            .unpack_convert(&updates, |actor, previous, position: Position| {
                 let current_value = if let Some(p) = self.position_ac.get(&actor) {
                     *p
                 } else {
@@ -98,8 +97,7 @@ impl ServerStateSystemData<'_> {
                 };
 
                 TargetQueue::from_previous(previous, current_value, position, current_time, new_lss)
-            },
-        );
+            });
 
         self.actions_packer
             .confirm_snapshot(data.last_client_snapshot);

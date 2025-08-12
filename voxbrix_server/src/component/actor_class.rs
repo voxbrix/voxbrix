@@ -5,16 +5,16 @@ use voxbrix_common::{
     entity::{
         actor::Actor,
         snapshot::ServerSnapshot,
-        state_component::StateComponent,
+        update::Update,
     },
-    messages::StatePacker,
+    messages::UpdatesPacker,
     system::actor_class_loading::LoadActorClassComponent,
 };
 
 pub mod model;
 
-/// Works as both Actor component and ActorClass component.
-/// Actor component overrides component of its ActorClass.
+/// Works as both Actor update and ActorClass update.
+/// Actor update overrides update of its ActorClass.
 pub struct PackableOverridableActorClassComponent<T>
 where
     T: 'static,
@@ -27,26 +27,26 @@ impl<T> PackableOverridableActorClassComponent<T>
 where
     T: 'static + Serialize + PartialEq,
 {
-    pub fn new(state_component: StateComponent) -> Self {
+    pub fn new(update: Update) -> Self {
         Self {
             classes: Vec::new(),
-            overrides: ActorComponentPackable::new(state_component),
+            overrides: ActorComponentPackable::new(update),
         }
     }
 
     pub fn pack_full(
         &mut self,
-        state: &mut StatePacker,
+        updates: &mut UpdatesPacker,
         player_actor: Option<&Actor>,
         actors_full_update: &IntSet<Actor>,
     ) {
         self.overrides
-            .pack_full(state, player_actor, actors_full_update)
+            .pack_full(updates, player_actor, actors_full_update)
     }
 
     pub fn pack_changes(
         &mut self,
-        state: &mut StatePacker,
+        updates: &mut UpdatesPacker,
         snapshot: ServerSnapshot,
         client_last_snapshot: ServerSnapshot,
         player_actor: Option<&Actor>,
@@ -54,7 +54,7 @@ where
         actors_partial_update: &IntSet<Actor>,
     ) {
         self.overrides.pack_changes(
-            state,
+            updates,
             snapshot,
             client_last_snapshot,
             player_actor,

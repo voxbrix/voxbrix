@@ -4,6 +4,7 @@ use serde::{
     Serialize,
 };
 
+/// Event sent by an Actor.
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Hash, Ord, Copy, Clone, Debug)]
 pub struct Action(pub u32);
 

@@ -7,8 +7,8 @@ use crate::{
     scene::game::Transition,
     system::{
         chunk_changes_accept::ChunkChangesAcceptSystem,
-        server_actions::ServerActionsSystem,
-        server_state::ServerStateSystem,
+        server_dispatches::ServerDispatchesSystem,
+        server_updates::ServerUpdatesSystem,
     },
 };
 use log::error;
@@ -48,13 +48,17 @@ impl NetworkInput<'_> {
             Ok(message) => {
                 match message {
                     ClientAccept::State(state) => {
-                        if world.get_data::<ServerStateSystem>().run(&state).is_err() {
-                            error!("unable to decode server state");
+                        if world.get_data::<ServerUpdatesSystem>().run(&state).is_err() {
+                            error!("unable to decode server updates");
                             return Transition::Menu;
                         }
 
-                        if world.get_data::<ServerActionsSystem>().run(&state).is_err() {
-                            error!("unable to decode server actions");
+                        if world
+                            .get_data::<ServerDispatchesSystem>()
+                            .run(&state)
+                            .is_err()
+                        {
+                            error!("unable to decode server dispatches");
                             return Transition::Menu;
                         }
 

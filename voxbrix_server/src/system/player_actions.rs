@@ -16,10 +16,10 @@ use crate::{
         },
         block::class::ClassBlockComponent,
         player::{
-            actions_packer::ActionsPackerPlayerComponent,
             actor::ActorPlayerComponent,
             chunk_view::ChunkViewPlayerComponent,
             client::ClientPlayerComponent,
+            dispatches_packer::DispatchesPackerPlayerComponent,
         },
     },
     entity::{
@@ -89,6 +89,12 @@ impl ConditionCheck<'_> {
     }
 }
 
+pub enum Error {
+    Corrupted,
+    PlayerActorMissing,
+    PlayerHasNoClient,
+}
+
 #[derive(SystemData)]
 pub struct PlayerActionsSystemData<'a> {
     snapshot: &'a ServerSnapshot,
@@ -110,28 +116,31 @@ pub struct PlayerActionsSystemData<'a> {
     projectile_ac: &'a mut ProjectileActorComponent,
 
     label_library: &'a LabelLibrary,
-    actions_packer_pc: &'a mut ActionsPackerPlayerComponent,
+    dispatches_packer_pc: &'a mut DispatchesPackerPlayerComponent,
     chunk_view_pc: &'a ChunkViewPlayerComponent,
     class_bc: &'a mut ClassBlockComponent,
     collision_bcc: &'a CollisionBlockClassComponent,
 }
 
 impl PlayerActionsSystemData<'_> {
-    pub fn run(mut self, player: Player, state: &ClientState) {
-        let actor = *self
-            .actor_pc
-            .get(&player)
-            .expect("player missing actor must be caught earlier");
-
-        let Ok(actions) = self.actions_unpacker.unpack_actions(&state.actions) else {
+    pub fn run(mut self, player: Player, state: &ClientState) -> Result<(), Error> {
+        let actions = self.actions_unpacker.unpack(&state.actions).map_err(|_| {
             debug!("unable to unpack actions");
-            return;
-        };
 
-        let Some(client) = self.client_pc.get(&player) else {
+            Error::Corrupted
+        })?;
+
+        let actor = *self.actor_pc.get(&player).ok_or_else(|| {
+            error!("player actor is missing");
+
+            Error::PlayerActorMissing
+        })?;
+
+        let client = self.client_pc.get(&player).ok_or_else(|| {
             error!("unable to find client for player");
-            return;
-        };
+
+            Error::PlayerHasNoClient
+        })?;
 
         // Filtering out already handled actions
         for (action, _, data) in actions
@@ -212,7 +221,7 @@ impl PlayerActionsSystemData<'_> {
                             let script_data = ScriptSharedDataRef {
                                 snapshot: *self.snapshot,
                                 actor_pc: &self.actor_pc,
-                                actions_packer_pc: &mut self.actions_packer_pc,
+                                dispatches_packer_pc: &mut self.dispatches_packer_pc,
                                 chunk_view_pc: &self.chunk_view_pc,
                                 position_ac: &self.position_ac,
                                 label_library: &self.label_library,
@@ -235,5 +244,7 @@ impl PlayerActionsSystemData<'_> {
                 }
             }
         }
+
+        Ok(())
     }
 }

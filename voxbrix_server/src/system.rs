@@ -10,5 +10,5 @@ pub mod entity_removal;
 pub mod map_loading;
 pub mod player_actions;
 pub mod player_add;
-pub mod player_state;
+pub mod player_updates;
 pub mod position;

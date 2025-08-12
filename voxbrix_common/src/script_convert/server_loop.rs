@@ -8,6 +8,7 @@ use crate::entity::{
         Dimension,
         DimensionKind,
     },
+    dispatch::Dispatch,
 };
 
 impl From<server_loop_api::Block> for Block {
@@ -84,6 +85,18 @@ impl From<server_loop_api::Action> for Action {
 
 impl From<Action> for server_loop_api::Action {
     fn from(value: Action) -> Self {
+        Self(value.0)
+    }
+}
+
+impl From<server_loop_api::Dispatch> for Dispatch {
+    fn from(value: server_loop_api::Dispatch) -> Self {
+        Self(value.0)
+    }
+}
+
+impl From<Dispatch> for server_loop_api::Dispatch {
+    fn from(value: Dispatch) -> Self {
         Self(value.0)
     }
 }

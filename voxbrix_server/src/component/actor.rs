@@ -18,12 +18,12 @@ use voxbrix_common::{
             ServerSnapshot,
             MAX_SNAPSHOT_DIFF,
         },
-        state_component::StateComponent,
+        update::Update,
     },
     messages::{
-        ActorStatePack,
-        StatePacker,
-        StateUnpacked,
+        ActorUpdatePack,
+        UpdatesPacker,
+        UpdatesUnpacked,
     },
     pack,
 };
@@ -88,11 +88,11 @@ where
     fn pack(mut self, buffer: &mut Vec<u8>) -> ActorComponentPacker<'static, T> {
         match self.loaded_data {
             LoadedData::Changes => {
-                let msg = ActorStatePack::Change(&self.data_changes);
+                let msg = ActorUpdatePack::Change(&self.data_changes);
                 pack::encode_into(&msg, buffer);
             },
             LoadedData::Full => {
-                let msg = ActorStatePack::Full(&self.data_full);
+                let msg = ActorUpdatePack::Full(&self.data_full);
                 pack::encode_into(&msg, buffer);
             },
             LoadedData::None => {
@@ -153,7 +153,7 @@ pub struct ActorComponentPackable<T>
 where
     T: 'static,
 {
-    state_component: StateComponent,
+    update: Update,
     last_packed_snapshot: ServerSnapshot,
     changes: IntMap<Actor, ServerSnapshot>,
     packer: Option<ActorComponentPacker<'static, T>>,
@@ -167,11 +167,11 @@ where
     pub fn unpack_player(
         &mut self,
         player_actor: &Actor,
-        state: &StateUnpacked<'a>,
+        updates: &UpdatesUnpacked<'a>,
         snapshot: ServerSnapshot,
     ) {
-        if let Some((change, _)) = state
-            .get_component(&self.state_component)
+        if let Some((change, _)) = updates
+            .get(&self.update)
             .and_then(|buf| pack::decode_from_slice::<Option<T>>(buf))
         {
             let updated = if let Some(new_value) = change {
@@ -194,9 +194,9 @@ impl<T> ActorComponentPackable<T>
 where
     T: 'static + Serialize + PartialEq,
 {
-    pub fn new(state_component: StateComponent) -> Self {
+    pub fn new(update: Update) -> Self {
         Self {
-            state_component,
+            update,
             last_packed_snapshot: ServerSnapshot(0),
             changes: IntMap::default(),
             packer: Some(ActorComponentPacker::new()),
@@ -206,13 +206,13 @@ where
 
     pub fn pack_full(
         &mut self,
-        state: &mut StatePacker,
+        updates_packer: &mut UpdatesPacker,
         player_actor: Option<&Actor>,
         actors_full_update: &IntSet<Actor>,
     ) {
         let mut packer = self.packer.take().unwrap();
 
-        let buffer = state.get_component_buffer(self.state_component);
+        let buffer = updates_packer.get_buffer(self.update);
 
         if let Some(player_actor) = player_actor {
             let iter = actors_full_update
@@ -234,7 +234,7 @@ where
 
     pub fn pack_changes(
         &mut self,
-        state: &mut StatePacker,
+        updates_packer: &mut UpdatesPacker,
         snapshot: ServerSnapshot,
         client_last_snapshot: ServerSnapshot,
         player_actor: Option<&Actor>,
@@ -257,7 +257,7 @@ where
             .map(|(actor, _)| actor)
             .chain(actors_full_update.iter());
 
-        let buffer = state.get_component_buffer(self.state_component);
+        let buffer = updates_packer.get_buffer(self.update);
 
         if let Some(player_actor) = player_actor {
             let iter = changed_actors_iter

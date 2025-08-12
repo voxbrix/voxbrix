@@ -9,7 +9,6 @@ use std::{
     cell::RefCell,
     io::Write,
     panic,
-    ptr,
 };
 
 thread_local! {
@@ -25,7 +24,7 @@ mod import {
         pub fn get_target_block(ptr: *const u8, len: u32);
         pub fn set_class_of_block(ptr: *const u8, len: u32);
         pub fn get_block_class_by_label(ptr: *const u8, len: u32);
-        pub fn broadcast_action_local(ptr: *const u8, len: u32);
+        pub fn broadcast_dispatch_local(ptr: *const u8, len: u32);
     }
 }
 
@@ -114,17 +113,16 @@ where
     })
 }
 
-// TODO instead of None optionally have a possibility to pass a position.
-pub fn broadcast_action<T>(action: Action, actor: Option<Actor>, data: T)
+/// Broadcast dispatch to local (within chunk view) players.
+pub fn broadcast_dispatch_local<T>(dispatch: Dispatch, actor: Actor, data: T)
 where
     T: Serialize,
 {
-    static mut BROADCAST_BUFFER: Vec<u8> = Vec::new();
+    thread_local! {
+        static BROADCAST_BUFFER: RefCell<Vec<u8>> = RefCell::new(Vec::new());
+    }
 
-    // Safety: no reference must escape the block
-    unsafe {
-        let broadcast_buffer = &mut *ptr::addr_of_mut!(BROADCAST_BUFFER);
-
+    BROADCAST_BUFFER.with_borrow_mut(|broadcast_buffer| {
         broadcast_buffer.clear();
 
         postcard::serialize_with_flavor(
@@ -136,14 +134,16 @@ where
         )
         .unwrap();
 
-        let (input_slice_ptr, input_slice_len) = write_buffer(ActionInput {
-            action,
+        let (input_slice_ptr, input_slice_len) = write_buffer(BroadcastDispatchLocalRequest {
+            dispatch,
             actor,
             data: broadcast_buffer.as_slice(),
         });
 
-        import::broadcast_action_local(input_slice_ptr, input_slice_len.try_into().unwrap());
-    }
+        unsafe {
+            import::broadcast_dispatch_local(input_slice_ptr, input_slice_len.try_into().unwrap());
+        }
+    })
 }
 
 struct Writer<W> {

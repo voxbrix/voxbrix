@@ -4,11 +4,11 @@ use voxbrix_common::{
     entity::{
         actor::Actor,
         actor_class::ActorClass,
-        state_component::StateComponent,
+        update::Update,
     },
     messages::{
-        ActorStateUnpack,
-        StateUnpacked,
+        ActorUpdateUnpack,
+        UpdatesUnpacked,
     },
     pack,
     system::actor_class_loading::LoadActorClassComponent,
@@ -21,7 +21,7 @@ pub mod model;
 /// Actor component overrides component of its ActorClass.
 /// Overrides are only meant to be coming from the server.
 pub struct OverridableActorClassComponent<T> {
-    state_component: StateComponent,
+    update: Update,
     player_actor: Actor,
     is_client_controlled: bool,
     classes: Vec<Option<T>>,
@@ -29,13 +29,9 @@ pub struct OverridableActorClassComponent<T> {
 }
 
 impl<T> OverridableActorClassComponent<T> {
-    pub fn new(
-        state_component: StateComponent,
-        player_actor: Actor,
-        is_client_controlled: bool,
-    ) -> Self {
+    pub fn new(update: Update, player_actor: Actor, is_client_controlled: bool) -> Self {
         Self {
-            state_component,
+            update,
             player_actor,
             is_client_controlled,
             classes: Vec::new(),
@@ -54,13 +50,13 @@ impl<'a, T> OverridableActorClassComponent<T>
 where
     T: Deserialize<'a>,
 {
-    pub fn unpack_state(&mut self, state: &StateUnpacked<'a>) {
-        if let Some((changes, _)) = state
-            .get_component(&self.state_component)
-            .and_then(|buffer| pack::decode_from_slice::<ActorStateUnpack<T>>(buffer))
+    pub fn unpack(&mut self, updates: &UpdatesUnpacked<'a>) {
+        if let Some((changes, _)) = updates
+            .get(&self.update)
+            .and_then(|buffer| pack::decode_from_slice::<ActorUpdateUnpack<T>>(buffer))
         {
             match changes {
-                ActorStateUnpack::Change(changes) => {
+                ActorUpdateUnpack::Change(changes) => {
                     for (actor, change) in changes {
                         if let Some(component) = change {
                             self.overrides.insert(actor, component);
@@ -69,7 +65,7 @@ where
                         }
                     }
                 },
-                ActorStateUnpack::Full(full) => {
+                ActorUpdateUnpack::Full(full) => {
                     let player_value = self.overrides.remove(&self.player_actor);
 
                     self.overrides.clear();

@@ -10,11 +10,11 @@ use crate::{
             velocity::VelocityActorComponent,
         },
         player::{
-            actions_packer::ActionsPackerPlayerComponent,
             actor::ActorPlayerComponent,
             chunk_update::ChunkUpdatePlayerComponent,
             chunk_view::ChunkViewPlayerComponent,
             client::ClientPlayerComponent,
+            dispatches_packer::DispatchesPackerPlayerComponent,
         },
     },
     entity::{
@@ -78,7 +78,7 @@ pub struct EntityRemovalSystemData<'a> {
     client_pc: &'a mut ClientPlayerComponent,
     chunk_update_pc: &'a mut ChunkUpdatePlayerComponent,
     chunk_view_pc: &'a mut ChunkViewPlayerComponent,
-    actions_packer_pc: &'a mut ActionsPackerPlayerComponent,
+    dispatches_packer_pc: &'a mut DispatchesPackerPlayerComponent,
     actor_pc: &'a mut ActorPlayerComponent,
 }
 
@@ -88,7 +88,7 @@ impl EntityRemovalSystemData<'_> {
             self.client_pc.remove(&player);
             self.chunk_update_pc.remove(&player);
             self.chunk_view_pc.remove(&player);
-            self.actions_packer_pc.remove(&player);
+            self.dispatches_packer_pc.remove(&player);
             if let Some(actor) = self.actor_pc.remove(&player) {
                 self.actor_rq.enqueue(actor);
             }

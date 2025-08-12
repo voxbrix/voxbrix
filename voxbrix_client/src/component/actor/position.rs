@@ -13,13 +13,13 @@ use voxbrix_common::{
         actor::Actor,
         chunk::Chunk,
         snapshot::ClientSnapshot,
-        state_component::StateComponent,
+        update::Update,
     },
     math::MinMax,
     messages::{
-        ActorStateUnpack,
-        StatePacker,
-        StateUnpacked,
+        ActorUpdateUnpack,
+        UpdatesPacker,
+        UpdatesUnpacked,
     },
     pack,
 };
@@ -72,7 +72,7 @@ impl<'a> Deref for Writable<'a> {
 /// Position is always client-controlled.
 #[derive(Debug)]
 pub struct PositionActorComponent {
-    state_component: StateComponent,
+    update: Update,
     player_actor: Actor,
     last_change_snapshot: ClientSnapshot,
     storage: IntMap<Actor, Position>,
@@ -81,9 +81,9 @@ pub struct PositionActorComponent {
 }
 
 impl PositionActorComponent {
-    pub fn new(state_component: StateComponent, player_actor: Actor) -> Self {
+    pub fn new(update: Update, player_actor: Actor) -> Self {
         Self {
-            state_component,
+            update,
             player_actor,
             last_change_snapshot: ClientSnapshot(0),
             storage: IntMap::default(),
@@ -134,11 +134,15 @@ impl PositionActorComponent {
         self.storage.iter().map(|(k, v)| (*k, v))
     }
 
-    pub fn pack_player(&mut self, state: &mut StatePacker, last_client_snapshot: ClientSnapshot) {
+    pub fn pack_player(
+        &mut self,
+        updates_packer: &mut UpdatesPacker,
+        last_client_snapshot: ClientSnapshot,
+    ) {
         if last_client_snapshot < self.last_change_snapshot {
             let change = self.storage.get(&self.player_actor);
 
-            let buffer = state.get_component_buffer(self.state_component);
+            let buffer = updates_packer.get_buffer(self.update);
 
             pack::encode_into(&change, buffer);
         }
@@ -184,26 +188,26 @@ impl PositionActorComponent {
         pos
     }
 
-    /// Special version of the "unpack_state" to sync state for interpolatable actor components,
+    /// Special version of the "unpack" to sync state for interpolatable actor components,
     /// like orientation or position.
     /// Should be used together with the "target" version of the component - "target" uses
-    /// [`unpack_state`] and the component itself uses [`unpack_state_target`].
+    /// [`unpack`] and the component itself uses [`unpack_target`].
     /// Internally does not directly set the component unless the change is a full update or
     /// a removal.
-    pub fn unpack_state_target(&mut self, state: &StateUnpacked) {
-        if let Some((changes, _)) = state
-            .get_component(&self.state_component)
-            .and_then(|buffer| pack::decode_from_slice::<ActorStateUnpack<Position>>(buffer))
+    pub fn unpack_target(&mut self, updates: &UpdatesUnpacked) {
+        if let Some((changes, _)) = updates
+            .get(&self.update)
+            .and_then(|buffer| pack::decode_from_slice::<ActorUpdateUnpack<Position>>(buffer))
         {
             match changes {
-                ActorStateUnpack::Change(changes) => {
+                ActorUpdateUnpack::Change(changes) => {
                     for (actor, change) in changes {
                         if change.is_none() {
                             self.storage.remove(&actor);
                         }
                     }
                 },
-                ActorStateUnpack::Full(full) => {
+                ActorUpdateUnpack::Full(full) => {
                     let player_value = self.storage.remove(&self.player_actor);
 
                     self.storage.clear();

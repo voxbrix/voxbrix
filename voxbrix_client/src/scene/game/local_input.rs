@@ -90,14 +90,14 @@ impl LocalInput<'_> {
                                         let actions_packer =
                                             world.get_resource_mut::<ClientActionsPacker>();
 
-                                        actions_packer.add_action(Action(2), snapshot, ());
+                                        actions_packer.add(Action(2), snapshot, ());
                                     },
                                     winit::keyboard::KeyCode::KeyL => {
                                         let snapshot = *world.get_resource_ref::<ClientSnapshot>();
                                         let actions_packer =
                                             world.get_resource_mut::<ClientActionsPacker>();
 
-                                        actions_packer.add_action(Action(3), snapshot, ());
+                                        actions_packer.add(Action(3), snapshot, ());
                                     },
                                     _ => {},
                                 }
@@ -173,7 +173,7 @@ impl LocalInput<'_> {
                                             direction: [f32; 3],
                                         }
 
-                                        sd.actions_packer.add_action(
+                                        sd.actions_packer.add(
                                             Action(0),
                                             *sd.snapshot,
                                             RemoveBlock {
@@ -219,7 +219,7 @@ impl LocalInput<'_> {
                                                 block_class: BlockClass,
                                             }
 
-                                            sd.actions_packer.add_action(
+                                            sd.actions_packer.add(
                                                 Action(1),
                                                 *sd.snapshot,
                                                 PlaceBlock {

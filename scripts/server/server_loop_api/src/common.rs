@@ -107,9 +107,19 @@ pub struct Actor(pub u32);
 pub struct Action(pub u32);
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
+pub struct Dispatch(pub u32);
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct ActionInput<'a> {
     pub action: Action,
     pub actor: Option<Actor>,
+    pub data: &'a [u8],
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
+pub struct BroadcastDispatchLocalRequest<'a> {
+    pub dispatch: Dispatch,
+    pub actor: Actor,
     pub data: &'a [u8],
 }
 

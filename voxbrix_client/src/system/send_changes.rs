@@ -21,7 +21,7 @@ use voxbrix_common::{
             ServerAccept,
         },
         ClientActionsPacker,
-        StatePacker,
+        UpdatesPacker,
     },
     pack::Packer,
     resource::removal_queue::RemovalQueue,
@@ -44,7 +44,7 @@ pub struct SendChangesSystemData<'a> {
     orientation_ac: &'a mut OrientationActorComponent,
     velocity_ac: &'a mut VelocityActorComponent,
     packer: &'a mut Packer,
-    state_packer: &'a mut StatePacker,
+    updates_packer: &'a mut UpdatesPacker,
     actions_packer: &'a mut ClientActionsPacker,
     player_chunk_view_radius: &'a PlayerChunkViewRadius,
     confirmed_snapshots: &'a ConfirmedSnapshots,
@@ -77,15 +77,15 @@ impl SendChangesSystemData<'_> {
 
         let lcs = self.confirmed_snapshots.last_client_snapshot;
 
-        self.position_ac.pack_player(self.state_packer, lcs);
-        self.velocity_ac.pack_player(self.state_packer, lcs);
-        self.orientation_ac.pack_player(self.state_packer, lcs);
+        self.position_ac.pack_player(self.updates_packer, lcs);
+        self.velocity_ac.pack_player(self.updates_packer, lcs);
+        self.orientation_ac.pack_player(self.updates_packer, lcs);
 
         let packed = self.packer.pack_to_vec(&ServerAccept::State(ClientState {
             snapshot: *self.snapshot,
             last_server_snapshot: self.confirmed_snapshots.last_server_snapshot,
-            state: self.state_packer.pack_state(),
-            actions: self.actions_packer.pack_actions(),
+            updates: self.updates_packer.pack(),
+            actions: self.actions_packer.pack(),
         }));
 
         let _ = self.server_sender.unreliable.send(packed);

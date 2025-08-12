@@ -9,7 +9,6 @@ use crate::{
             player::PlayerActorComponent,
         },
         player::{
-            actions_packer::ActionsPackerPlayerComponent,
             actor::ActorPlayerComponent,
             chunk_view::{
                 ChunkView,
@@ -20,6 +19,7 @@ use crate::{
                 ClientEvent,
                 ClientPlayerComponent,
             },
+            dispatches_packer::DispatchesPackerPlayerComponent,
         },
     },
     entity::{
@@ -37,7 +37,7 @@ use voxbrix_common::{
             ServerSnapshot,
         },
     },
-    messages::ActionsPacker,
+    messages::DispatchesPacker,
     resource::removal_queue::RemovalQueue,
     LabelLibrary,
 };
@@ -67,7 +67,7 @@ pub struct PlayerAddSystemData<'a> {
     actor_pc: &'a mut ActorPlayerComponent,
     client_pc: &'a mut ClientPlayerComponent,
     chunk_view_pc: &'a mut ChunkViewPlayerComponent,
-    actions_packer_pc: &'a mut ActionsPackerPlayerComponent,
+    dispatches_packer_pc: &'a mut DispatchesPackerPlayerComponent,
 
     actor_registry: &'a mut ActorRegistry,
     class_ac: &'a mut ClassActorComponent,
@@ -123,7 +123,8 @@ impl PlayerAddSystemData<'_> {
             },
         );
 
-        self.actions_packer_pc.insert(player, ActionsPacker::new());
+        self.dispatches_packer_pc
+            .insert(player, DispatchesPacker::new());
 
         if tx_init.send(ClientEvent::AssignActor { actor }).is_err() {
             self.player_rq.enqueue(player);

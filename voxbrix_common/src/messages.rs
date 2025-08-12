@@ -2,11 +2,12 @@ use crate::{
     entity::{
         action::Action,
         actor::Actor,
+        dispatch::Dispatch,
         snapshot::{
             ClientSnapshot,
             ServerSnapshot,
         },
-        state_component::StateComponent,
+        update::Update,
     },
     pack::{
         self,
@@ -31,46 +32,45 @@ use std::{
 pub mod client;
 pub mod server;
 
-pub type ClientActionsPacker = ActionsPacker<ClientSnapshot>;
-pub type ServerActionsPacker = ActionsPacker<ServerSnapshot>;
+pub type ClientActionsPacker = EventsPacker<Action, ClientSnapshot>;
+pub type DispatchesPacker = EventsPacker<Dispatch, ServerSnapshot>;
 
-pub type ClientActionsUnpacker = ActionsUnpacker<ClientSnapshot>;
-pub type ServerActionsUnpacker = ActionsUnpacker<ServerSnapshot>;
+pub type ClientActionsUnpacker = EventsUnpacker<Action, ClientSnapshot>;
+pub type DispatchesUnpacker = EventsUnpacker<Dispatch, ServerSnapshot>;
 
-pub type ClientActionsPacked<'a> = ActionsPacked<'a, ClientSnapshot>;
-pub type ServerActionsPacked<'a> = ActionsPacked<'a, ServerSnapshot>;
+pub type ClientActionsPacked<'a> = EventsPacked<'a, Action, ClientSnapshot>;
+pub type DispatchesPacked<'a> = EventsPacked<'a, Dispatch, ServerSnapshot>;
 
-pub type ClientActionsUnpacked<'a> = ActionsUnpacked<'a, ClientSnapshot>;
-pub type ServerActionsUnpacked<'a> = ActionsUnpacked<'a, ServerSnapshot>;
+pub type ClientActionsUnpacked<'a> = EventsUnpacked<'a, Action, ClientSnapshot>;
+pub type DispatchesUnpacked<'a> = EventsUnpacked<'a, Dispatch, ServerSnapshot>;
 
-/// State container.
-/// The components supposed to be transfered in delta manner,
-/// meaining that only changed components are in the map.
+/// Update data container.
+/// The updates supposed to be transfered in delta manner,
+/// meaining that only changed updates are in the map,
+/// but new instances of an Update override the old ones for the same Update.
 #[derive(Serialize, Deserialize)]
-pub struct StatePacked<'a>(&'a [u8]);
+pub struct UpdatesPacked<'a>(&'a [u8]);
 
-pub struct StateUnpacked<'a> {
-    origin: &'a mut StateUnpacker,
-    components: IntMap<StateComponent, &'a [u8]>,
+pub struct UpdatesUnpacked<'a> {
+    origin: &'a mut UpdatesUnpacker,
+    updates: IntMap<Update, &'a [u8]>,
 }
 
-impl<'a> StateUnpacked<'a> {
-    pub fn get_component(&self, component: &StateComponent) -> Option<&'a [u8]> {
-        self.components.get(component).copied()
+impl<'a> UpdatesUnpacked<'a> {
+    pub fn get(&self, update: &Update) -> Option<&'a [u8]> {
+        self.updates.get(update).copied()
     }
 }
 
-impl<'a> Drop for StateUnpacked<'a> {
+impl<'a> Drop for UpdatesUnpacked<'a> {
     fn drop(&mut self) {
-        let mut buffer = mem::take(&mut self.components);
+        let mut buffer = mem::take(&mut self.updates);
 
         buffer.clear();
 
         // Safety: all references are removed in the previous step.
         let buffer = unsafe {
-            mem::transmute::<IntMap<StateComponent, &'a [u8]>, IntMap<StateComponent, &'static [u8]>>(
-                buffer,
-            )
+            mem::transmute::<IntMap<Update, &'a [u8]>, IntMap<Update, &'static [u8]>>(buffer)
         };
 
         self.origin.buffer = buffer;
@@ -78,11 +78,11 @@ impl<'a> Drop for StateUnpacked<'a> {
 }
 
 #[derive(Default)]
-pub struct StateUnpacker {
-    buffer: IntMap<StateComponent, &'static [u8]>,
+pub struct UpdatesUnpacker {
+    buffer: IntMap<Update, &'static [u8]>,
 }
 
-impl StateUnpacker {
+impl UpdatesUnpacker {
     pub fn new() -> Self {
         Self {
             buffer: IntMap::default(),
@@ -90,14 +90,14 @@ impl StateUnpacker {
     }
 }
 
-impl StateUnpacker {
-    pub fn unpack_state<'a>(
+impl UpdatesUnpacker {
+    pub fn unpack<'a>(
         &'a mut self,
-        state: &'a StatePacked<'a>,
-    ) -> Result<StateUnpacked<'a>, UnpackError> {
+        updates: &'a UpdatesPacked<'a>,
+    ) -> Result<UpdatesUnpacked<'a>, UnpackError> {
         let mut buffer = mem::take(&mut self.buffer);
 
-        let (size, mut offset) = pack::decode_from_slice::<u64>(state.0).ok_or(UnpackError)?;
+        let (size, mut offset) = pack::decode_from_slice::<u64>(updates.0).ok_or(UnpackError)?;
 
         let size: usize = size.try_into().map_err(|_| UnpackError)?;
 
@@ -105,7 +105,7 @@ impl StateUnpacker {
 
         for _ in 0 .. size {
             let ((key, value), new_offset) =
-                pack::decode_from_slice::<(StateComponent, &[u8])>(&state.0[offset ..])
+                pack::decode_from_slice::<(Update, &[u8])>(&updates.0[offset ..])
                     .ok_or(UnpackError)?;
 
             offset += new_offset;
@@ -113,156 +113,156 @@ impl StateUnpacker {
             buffer.insert(key, value);
         }
 
-        let unpacked = StateUnpacked {
+        let unpacked = UpdatesUnpacked {
             origin: self,
-            components: buffer,
+            updates: buffer,
         };
 
         Ok(unpacked)
     }
 }
 
-pub struct StatePacker {
-    packed_components: IntSet<StateComponent>,
-    components: IntMap<StateComponent, Vec<u8>>,
+pub struct UpdatesPacker {
+    packed_updates: IntSet<Update>,
+    updates: IntMap<Update, Vec<u8>>,
     to_be_cleared: bool,
     buffer: Vec<u8>,
 }
 
-impl StatePacker {
+impl UpdatesPacker {
     pub fn new() -> Self {
         Self {
-            packed_components: IntSet::default(),
-            components: IntMap::default(),
+            packed_updates: IntSet::default(),
+            updates: IntMap::default(),
             to_be_cleared: false,
             buffer: Vec::new(),
         }
     }
 
-    pub fn get_component_buffer(&mut self, component: StateComponent) -> &mut Vec<u8> {
+    pub fn get_buffer(&mut self, update: Update) -> &mut Vec<u8> {
         if self.to_be_cleared {
             self.to_be_cleared = false;
 
-            for component in self.packed_components.drain() {
-                self.components.get_mut(&component).unwrap().clear();
+            for update in self.packed_updates.drain() {
+                self.updates.get_mut(&update).unwrap().clear();
             }
         }
 
-        if self.components.get(&component).is_none() {
-            self.components.insert(component, Vec::new());
+        if self.updates.get(&update).is_none() {
+            self.updates.insert(update, Vec::new());
         }
 
-        let buffer = self.components.get_mut(&component).unwrap();
+        let buffer = self.updates.get_mut(&update).unwrap();
 
-        self.packed_components.insert(component);
+        self.packed_updates.insert(update);
 
         buffer
     }
 
-    pub fn pack_state<'a>(&'a mut self) -> StatePacked<'a> {
+    pub fn pack<'a>(&'a mut self) -> UpdatesPacked<'a> {
         let extend_iter = self
-            .packed_components
+            .packed_updates
             .iter()
-            .map(|comp| self.components.get_key_value(comp).unwrap());
+            .map(|comp| self.updates.get_key_value(comp).unwrap());
 
-        let components_count = self.packed_components.len();
+        let updates_count = self.packed_updates.len();
 
         self.buffer.clear();
 
-        pack::encode_write(&(components_count as u64), &mut self.buffer);
+        pack::encode_write(&(updates_count as u64), &mut self.buffer);
 
-        for component in extend_iter {
-            pack::encode_write(&component, &mut self.buffer);
+        for update in extend_iter {
+            pack::encode_write(&update, &mut self.buffer);
         }
 
         self.to_be_cleared = true;
 
-        StatePacked(self.buffer.as_slice())
+        UpdatesPacked(self.buffer.as_slice())
     }
 }
 
 #[derive(Deserialize)]
-pub enum ActorStateUnpack<T> {
+pub enum ActorUpdateUnpack<T> {
     Full(Vec<(Actor, T)>),
     Change(Vec<(Actor, Option<T>)>),
 }
 
 #[derive(Serialize)]
-pub enum ActorStatePack<'a, T> {
+pub enum ActorUpdatePack<'a, T> {
     Full(&'a [(Actor, &'a T)]),
     Change(&'a [(Actor, Option<&'a T>)]),
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct ActionsPacked<'a, S> {
+pub struct EventsPacked<'a, E, S> {
     data: &'a [u8],
-    _snapshot: PhantomData<S>,
+    _ty: PhantomData<(E, S)>,
 }
 
-pub struct ActionsUnpacked<'a, S> {
-    origin: &'a mut ActionsUnpacker<S>,
-    data: Vec<(Action, S, &'a [u8])>,
+pub struct EventsUnpacked<'a, E, S> {
+    origin: &'a mut EventsUnpacker<E, S>,
+    data: Vec<(E, S, &'a [u8])>,
 }
 
-impl<'a, S> ActionsUnpacked<'a, S> {
-    pub fn data(&self) -> &[(Action, S, &'a [u8])] {
+impl<'a, E, S> EventsUnpacked<'a, E, S> {
+    pub fn data(&self) -> &[(E, S, &'a [u8])] {
         self.data.as_slice()
     }
 }
 
-impl<'a, S> Drop for ActionsUnpacked<'a, S> {
+impl<'a, E, S> Drop for EventsUnpacked<'a, E, S> {
     fn drop(&mut self) {
         let mut buffer = mem::take(&mut self.data);
 
         buffer.clear();
 
         // Safety: all references are removed in the previous step.
-        let buffer = unsafe {
-            mem::transmute::<Vec<(Action, S, &'a [u8])>, Vec<(Action, S, &'static [u8])>>(buffer)
-        };
+        let buffer =
+            unsafe { mem::transmute::<Vec<(E, S, &'a [u8])>, Vec<(E, S, &'static [u8])>>(buffer) };
 
         self.origin.buffer = buffer;
     }
 }
 
 #[derive(Default)]
-pub struct ActionsUnpacker<S> {
-    buffer: Vec<(Action, S, &'static [u8])>,
+pub struct EventsUnpacker<E, S> {
+    buffer: Vec<(E, S, &'static [u8])>,
 }
 
-impl<S> ActionsUnpacker<S> {
+impl<E, S> EventsUnpacker<E, S> {
     pub fn new() -> Self {
         Self { buffer: Vec::new() }
     }
 }
 
-impl<S> ActionsUnpacker<S>
+impl<E, S> EventsUnpacker<E, S>
 where
+    E: DeserializeOwned,
     S: DeserializeOwned,
 {
-    pub fn unpack_actions<'a>(
+    pub fn unpack<'a>(
         &'a mut self,
-        actions: &'a ActionsPacked<'a, S>,
-    ) -> Result<ActionsUnpacked<'a, S>, UnpackError> {
+        events: &'a EventsPacked<'a, E, S>,
+    ) -> Result<EventsUnpacked<'a, E, S>, UnpackError> {
         let mut buffer = mem::take(&mut self.buffer);
 
-        let (size, mut offset) = pack::decode_from_slice::<u64>(actions.data).ok_or(UnpackError)?;
+        let (size, mut offset) = pack::decode_from_slice::<u64>(events.data).ok_or(UnpackError)?;
 
         let size: usize = size.try_into().map_err(|_| UnpackError)?;
 
         buffer.reserve(size);
 
         for _ in 0 .. size {
-            let ((action, snapshot, data), new_offset) =
-                pack::decode_from_slice::<(Action, S, &[u8])>(&actions.data[offset ..])
+            let ((event, snapshot, data), new_offset) =
+                pack::decode_from_slice::<(E, S, &[u8])>(&events.data[offset ..])
                     .ok_or(UnpackError)?;
 
             offset += new_offset;
 
-            buffer.push((action, snapshot, data));
+            buffer.push((event, snapshot, data));
         }
 
-        let unpacked = ActionsUnpacked {
+        let unpacked = EventsUnpacked {
             origin: self,
             data: buffer,
         };
@@ -271,75 +271,72 @@ where
     }
 }
 
-pub struct ActionsPacker<S> {
+pub struct EventsPacker<E, S> {
     buffer: Vec<u8>,
-    actions: VecDeque<(S, Action, usize)>,
+    events: VecDeque<(S, E, usize)>,
     data: VecDeque<u8>,
 }
 
-impl<S> ActionsPacker<S>
+impl<E, S> EventsPacker<E, S>
 where
+    E: Serialize + Copy + Ord,
     S: Serialize + Copy + Ord,
 {
     pub fn new() -> Self {
         Self {
             buffer: Vec::new(),
-            actions: VecDeque::new(),
+            events: VecDeque::new(),
             data: VecDeque::new(),
         }
     }
 
-    pub fn add_action(&mut self, action: Action, snapshot: S, data: impl Serialize) {
+    pub fn add(&mut self, event: E, snapshot: S, data: impl Serialize) {
         let size = pack::encode_write(&data, &mut self.data);
 
-        self.actions.push_back((snapshot, action, size));
+        self.events.push_back((snapshot, event, size));
     }
 
-    fn remove_action(&mut self) {
-        if let Some((_, _, size)) = self.actions.pop_front() {
+    fn remove_event(&mut self) {
+        if let Some((_, _, size)) = self.events.pop_front() {
             self.data.drain(.. size);
         }
     }
 
     pub fn confirm_snapshot(&mut self, snapshot: S) {
         loop {
-            match self.actions.front() {
-                Some((action_snapshot, _, _)) if *action_snapshot <= snapshot => {
-                    self.remove_action();
+            match self.events.front() {
+                Some((event_snapshot, _, _)) if *event_snapshot <= snapshot => {
+                    self.remove_event();
                 },
                 _ => break,
             }
         }
     }
 
-    pub fn pack_actions<'a>(&'a mut self) -> ActionsPacked<'a, S> {
+    pub fn pack<'a>(&'a mut self) -> EventsPacked<'a, E, S> {
         let mut data_cursor = 0;
 
         let data_slice: &_ = self.data.make_contiguous();
 
-        let extend_iter = self
-            .actions
-            .iter()
-            .copied()
-            .map(|(snapshot, action, size)| {
-                let read_from = data_cursor;
-                data_cursor += size;
-                (action, snapshot, &data_slice[read_from .. data_cursor])
-            });
+        let extend_iter = self.events.iter().copied().map(|(snapshot, event, size)| {
+            let read_from = data_cursor;
+            data_cursor += size;
+            (event, snapshot, &data_slice[read_from .. data_cursor])
+        });
 
-        let components_count = self.actions.len();
+        let updates_count = self.events.len();
 
         self.buffer.clear();
 
-        pack::encode_write(&(components_count as u64), &mut self.buffer);
+        pack::encode_write(&(updates_count as u64), &mut self.buffer);
 
         for element in extend_iter {
             pack::encode_write(&element, &mut self.buffer);
         }
 
-        ActionsPacked {
+        EventsPacked {
             data: self.buffer.as_slice(),
-            _snapshot: PhantomData,
+            _ty: PhantomData,
         }
     }
 }
@@ -350,31 +347,31 @@ mod tests {
     use crate::pack;
 
     #[test]
-    fn test_actor_state_serde() {
-        let initial = ActorStatePack::Full(&[(Actor(3), &"Actor3")]);
+    fn test_actor_update_serde() {
+        let initial = ActorUpdatePack::Full(&[(Actor(3), &"Actor3")]);
         let mut buffer = Vec::new();
         pack::encode_write(&initial, &mut buffer);
-        let (control, _) = pack::decode_from_slice::<ActorStateUnpack<String>>(&buffer).unwrap();
+        let (control, _) = pack::decode_from_slice::<ActorUpdateUnpack<String>>(&buffer).unwrap();
 
         match (initial, control) {
-            (ActorStatePack::Full(initial), ActorStateUnpack::Full(control)) => {
+            (ActorUpdatePack::Full(initial), ActorUpdateUnpack::Full(control)) => {
                 assert_eq!(initial[0].0, control[0].0);
                 assert_eq!(*initial[0].1, control[0].1.as_str());
             },
             _ => unreachable!(),
         }
 
-        let initial = ActorStatePack::Full(&[
+        let initial = ActorUpdatePack::Full(&[
             (Actor(7), &"Actor7"),
             (Actor(1), &"Actor1"),
             (Actor(13), &"Actor13"),
         ]);
         let mut buffer = Vec::new();
         pack::encode_write(&initial, &mut buffer);
-        let (control, _) = pack::decode_from_slice::<ActorStateUnpack<String>>(&buffer).unwrap();
+        let (control, _) = pack::decode_from_slice::<ActorUpdateUnpack<String>>(&buffer).unwrap();
 
         match (initial, control) {
-            (ActorStatePack::Full(initial), ActorStateUnpack::Full(control)) => {
+            (ActorUpdatePack::Full(initial), ActorUpdateUnpack::Full(control)) => {
                 for (initial, control) in initial.iter().zip(control.iter()) {
                     assert_eq!(initial.0, control.0);
                     assert_eq!(*initial.1, control.1.as_str());

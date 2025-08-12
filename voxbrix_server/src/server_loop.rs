@@ -29,7 +29,6 @@ use crate::{
             status::StatusChunkComponent,
         },
         player::{
-            actions_packer::ActionsPackerPlayerComponent,
             actor::ActorPlayerComponent,
             chunk_update::ChunkUpdatePlayerComponent,
             chunk_view::ChunkViewPlayerComponent,
@@ -37,6 +36,7 @@ use crate::{
                 ClientEvent,
                 ClientPlayerComponent,
             },
+            dispatches_packer::DispatchesPackerPlayerComponent,
         },
     },
     entity::{
@@ -87,7 +87,7 @@ use voxbrix_common::{
         ACTION_LIST_PATH,
         ACTOR_MODEL_LIST_PATH,
         EFFECT_LIST_PATH,
-        STATE_COMPONENTS_PATH,
+        UPDATE_LIST_PATH,
     },
     component::{
         actor::effect::EffectActorComponent,
@@ -107,8 +107,8 @@ use voxbrix_common::{
     messages::{
         client::ClientAccept,
         ClientActionsUnpacker,
-        StatePacker,
-        StateUnpacker,
+        UpdatesPacker,
+        UpdatesUnpacker,
     },
     pack::Packer,
     resource::{
@@ -171,12 +171,12 @@ impl ServerLoop {
 
         let mut label_library = LabelLibrary::new();
 
-        let state_components_label_map = List::load(STATE_COMPONENTS_PATH)
+        let updates_label_map = List::load(UPDATE_LIST_PATH)
             .await
-            .expect("state component list not found")
+            .expect("update list not found")
             .into_label_map();
 
-        label_library.add(state_components_label_map.clone());
+        label_library.add(updates_label_map.clone());
 
         let actor_model_label_map = List::load(ACTOR_MODEL_LIST_PATH)
             .await
@@ -185,15 +185,13 @@ impl ServerLoop {
 
         label_library.add(actor_model_label_map.clone());
 
-        let class_ac =
-            ClassActorComponent::new(state_components_label_map.get("actor_class").unwrap());
+        let class_ac = ClassActorComponent::new(updates_label_map.get("actor_class").unwrap());
         let position_ac =
-            PositionActorComponent::new(state_components_label_map.get("actor_position").unwrap());
+            PositionActorComponent::new(updates_label_map.get("actor_position").unwrap());
         let velocity_ac =
-            VelocityActorComponent::new(state_components_label_map.get("actor_velocity").unwrap());
-        let orientation_ac = OrientationActorComponent::new(
-            state_components_label_map.get("actor_orientation").unwrap(),
-        );
+            VelocityActorComponent::new(updates_label_map.get("actor_velocity").unwrap());
+        let orientation_ac =
+            OrientationActorComponent::new(updates_label_map.get("actor_orientation").unwrap());
         let player_ac = PlayerActorComponent::new();
         let chunk_activation_ac = ChunkActivationActorComponent::new();
 
@@ -205,7 +203,7 @@ impl ServerLoop {
         label_library.add(effect_label_map);
 
         let mut model_acc =
-            ModelActorClassComponent::new(state_components_label_map.get("actor_model").unwrap());
+            ModelActorClassComponent::new(updates_label_map.get("actor_model").unwrap());
 
         let status_cc = StatusChunkComponent::new();
         let cache_cc = CacheChunkComponent::new();
@@ -295,7 +293,7 @@ impl ServerLoop {
         world.add(ActorRegistry::new());
 
         world.add(ClientPlayerComponent::new());
-        world.add(ActionsPackerPlayerComponent::new());
+        world.add(DispatchesPackerPlayerComponent::new());
         world.add(ActorPlayerComponent::new());
         world.add(ChunkUpdatePlayerComponent::new());
         world.add(ChunkViewPlayerComponent::new());
@@ -350,8 +348,8 @@ impl ServerLoop {
 
         world.add(ServerSnapshot(1));
 
-        world.add(StatePacker::new());
-        world.add(StateUnpacker::new());
+        world.add(UpdatesPacker::new());
+        world.add(UpdatesUnpacker::new());
         world.add(ClientActionsUnpacker::new());
 
         world.add(ProcessTimer::new());

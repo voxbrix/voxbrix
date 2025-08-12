@@ -1,11 +1,11 @@
 use crate::entity::player::Player;
 use nohash_hasher::IntMap;
 
-pub mod actions_packer;
 pub mod actor;
 pub mod chunk_update;
 pub mod chunk_view;
 pub mod client;
+pub mod dispatches_packer;
 
 pub struct PlayerComponent<T> {
     data: IntMap<Player, T>,
