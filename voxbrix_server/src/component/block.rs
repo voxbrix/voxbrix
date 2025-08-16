@@ -92,7 +92,7 @@ impl<T> TrackingBlockComponent<BlocksVec<T>> {
         self.data.get(chunk).as_ref().map(|v| &v.data)
     }
 
-    pub fn get_mut_chunk(&mut self, chunk: &Chunk) -> Option<BlocksVecTracking<T>> {
+    pub fn get_mut_chunk(&mut self, chunk: &Chunk) -> Option<BlocksVecTracking<'_, T>> {
         let container = self.data.get_mut(chunk)?;
 
         Some(BlocksVecTracking {

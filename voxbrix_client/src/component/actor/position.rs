@@ -118,7 +118,11 @@ impl PositionActorComponent {
         self.storage.get(i)
     }
 
-    pub fn get_writable(&mut self, actor: &Actor, snapshot: ClientSnapshot) -> Option<Writable> {
+    pub fn get_writable(
+        &mut self,
+        actor: &Actor,
+        snapshot: ClientSnapshot,
+    ) -> Option<Writable<'_>> {
         Some(Writable {
             is_player: *actor == self.player_actor,
             actor: *actor,

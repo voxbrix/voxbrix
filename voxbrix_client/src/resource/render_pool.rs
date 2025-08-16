@@ -199,7 +199,7 @@ pub struct RenderPool {
 }
 
 impl RenderPool {
-    pub fn get_render_parameters(&self) -> RenderParameters {
+    pub fn get_render_parameters(&self) -> RenderParameters<'_> {
         RenderParameters {
             camera_bind_group_layout: self.camera.get_bind_group_layout(),
             texture_format: self.texture_format,

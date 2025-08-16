@@ -39,6 +39,7 @@ use local_channel::mpsc::Sender;
 use log::warn;
 use redb::{
     Database,
+    ReadableDatabase,
     ReadableTable,
 };
 use std::sync::Arc;

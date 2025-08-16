@@ -408,7 +408,7 @@ impl Receiver {
     ///
     /// **Futures returned must be constantly polled in loop in order to send reliable messages
     /// using `Sender`!**
-    pub async fn recv(&mut self) -> Result<ReceivedData, Error> {
+    pub async fn recv(&mut self) -> Result<ReceivedData<'_>, Error> {
         loop {
             // Firstly, we check the reliable message queue
             // in case we have messages ready, handle these first

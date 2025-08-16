@@ -26,7 +26,10 @@ use crate::{
 };
 use ahash::AHashMap;
 use flume::Sender;
-use redb::Database;
+use redb::{
+    Database,
+    ReadableDatabase,
+};
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use voxbrix_common::{

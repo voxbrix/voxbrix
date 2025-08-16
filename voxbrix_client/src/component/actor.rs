@@ -137,7 +137,11 @@ where
         self.storage.get(actor)
     }
 
-    pub fn get_writable(&mut self, actor: &Actor, snapshot: ClientSnapshot) -> Option<Writable<T>> {
+    pub fn get_writable(
+        &mut self,
+        actor: &Actor,
+        snapshot: ClientSnapshot,
+    ) -> Option<Writable<'_, T>> {
         Some(Writable {
             is_player: *actor == self.player_actor,
             snapshot,
