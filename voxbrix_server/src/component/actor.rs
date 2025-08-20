@@ -7,10 +7,7 @@ use serde::{
     Deserialize,
     Serialize,
 };
-use std::{
-    collections::hash_map,
-    mem,
-};
+use std::collections::hash_map;
 use voxbrix_common::{
     entity::{
         actor::Actor,
@@ -21,7 +18,7 @@ use voxbrix_common::{
         update::Update,
     },
     messages::{
-        ActorUpdatePack,
+        ComponentPacker,
         UpdatesPacker,
         UpdatesUnpacked,
     },
@@ -30,88 +27,12 @@ use voxbrix_common::{
 
 pub mod chunk_activation;
 pub mod class;
+pub mod effect;
 pub mod orientation;
 pub mod player;
 pub mod position;
 pub mod projectile;
 pub mod velocity;
-
-enum LoadedData {
-    Changes,
-    Full,
-    None,
-}
-
-struct ActorComponentPacker<'a, T> {
-    loaded_data: LoadedData,
-    data_changes: Vec<(Actor, Option<&'a T>)>,
-    data_full: Vec<(Actor, &'a T)>,
-}
-
-impl<T> ActorComponentPacker<'static, T>
-where
-    T: Serialize,
-{
-    fn new() -> Self {
-        Self {
-            loaded_data: LoadedData::None,
-            data_full: Vec::new(),
-            data_changes: Vec::new(),
-        }
-    }
-
-    fn load_changes<'a>(
-        self,
-        iter: impl Iterator<Item = (Actor, Option<&'a T>)>,
-    ) -> ActorComponentPacker<'a, T> {
-        let mut new = self;
-        new.data_changes.extend(iter);
-        new.loaded_data = LoadedData::Changes;
-        new
-    }
-
-    fn load_full<'a>(
-        self,
-        iter: impl Iterator<Item = (Actor, &'a T)>,
-    ) -> ActorComponentPacker<'a, T> {
-        let mut new = self;
-        new.data_full.extend(iter);
-        new.loaded_data = LoadedData::Full;
-        new
-    }
-}
-
-impl<'a, T> ActorComponentPacker<'a, T>
-where
-    T: Serialize,
-{
-    fn pack(mut self, buffer: &mut Vec<u8>) -> ActorComponentPacker<'static, T> {
-        match self.loaded_data {
-            LoadedData::Changes => {
-                let msg = ActorUpdatePack::Change(&self.data_changes);
-                pack::encode_into(&msg, buffer);
-            },
-            LoadedData::Full => {
-                let msg = ActorUpdatePack::Full(&self.data_full);
-                pack::encode_into(&msg, buffer);
-            },
-            LoadedData::None => {
-                panic!("no changes loaded");
-            },
-        }
-
-        self.data_changes.clear();
-        self.data_full.clear();
-        self.loaded_data = LoadedData::None;
-
-        // Safety: the `self.data` is `Vec` that contains references with lifetime `'a`.
-        // It is the only field of the struct that utilizes the `'a` lifetime and since we
-        // empty the `Vec` with `clear()` on the previous step, this `unsafe` should be sound.
-        unsafe {
-            mem::transmute::<ActorComponentPacker<'a, T>, ActorComponentPacker<'static, T>>(self)
-        }
-    }
-}
 
 // pub struct Writable<'a, T> {
 // actor: Actor,
@@ -156,7 +77,7 @@ where
     update: Update,
     last_packed_snapshot: ServerSnapshot,
     changes: IntMap<Actor, ServerSnapshot>,
-    packer: Option<ActorComponentPacker<'static, T>>,
+    packer: Option<ComponentPacker<'static, Actor, T>>,
     storage: IntMap<Actor, T>,
 }
 
@@ -199,7 +120,7 @@ where
             update,
             last_packed_snapshot: ServerSnapshot(0),
             changes: IntMap::default(),
-            packer: Some(ActorComponentPacker::new()),
+            packer: Some(ComponentPacker::new()),
             storage: IntMap::default(),
         }
     }

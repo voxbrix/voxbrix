@@ -7,7 +7,7 @@ use voxbrix_common::{
         update::Update,
     },
     messages::{
-        ActorUpdateUnpack,
+        ComponentUpdateUnpack,
         UpdatesUnpacked,
     },
     pack,
@@ -53,10 +53,10 @@ where
     pub fn unpack(&mut self, updates: &UpdatesUnpacked<'a>) {
         if let Some((changes, _)) = updates
             .get(&self.update)
-            .and_then(|buffer| pack::decode_from_slice::<ActorUpdateUnpack<T>>(buffer))
+            .and_then(|buffer| pack::decode_from_slice::<ComponentUpdateUnpack<Actor, T>>(buffer))
         {
             match changes {
-                ActorUpdateUnpack::Change(changes) => {
+                ComponentUpdateUnpack::Change(changes) => {
                     for (actor, change) in changes {
                         if let Some(component) = change {
                             self.overrides.insert(actor, component);
@@ -65,7 +65,7 @@ where
                         }
                     }
                 },
-                ActorUpdateUnpack::Full(full) => {
+                ComponentUpdateUnpack::Full(full) => {
                     let player_value = self.overrides.remove(&self.player_actor);
 
                     self.overrides.clear();

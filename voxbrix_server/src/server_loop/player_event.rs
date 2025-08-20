@@ -92,7 +92,9 @@ impl PlayerEvent<'_> {
         let mut packer = mem::take(self.world.get_resource_mut::<Packer>());
 
         if self.try_run(&mut packer).is_err() {
-            self.world.get_resource_mut::<RemovalQueue<Player>>();
+            self.world
+                .get_resource_mut::<RemovalQueue<Player>>()
+                .enqueue(self.player);
         }
 
         *self.world.get_resource_mut::<Packer>() = packer;

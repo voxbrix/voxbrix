@@ -13,6 +13,7 @@ use crate::{
         actor::{
             chunk_activation::ChunkActivationActorComponent,
             class::ClassActorComponent,
+            effect::EffectActorComponent,
             orientation::OrientationActorComponent,
             player::PlayerActorComponent,
             position::{
@@ -89,12 +90,9 @@ use voxbrix_common::{
         EFFECT_LIST_PATH,
         UPDATE_LIST_PATH,
     },
-    component::{
-        actor::effect::EffectActorComponent,
-        block_class::collision::{
-            Collision,
-            CollisionBlockClassComponent,
-        },
+    component::block_class::collision::{
+        Collision,
+        CollisionBlockClassComponent,
     },
     compute,
     entity::{
@@ -305,7 +303,9 @@ impl ServerLoop {
         world.add(orientation_ac);
         world.add(player_ac);
         world.add(chunk_activation_ac);
-        world.add(EffectActorComponent::new());
+        world.add(EffectActorComponent::new(
+            updates_label_map.get("actor_effect").unwrap(),
+        ));
         world.add(ProjectileActorComponent::new());
 
         world.add(model_acc);

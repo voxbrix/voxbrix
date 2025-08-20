@@ -1,6 +1,7 @@
 use crate::component::{
     actor::{
         class::ClassActorComponent,
+        effect::EffectActorComponent,
         orientation::OrientationActorComponent,
         position::PositionActorComponent,
         target_orientation::TargetOrientationActorComponent,
@@ -43,6 +44,7 @@ impl System for ServerUpdatesSystem {
 pub struct ServerUpdatesSystemData<'a> {
     snapshot: &'a ClientSnapshot,
     class_ac: &'a mut ClassActorComponent,
+    effect_ac: &'a mut EffectActorComponent,
     model_acc: &'a mut ModelActorClassComponent,
     position_ac: &'a mut PositionActorComponent,
     target_position_ac: &'a mut TargetPositionActorComponent,
@@ -63,6 +65,7 @@ impl ServerUpdatesSystemData<'_> {
             .map_err(|_| Error::UnpackError)?;
 
         self.class_ac.unpack(&updates);
+        self.effect_ac.unpack(&updates);
         self.model_acc.unpack(&updates);
         self.velocity_ac.unpack(&updates);
         self.orientation_ac.unpack_target(&updates);

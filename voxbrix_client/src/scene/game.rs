@@ -16,6 +16,7 @@ use crate::{
         actor::{
             animation_state::AnimationStateActorComponent,
             class::ClassActorComponent,
+            effect::EffectActorComponent,
             orientation::OrientationActorComponent,
             position::PositionActorComponent,
             target_orientation::TargetOrientationActorComponent,
@@ -413,6 +414,7 @@ impl GameScene {
             player_actor,
             false,
         );
+        let effect_ac = EffectActorComponent::new(updates_label_map.get("actor_effect").unwrap());
         let mut position_ac = PositionActorComponent::new(
             updates_label_map.get("actor_position").unwrap(),
             player_actor,
@@ -572,6 +574,7 @@ impl GameScene {
         world.add(label_library);
 
         world.add(class_ac);
+        world.add(effect_ac);
         world.add(position_ac);
         world.add(velocity_ac);
         world.add(orientation_ac);

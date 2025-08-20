@@ -3,6 +3,7 @@ use crate::{
         actor::{
             chunk_activation::ChunkActivationActorComponent,
             class::ClassActorComponent,
+            effect::EffectActorComponent,
             orientation::OrientationActorComponent,
             player::PlayerActorComponent,
             position::PositionActorComponent,
@@ -23,7 +24,6 @@ use crate::{
     },
 };
 use voxbrix_common::{
-    component::actor::effect::EffectActorComponent,
     entity::{
         actor::Actor,
         snapshot::ServerSnapshot,
@@ -99,9 +99,9 @@ impl EntityRemovalSystemData<'_> {
             self.position_ac.remove(&actor, *self.snapshot);
             self.velocity_ac.remove(&actor, *self.snapshot);
             self.orientation_ac.remove(&actor, *self.snapshot);
+            self.effect_ac.remove_actor(&actor, *self.snapshot);
             self.player_ac.remove(&actor);
             self.chunk_activation_ac.remove(&actor);
-            self.effect_ac.remove_actor(&actor);
             self.projectile_ac.remove(&actor);
             self.actor_registry.remove(&actor, *self.snapshot);
         }

@@ -24,7 +24,7 @@ use voxbrix_common::{
     },
     math::MinMax,
     messages::{
-        ActorUpdateUnpack,
+        ComponentUpdateUnpack,
         UpdatesPacker,
         UpdatesUnpacked,
     },
@@ -33,6 +33,7 @@ use voxbrix_common::{
 
 pub mod animation_state;
 pub mod class;
+pub mod effect;
 pub mod orientation;
 pub mod position;
 pub mod target_orientation;
@@ -184,10 +185,10 @@ where
     pub fn unpack(&mut self, updates: &UpdatesUnpacked<'a>) {
         if let Some((changes, _)) = updates
             .get(&self.update)
-            .and_then(|buffer| pack::decode_from_slice::<ActorUpdateUnpack<T>>(buffer))
+            .and_then(|buffer| pack::decode_from_slice::<ComponentUpdateUnpack<Actor, T>>(buffer))
         {
             match changes {
-                ActorUpdateUnpack::Change(changes) => {
+                ComponentUpdateUnpack::Change(changes) => {
                     for (actor, change) in changes {
                         if let Some(component) = change {
                             self.storage.insert(actor, component);
@@ -196,7 +197,7 @@ where
                         }
                     }
                 },
-                ActorUpdateUnpack::Full(full) => {
+                ComponentUpdateUnpack::Full(full) => {
                     let player_value = self.storage.remove(&self.player_actor);
 
                     self.storage.clear();
@@ -221,17 +222,17 @@ where
     pub fn unpack_target(&mut self, updates: &UpdatesUnpacked<'a>) {
         if let Some((changes, _)) = updates
             .get(&self.update)
-            .and_then(|buffer| pack::decode_from_slice::<ActorUpdateUnpack<T>>(buffer))
+            .and_then(|buffer| pack::decode_from_slice::<ComponentUpdateUnpack<Actor, T>>(buffer))
         {
             match changes {
-                ActorUpdateUnpack::Change(changes) => {
+                ComponentUpdateUnpack::Change(changes) => {
                     for (actor, change) in changes {
                         if change.is_none() {
                             self.storage.remove(&actor);
                         }
                     }
                 },
-                ActorUpdateUnpack::Full(full) => {
+                ComponentUpdateUnpack::Full(full) => {
                     let player_value = self.storage.remove(&self.player_actor);
 
                     self.storage.clear();
@@ -281,10 +282,10 @@ impl<T> ActorComponentUnpackable<T> {
     {
         if let Some((changes, _)) = updates
             .get(&self.update)
-            .and_then(|buffer| pack::decode_from_slice::<ActorUpdateUnpack<U>>(buffer))
+            .and_then(|buffer| pack::decode_from_slice::<ComponentUpdateUnpack<Actor, U>>(buffer))
         {
             match changes {
-                ActorUpdateUnpack::Change(changes) => {
+                ComponentUpdateUnpack::Change(changes) => {
                     for (actor, change) in changes {
                         if let Some(component) = change {
                             let previous = self.storage.remove(&actor);
@@ -295,7 +296,7 @@ impl<T> ActorComponentUnpackable<T> {
                         }
                     }
                 },
-                ActorUpdateUnpack::Full(full) => {
+                ComponentUpdateUnpack::Full(full) => {
                     let full = full
                         .into_iter()
                         .map(|(actor, component)| {

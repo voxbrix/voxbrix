@@ -17,7 +17,7 @@ use voxbrix_common::{
     },
     math::MinMax,
     messages::{
-        ActorUpdateUnpack,
+        ComponentUpdateUnpack,
         UpdatesPacker,
         UpdatesUnpacked,
     },
@@ -199,19 +199,18 @@ impl PositionActorComponent {
     /// Internally does not directly set the component unless the change is a full update or
     /// a removal.
     pub fn unpack_target(&mut self, updates: &UpdatesUnpacked) {
-        if let Some((changes, _)) = updates
-            .get(&self.update)
-            .and_then(|buffer| pack::decode_from_slice::<ActorUpdateUnpack<Position>>(buffer))
-        {
+        if let Some((changes, _)) = updates.get(&self.update).and_then(|buffer| {
+            pack::decode_from_slice::<ComponentUpdateUnpack<Actor, Position>>(buffer)
+        }) {
             match changes {
-                ActorUpdateUnpack::Change(changes) => {
+                ComponentUpdateUnpack::Change(changes) => {
                     for (actor, change) in changes {
                         if change.is_none() {
                             self.storage.remove(&actor);
                         }
                     }
                 },
-                ActorUpdateUnpack::Full(full) => {
+                ComponentUpdateUnpack::Full(full) => {
                     let player_value = self.storage.remove(&self.player_actor);
 
                     self.storage.clear();

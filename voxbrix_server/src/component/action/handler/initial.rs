@@ -12,16 +12,12 @@ use voxbrix_common::{
 
 pub enum Condition {
     Always,
-    SourceActorHasNoEffect(Effect),
+    SourceActorHasNoEffect {
+        effect: Effect,
+        discriminant: EffectDiscriminantType,
+    },
     And(Vec<Condition>),
     Or(Vec<Condition>),
-}
-
-#[derive(Clone, Copy, Deserialize)]
-#[serde(tag = "kind", content = "value")]
-pub enum Source {
-    Actor,
-    World,
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -32,9 +28,10 @@ pub enum Target {
 
 pub enum Alteration {
     ApplyEffect {
-        source: Source,
         target: Target,
         effect: Effect,
+        discriminant: EffectDiscriminantType,
+        state: EffectStateType,
     },
     RemoveSourceActorEffect {
         effect: Effect,
@@ -70,21 +67,32 @@ impl HandlerSet {
 #[serde(tag = "kind")]
 enum ConditionDescriptor {
     Always,
-    SourceActorHasNoEffect { effect: String },
-    And { set: Vec<ConditionDescriptor> },
-    Or { set: Vec<ConditionDescriptor> },
+    SourceActorHasNoEffect {
+        effect: String,
+        discriminant: EffectDiscriminantType,
+    },
+    And {
+        set: Vec<ConditionDescriptor>,
+    },
+    Or {
+        set: Vec<ConditionDescriptor>,
+    },
 }
 
 impl ConditionDescriptor {
     fn describe(&self, label_lib: &LabelLibrary) -> Result<Condition, Error> {
         Ok(match self {
             Self::Always => Condition::Always,
-            Self::SourceActorHasNoEffect { effect } => {
-                Condition::SourceActorHasNoEffect(
-                    label_lib
+            Self::SourceActorHasNoEffect {
+                effect,
+                discriminant,
+            } => {
+                Condition::SourceActorHasNoEffect {
+                    effect: label_lib
                         .get(&effect)
                         .ok_or_else(|| anyhow::anyhow!("effect \"{}\" is undefined", effect))?,
-                )
+                    discriminant: *discriminant,
+                }
             },
             Self::And { set } => {
                 Condition::And(
@@ -138,13 +146,29 @@ impl HandlerSetDescriptor {
     }
 }
 
+#[derive(Deserialize, Clone, Copy, Debug)]
+#[serde(tag = "kind", content = "value")]
+pub enum EffectDiscriminantType {
+    None,
+    SourceActor,
+    Action,
+}
+
+#[derive(Deserialize, Clone, Copy, Debug)]
+#[serde(tag = "kind", content = "value")]
+pub enum EffectStateType {
+    None,
+    CurrentSnapshot,
+}
+
 #[derive(Deserialize)]
 #[serde(tag = "kind")]
 pub enum AlterationDescriptor {
     ApplyEffect {
-        source: Source,
         target: Target,
         effect: String,
+        discriminant: EffectDiscriminantType,
+        state: EffectStateType,
     },
     RemoveSourceActorEffect {
         effect: String,
@@ -165,14 +189,16 @@ impl AlterationDescriptor {
             Self::ApplyEffect {
                 target,
                 effect,
-                source,
+                discriminant,
+                state,
             } => {
                 Alteration::ApplyEffect {
-                    source: *source,
                     target: *target,
                     effect: label_lib
                         .get(&effect)
                         .ok_or_else(|| anyhow::anyhow!("effect \"{}\" is undefined", effect))?,
+                    discriminant: *discriminant,
+                    state: *state,
                 }
             },
             Self::RemoveSourceActorEffect { effect } => {

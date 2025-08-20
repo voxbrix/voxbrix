@@ -26,3 +26,21 @@ impl AsFromUsize for Effect {
         Self(i.try_into().unwrap())
     }
 }
+
+/// Parameter that differentiates instances of the same Effect on an individual Actor.
+#[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Copy, Clone, Debug)]
+pub struct EffectDiscriminant(pub u64);
+
+impl EffectDiscriminant {
+    /// Only use with effects that have no discriminants.
+    pub fn none() -> Self {
+        Self(0)
+    }
+}
+
+impl nohash_hasher::IsEnabled for EffectDiscriminant {}
+
+impl MinMax for EffectDiscriminant {
+    const MAX: Self = EffectDiscriminant(u64::MAX);
+    const MIN: Self = EffectDiscriminant(u64::MIN);
+}

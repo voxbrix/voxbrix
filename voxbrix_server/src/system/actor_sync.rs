@@ -2,6 +2,7 @@ use crate::{
     component::{
         actor::{
             class::ClassActorComponent,
+            effect::EffectActorComponent,
             orientation::OrientationActorComponent,
             position::PositionActorComponent,
             velocity::VelocityActorComponent,
@@ -57,10 +58,11 @@ pub struct ActorSyncSystemData<'a> {
     dispatches_packer_pc: &'a mut DispatchesPackerPlayerComponent,
     actor_pc: &'a ActorPlayerComponent,
     chunk_view_pc: &'a ChunkViewPlayerComponent,
+    client_pc: &'a ClientPlayerComponent,
     player_rq: &'a mut RemovalQueue<Player>,
 
     class_ac: &'a mut ClassActorComponent,
-    client_pc: &'a ClientPlayerComponent,
+    effect_ac: &'a mut EffectActorComponent,
     position_ac: &'a mut PositionActorComponent,
     velocity_ac: &'a mut VelocityActorComponent,
     orientation_ac: &'a mut OrientationActorComponent,
@@ -160,6 +162,14 @@ impl ActorSyncSystemData<'_> {
                     self.position_ac.actors_partial_update(),
                 );
 
+                self.effect_ac.pack_changes(
+                    &mut self.updates_packer,
+                    *self.snapshot,
+                    client.last_server_snapshot,
+                    self.position_ac.actors_full_update(),
+                    self.position_ac.actors_partial_update(),
+                );
+
                 // Client-conrolled components, we pass `Some(player_actor)`.
                 // These components will filter out player's own components.
                 self.velocity_ac.pack_changes(
@@ -197,6 +207,11 @@ impl ActorSyncSystemData<'_> {
                 self.model_acc.pack_full(
                     &mut self.updates_packer,
                     None,
+                    self.position_ac.actors_full_update(),
+                );
+
+                self.effect_ac.pack_full(
+                    &mut self.updates_packer,
                     self.position_ac.actors_full_update(),
                 );
 

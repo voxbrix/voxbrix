@@ -1,7 +1,6 @@
 use crate::{
     entity::{
         action::Action,
-        actor::Actor,
         dispatch::Dispatch,
         snapshot::{
             ClientSnapshot,
@@ -182,15 +181,15 @@ impl UpdatesPacker {
 }
 
 #[derive(Deserialize)]
-pub enum ActorUpdateUnpack<T> {
-    Full(Vec<(Actor, T)>),
-    Change(Vec<(Actor, Option<T>)>),
+pub enum ComponentUpdateUnpack<E, T> {
+    Full(Vec<(E, T)>),
+    Change(Vec<(E, Option<T>)>),
 }
 
 #[derive(Serialize)]
-pub enum ActorUpdatePack<'a, T> {
-    Full(&'a [(Actor, &'a T)]),
-    Change(&'a [(Actor, Option<&'a T>)]),
+pub enum ComponentUpdatePack<'a, E, T> {
+    Full(&'a [(E, &'a T)]),
+    Change(&'a [(E, Option<&'a T>)]),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -341,6 +340,83 @@ where
     }
 }
 
+pub enum LoadedData {
+    Changes,
+    Full,
+    None,
+}
+
+pub struct ComponentPacker<'a, E, T> {
+    loaded_data: LoadedData,
+    data_changes: Vec<(E, Option<&'a T>)>,
+    data_full: Vec<(E, &'a T)>,
+}
+
+impl<E, T> ComponentPacker<'static, E, T>
+where
+    E: Serialize,
+    T: Serialize,
+{
+    pub fn new() -> Self {
+        Self {
+            loaded_data: LoadedData::None,
+            data_full: Vec::new(),
+            data_changes: Vec::new(),
+        }
+    }
+
+    pub fn load_changes<'a>(
+        self,
+        iter: impl Iterator<Item = (E, Option<&'a T>)>,
+    ) -> ComponentPacker<'a, E, T> {
+        let mut new = self;
+        new.data_changes.extend(iter);
+        new.loaded_data = LoadedData::Changes;
+        new
+    }
+
+    pub fn load_full<'a>(
+        self,
+        iter: impl Iterator<Item = (E, &'a T)>,
+    ) -> ComponentPacker<'a, E, T> {
+        let mut new = self;
+        new.data_full.extend(iter);
+        new.loaded_data = LoadedData::Full;
+        new
+    }
+}
+
+impl<'a, E, T> ComponentPacker<'a, E, T>
+where
+    E: Serialize,
+    T: Serialize,
+{
+    pub fn pack(mut self, buffer: &mut Vec<u8>) -> ComponentPacker<'static, E, T> {
+        match self.loaded_data {
+            LoadedData::Changes => {
+                let msg = ComponentUpdatePack::Change(&self.data_changes);
+                pack::encode_into(&msg, buffer);
+            },
+            LoadedData::Full => {
+                let msg = ComponentUpdatePack::Full(&self.data_full);
+                pack::encode_into(&msg, buffer);
+            },
+            LoadedData::None => {
+                panic!("no changes loaded");
+            },
+        }
+
+        self.data_changes.clear();
+        self.data_full.clear();
+        self.loaded_data = LoadedData::None;
+
+        // Safety: the `self.data` is `Vec` that contains references with lifetime `'a`.
+        // It is the only field of the struct that utilizes the `'a` lifetime and since we
+        // empty the `Vec` with `clear()` on the previous step, this `unsafe` should be sound.
+        unsafe { mem::transmute::<ComponentPacker<'a, E, T>, ComponentPacker<'static, E, T>>(self) }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -348,30 +424,32 @@ mod tests {
 
     #[test]
     fn test_actor_update_serde() {
-        let initial = ActorUpdatePack::Full(&[(Actor(3), &"Actor3")]);
+        let initial = ComponentUpdatePack::Full(&[("Key3", &"Value3")]);
         let mut buffer = Vec::new();
         pack::encode_write(&initial, &mut buffer);
-        let (control, _) = pack::decode_from_slice::<ActorUpdateUnpack<String>>(&buffer).unwrap();
+        let (control, _) =
+            pack::decode_from_slice::<ComponentUpdateUnpack<String, String>>(&buffer).unwrap();
 
         match (initial, control) {
-            (ActorUpdatePack::Full(initial), ActorUpdateUnpack::Full(control)) => {
+            (ComponentUpdatePack::Full(initial), ComponentUpdateUnpack::Full(control)) => {
                 assert_eq!(initial[0].0, control[0].0);
                 assert_eq!(*initial[0].1, control[0].1.as_str());
             },
             _ => unreachable!(),
         }
 
-        let initial = ActorUpdatePack::Full(&[
-            (Actor(7), &"Actor7"),
-            (Actor(1), &"Actor1"),
-            (Actor(13), &"Actor13"),
+        let initial = ComponentUpdatePack::Full(&[
+            ("Key7", &"Value7"),
+            ("Key1", &"Value1"),
+            ("Key13", &"Value13"),
         ]);
         let mut buffer = Vec::new();
         pack::encode_write(&initial, &mut buffer);
-        let (control, _) = pack::decode_from_slice::<ActorUpdateUnpack<String>>(&buffer).unwrap();
+        let (control, _) =
+            pack::decode_from_slice::<ComponentUpdateUnpack<String, String>>(&buffer).unwrap();
 
         match (initial, control) {
-            (ActorUpdatePack::Full(initial), ActorUpdateUnpack::Full(control)) => {
+            (ComponentUpdatePack::Full(initial), ComponentUpdateUnpack::Full(control)) => {
                 for (initial, control) in initial.iter().zip(control.iter()) {
                     assert_eq!(initial.0, control.0);
                     assert_eq!(*initial.1, control.1.as_str());

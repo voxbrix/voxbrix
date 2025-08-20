@@ -110,6 +110,7 @@ impl World {
         }
     }
 
+    #[must_use]
     pub fn get_resource_ref<'a, T>(&'a self) -> &'a T
     where
         T: 'static,
@@ -129,6 +130,7 @@ impl World {
         bx.downcast_ref::<T>().unwrap()
     }
 
+    #[must_use]
     pub fn get_resource_mut<'a, T>(&'a mut self) -> &'a mut T
     where
         T: 'static,
@@ -200,6 +202,7 @@ impl World {
     /// for tuples of systems.
     ///
     /// Panic: will panic if resource borrowing rules are violated.
+    #[must_use]
     pub fn get_data<'a, S>(&'a mut self) -> S::Data<'a>
     where
         S: System + Send + Sync + 'static,

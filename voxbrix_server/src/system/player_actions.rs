@@ -6,6 +6,7 @@ use crate::{
         },
         actor::{
             class::ClassActorComponent,
+            effect::EffectActorComponent,
             orientation::OrientationActorComponent,
             position::PositionActorComponent,
             projectile::{
@@ -34,7 +35,8 @@ use crate::{
 use initial::{
     Alteration,
     Condition,
-    Source,
+    EffectDiscriminantType,
+    EffectStateType,
     Target,
 };
 use log::{
@@ -45,19 +47,22 @@ use server_loop_api::ActionInput;
 use voxbrix_common::{
     component::{
         actor::{
-            effect::EffectActorComponent,
+            effect::EffectState,
             velocity::Velocity,
         },
         block_class::collision::CollisionBlockClassComponent,
     },
     entity::{
+        action::Action,
         actor::Actor,
+        effect::EffectDiscriminant,
         snapshot::ServerSnapshot,
     },
     messages::{
         server::ClientState,
         ClientActionsUnpacker,
     },
+    pack,
     script_registry::ScriptRegistry,
     LabelLibrary,
 };
@@ -73,18 +78,31 @@ impl System for PlayerActionsSystem {
 }
 
 struct ConditionCheck<'a> {
+    source: &'a Actor,
+    action: &'a Action,
     effect_ac: &'a EffectActorComponent,
 }
 
 impl ConditionCheck<'_> {
-    fn is_valid(&self, condition: &Condition, source: &Actor) -> bool {
+    fn is_valid(&self, condition: &Condition) -> bool {
         match condition {
             Condition::Always => true,
-            Condition::SourceActorHasNoEffect(effect) => {
-                !self.effect_ac.has_effect(*source, *effect)
+            Condition::SourceActorHasNoEffect {
+                effect,
+                discriminant,
+            } => {
+                let discriminant = match discriminant {
+                    EffectDiscriminantType::None => EffectDiscriminant::none(),
+                    EffectDiscriminantType::SourceActor => EffectDiscriminant(self.source.0 as u64),
+                    EffectDiscriminantType::Action => EffectDiscriminant(self.action.0 as u64),
+                };
+
+                !self
+                    .effect_ac
+                    .has_effect(*self.source, *effect, discriminant)
             },
-            Condition::And(conditions) => conditions.iter().all(|c| self.is_valid(c, source)),
-            Condition::Or(conditions) => conditions.iter().any(|c| self.is_valid(c, source)),
+            Condition::And(conditions) => conditions.iter().all(|c| self.is_valid(c)),
+            Condition::Or(conditions) => conditions.iter().any(|c| self.is_valid(c)),
         }
     }
 }
@@ -152,9 +170,11 @@ impl PlayerActionsSystemData<'_> {
 
             for handler in handler_set.iter() {
                 if !(ConditionCheck {
+                    source: &actor,
+                    action,
                     effect_ac: &self.effect_ac,
                 }
-                .is_valid(&handler.condition, &actor))
+                .is_valid(&handler.condition))
                 {
                     continue;
                 }
@@ -162,23 +182,44 @@ impl PlayerActionsSystemData<'_> {
                 for alteration in handler.alterations.iter() {
                     match alteration {
                         Alteration::ApplyEffect {
-                            source,
                             target,
                             effect,
+                            discriminant,
+                            state,
                         } => {
-                            let source = match source {
-                                Source::Actor => Some(actor),
-                                Source::World => None,
+                            let discriminant = match discriminant {
+                                EffectDiscriminantType::None => EffectDiscriminant::none(),
+                                EffectDiscriminantType::SourceActor => {
+                                    EffectDiscriminant(actor.0 as u64)
+                                },
+                                EffectDiscriminantType::Action => {
+                                    EffectDiscriminant(action.0 as u64)
+                                },
                             };
+
+                            let mut state_buf = EffectState::new();
+
+                            match state {
+                                EffectStateType::None => {},
+                                EffectStateType::CurrentSnapshot => {
+                                    pack::encode_write(self.snapshot, &mut state_buf);
+                                },
+                            }
 
                             let target = match target {
                                 Target::Source => actor,
                             };
 
-                            self.effect_ac.add(target, *effect, source);
+                            self.effect_ac.insert(
+                                target,
+                                *effect,
+                                discriminant,
+                                state_buf,
+                                *self.snapshot,
+                            );
                         },
                         Alteration::RemoveSourceActorEffect { effect } => {
-                            self.effect_ac.remove_any_source(actor, *effect);
+                            self.effect_ac.remove_any(actor, *effect, *self.snapshot);
                         },
                         Alteration::CreateProjectile {
                             actor_class,

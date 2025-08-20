@@ -43,7 +43,7 @@ impl ServerDispatchesSystemData<'_> {
             .iter()
             .filter(|(_, snapshot, _)| *snapshot > self.confirmed_snapshots.last_server_snapshot)
         {
-            let (actor_opt, dispatch_data): (Option<Actor>, &[u8]) = pack::decode_from_slice(data)
+            let (actor_opt, dispatch_data): (Actor, &[u8]) = pack::decode_from_slice(data)
                 .expect("unable to unpack server answer")
                 .0;
             error!(

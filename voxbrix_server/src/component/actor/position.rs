@@ -1,4 +1,3 @@
-use crate::component::actor::ActorComponentPacker;
 use nohash_hasher::{
     IntMap,
     IntSet,
@@ -28,6 +27,7 @@ use voxbrix_common::{
     },
     math::MinMax,
     messages::{
+        ComponentPacker,
         UpdatesPacker,
         UpdatesUnpacked,
     },
@@ -128,7 +128,7 @@ pub struct PositionActorComponent {
     last_packed_snapshot: ServerSnapshot,
     changes: IntMap<Actor, ServerSnapshot>,
     chunk_changes: VecDeque<ActorChunkChange>,
-    packer: Option<ActorComponentPacker<'static, Position>>,
+    packer: Option<ComponentPacker<'static, Actor, Position>>,
     storage: IntMap<Actor, Position>,
     chunk_actor_component: BTreeSet<(Chunk, Actor)>,
     /// Actors that must have all components packed.
@@ -179,7 +179,7 @@ impl PositionActorComponent {
             last_packed_snapshot: ServerSnapshot(0),
             changes: IntMap::default(),
             chunk_changes: VecDeque::new(),
-            packer: Some(ActorComponentPacker::new()),
+            packer: Some(ComponentPacker::new()),
             storage: IntMap::default(),
             chunk_actor_component: BTreeSet::new(),
             actors_full_update: IntSet::default(),

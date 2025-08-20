@@ -3,14 +3,16 @@
     {
       "condition": {
         "kind": "SourceActorHasNoEffect",
-        "effect": "remove_block_cooldown"
+        "effect": "remove_block_cooldown",
+        "discriminant": { "kind": "Action" }
       },
       "alterations": [
         {
           "kind": "ApplyEffect",
-          "source": { "kind": "World" },
           "target": { "kind": "Source" },
-          "effect": "remove_block_cooldown"
+          "effect": "remove_block_cooldown",
+          "discriminant": { "kind": "Action" },
+          "state": { "kind": "CurrentSnapshot" }
         },
         {
           "kind": "Scripted",
