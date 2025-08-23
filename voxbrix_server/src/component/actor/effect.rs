@@ -87,6 +87,26 @@ impl EffectActorComponent {
         }
     }
 
+    pub fn iter_mut(
+        &mut self,
+    ) -> impl ExactSizeIterator<Item = (&(Actor, Effect, EffectDiscriminant), &mut EffectState)>
+    {
+        self.storage.iter_mut()
+    }
+
+    pub fn remove(
+        &mut self,
+        actor: Actor,
+        effect: Effect,
+        discriminant: EffectDiscriminant,
+        snapshot: ServerSnapshot,
+    ) {
+        let key = (actor, effect, discriminant);
+        if self.storage.remove(&key).is_some() {
+            self.changes.push_back((snapshot, key));
+        }
+    }
+
     /// Remove any instance of Effect.
     pub fn remove_any(&mut self, actor: Actor, effect: Effect, snapshot: ServerSnapshot) {
         while let Some(key) = self

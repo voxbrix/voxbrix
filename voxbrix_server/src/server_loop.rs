@@ -2,6 +2,7 @@ use crate::{
     assets::{
         ACTION_HANDLER_MAP,
         DIMENSION_KIND_LIST,
+        EFFECTS_DIR,
         SERVER_LOOP_SCRIPT_DIR,
         SERVER_LOOP_SCRIPT_LIST,
     },
@@ -29,6 +30,7 @@ use crate::{
             cache::CacheChunkComponent,
             status::StatusChunkComponent,
         },
+        effect::snapshot_handler::SnapshotHandlerEffectComponent,
         player::{
             actor::ActorPlayerComponent,
             chunk_update::ChunkUpdatePlayerComponent,
@@ -117,6 +119,7 @@ use voxbrix_common::{
     system::{
         actor_class_loading::ActorClassLoadingSystem,
         block_class_loading::BlockClassLoadingSystem,
+        component_map::ComponentMap,
         list_loading::List,
     },
     ChunkData,
@@ -199,6 +202,14 @@ impl ServerLoop {
             .into_label_map::<Effect>();
 
         label_library.add(effect_label_map);
+
+        let effect_component_map = ComponentMap::load_data(EFFECTS_DIR, &label_library)
+            .await
+            .expect("unable to load effect component map");
+
+        let snapshot_handler_ec =
+            SnapshotHandlerEffectComponent::new(&effect_component_map, &label_library)
+                .expect("unable to load snapshot handler effect component");
 
         let mut model_acc =
             ModelActorClassComponent::new(updates_label_map.get("actor_model").unwrap());
@@ -313,6 +324,8 @@ impl ServerLoop {
         world.add(class_bc);
 
         world.add(collision_bcc);
+
+        world.add(snapshot_handler_ec);
 
         world.add(status_cc);
         world.add(cache_cc);

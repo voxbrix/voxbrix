@@ -5,3 +5,4 @@ pub const DIMENSION_KIND_LIST: &str = "assets/server/dimension_kind_list.json";
 pub const SERVER_LOOP_SCRIPT_LIST: &str = "assets/server/scripts/server_loop_list.json";
 pub const SERVER_LOOP_SCRIPT_DIR: &str = "assets/server/scripts/server_loop";
 pub const ACTION_HANDLER_MAP: &str = "assets/server/action_handler_map.json";
+pub const EFFECTS_DIR: &str = "assets/server/effects";

@@ -17,11 +17,10 @@ pub enum Condition {
 }
 
 #[derive(Clone, Copy, Deserialize)]
-#[serde(tag = "kind", content = "value")]
+#[serde(tag = "kind")]
 pub enum Target {
     Source,
     Collider,
-    AllInRadius(f32),
 }
 
 pub enum Alteration {
@@ -145,17 +144,20 @@ impl HandlerSetDescriptor {
 }
 
 #[derive(Deserialize, Clone, Copy, Debug)]
-#[serde(tag = "kind", content = "value")]
+#[serde(tag = "kind")]
 pub enum EffectDiscriminantType {
     None,
     SourceActor,
 }
 
 #[derive(Deserialize, Clone, Copy, Debug)]
-#[serde(tag = "kind", content = "value")]
+#[serde(tag = "kind")]
 pub enum EffectStateType {
     None,
-    CurrentSnapshot,
+    /// Duration is in snapshots.
+    CurrentSnapshotWithN {
+        n: u32,
+    },
 }
 
 #[derive(Deserialize)]

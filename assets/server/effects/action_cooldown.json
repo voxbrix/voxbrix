@@ -1,0 +1,14 @@
+{
+  "snapshot_handler": [
+    {
+      "condition": {
+        "kind": "EveryNSnapshot"
+      },
+      "alterations": [
+        {
+          "kind": "RemoveThisEffect"
+        }
+      ]
+    }
+  ]
+}

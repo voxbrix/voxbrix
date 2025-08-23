@@ -201,8 +201,9 @@ impl PlayerActionsSystemData<'_> {
 
                             match state {
                                 EffectStateType::None => {},
-                                EffectStateType::CurrentSnapshot => {
+                                EffectStateType::CurrentSnapshotWithN { n } => {
                                     pack::encode_write(self.snapshot, &mut state_buf);
+                                    pack::encode_write(n, &mut state_buf);
                                 },
                             }
 

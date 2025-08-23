@@ -21,7 +21,7 @@ pub enum Condition {
 }
 
 #[derive(Clone, Copy, Deserialize)]
-#[serde(tag = "kind", content = "value")]
+#[serde(tag = "kind")]
 pub enum Target {
     Source,
 }
@@ -147,7 +147,7 @@ impl HandlerSetDescriptor {
 }
 
 #[derive(Deserialize, Clone, Copy, Debug)]
-#[serde(tag = "kind", content = "value")]
+#[serde(tag = "kind")]
 pub enum EffectDiscriminantType {
     None,
     SourceActor,
@@ -155,10 +155,13 @@ pub enum EffectDiscriminantType {
 }
 
 #[derive(Deserialize, Clone, Copy, Debug)]
-#[serde(tag = "kind", content = "value")]
+#[serde(tag = "kind")]
 pub enum EffectStateType {
     None,
-    CurrentSnapshot,
+    /// Duration is in snapshots.
+    CurrentSnapshotWithN {
+        n: u32,
+    },
 }
 
 #[derive(Deserialize)]

@@ -5,6 +5,7 @@ use crate::system::{
     block_sync::BlockSyncSystem,
     chunk_activation::ChunkActivationSystem,
     chunk_sending::ChunkSendingSystem,
+    effect_snapshot::EffectSnapshotSystem,
     position::PositionSystem,
 };
 use voxbrix_common::{
@@ -30,6 +31,8 @@ impl Process<'_> {
         world.get_data::<PositionSystem>().run();
 
         world.get_data::<ActorBlockCollisionSystem>().run();
+
+        world.get_data::<EffectSnapshotSystem>().run();
 
         world.get_data::<ActorSyncSystem>().run();
 

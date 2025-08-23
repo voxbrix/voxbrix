@@ -2,18 +2,9 @@
   "remove_block": [
     {
       "condition": {
-        "kind": "SourceActorHasNoEffect",
-        "effect": "remove_block_cooldown",
-        "discriminant": { "kind": "Action" }
+        "kind": "Always"
       },
       "alterations": [
-        {
-          "kind": "ApplyEffect",
-          "target": { "kind": "Source" },
-          "effect": "remove_block_cooldown",
-          "discriminant": { "kind": "Action" },
-          "state": { "kind": "CurrentSnapshot" }
-        },
         {
           "kind": "Scripted",
           "script": "remove_block"
@@ -27,10 +18,6 @@
         "kind": "Always"
       },
       "alterations": [
-        {
-          "kind": "RemoveSourceActorEffect",
-          "effect": "remove_block_cooldown"
-        },
         {
           "kind": "Scripted",
           "script": "place_block"
@@ -64,9 +51,21 @@
   "lightning": [
     {
       "condition": {
-        "kind": "Always"
+        "kind": "SourceActorHasNoEffect",
+        "effect": "action_cooldown",
+        "discriminant": { "kind": "Action" }
       },
       "alterations": [
+        {
+          "kind": "ApplyEffect",
+          "target": { "kind": "Source" },
+          "effect": "action_cooldown",
+          "discriminant": { "kind": "Action" },
+          "state": {
+            "kind": "CurrentSnapshotWithN",
+            "n": 30
+          }
+        },
         {
           "kind": "CreateProjectile",
           "actor_class": "lightning",
