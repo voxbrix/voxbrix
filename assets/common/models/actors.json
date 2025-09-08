@@ -1,7 +1,5 @@
-{
-  "list": [
-    "human",
-    "fireball",
-    "lightning"
-  ]
-}
+[
+  "human",
+  "fireball",
+  "lightning"
+]

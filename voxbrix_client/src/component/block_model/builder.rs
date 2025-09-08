@@ -13,14 +13,14 @@ use voxbrix_common::{
         chunk::Chunk,
     },
     ArrayExt,
-    LabelMap,
+    LabelLibrary,
 };
 
 pub type BuilderBlockModelComponent = BlockModelComponent<BlockModelBuilder>;
 const VERTEX_TEXTURE_POSITION_OFFSET: f32 = 0.00001;
 
 #[derive(Deserialize, Debug, Clone, Copy)]
-#[serde(tag = "type")]
+#[serde(tag = "kind")]
 enum CullingNeighbor {
     None,
     NegativeX,
@@ -44,10 +44,6 @@ struct BlockModelDescriptorQuad {
     vertices: [BlockModelDescriptorVertex; 4],
 }
 
-pub struct BlockModelContext<'a> {
-    pub texture_label_map: &'a LabelMap<Texture>,
-}
-
 #[derive(Deserialize, Debug)]
 pub struct BlockModelBuilderDescriptor {
     grid_size: [usize; 3],
@@ -56,16 +52,14 @@ pub struct BlockModelBuilderDescriptor {
 }
 
 impl BlockModelBuilderDescriptor {
-    pub fn describe(&self, context: &BlockModelContext) -> Result<BlockModelBuilder, Error> {
+    pub fn describe(&self, label_library: &LabelLibrary) -> Result<BlockModelBuilder, Error> {
         Ok(BlockModelBuilder {
             quads: self
                 .quads
                 .iter()
                 .map(|desc| {
-                    let texture = context
-                        .texture_label_map
-                        .get(&desc.texture_label)
-                        .ok_or_else(|| {
+                    let texture: Texture =
+                        label_library.get(&desc.texture_label).ok_or_else(|| {
                             Error::msg(format!(
                                 "block texture label \"{}\" is undefined",
                                 &desc.texture_label

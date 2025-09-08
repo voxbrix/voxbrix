@@ -2,7 +2,6 @@ use crate::{
     entity::script::Script,
     pack,
     read_data_file,
-    system::list_loading::List,
     LabelMap,
 };
 use anyhow::{
@@ -162,7 +161,7 @@ impl<T> ScriptRegistryBuilder<T> {
         let list = {
             let list_path = list_path.clone();
 
-            task::spawn_blocking(move || read_data_file::<List>(list_path))
+            task::spawn_blocking(move || read_data_file::<Vec<String>>(list_path))
                 .await
                 .unwrap()
         }
@@ -170,11 +169,10 @@ impl<T> ScriptRegistryBuilder<T> {
 
         let engine_clone = engine.clone();
 
-        let label_map = list.clone().into_label_map();
+        let label_map = LabelMap::from_list(&list);
 
         let modules = task::spawn_blocking(move || {
-            list.list
-                .into_iter()
+            list.into_iter()
                 .map(|file_name| {
                     let file_path = dir_path.as_ref().join(file_name).with_extension("wasm");
 

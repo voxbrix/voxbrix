@@ -6,7 +6,6 @@ pub mod chunk_presence;
 pub mod entity_removal;
 pub mod interface_render;
 pub mod inventory_window;
-pub mod model_loading;
 pub mod movement_interpolation;
 pub mod player_control;
 pub mod player_position;

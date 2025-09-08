@@ -23,11 +23,6 @@ const TEXTURE_FORMAT_NAME: &str = "png";
 const TEXTURE_FORMAT_SHADER: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Uint;
 const TEXTURE_BYTES_PER_PIXEL: u32 = 4;
 
-#[derive(Deserialize, Debug)]
-struct TextureList {
-    list: Vec<String>,
-}
-
 #[derive(Clone, Copy, Deserialize, Debug)]
 struct AnimationParameters {
     frames: NonZero<u32>,
@@ -93,11 +88,11 @@ impl TextureLoadingSystem {
         path_prefix: &'static str,
         animation_path: &'static str,
     ) -> Result<Self, Error> {
-        let texture_list: TextureList = task::spawn_blocking(move || read_data_file(list_path))
+        let texture_list: Vec<String> = task::spawn_blocking(move || read_data_file(list_path))
             .await
             .unwrap()?;
 
-        let label_map = LabelMap::from_list(&texture_list.list);
+        let label_map = LabelMap::from_list(&texture_list);
 
         let animation_map: AnimationMap =
             task::spawn_blocking(move || read_data_file(animation_path))
@@ -112,7 +107,7 @@ impl TextureLoadingSystem {
                 let mut views = Vec::new();
                 let mut parameters = Vec::new();
 
-                for texture_label in texture_list.list.into_iter() {
+                for texture_label in texture_list.into_iter() {
                     let file_path = Path::new(path_prefix)
                         .join(format!("{}.{}", texture_label, TEXTURE_FORMAT_NAME));
 

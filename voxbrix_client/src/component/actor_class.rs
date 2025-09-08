@@ -1,3 +1,4 @@
+use anyhow::Error;
 use nohash_hasher::IntMap;
 use serde::Deserialize;
 use voxbrix_common::{
@@ -11,8 +12,9 @@ use voxbrix_common::{
         UpdatesUnpacked,
     },
     pack,
-    system::actor_class_loading::LoadActorClassComponent,
+    system::component_map::ComponentMap,
     AsFromUsize,
+    LabelLibrary,
 };
 
 pub mod model;
@@ -29,14 +31,42 @@ pub struct OverridableActorClassComponent<T> {
 }
 
 impl<T> OverridableActorClassComponent<T> {
-    pub fn new(update: Update, player_actor: Actor, is_client_controlled: bool) -> Self {
-        Self {
+    pub fn new<'de, 'label, D>(
+        update: Update,
+        player_actor: Actor,
+        is_client_controlled: bool,
+        component_map: &'de ComponentMap<ActorClass>,
+        label_library: &LabelLibrary,
+        component_name: &'label str,
+        convert: impl Fn(D) -> Result<T, Error>,
+    ) -> Result<Self, Error>
+    where
+        D: Deserialize<'de>,
+        'label: 'de,
+    {
+        let mut vec = Vec::new();
+
+        vec.resize_with(
+            label_library
+                .get_label_map_for::<ActorClass>()
+                .expect("ActorClass label map is undefined")
+                .len(),
+            || None,
+        );
+
+        for res in component_map.get_component::<'de, 'label, D>(component_name) {
+            let (e, d) = res?;
+
+            vec[e.as_usize()] = Some(convert(d)?);
+        }
+
+        Ok(Self {
             update,
             player_actor,
             is_client_controlled,
-            classes: Vec::new(),
+            classes: vec,
             overrides: IntMap::default(),
-        }
+        })
     }
 
     pub fn get(&self, actor: &Actor, actor_class: &ActorClass) -> Option<&T> {
@@ -79,11 +109,5 @@ where
                 },
             }
         }
-    }
-}
-
-impl<T> LoadActorClassComponent<T> for OverridableActorClassComponent<T> {
-    fn reload_classes(&mut self, data: Vec<Option<T>>) {
-        self.classes = data;
     }
 }

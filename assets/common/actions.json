@@ -1,8 +1,6 @@
-{
-  "list": [
-    "remove_block",
-    "place_block",
-    "fireball",
-    "lightning"
-  ]
-}
+[
+  "remove_block",
+  "place_block",
+  "fireball",
+  "lightning"
+]

@@ -170,7 +170,7 @@ impl LabelLibrary {
         Self(Arc::new(LabelLibraryInner(AHashMap::new())))
     }
 
-    pub fn add<T>(&mut self, label_map: LabelMap<T>)
+    pub fn add_label_map<T>(&mut self, label_map: LabelMap<T>)
     where
         T: Any + Send + Sync,
     {
@@ -178,6 +178,32 @@ impl LabelLibrary {
             .expect("cannot add label map: library was already cloned")
             .0
             .insert(TypeId::of::<T>(), label_map.0);
+    }
+
+    pub async fn load<T>(&mut self, path: impl AsRef<Path>) -> Result<(), anyhow::Error>
+    where
+        T: AsFromUsize + Any + Send + Sync,
+    {
+        let read_path = path.as_ref().to_owned();
+
+        let list = task::spawn_blocking(move || read_data_file::<Vec<String>>(read_path))
+            .await
+            .unwrap()
+            .with_context(|| {
+                format!(
+                    "unable to load list \"{:?}\"",
+                    path.as_ref().to_string_lossy()
+                )
+            })?;
+
+        let label_map = LabelMap::<T>::from_list(&list);
+
+        Arc::get_mut(&mut self.0)
+            .expect("cannot add label map: library was already cloned")
+            .0
+            .insert(TypeId::of::<T>(), label_map.0);
+
+        Ok(())
     }
 
     pub fn get_label_map_for<T>(&self) -> Option<LabelMap<T>>

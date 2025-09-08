@@ -25,7 +25,7 @@ use voxbrix_common::{
         Vec3F32,
     },
     ArrayExt,
-    LabelMap,
+    LabelLibrary,
 };
 
 pub const BASE_BONE: ActorBone = ActorBone(0);
@@ -148,12 +148,6 @@ impl ActorModelBuilder {
     }
 }
 
-pub struct ActorModelBuilderContext<'a> {
-    pub texture_label_map: &'a LabelMap<Texture>,
-    pub actor_bone_label_map: &'a LabelMap<ActorBone>,
-    pub actor_animation_label_map: &'a LabelMap<ActorAnimation>,
-}
-
 #[derive(Deserialize, Debug)]
 pub struct ActorModelBuilderDescriptor {
     grid_in_block: usize,
@@ -165,26 +159,22 @@ pub struct ActorModelBuilderDescriptor {
 }
 
 impl ActorModelBuilderDescriptor {
-    pub fn describe(&self, ctx: &ActorModelBuilderContext) -> Result<ActorModelBuilder, Error> {
+    pub fn describe(&self, label_library: &LabelLibrary) -> Result<ActorModelBuilder, Error> {
         let default_scale = 1.0 / (self.grid_in_block as f32);
 
-        let texture = ctx
-            .texture_label_map
-            .get(&self.texture_label)
-            .ok_or_else(|| {
-                Error::msg(format!("texture \"{}\" is undefined", self.texture_label))
-            })?;
+        let texture: Texture = label_library.get(&self.texture_label).ok_or_else(|| {
+            Error::msg(format!("texture \"{}\" is undefined", self.texture_label))
+        })?;
 
         let skeleton = self
             .skeleton
             .iter()
             .map(|(label, desc)| {
-                let bone = ctx
-                    .actor_bone_label_map
+                let bone: ActorBone = label_library
                     .get(&label)
                     .ok_or_else(|| Error::msg(format!("bone \"{}\" is undefined", label)))?;
 
-                let parent = ctx.actor_bone_label_map.get(&desc.parent).ok_or_else(|| {
+                let parent: ActorBone = label_library.get(&desc.parent).ok_or_else(|| {
                     Error::msg(format!(
                         "parent \"{}\" of bone \"{}\" is undefined",
                         desc.parent, label,
@@ -217,7 +207,7 @@ impl ActorModelBuilderDescriptor {
             .model_parts
             .iter()
             .map(|(label, desc)| {
-                let bone = ctx.actor_bone_label_map.get(&label).ok_or_else(|| {
+                let bone: ActorBone = label_library.get(&label).ok_or_else(|| {
                     Error::msg(format!("bone \"{}\" for model part is undefined", label))
                 })?;
 
@@ -294,56 +284,56 @@ impl ActorModelBuilderDescriptor {
             })
             .collect::<Result<_, Error>>()?;
 
-        let animations =
-            self.animations
-                .iter()
-                .map(|(label, desc)| {
-                    let animation = ctx.actor_animation_label_map.get(&label).ok_or_else(|| {
-                        Error::msg(format!("animation \"{}\" is undefined", label))
+        let animations = self
+            .animations
+            .iter()
+            .map(|(label, desc)| {
+                let animation: ActorAnimation = label_library
+                    .get(&label)
+                    .ok_or_else(|| Error::msg(format!("animation \"{}\" is undefined", label)))?;
+
+                let mut transformations = BTreeMap::new();
+
+                for transform_desc in desc.transformations.iter() {
+                    let TransformationDescriptor {
+                        time,
+                        bone,
+                        operations,
+                    } = transform_desc;
+
+                    let bone: ActorBone = label_library.get(&bone).ok_or_else(|| {
+                        Error::msg(format!(
+                            "bone \"{}\" in animation \"{}\" is undefined",
+                            bone, label
+                        ))
                     })?;
 
-                    let mut transformations = BTreeMap::new();
-
-                    for transform_desc in desc.transformations.iter() {
-                        let TransformationDescriptor {
-                            time,
-                            bone,
-                            operations,
-                        } = transform_desc;
-
-                        let bone = ctx.actor_bone_label_map.get(&bone).ok_or_else(|| {
-                            Error::msg(format!(
-                                "bone \"{}\" in animation \"{}\" is undefined",
-                                bone, label
-                            ))
-                        })?;
-
-                        let transform_mat = match transformations.get_mut(&(bone, time)) {
-                            Some(t) => t,
-                            None => {
-                                transformations.insert((bone, time), Mat4F32::IDENTITY);
-                                transformations.get_mut(&(bone, time)).unwrap()
-                            },
-                        };
-
-                        for operation in operations {
-                            *transform_mat = operation.to_matrix() * *transform_mat;
-                        }
-                    }
-
-                    let builder = ActorAnimationBuilder {
-                        duration: desc.duration as f32,
-                        transformations: transformations
-                            .iter()
-                            .map(|((model, anim), transform)| {
-                                ((*model, **anim), Transformation::from_matrix(&transform))
-                            })
-                            .collect(),
+                    let transform_mat = match transformations.get_mut(&(bone, time)) {
+                        Some(t) => t,
+                        None => {
+                            transformations.insert((bone, time), Mat4F32::IDENTITY);
+                            transformations.get_mut(&(bone, time)).unwrap()
+                        },
                     };
 
-                    Ok((animation, builder))
-                })
-                .collect::<Result<_, Error>>()?;
+                    for operation in operations {
+                        *transform_mat = operation.to_matrix() * *transform_mat;
+                    }
+                }
+
+                let builder = ActorAnimationBuilder {
+                    duration: desc.duration as f32,
+                    transformations: transformations
+                        .iter()
+                        .map(|((model, anim), transform)| {
+                            ((*model, **anim), Transformation::from_matrix(&transform))
+                        })
+                        .collect(),
+                };
+
+                Ok((animation, builder))
+            })
+            .collect::<Result<_, Error>>()?;
 
         Ok(ActorModelBuilder {
             default_scale,

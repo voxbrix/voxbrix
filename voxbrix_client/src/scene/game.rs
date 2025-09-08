@@ -2,15 +2,15 @@ use crate::{
     assets::{
         ACTOR_MODEL_ANIMATION_LIST_PATH,
         ACTOR_MODEL_BONE_LIST_PATH,
-        ACTOR_MODEL_PATH_PREFIX,
+        ACTOR_MODEL_DIR,
         ACTOR_TEXTURE_ANIMATION_PATH,
+        ACTOR_TEXTURE_DIR,
         ACTOR_TEXTURE_LIST_PATH,
-        ACTOR_TEXTURE_PATH_PREFIX,
+        BLOCK_MODEL_DIR,
         BLOCK_MODEL_LIST_PATH,
-        BLOCK_MODEL_PATH_PREFIX,
         BLOCK_TEXTURE_ANIMATION_PATH,
+        BLOCK_TEXTURE_DIR,
         BLOCK_TEXTURE_LIST_PATH,
-        BLOCK_TEXTURE_PATH_PREFIX,
     },
     component::{
         actor::{
@@ -25,7 +25,6 @@ use crate::{
         },
         actor_class::model::ModelActorClassComponent,
         actor_model::builder::{
-            ActorModelBuilderContext,
             ActorModelBuilderDescriptor,
             BuilderActorModelComponent,
         },
@@ -34,7 +33,6 @@ use crate::{
         block_model::{
             builder::{
                 BlockModelBuilderDescriptor,
-                BlockModelContext,
                 BuilderBlockModelComponent,
             },
             culling::{
@@ -46,6 +44,13 @@ use crate::{
             render_data::RenderDataChunkComponent,
             sky_light_data::SkyLightDataChunkComponent,
         },
+    },
+    entity::{
+        actor_model::{
+            ActorAnimation,
+            ActorBone,
+        },
+        block_model::BlockModel,
     },
     resource::{
         chunk_calculation_data::ChunkCalculationData,
@@ -73,7 +78,6 @@ use crate::{
             EntityRemovalCheckSystem,
             EntityRemovalSystem,
         },
-        model_loading::ModelLoadingSystem,
         send_changes::SendChangesSystem,
         sky_light::SkyLightSystem,
         target_block_highlight::TargetBlockHightlightSystemDescriptor,
@@ -86,7 +90,10 @@ use crate::{
     },
     CONNECTION_TIMEOUT,
 };
-use anyhow::Result;
+use anyhow::{
+    Context,
+    Result,
+};
 use chunk_calculation::ChunkCalculation;
 use futures_lite::{
     future::{
@@ -115,7 +122,11 @@ use tokio::{
 };
 use voxbrix_common::{
     assets::{
+        ACTOR_CLASS_DIR,
+        ACTOR_CLASS_LIST_PATH,
         ACTOR_MODEL_LIST_PATH,
+        BLOCK_CLASS_DIR,
+        BLOCK_CLASS_LIST_PATH,
         UPDATE_LIST_PATH,
     },
     async_ext::{
@@ -144,6 +155,9 @@ use voxbrix_common::{
     compute,
     entity::{
         actor::Actor,
+        actor_class::ActorClass,
+        actor_model::ActorModel,
+        block_class::BlockClass,
         chunk::{
             Chunk,
             Dimension,
@@ -152,6 +166,7 @@ use voxbrix_common::{
             ClientSnapshot,
             ServerSnapshot,
         },
+        update::Update,
     },
     math::Vec3F32,
     messages::{
@@ -165,11 +180,7 @@ use voxbrix_common::{
         process_timer::ProcessTimer,
         removal_queue::RemovalQueue,
     },
-    system::{
-        actor_class_loading::ActorClassLoadingSystem,
-        block_class_loading::BlockClassLoadingSystem,
-        list_loading::List,
-    },
+    system::component_map::ComponentMap,
     LabelLibrary,
 };
 use voxbrix_protocol::client::{
@@ -225,6 +236,43 @@ impl GameScene {
                     player_chunk_view_radius,
                 },
         } = self;
+
+        let mut label_library = LabelLibrary::new();
+
+        label_library
+            .load::<ActorClass>(ACTOR_CLASS_LIST_PATH)
+            .await
+            .context("ActorClass list loading error")?;
+
+        label_library
+            .load::<ActorModel>(ACTOR_MODEL_LIST_PATH)
+            .await
+            .context("ActorModel list loading error")?;
+
+        label_library
+            .load::<ActorBone>(ACTOR_MODEL_BONE_LIST_PATH)
+            .await
+            .context("ActorBone list loading error")?;
+
+        label_library
+            .load::<ActorAnimation>(ACTOR_MODEL_ANIMATION_LIST_PATH)
+            .await
+            .context("ActorAnimation list loading error")?;
+
+        label_library
+            .load::<BlockClass>(BLOCK_CLASS_LIST_PATH)
+            .await
+            .context("BlockClass list loading error")?;
+
+        label_library
+            .load::<BlockModel>(BLOCK_MODEL_LIST_PATH)
+            .await
+            .context("BlockModel list loading error")?;
+
+        label_library
+            .load::<Update>(UPDATE_LIST_PATH)
+            .await
+            .context("Update list loading error")?;
 
         let (_reliable_tx, reliable_rx) = flume::unbounded::<Vec<u8>>();
         let (unreliable_tx, unreliable_rx) = flume::unbounded::<Vec<u8>>();
@@ -325,35 +373,40 @@ impl GameScene {
             })
         };
 
-        let block_class_loading_system = BlockClassLoadingSystem::load_data().await?;
+        let actor_class_component_map =
+            ComponentMap::<ActorClass>::load_data(ACTOR_CLASS_DIR, &label_library).await?;
+
+        let actor_model_component_map =
+            ComponentMap::<ActorModel>::load_data(ACTOR_MODEL_DIR, &label_library).await?;
+
+        let block_class_component_map =
+            ComponentMap::<BlockClass>::load_data(BLOCK_CLASS_DIR, &label_library).await?;
+
+        let block_model_component_map =
+            ComponentMap::<BlockModel>::load_data(BLOCK_MODEL_DIR, &label_library).await?;
+
         let block_texture_loading_system = TextureLoadingSystem::load_data(
             window.device(),
             window.queue(),
             BLOCK_TEXTURE_LIST_PATH,
-            BLOCK_TEXTURE_PATH_PREFIX,
+            BLOCK_TEXTURE_DIR,
             BLOCK_TEXTURE_ANIMATION_PATH,
         )
         .await?;
 
-        let mut builder_bmc = BuilderBlockModelComponent::new();
-        let mut culling_bmc = CullingBlockModelComponent::new();
+        label_library.add_label_map(block_texture_loading_system.label_map());
 
-        let block_model_loading_system =
-            ModelLoadingSystem::load_data(BLOCK_MODEL_LIST_PATH, BLOCK_MODEL_PATH_PREFIX).await?;
-
-        let block_model_context = BlockModelContext {
-            texture_label_map: &block_texture_loading_system.label_map(),
-        };
-
-        block_model_loading_system.load_component(
+        let builder_bmc = BuilderBlockModelComponent::new(
+            &block_model_component_map,
+            &label_library,
             "builder",
-            &mut builder_bmc,
-            |desc: BlockModelBuilderDescriptor| desc.describe(&block_model_context),
+            |desc: BlockModelBuilderDescriptor| desc.describe(&label_library),
         )?;
 
-        block_model_loading_system.load_component(
+        let culling_bmc = CullingBlockModelComponent::new(
+            &block_model_component_map,
+            &label_library,
             "culling",
-            &mut culling_bmc,
             |value: Culling| Ok(value),
         )?;
 
@@ -362,17 +415,12 @@ impl GameScene {
         let class_bc = ClassBlockComponent::new();
         let sky_light_bc = SkyLightBlockComponent::new();
 
-        let mut model_bcc = ModelBlockClassComponent::new();
-        let mut collision_bcc = CollisionBlockClassComponent::new();
-        let mut opacity_bcc = OpacityBlockClassComponent::new();
-
-        let block_model_label_map = block_model_loading_system.into_label_map();
-
-        block_class_loading_system.load_component(
+        let model_bcc = ModelBlockClassComponent::new(
+            &block_class_component_map,
+            &label_library,
             "model",
-            &mut model_bcc,
             |model_label: String| {
-                block_model_label_map.get(&model_label).ok_or_else(|| {
+                label_library.get(&model_label).ok_or_else(|| {
                     anyhow::Error::msg(format!(
                         "block texture with label \"{}\" is undefined",
                         model_label
@@ -381,104 +429,80 @@ impl GameScene {
             },
         )?;
 
-        block_class_loading_system.load_component(
+        let collision_bcc = CollisionBlockClassComponent::new(
+            &block_class_component_map,
+            &label_library,
             "collision",
-            &mut collision_bcc,
             |desc: Collision| Ok(desc),
         )?;
 
-        block_class_loading_system.load_component(
+        let opacity_bcc = OpacityBlockClassComponent::new(
+            &block_class_component_map,
+            &label_library,
             "opacity",
-            &mut opacity_bcc,
             |desc: Opacity| Ok(desc),
         )?;
 
-        let block_class_label_map = block_class_loading_system.into_label_map();
-
         let player_input = PlayerInput::new(10.0, 0.4);
         let sky_light_system = SkyLightSystem::new();
+
+        let class_ac = ClassActorComponent::new(
+            label_library.get("actor_class").unwrap(),
+            player_actor,
+            false,
+        );
+        let effect_ac = EffectActorComponent::new(label_library.get("actor_effect").unwrap());
+        let mut position_ac =
+            PositionActorComponent::new(label_library.get("actor_position").unwrap(), player_actor);
+        let mut velocity_ac = VelocityActorComponent::new(
+            label_library.get("actor_velocity").unwrap(),
+            player_actor,
+            true,
+        );
+        let mut orientation_ac = OrientationActorComponent::new(
+            label_library.get("actor_orientation").unwrap(),
+            player_actor,
+            true,
+        );
+        let animation_state_ac = AnimationStateActorComponent::new();
+        let target_orientation_ac =
+            TargetOrientationActorComponent::new(label_library.get("actor_orientation").unwrap());
+        let target_position_ac =
+            TargetPositionActorComponent::new(label_library.get("actor_position").unwrap());
 
         let actor_texture_loading_system = TextureLoadingSystem::load_data(
             window.device(),
             window.queue(),
             ACTOR_TEXTURE_LIST_PATH,
-            ACTOR_TEXTURE_PATH_PREFIX,
+            ACTOR_TEXTURE_DIR,
             ACTOR_TEXTURE_ANIMATION_PATH,
         )
         .await?;
 
-        let updates_label_map = List::load(UPDATE_LIST_PATH).await?.into_label_map();
+        // FIXME overrides block texture label map,
+        // avoid doing this.
+        label_library.add_label_map(actor_texture_loading_system.label_map());
 
-        let class_ac = ClassActorComponent::new(
-            updates_label_map.get("actor_class").unwrap(),
+        let model_acc = ModelActorClassComponent::new(
+            label_library.get("actor_model").unwrap(),
             player_actor,
             false,
-        );
-        let effect_ac = EffectActorComponent::new(updates_label_map.get("actor_effect").unwrap());
-        let mut position_ac = PositionActorComponent::new(
-            updates_label_map.get("actor_position").unwrap(),
-            player_actor,
-        );
-        let mut velocity_ac = VelocityActorComponent::new(
-            updates_label_map.get("actor_velocity").unwrap(),
-            player_actor,
-            true,
-        );
-        let mut orientation_ac = OrientationActorComponent::new(
-            updates_label_map.get("actor_orientation").unwrap(),
-            player_actor,
-            true,
-        );
-        let animation_state_ac = AnimationStateActorComponent::new();
-        let target_orientation_ac = TargetOrientationActorComponent::new(
-            updates_label_map.get("actor_orientation").unwrap(),
-        );
-        let target_position_ac =
-            TargetPositionActorComponent::new(updates_label_map.get("actor_position").unwrap());
-
-        let mut model_acc = ModelActorClassComponent::new(
-            updates_label_map.get("actor_model").unwrap(),
-            player_actor,
-            false,
-        );
-
-        let actor_class_loading_system = ActorClassLoadingSystem::load_data().await?;
-        let actor_model_loading_system =
-            ModelLoadingSystem::load_data(ACTOR_MODEL_LIST_PATH, ACTOR_MODEL_PATH_PREFIX).await?;
-        let mut builder_amc = BuilderActorModelComponent::new();
-
-        let actor_bone_label_map = List::load(ACTOR_MODEL_BONE_LIST_PATH)
-            .await?
-            .into_label_map();
-        let actor_animation_label_map = List::load(ACTOR_MODEL_ANIMATION_LIST_PATH)
-            .await?
-            .into_label_map();
-
-        let ctx = ActorModelBuilderContext {
-            texture_label_map: &actor_texture_loading_system.label_map(),
-            actor_bone_label_map: &actor_bone_label_map,
-            actor_animation_label_map: &actor_animation_label_map,
-        };
-
-        actor_model_loading_system.load_component(
-            "builder",
-            &mut builder_amc,
-            |desc: ActorModelBuilderDescriptor| desc.describe(&ctx),
-        )?;
-
-        let actor_model_label_map = actor_model_loading_system.into_label_map();
-
-        actor_class_loading_system.load_component(
+            &actor_class_component_map,
+            &label_library,
             "model",
-            &mut model_acc,
             |model_label: String| {
-                actor_model_label_map.get(&model_label).ok_or_else(|| {
+                label_library.get(&model_label).ok_or_else(|| {
                     anyhow::Error::msg(format!("actor model \"{}\" is undefined", model_label))
                 })
             },
         )?;
 
-        let _actor_class_map = actor_class_loading_system.into_label_map();
+        let builder_amc = BuilderActorModelComponent::new(
+            &actor_model_component_map,
+            &label_library,
+            "builder",
+            |desc: ActorModelBuilderDescriptor| desc.describe(&label_library),
+        )?;
 
         position_ac.insert(
             player_actor,
@@ -560,9 +584,6 @@ impl GameScene {
         }
         .build(window)
         .await;
-
-        let mut label_library = LabelLibrary::new();
-        label_library.add(block_class_label_map);
 
         let frame_source = window.get_frame_source();
         let input_source = window.get_input_source();

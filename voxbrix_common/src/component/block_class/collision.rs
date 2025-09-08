@@ -5,7 +5,7 @@ pub type CollisionBlockClassComponent = BlockClassComponent<Collision>;
 
 // How this block culls neighbors' sides
 #[derive(Deserialize, Debug)]
-#[serde(tag = "type")]
+#[serde(tag = "kind")]
 pub enum Collision {
     SolidCube,
 }

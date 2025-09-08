@@ -1,8 +1,6 @@
-{
-  "list": [
-    "highlight",
-    "grass",
-    "dirt",
-    "stone"
-  ]
-}
+[
+  "highlight",
+  "grass",
+  "dirt",
+  "stone"
+]

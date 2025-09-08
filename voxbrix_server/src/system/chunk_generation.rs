@@ -12,7 +12,10 @@ use crate::{
     system::map_loading::Map,
     BLOCK_CLASS_TABLE,
 };
-use anyhow::Error;
+use anyhow::{
+    Context,
+    Error,
+};
 use flume::Sender;
 use redb::Database;
 use std::{
@@ -21,6 +24,7 @@ use std::{
     sync::Arc,
     thread,
 };
+use tokio::task;
 use voxbrix_common::{
     component::block::{
         BlocksVec,
@@ -37,7 +41,7 @@ use voxbrix_common::{
         script::Script,
     },
     pack::Packer,
-    system::list_loading::List,
+    read_data_file,
     AsFromUsize,
     LabelLibrary,
     LabelMap,
@@ -90,10 +94,17 @@ impl ChunkGenerationSystemData<'_> {
 
         let (new_chunks_tx, new_chunks_rx) = flume::unbounded();
 
-        let script_labels: LabelMap<Script> = List::load(CHUNK_GENERATION_SCRIPT_LIST)
+        let list = {
+            task::spawn_blocking(move || {
+                read_data_file::<Vec<String>>(CHUNK_GENERATION_SCRIPT_LIST)
+            })
             .await
-            .expect("unable to load chunk generation script list")
-            .into_label_map();
+            .unwrap()
+        }
+        .with_context(|| format!("unable to load list \"{:?}\"", CHUNK_GENERATION_SCRIPT_LIST))
+        .unwrap();
+
+        let script_labels = LabelMap::<Script>::from_list(&list);
 
         let dimension_kind_script_map = Map::<String>::load(DIMENSION_KIND_GENERATION_MAP)
             .await

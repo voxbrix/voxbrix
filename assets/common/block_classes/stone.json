@@ -1,12 +1,9 @@
 {
-  "label": "stone",
-  "components": {
-    "model": "stone",
-    "collision": {
-      "type": "SolidCube"
-    },
-    "opacity": {
-      "type": "Full"
-    }
+  "model": "stone",
+  "collision": {
+    "kind": "SolidCube"
+  },
+  "opacity": {
+    "kind": "Full"
   }
 }
