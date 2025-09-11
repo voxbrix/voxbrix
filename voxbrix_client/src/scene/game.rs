@@ -3,14 +3,8 @@ use crate::{
         ACTOR_MODEL_ANIMATION_LIST_PATH,
         ACTOR_MODEL_BONE_LIST_PATH,
         ACTOR_MODEL_DIR,
-        ACTOR_TEXTURE_ANIMATION_PATH,
-        ACTOR_TEXTURE_DIR,
-        ACTOR_TEXTURE_LIST_PATH,
         BLOCK_MODEL_DIR,
         BLOCK_MODEL_LIST_PATH,
-        BLOCK_TEXTURE_ANIMATION_PATH,
-        BLOCK_TEXTURE_DIR,
-        BLOCK_TEXTURE_LIST_PATH,
     },
     component::{
         actor::{
@@ -385,16 +379,10 @@ impl GameScene {
         let block_model_component_map =
             ComponentMap::<BlockModel>::load_data(BLOCK_MODEL_DIR, &label_library).await?;
 
-        let block_texture_loading_system = TextureLoadingSystem::load_data(
-            window.device(),
-            window.queue(),
-            BLOCK_TEXTURE_LIST_PATH,
-            BLOCK_TEXTURE_DIR,
-            BLOCK_TEXTURE_ANIMATION_PATH,
-        )
-        .await?;
+        let texture_loading_system =
+            TextureLoadingSystem::load_data(window.device(), window.queue()).await?;
 
-        label_library.add_label_map(block_texture_loading_system.label_map());
+        label_library.add_label_map(texture_loading_system.label_map());
 
         let builder_bmc = BuilderBlockModelComponent::new(
             &block_model_component_map,
@@ -469,19 +457,6 @@ impl GameScene {
             TargetOrientationActorComponent::new(label_library.get("actor_orientation").unwrap());
         let target_position_ac =
             TargetPositionActorComponent::new(label_library.get("actor_position").unwrap());
-
-        let actor_texture_loading_system = TextureLoadingSystem::load_data(
-            window.device(),
-            window.queue(),
-            ACTOR_TEXTURE_LIST_PATH,
-            ACTOR_TEXTURE_DIR,
-            ACTOR_TEXTURE_ANIMATION_PATH,
-        )
-        .await?;
-
-        // FIXME overrides block texture label map,
-        // avoid doing this.
-        label_library.add_label_map(actor_texture_loading_system.label_map());
 
         let model_acc = ModelActorClassComponent::new(
             label_library.get("actor_model").unwrap(),
@@ -562,25 +537,25 @@ impl GameScene {
 
         let block_render_system = BlockRenderSystemDescriptor {
             render_parameters,
-            block_texture_bind_group_layout: block_texture_loading_system.bind_group_layout(),
-            block_texture_bind_group: block_texture_loading_system.bind_group(),
+            block_texture_bind_group_layout: texture_loading_system.bind_group_layout(),
+            block_texture_bind_group: texture_loading_system.bind_group(),
         }
         .build(window)
         .await;
 
         let target_block_highlight_system = TargetBlockHightlightSystemDescriptor {
             render_parameters,
-            block_texture_bind_group_layout: block_texture_loading_system.bind_group_layout(),
-            block_texture_bind_group: block_texture_loading_system.bind_group(),
-            block_texture_label_map: block_texture_loading_system.label_map(),
+            block_texture_bind_group_layout: texture_loading_system.bind_group_layout(),
+            block_texture_bind_group: texture_loading_system.bind_group(),
+            block_texture_label_map: texture_loading_system.label_map(),
         }
         .build(window)
         .await;
 
         let actor_render_system = ActorRenderSystemDescriptor {
             render_parameters,
-            actor_texture_bind_group_layout: actor_texture_loading_system.bind_group_layout(),
-            actor_texture_bind_group: actor_texture_loading_system.bind_group(),
+            actor_texture_bind_group_layout: texture_loading_system.bind_group_layout(),
+            actor_texture_bind_group: texture_loading_system.bind_group(),
         }
         .build(window)
         .await;

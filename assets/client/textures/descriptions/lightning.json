@@ -1,5 +1,5 @@
 {
-  "lightning": {
+  "animation": {
     "frames": 3,
     "ms_per_frame": 100,
     "interpolate": false

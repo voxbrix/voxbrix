@@ -1,4 +1,11 @@
-use crate::entity::texture::Texture;
+use crate::{
+    assets::{
+        TEXTURE_BITMAP_DIR,
+        TEXTURE_DESCRIPTION_DIR,
+        TEXTURE_LIST_PATH,
+    },
+    entity::texture::Texture,
+};
 use anyhow::{
     Context,
     Error,
@@ -6,7 +13,6 @@ use anyhow::{
 use image::GenericImageView;
 use serde::Deserialize;
 use std::{
-    collections::HashMap,
     fs,
     mem,
     num::NonZero,
@@ -52,15 +58,18 @@ struct TextureParameters {
 }
 
 impl TextureParameters {
-    pub fn new(anim: &AnimationParameters) -> Self {
-        let mpf_interp: u32 = ((anim.ms_per_frame.get() as u32) << 1) | (anim.interpolate as u32);
+    pub fn new(desc: &TextureDescription) -> Self {
+        let mpf_interp: u32 =
+            ((desc.animation.ms_per_frame.get() as u32) << 1) | (desc.animation.interpolate as u32);
 
         Self { mpf_interp }
     }
 }
 
-#[derive(Deserialize, Debug)]
-struct AnimationMap(HashMap<String, AnimationParameters>);
+#[derive(Deserialize, Default, Debug)]
+struct TextureDescription {
+    animation: AnimationParameters,
+}
 
 pub struct TextureLoadingSystem {
     label_map: LabelMap<Texture>,
@@ -81,23 +90,13 @@ impl TextureLoadingSystem {
         self.bind_group_layout.clone()
     }
 
-    pub async fn load_data(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        list_path: &'static str,
-        path_prefix: &'static str,
-        animation_path: &'static str,
-    ) -> Result<Self, Error> {
-        let texture_list: Vec<String> = task::spawn_blocking(move || read_data_file(list_path))
-            .await
-            .unwrap()?;
-
-        let label_map = LabelMap::from_list(&texture_list);
-
-        let animation_map: AnimationMap =
-            task::spawn_blocking(move || read_data_file(animation_path))
+    pub async fn load_data(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Self, Error> {
+        let texture_list: Vec<String> =
+            task::spawn_blocking(move || read_data_file(TEXTURE_LIST_PATH))
                 .await
                 .unwrap()?;
+
+        let label_map = LabelMap::from_list(&texture_list);
 
         let (texture_views, texture_parameters) = {
             let device = device.clone();
@@ -108,28 +107,43 @@ impl TextureLoadingSystem {
                 let mut parameters = Vec::new();
 
                 for texture_label in texture_list.into_iter() {
-                    let file_path = Path::new(path_prefix)
+                    let bitmap_path = Path::new(TEXTURE_BITMAP_DIR)
                         .join(format!("{}.{}", texture_label, TEXTURE_FORMAT_NAME));
 
-                    let image_file = fs::read(&file_path)
-                        .with_context(|| format!("reading texture file {:?}", &file_path))?;
+                    let description_path =
+                        Path::new(TEXTURE_DESCRIPTION_DIR).join(format!("{}.json", texture_label));
+
+                    let image_file = fs::read(&bitmap_path).with_context(|| {
+                        format!("reading texture bitmap file {:?}", &bitmap_path)
+                    })?;
+
+                    let description: TextureDescription = fs::read(&description_path)
+                        .map(|file| {
+                            serde_json::from_slice(&file).with_context(|| {
+                                format!("reading texture description from {:?}", &description_path)
+                            })
+                        })
+                        .or_else(|err| {
+                            if err.kind() == std::io::ErrorKind::NotFound {
+                                Ok(Ok(TextureDescription::default()))
+                            } else {
+                                Err(err)
+                            }
+                        })
+                        .with_context(|| {
+                            format!("reading texture description file {:?}", &description_path)
+                        })??;
 
                     let image = image::load_from_memory(&image_file)
-                        .with_context(|| format!("reading image from {:?}", &file_path))?;
+                        .with_context(|| format!("reading image from {:?}", &bitmap_path))?;
 
-                    let anim_param = animation_map
-                        .0
-                        .get(&texture_label)
-                        .copied()
-                        .unwrap_or_default();
-
-                    let layers = anim_param.frames.get();
+                    let layers = description.animation.frames.get();
 
                     let view = load_texture(&device, &queue, &image, &texture_label, layers)
-                        .with_context(|| format!("loading texture {:?}", &file_path))?;
+                        .with_context(|| format!("loading texture {}", &texture_label))?;
 
                     views.push(view);
-                    parameters.push(TextureParameters::new(&anim_param));
+                    parameters.push(TextureParameters::new(&description));
                 }
 
                 Ok::<_, Error>((views, parameters))
@@ -141,7 +155,7 @@ impl TextureLoadingSystem {
         let count: u32 = texture_views.len().try_into().expect("too many textures");
         let count: NonZero<u32> = count
             .try_into()
-            .with_context(|| format!("no textures provided in {:?}", &list_path))?;
+            .with_context(|| format!("no textures provided in {:?}", TEXTURE_LIST_PATH))?;
 
         let texture_parameters = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("texture_parameters_buffer"),
