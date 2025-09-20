@@ -18,6 +18,7 @@ use voxbrix_common::{
     LabelLibrary,
 };
 
+pub mod block_collision;
 pub mod model;
 
 /// Works as both Actor update and ActorClass update.

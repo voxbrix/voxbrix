@@ -1,16 +1,21 @@
 use crate::{
     component::{
         actor::{
+            class::ClassActorComponent,
             position::PositionActorComponent,
             velocity::VelocityActorComponent,
             WritableTrait,
         },
+        actor_class::block_collision::BlockCollisionActorClassComponent,
         block::class::ClassBlockComponent,
     },
     resource::player_actor::PlayerActor,
 };
 use voxbrix_common::{
-    component::block_class::collision::CollisionBlockClassComponent,
+    component::{
+        actor_class::block_collision::BlockCollision,
+        block_class::collision::CollisionBlockClassComponent,
+    },
     entity::snapshot::ClientSnapshot,
     resource::process_timer::ProcessTimer,
     system::position,
@@ -33,23 +38,31 @@ pub struct PlayerPositionSystemData<'a> {
     player_actor: &'a PlayerActor,
     class_bc: &'a ClassBlockComponent,
     collision_bcc: &'a CollisionBlockClassComponent,
+    class_ac: &'a ClassActorComponent,
     position_ac: &'a mut PositionActorComponent,
     velocity_ac: &'a VelocityActorComponent,
+    block_collision_acc: &'a BlockCollisionActorClassComponent,
 }
 
 impl PlayerPositionSystemData<'_> {
     pub fn run(self) {
-        // TODO: replace
-        let h_radius = 0.45;
-        let v_radius = 0.95;
-        let radius = [h_radius, h_radius, v_radius];
-
         if let Some((velocity, mut writable_position)) =
             self.velocity_ac.get(&self.player_actor.0).zip(
                 self.position_ac
                     .get_writable(&self.player_actor.0, *self.snapshot),
             )
         {
+            let actor = self.player_actor.0;
+            let Some(actor_class) = self.class_ac.get(&actor) else {
+                return;
+            };
+            let Some(block_collision) = self.block_collision_acc.get(&actor_class, &actor) else {
+                return;
+            };
+            let radius = match block_collision {
+                BlockCollision::AABB { radius_blocks } => radius_blocks,
+            };
+
             let (new_pos, _new_vel) = position::process_actor(
                 self.process_timer.elapsed(),
                 self.class_bc,

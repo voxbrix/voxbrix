@@ -1,5 +1,6 @@
 use crate::component::{
     actor::{
+        class::ClassActorComponent,
         player::PlayerActorComponent,
         position::{
             Change,
@@ -8,11 +9,15 @@ use crate::component::{
         },
         velocity::VelocityActorComponent,
     },
+    actor_class::block_collision::BlockCollisionActorClassComponent,
     block::class::ClassBlockComponent,
 };
 use rayon::prelude::*;
 use voxbrix_common::{
-    component::block_class::collision::CollisionBlockClassComponent,
+    component::{
+        actor_class::block_collision::BlockCollision,
+        block_class::collision::CollisionBlockClassComponent,
+    },
     entity::snapshot::ServerSnapshot,
     resource::process_timer::ProcessTimer,
     system::position,
@@ -34,19 +39,17 @@ pub struct PositionSystemData<'a> {
     process_timer: &'a ProcessTimer,
     class_bc: &'a ClassBlockComponent,
     collision_bcc: &'a CollisionBlockClassComponent,
+    class_ac: &'a ClassActorComponent,
     position_ac: &'a mut PositionActorComponent,
     velocity_ac: &'a mut VelocityActorComponent,
     player_ac: &'a PlayerActorComponent,
+    block_collision_acc: &'a BlockCollisionActorClassComponent,
     position_changes: &'a mut PositionChanges,
 }
 
 impl PositionSystemData<'_> {
     pub fn run(self) {
         let dt = self.process_timer.elapsed();
-        // TODO: replace
-        let h_radius = 0.45;
-        let v_radius = 0.95;
-        let radius = [h_radius, h_radius, v_radius];
 
         let par_iter = self
             .velocity_ac
@@ -54,6 +57,10 @@ impl PositionSystemData<'_> {
             .filter(|(actor, _)| self.player_ac.get(actor).is_none())
             .filter_map(|(actor, velocity)| {
                 let position = self.position_ac.get(&actor)?;
+                let actor_class = self.class_ac.get(&actor)?;
+                let radius = match self.block_collision_acc.get(&actor_class, &actor)? {
+                    BlockCollision::AABB { radius_blocks } => radius_blocks,
+                };
 
                 let mut collides_with_block = false;
 

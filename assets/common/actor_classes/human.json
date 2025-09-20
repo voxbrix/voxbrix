@@ -1,3 +1,7 @@
 {
+  "block_collision": {
+    "kind": "AABB",
+    "radius_blocks": [0.45, 0.45, 0.95]
+  },
   "model": "human"
 }

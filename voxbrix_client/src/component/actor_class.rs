@@ -17,6 +17,7 @@ use voxbrix_common::{
     LabelLibrary,
 };
 
+pub mod block_collision;
 pub mod model;
 
 /// Works as both Actor component and ActorClass component.
@@ -69,7 +70,7 @@ impl<T> OverridableActorClassComponent<T> {
         })
     }
 
-    pub fn get(&self, actor: &Actor, actor_class: &ActorClass) -> Option<&T> {
+    pub fn get(&self, actor_class: &ActorClass, actor: &Actor) -> Option<&T> {
         self.overrides
             .get(actor)
             .or_else(|| self.classes.get(actor_class.as_usize())?.as_ref())

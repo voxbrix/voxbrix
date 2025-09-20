@@ -1,3 +1,7 @@
 {
+  "block_collision": {
+    "kind": "AABB",
+    "radius_blocks": [0.25, 0.25, 0.25]
+  },
   "model": "fireball"
 }

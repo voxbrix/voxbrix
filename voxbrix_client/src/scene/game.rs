@@ -17,7 +17,10 @@ use crate::{
             target_position::TargetPositionActorComponent,
             velocity::VelocityActorComponent,
         },
-        actor_class::model::ModelActorClassComponent,
+        actor_class::{
+            block_collision::BlockCollisionActorClassComponent,
+            model::ModelActorClassComponent,
+        },
         actor_model::builder::{
             ActorModelBuilderDescriptor,
             BuilderActorModelComponent,
@@ -133,6 +136,7 @@ use voxbrix_common::{
             position::Position,
             velocity::Velocity,
         },
+        actor_class::block_collision::BlockCollision,
         block::sky_light::SkyLightBlockComponent,
         block_class::{
             collision::{
@@ -472,6 +476,16 @@ impl GameScene {
             },
         )?;
 
+        let block_collision_acc = BlockCollisionActorClassComponent::new(
+            label_library.get("actor_block_collision").unwrap(),
+            player_actor,
+            false,
+            &actor_class_component_map,
+            &label_library,
+            "block_collision",
+            |desc: BlockCollision| Ok(desc),
+        )?;
+
         let builder_amc = BuilderActorModelComponent::new(
             &actor_model_component_map,
             &label_library,
@@ -580,6 +594,7 @@ impl GameScene {
 
         world.add(builder_amc);
 
+        world.add(block_collision_acc);
         world.add(model_acc);
 
         world.add(class_bc);

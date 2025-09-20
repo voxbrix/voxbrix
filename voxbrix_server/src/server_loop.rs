@@ -24,7 +24,10 @@ use crate::{
             projectile::ProjectileActorComponent,
             velocity::VelocityActorComponent,
         },
-        actor_class::model::ModelActorClassComponent,
+        actor_class::{
+            block_collision::BlockCollisionActorClassComponent,
+            model::ModelActorClassComponent,
+        },
         block::class::ClassBlockComponent,
         chunk::{
             cache::CacheChunkComponent,
@@ -96,9 +99,12 @@ use voxbrix_common::{
         EFFECT_LIST_PATH,
         UPDATE_LIST_PATH,
     },
-    component::block_class::collision::{
-        Collision,
-        CollisionBlockClassComponent,
+    component::{
+        actor_class::block_collision::BlockCollision,
+        block_class::collision::{
+            Collision,
+            CollisionBlockClassComponent,
+        },
     },
     compute,
     entity::{
@@ -240,6 +246,15 @@ impl ServerLoop {
         )
         .expect("unable to load CollisionBlockClassComponent");
 
+        let block_collision_acc = BlockCollisionActorClassComponent::new(
+            &actor_class_component_map,
+            &label_library,
+            label_library.get("actor_block_collision").unwrap(),
+            "block_collision",
+            |desc: BlockCollision| Ok(desc),
+        )
+        .expect("unable to load BlockCollisionActorClassComponent");
+
         let status_cc = StatusChunkComponent::new();
         let cache_cc = CacheChunkComponent::new();
 
@@ -316,6 +331,7 @@ impl ServerLoop {
         ));
         world.add(ProjectileActorComponent::new());
 
+        world.add(block_collision_acc);
         world.add(model_acc);
 
         world.add(class_bc);
