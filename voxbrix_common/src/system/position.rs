@@ -79,7 +79,7 @@ pub fn process_actor<C>(
     collision_bcc: &CollisionBlockClassComponent,
     position: &Position,
     velocity: &Velocity,
-    radius: &[f32; 3],
+    radius: Option<&[f32; 3]>,
     mut traverse_block_callback: impl FnMut(&Chunk, Block),
     mut collide_block_callback: impl FnMut(&Chunk, Block),
 ) -> (Position, Velocity)
@@ -90,6 +90,8 @@ where
         chunk: mut center_chunk,
         offset: start_position,
     } = position;
+
+    let radius = radius.copied().unwrap_or_default();
 
     let mut calc_pass = |finish_position: Vec3F32, axis_set: [usize; 3]| {
         let [a0, a1, a2] = axis_set;
