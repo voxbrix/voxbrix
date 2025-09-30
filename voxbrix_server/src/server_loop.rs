@@ -15,17 +15,19 @@ use crate::{
             chunk_activation::ChunkActivationActorComponent,
             class::ClassActorComponent,
             effect::EffectActorComponent,
+            movement_change::MovementChangeActorComponent,
             orientation::OrientationActorComponent,
             player::PlayerActorComponent,
-            position::{
-                PositionActorComponent,
-                PositionChanges,
-            },
+            position::PositionActorComponent,
             projectile::ProjectileActorComponent,
             velocity::VelocityActorComponent,
         },
         actor_class::{
             block_collision::BlockCollisionActorClassComponent,
+            hitbox::{
+                Hitbox,
+                HitboxActorClassComponent,
+            },
             model::ModelActorClassComponent,
         },
         block::class::ClassBlockComponent,
@@ -50,6 +52,7 @@ use crate::{
         player::Player,
     },
     resource::{
+        projectile_actor_collisions::ProjectileActorCollisions,
         script_shared_data,
         shared_event::SharedEvent,
     },
@@ -244,7 +247,16 @@ impl ServerLoop {
                     .ok_or_else(|| anyhow::anyhow!("model \"{}\" not found", desc))
             },
         )
-        .expect("unable to load CollisionBlockClassComponent");
+        .expect("unable to load ModelActorClassComponent");
+
+        let hitbox_acc = HitboxActorClassComponent::new(
+            &actor_class_component_map,
+            &label_library,
+            label_library.get("actor_hitbox").unwrap(),
+            "hitbox",
+            |desc: Hitbox| Ok(desc),
+        )
+        .expect("unable to load HitboxActorClassComponent");
 
         let block_collision_acc = BlockCollisionActorClassComponent::new(
             &actor_class_component_map,
@@ -321,7 +333,7 @@ impl ServerLoop {
 
         world.add(class_ac);
         world.add(position_ac);
-        world.add(PositionChanges::new());
+        world.add(MovementChangeActorComponent::new());
         world.add(velocity_ac);
         world.add(orientation_ac);
         world.add(player_ac);
@@ -331,8 +343,11 @@ impl ServerLoop {
         ));
         world.add(ProjectileActorComponent::new());
 
+        world.add(ProjectileActorCollisions::new());
+
         world.add(block_collision_acc);
         world.add(model_acc);
+        world.add(hitbox_acc);
 
         world.add(class_bc);
 

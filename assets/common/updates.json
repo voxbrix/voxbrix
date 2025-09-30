@@ -5,5 +5,6 @@
   "actor_orientation",
   "actor_model",
   "actor_effect",
-  "actor_block_collision"
+  "actor_block_collision",
+  "actor_hitbox"
 ]

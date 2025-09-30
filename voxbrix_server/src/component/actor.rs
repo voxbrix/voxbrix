@@ -28,6 +28,7 @@ use voxbrix_common::{
 pub mod chunk_activation;
 pub mod class;
 pub mod effect;
+pub mod movement_change;
 pub mod orientation;
 pub mod player;
 pub mod position;
@@ -282,5 +283,20 @@ impl<T> ActorComponent<T> {
 
     pub fn remove(&mut self, actor: &Actor) -> Option<T> {
         self.storage.remove(actor)
+    }
+}
+
+impl<T> ActorComponent<T>
+where
+    T: Send + Sync,
+{
+    /// Clears the component and refills it from the parallel iterator.
+    pub fn from_par_iter(&mut self, iter: impl ParallelIterator<Item = (Actor, T)>) {
+        self.storage.clear();
+        self.storage.par_extend(iter);
+    }
+
+    pub fn par_iter(&self) -> impl ParallelIterator<Item = (&Actor, &T)> {
+        self.storage.par_iter()
     }
 }

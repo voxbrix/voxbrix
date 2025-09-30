@@ -1,4 +1,3 @@
-pub mod actor_block_collision;
 pub mod actor_pruning;
 pub mod actor_sync;
 pub mod block_sync;
@@ -13,3 +12,6 @@ pub mod player_actions;
 pub mod player_add;
 pub mod player_updates;
 pub mod position;
+pub mod projectile_actor_handling;
+pub mod projectile_block_handling;
+pub mod projectile_hitbox_collision;

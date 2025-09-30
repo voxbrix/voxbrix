@@ -3,5 +3,9 @@
     "kind": "AABB",
     "radius_blocks": [0.45, 0.45, 0.95]
   },
-  "model": "human"
+  "model": "human",
+  "hitbox": {
+    "kind": "Sphere",
+    "radius_blocks": 0.75
+  }
 }

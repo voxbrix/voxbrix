@@ -84,6 +84,23 @@ impl Chunk {
         }
     }
 
+    /// Radius around all chunks in between self and other chunk.
+    /// Returns [`None`] if the other chunk is in different dimension.
+    pub fn radius_for_range(&self, other: &Chunk, radius: i32) -> Option<ChunkRadius> {
+        if self.dimension != other.dimension {
+            return None;
+        }
+
+        let min_chunk_pos = [0, 1, 2].map(|i| self.position[i].min(other.position[i]));
+        let max_chunk_pos = [0, 1, 2].map(|i| self.position[i].max(other.position[i]));
+
+        Some(ChunkRadius {
+            dimension: self.dimension,
+            min_position: min_chunk_pos.map(|i| i.saturating_sub(radius)),
+            max_position: max_chunk_pos.map(|i| i.saturating_add(radius - 1)),
+        })
+    }
+
     pub fn checked_add(&self, offset: [i32; 3]) -> Option<Self> {
         Some(Self {
             position: [

@@ -1,5 +1,4 @@
 use crate::system::{
-    actor_block_collision::ActorBlockCollisionSystem,
     actor_pruning::ActorPruningSystem,
     actor_sync::ActorSyncSystem,
     block_sync::BlockSyncSystem,
@@ -7,6 +6,9 @@ use crate::system::{
     chunk_sending::ChunkSendingSystem,
     effect_snapshot::EffectSnapshotSystem,
     position::PositionSystem,
+    projectile_actor_handling::ProjectileActorHandlingSystem,
+    projectile_block_handling::ProjectileBlockHandlingSystem,
+    projectile_hitbox_collision::ProjectileHitboxCollisionSystem,
 };
 use voxbrix_common::{
     entity::snapshot::ServerSnapshot,
@@ -30,7 +32,11 @@ impl Process<'_> {
 
         world.get_data::<PositionSystem>().run();
 
-        world.get_data::<ActorBlockCollisionSystem>().run();
+        world.get_data::<ProjectileHitboxCollisionSystem>().run();
+
+        world.get_data::<ProjectileActorHandlingSystem>().run();
+
+        world.get_data::<ProjectileBlockHandlingSystem>().run();
 
         world.get_data::<EffectSnapshotSystem>().run();
 

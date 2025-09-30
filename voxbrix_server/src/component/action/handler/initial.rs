@@ -40,6 +40,7 @@ pub enum Alteration {
         actor_class: ActorClass,
         handler_set: projectile::HandlerSet,
         velocity_magnitude: f32,
+        radius_blocks: f32,
     },
     Scripted {
         script: Script,
@@ -180,6 +181,7 @@ pub enum AlterationDescriptor {
         actor_class: String,
         handler_set: projectile::HandlerSetDescriptor,
         velocity_magnitude: f32,
+        radius_blocks: f32,
     },
     Scripted {
         script: String,
@@ -215,6 +217,7 @@ impl AlterationDescriptor {
                 actor_class,
                 handler_set,
                 velocity_magnitude,
+                radius_blocks,
             } => {
                 Alteration::CreateProjectile {
                     actor_class: label_lib.get(&actor_class).ok_or_else(|| {
@@ -222,6 +225,7 @@ impl AlterationDescriptor {
                     })?,
                     handler_set: handler_set.describe(label_lib)?,
                     velocity_magnitude: *velocity_magnitude,
+                    radius_blocks: *radius_blocks,
                 }
             },
             Self::Scripted { script } => {

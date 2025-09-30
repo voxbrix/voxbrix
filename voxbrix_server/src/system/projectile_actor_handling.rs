@@ -1,16 +1,21 @@
-use crate::component::{
-    action::handler::projectile::{
-        Alteration,
-        Condition,
-        EffectDiscriminantType,
-        EffectStateType,
-        Target,
-        Trigger,
+use crate::{
+    component::{
+        action::handler::projectile::{
+            Alteration,
+            Condition,
+            EffectDiscriminantType,
+            EffectStateType,
+            Target,
+            Trigger,
+        },
+        actor::{
+            effect::EffectActorComponent,
+            projectile::ProjectileActorComponent,
+        },
     },
-    actor::{
-        effect::EffectActorComponent,
-        position::PositionChanges,
-        projectile::ProjectileActorComponent,
+    resource::projectile_actor_collisions::{
+        ProjectileActorCollision,
+        ProjectileActorCollisions,
     },
 };
 use voxbrix_common::{
@@ -28,62 +33,48 @@ use voxbrix_world::{
     SystemData,
 };
 
-pub struct ActorBlockCollisionSystem;
+pub struct ProjectileActorHandlingSystem;
 
-impl System for ActorBlockCollisionSystem {
-    type Data<'a> = ActorBlockCollisionSystemData<'a>;
+impl System for ProjectileActorHandlingSystem {
+    type Data<'a> = ProjectileActorHandlingSystemData<'a>;
 }
 
 #[derive(SystemData)]
-pub struct ActorBlockCollisionSystemData<'a> {
+pub struct ProjectileActorHandlingSystemData<'a> {
     snapshot: &'a ServerSnapshot,
     effect_ac: &'a mut EffectActorComponent,
     projectile_ac: &'a ProjectileActorComponent,
-    position_changes: &'a PositionChanges,
+    projectile_actor_collisions: &'a ProjectileActorCollisions,
     actor_rq: &'a mut RemovalQueue<Actor>,
 }
 
-impl ActorBlockCollisionSystemData<'_> {
-    fn condition_valid(&self, condition: &Condition, source: &Actor) -> bool {
+impl ProjectileActorHandlingSystemData<'_> {
+    fn condition_valid(&self, condition: &Condition) -> bool {
         match condition {
             Condition::Always => true,
-            Condition::SourceActorHasNoEffect {
-                effect,
-                discriminant,
-            } => {
-                let discriminant = match discriminant {
-                    EffectDiscriminantType::None => EffectDiscriminant::none(),
-                    EffectDiscriminantType::SourceActor => EffectDiscriminant(source.0 as u64),
-                };
-
-                !self.effect_ac.has_effect(*source, *effect, discriminant)
-            },
-            Condition::And(conditions) => {
-                conditions.iter().all(|c| self.condition_valid(c, source))
-            },
-            Condition::Or(conditions) => conditions.iter().any(|c| self.condition_valid(c, source)),
+            Condition::And(conditions) => conditions.iter().all(|c| self.condition_valid(c)),
+            Condition::Or(conditions) => conditions.iter().any(|c| self.condition_valid(c)),
         }
     }
 
     pub fn run(self) {
-        for change in self
-            .position_changes
-            .iter()
-            .filter(|c| c.collides_with_block)
-        {
-            let actor = change.actor;
+        for collision in self.projectile_actor_collisions.iter() {
+            let ProjectileActorCollision {
+                projectile: proj_actor,
+                target: _targ_actor,
+            } = collision;
 
-            let Some(proj_ac) = self.projectile_ac.get(&actor) else {
+            let Some(proj_ac) = self.projectile_ac.get(&proj_actor) else {
                 return;
             };
 
             for handler in proj_ac.handler_set.iter() {
                 match handler.trigger {
-                    Trigger::AnyCollision | Trigger::BlockCollision => {},
-                    Trigger::ActorCollision => continue,
+                    Trigger::AnyCollision | Trigger::ActorCollision => {},
+                    Trigger::BlockCollision => continue,
                 }
 
-                if !self.condition_valid(&handler.condition, &actor) {
+                if !self.condition_valid(&handler.condition) {
                     continue;
                 }
 
@@ -98,7 +89,10 @@ impl ActorBlockCollisionSystemData<'_> {
                             let discriminant = match discriminant {
                                 EffectDiscriminantType::None => EffectDiscriminant::none(),
                                 EffectDiscriminantType::SourceActor => {
-                                    EffectDiscriminant(actor.0 as u64)
+                                    let Some(source_actor) = proj_ac.source_actor else {
+                                        continue;
+                                    };
+                                    EffectDiscriminant(source_actor.0 as u64)
                                 },
                             };
 
@@ -131,14 +125,14 @@ impl ActorBlockCollisionSystemData<'_> {
                             );
                         },
                         Alteration::RemoveSourceActorEffect { effect } => {
-                            let actor = match proj_ac.source_actor {
-                                Some(actor) => actor,
-                                None => continue,
+                            let Some(source_actor) = proj_ac.source_actor else {
+                                continue;
                             };
-                            self.effect_ac.remove_any(actor, *effect, *self.snapshot);
+                            self.effect_ac
+                                .remove_any(source_actor, *effect, *self.snapshot);
                         },
                         Alteration::RemoveSelf => {
-                            self.actor_rq.enqueue(actor);
+                            self.actor_rq.enqueue(*proj_actor);
                         },
                     }
                 }

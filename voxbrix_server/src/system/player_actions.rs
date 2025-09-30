@@ -15,6 +15,7 @@ use crate::{
             },
             velocity::VelocityActorComponent,
         },
+        actor_class::hitbox::Hitbox,
         block::class::ClassBlockComponent,
         player::{
             actor::ActorPlayerComponent,
@@ -226,6 +227,7 @@ impl PlayerActionsSystemData<'_> {
                             actor_class,
                             handler_set,
                             velocity_magnitude,
+                            radius_blocks,
                         } => {
                             let Some(position) = self.position_ac.get(&actor).cloned() else {
                                 continue;
@@ -245,6 +247,9 @@ impl PlayerActionsSystemData<'_> {
                                     source_actor: Some(actor),
                                     action_data: data.to_vec(),
                                     handler_set: handler_set.clone(),
+                                    hitbox: Hitbox::Sphere {
+                                        radius_blocks: *radius_blocks,
+                                    },
                                 },
                             );
                             self.position_ac

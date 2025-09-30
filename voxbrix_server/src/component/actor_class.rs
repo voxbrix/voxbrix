@@ -19,6 +19,7 @@ use voxbrix_common::{
 };
 
 pub mod block_collision;
+pub mod hitbox;
 pub mod model;
 
 /// Works as both Actor update and ActorClass update.

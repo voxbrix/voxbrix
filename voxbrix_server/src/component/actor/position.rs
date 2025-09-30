@@ -2,20 +2,13 @@ use nohash_hasher::{
     IntMap,
     IntSet,
 };
-use rayon::prelude::*;
-use std::{
-    collections::{
-        hash_map,
-        BTreeSet,
-        VecDeque,
-    },
-    ops::Deref,
+use std::collections::{
+    hash_map,
+    BTreeSet,
+    VecDeque,
 };
 use voxbrix_common::{
-    component::actor::{
-        position::Position,
-        velocity::Velocity,
-    },
+    component::actor::position::Position,
     entity::{
         actor::Actor,
         chunk::Chunk,
@@ -33,38 +26,6 @@ use voxbrix_common::{
     },
     pack,
 };
-
-pub struct Change {
-    pub actor: Actor,
-    #[allow(dead_code)]
-    pub prev_position: Position,
-    pub next_position: Position,
-    #[allow(dead_code)]
-    pub prev_velocity: Velocity,
-    pub next_velocity: Velocity,
-    pub collides_with_block: bool,
-}
-
-pub struct PositionChanges(Vec<Change>);
-
-impl PositionChanges {
-    pub fn new() -> PositionChanges {
-        PositionChanges(Vec::new())
-    }
-
-    pub fn from_par_iter(&mut self, iter: impl ParallelIterator<Item = Change>) {
-        self.0.clear();
-        self.0.par_extend(iter);
-    }
-}
-
-impl Deref for PositionChanges {
-    type Target = [Change];
-
-    fn deref(&self) -> &Self::Target {
-        self.0.as_slice()
-    }
-}
 
 // pub struct Writable<'a, T> {
 // actor: Actor,

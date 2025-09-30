@@ -8,10 +8,6 @@ use voxbrix_common::{
 
 pub enum Condition {
     Always,
-    SourceActorHasNoEffect {
-        effect: Effect,
-        discriminant: EffectDiscriminantType,
-    },
     And(Vec<Condition>),
     Or(Vec<Condition>),
 }
@@ -62,33 +58,14 @@ impl HandlerSet {
 #[serde(tag = "kind")]
 enum ConditionDescriptor {
     Always,
-    SourceActorHasNoEffect {
-        effect: String,
-        discriminant: EffectDiscriminantType,
-    },
-    And {
-        set: Vec<ConditionDescriptor>,
-    },
-    Or {
-        set: Vec<ConditionDescriptor>,
-    },
+    And { set: Vec<ConditionDescriptor> },
+    Or { set: Vec<ConditionDescriptor> },
 }
 
 impl ConditionDescriptor {
     fn describe(&self, label_lib: &LabelLibrary) -> Result<Condition, Error> {
         Ok(match self {
             Self::Always => Condition::Always,
-            Self::SourceActorHasNoEffect {
-                effect,
-                discriminant,
-            } => {
-                Condition::SourceActorHasNoEffect {
-                    effect: label_lib
-                        .get(&effect)
-                        .ok_or_else(|| anyhow::anyhow!("effect \"{}\" is undefined", effect))?,
-                    discriminant: *discriminant,
-                }
-            },
             Self::And { set } => {
                 Condition::And(
                     set.into_iter()

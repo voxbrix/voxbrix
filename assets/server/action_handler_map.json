@@ -43,7 +43,8 @@
               ]
             }
           ],
-          "velocity_magnitude": 10.0
+          "velocity_magnitude": 10.0,
+          "radius_blocks": 0.5
         }
       ]
     }
@@ -78,7 +79,8 @@
               ]
             }
           ],
-          "velocity_magnitude": 10.0
+          "velocity_magnitude": 10.0,
+          "radius_blocks": 0.5
         }
       ]
     }

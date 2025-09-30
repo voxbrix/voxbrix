@@ -1,6 +1,7 @@
 use crate::component::{
     action::handler::projectile::HandlerSet,
     actor::ActorComponent,
+    actor_class::hitbox::Hitbox,
 };
 use voxbrix_common::entity::actor::Actor;
 
@@ -9,6 +10,7 @@ pub struct Projectile {
     #[allow(dead_code)]
     pub action_data: Vec<u8>,
     pub handler_set: HandlerSet,
+    pub hitbox: Hitbox,
 }
 
 pub type ProjectileActorComponent = ActorComponent<Projectile>;

@@ -1,12 +1,12 @@
 use crate::component::{
     actor::{
         class::ClassActorComponent,
-        player::PlayerActorComponent,
-        position::{
-            Change,
-            PositionActorComponent,
-            PositionChanges,
+        movement_change::{
+            MovementChange,
+            MovementChangeActorComponent,
         },
+        player::PlayerActorComponent,
+        position::PositionActorComponent,
         velocity::VelocityActorComponent,
     },
     actor_class::block_collision::BlockCollisionActorClassComponent,
@@ -42,9 +42,9 @@ pub struct PositionSystemData<'a> {
     class_ac: &'a ClassActorComponent,
     position_ac: &'a mut PositionActorComponent,
     velocity_ac: &'a mut VelocityActorComponent,
+    movement_change_ac: &'a mut MovementChangeActorComponent,
     player_ac: &'a PlayerActorComponent,
     block_collision_acc: &'a BlockCollisionActorClassComponent,
-    position_changes: &'a mut PositionChanges,
 }
 
 impl PositionSystemData<'_> {
@@ -81,27 +81,29 @@ impl PositionSystemData<'_> {
             // TODO only add if the actor has collision component
             // AND insert any static (no velocity component) actors
             //     that have collision component before using
-            Some(Change {
+            Some((
                 actor,
-                prev_position: *position,
-                next_position: next_pos,
-                prev_velocity: *velocity,
-                next_velocity: next_vel,
-                collides_with_block,
-            })
+                MovementChange {
+                    prev_position: *position,
+                    next_position: next_pos,
+                    prev_velocity: *velocity,
+                    next_velocity: next_vel,
+                    collides_with_block,
+                },
+            ))
         });
 
-        self.position_changes.from_par_iter(par_iter);
+        self.movement_change_ac.from_par_iter(par_iter);
 
-        for change in self
-            .position_changes
+        for (actor, change) in self
+            .movement_change_ac
             .iter()
-            .filter(|change| self.player_ac.get(&change.actor).is_none())
+            .filter(|(actor, _)| self.player_ac.get(actor).is_none())
         {
             self.position_ac
-                .insert(change.actor, change.next_position, *self.snapshot);
+                .insert(actor, change.next_position, *self.snapshot);
             self.velocity_ac
-                .insert(change.actor, change.next_velocity, *self.snapshot);
+                .insert(actor, change.next_velocity, *self.snapshot);
         }
     }
 }
