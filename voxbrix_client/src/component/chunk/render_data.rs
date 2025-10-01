@@ -13,15 +13,21 @@ use std::{
     collections::VecDeque,
     iter,
 };
-use voxbrix_common::entity::{
-    block::{
-        Block,
-        Neighbor,
-        BLOCKS_IN_CHUNK_EDGE_F32,
+use voxbrix_common::{
+    entity::{
+        block::{
+            Block,
+            Neighbor,
+            BLOCKS_IN_CHUNK_EDGE_F32,
+        },
+        chunk::{
+            Chunk,
+            Dimension,
+        },
     },
-    chunk::{
-        Chunk,
-        Dimension,
+    math::{
+        Vec3F32,
+        Vec3I32,
     },
 };
 
@@ -42,7 +48,7 @@ impl VertexBuffer {
 
 #[derive(Clone, Hash, PartialEq, Eq)]
 struct SuperChunk {
-    position: [i32; 3],
+    position: Vec3I32,
     dimension: Dimension,
 }
 
@@ -52,21 +58,21 @@ impl SuperChunk {
         let dimension = self.dimension;
 
         (0 .. side)
-            .flat_map(move |z| (0 .. side).flat_map(move |y| (0 .. side).map(move |x| [x, y, z])))
+            .flat_map(move |z| {
+                (0 .. side).flat_map(move |y| (0 .. side).map(move |x| Vec3I32::new(x, y, z)))
+            })
             .map(move |add| {
-                let position = [0, 1, 2].map(|i| chunk_coord_base[i] + add[i]);
-
                 Chunk {
-                    position,
+                    position: chunk_coord_base + add,
                     dimension,
                 }
             })
     }
 
-    fn center(&self, side: i32) -> (Chunk, [f32; 3]) {
+    fn center(&self, side: i32) -> (Chunk, Vec3F32) {
         let center_chunk = self.position.map(|i| i * side + side / 2);
 
-        let center_offset = [(side % 2) as f32 * BLOCKS_IN_CHUNK_EDGE_F32; 3];
+        let center_offset = Vec3F32::splat((side % 2) as f32 * BLOCKS_IN_CHUNK_EDGE_F32);
 
         (
             Chunk {
@@ -173,7 +179,7 @@ impl RenderDataChunkComponent {
             [0, 0, 1],
         ]
         .into_iter()
-        .map(|offset| chunk.checked_add(offset))
+        .map(|offset| chunk.checked_add(Vec3I32::from_array(offset)))
         .enumerate()
         .filter_map(|(side, chunk)| Some((side, chunk?)));
 
@@ -256,7 +262,7 @@ impl RenderDataChunkComponent {
                             return None;
                         }
 
-                        chunk.checked_add(offset)
+                        chunk.checked_add(Vec3I32::from_array(offset))
                     },
                 );
 
@@ -373,7 +379,7 @@ impl RenderDataChunkComponent {
     /// third - radius of the object.
     pub fn get_visible_buffers<'a>(
         &'a self,
-        is_visible: impl Fn([i32; 3], [f32; 3], f32) -> bool + 'a,
+        is_visible: impl Fn(Vec3I32, Vec3F32, f32) -> bool + 'a,
     ) -> impl Iterator<Item = &'a VertexBuffer> + 'a {
         self.prepared_vertex_buffers
             .iter()

@@ -98,8 +98,9 @@ impl ChunkActivationSystemData<'_> {
                 chunk_radius.into_iter_simple().map(move |chunk| {
                     let reverse_priority: f64 = actor_chunk
                         .position
+                        .to_array()
                         .iter()
-                        .zip(chunk.position.iter())
+                        .zip(chunk.position.to_array().iter())
                         .map(|(actor_coord, chunk_coord)| {
                             ((chunk_coord - actor_coord) as f64 + 0.5).abs().powi(2)
                         })

@@ -204,7 +204,15 @@ mod queues {
                 return;
             }
 
-            if chunk.position.into_iter().map(|i| i as i64).sum::<i64>() % 2 == 0 {
+            if chunk
+                .position
+                .to_array()
+                .into_iter()
+                .map(|i| i as i64)
+                .sum::<i64>()
+                % 2
+                == 0
+            {
                 self.even_chunk_queue.push_back(chunk);
             } else {
                 self.odd_chunk_queue.push_back(chunk);

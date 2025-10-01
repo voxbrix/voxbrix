@@ -31,6 +31,7 @@ use voxbrix_common::{
         block_class::BlockClass,
         chunk::Chunk,
     },
+    math::Vec3I32,
 };
 use voxbrix_world::{
     System,
@@ -100,7 +101,7 @@ fn build_chunk_buffer_shard<'a>(
         [0, 0, -1],
         [0, 0, 1],
     ]
-    .map(|offset| chunk.checked_add(offset));
+    .map(|offset| chunk.checked_add(Vec3I32::from_array(offset)));
 
     let this_chunk_class = class_bc.get_chunk(chunk).unwrap();
     let this_chunk_light = sky_light_bc.get_chunk(chunk).unwrap();

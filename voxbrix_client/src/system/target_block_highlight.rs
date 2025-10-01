@@ -256,7 +256,7 @@ impl TargetBlockHightlightSystemData<'_> {
 
         let vertex = [0, 1, 2, 3].map(|i| {
             Vertex {
-                chunk: chunk.position,
+                chunk: chunk.position.into(),
                 texture_index: self.system.highlight_texture_index,
                 offset: positions[i],
                 texture_position: self.system.highlight_texture_coords[i],

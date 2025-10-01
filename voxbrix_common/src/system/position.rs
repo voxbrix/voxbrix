@@ -20,14 +20,12 @@ use crate::{
             BLOCKS_IN_CHUNK_EDGE_I32,
         },
         block_class::BlockClass,
-        chunk::{
-            Chunk,
-            ChunkPositionOperations,
-        },
+        chunk::Chunk,
     },
     math::{
         Round,
         Vec3F32,
+        Vec3I32,
     },
 };
 use arrayvec::ArrayVec;
@@ -167,7 +165,7 @@ where
                 let block_a2p = (actor_a2 + radius[a2]).round_down();
 
                 for block_a2 in block_a2m ..= block_a2p {
-                    let mut chunk_offset = [0; 3];
+                    let mut chunk_offset = Vec3I32::ZERO;
                     chunk_offset[a0] = block_a0;
                     chunk_offset[a1] = block_a1;
                     chunk_offset[a2] = block_a2;
@@ -275,17 +273,15 @@ where
         .iter()
         .any(|dist| dist.abs() > BLOCKS_IN_CHUNK_EDGE_F32)
     {
-        let chunk_diff = finish_position
-            .to_array()
-            .map(|f| f as i32 / BLOCKS_IN_CHUNK_EDGE_I32);
+        let chunk_diff = finish_position.as_ivec3() / BLOCKS_IN_CHUNK_EDGE_I32;
 
         let final_chunk = chunk_diff.saturating_add(center_chunk.position);
 
         let actor_diff_vec: Vec3F32 = final_chunk
             .checked_sub(center_chunk.position)
             .expect("cannot fail")
-            .map(|i| i as f32 * BLOCKS_IN_CHUNK_EDGE_F32)
-            .into();
+            .as_vec3()
+            * BLOCKS_IN_CHUNK_EDGE_F32;
 
         center_chunk.position = final_chunk;
 
@@ -352,7 +348,7 @@ pub fn get_target_block(
                 let block_axis_2 =
                     (position.offset[axis_2] + time * direction[axis_2]).round_down();
 
-                let mut block_offset = [0; 3];
+                let mut block_offset = Vec3I32::ZERO;
 
                 block_offset[axis_0] = block_axis_0;
                 block_offset[axis_1] = block_axis_1;

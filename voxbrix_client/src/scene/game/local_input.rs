@@ -197,7 +197,7 @@ impl LocalInput<'_> {
                                         let mut block = block.into_coords().map(|u| u as i32);
                                         block[axis] += direction;
 
-                                        if Block::from_chunk_offset(chunk, block).is_some() {
+                                        if Block::from_chunk_offset(chunk, block.into()).is_some() {
                                             // TODO Handle with script
                                             use serde::{
                                                 Deserialize,

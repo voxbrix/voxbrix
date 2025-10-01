@@ -17,10 +17,7 @@ use crate::{
     },
 };
 use rayon::prelude::*;
-use voxbrix_common::{
-    entity::block::BLOCKS_IN_CHUNK_EDGE_F32,
-    math::Vec3I32,
-};
+use voxbrix_common::entity::block::BLOCKS_IN_CHUNK_EDGE_F32;
 use voxbrix_world::{
     System,
     SystemData,
@@ -99,15 +96,19 @@ impl ProjectileHitboxCollisionSystemData<'_> {
                         let prev_proj_pos = proj_movement_change.prev_position;
                         let next_proj_pos = proj_movement_change.next_position;
 
-                        let targ_pos_diff = Vec3I32::from_array(next_targ_pos.chunk.position)
-                            .saturating_sub(Vec3I32::from_array(prev_targ_pos.chunk.position))
+                        let targ_pos_diff = next_targ_pos
+                            .chunk
+                            .position
+                            .saturating_sub(prev_targ_pos.chunk.position)
                             .as_vec3()
                             * BLOCKS_IN_CHUNK_EDGE_F32
                             + next_targ_pos.offset
                             - prev_targ_pos.offset;
 
-                        let proj_pos_diff = Vec3I32::from_array(next_proj_pos.chunk.position)
-                            .saturating_sub(Vec3I32::from_array(prev_proj_pos.chunk.position))
+                        let proj_pos_diff = next_proj_pos
+                            .chunk
+                            .position
+                            .saturating_sub(prev_proj_pos.chunk.position)
                             .as_vec3()
                             * BLOCKS_IN_CHUNK_EDGE_F32
                             + next_proj_pos.offset
@@ -117,8 +118,10 @@ impl ProjectileHitboxCollisionSystemData<'_> {
                         // time is assumed to be 1:
                         let targ_rel_vel = targ_pos_diff - proj_pos_diff;
 
-                        let targ_rel_pos = Vec3I32::from_array(prev_targ_pos.chunk.position)
-                            .saturating_sub(Vec3I32::from_array(prev_proj_pos.chunk.position))
+                        let targ_rel_pos = prev_targ_pos
+                            .chunk
+                            .position
+                            .saturating_sub(prev_proj_pos.chunk.position)
                             .as_vec3()
                             * BLOCKS_IN_CHUNK_EDGE_F32
                             + prev_targ_pos.offset

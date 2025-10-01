@@ -83,7 +83,7 @@ impl ActorModelBuilder {
         vertices.extend(model_part_builder.quads.iter().flat_map(|vertices| {
             vertices.map_ref(|vertex| {
                 Vertex {
-                    chunk: position.chunk.position,
+                    chunk: position.chunk.position.into(),
                     texture_index: self.texture,
                     offset: (position.offset
                         + transform.transform_point3(vertex.position) * self.default_scale)

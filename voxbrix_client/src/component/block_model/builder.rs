@@ -188,7 +188,7 @@ impl BlockModelBuilder {
             .flat_map(move |pb| {
                 pb.vertices.map_ref(|vxb| {
                     Vertex {
-                        chunk: chunk.position,
+                        chunk: chunk.position.into(),
                         texture_index: pb.texture_index,
                         offset: [0, 1, 2].map(|i| vxb.position[i] + block[i]),
                         texture_position: vxb.texture_position,

@@ -497,7 +497,7 @@ impl GameScene {
             player_actor,
             Position {
                 chunk: Chunk {
-                    position: [0, 0, 0],
+                    position: [0, 0, 0].into(),
                     dimension: Dimension {
                         kind: voxbrix_common::entity::chunk::DimensionKind(0),
                         phase: 0,
@@ -535,7 +535,7 @@ impl GameScene {
         let render_pool = RenderPoolDescriptor {
             // TODO hide?
             camera_parameters: CameraParameters {
-                chunk: player_position.chunk.position,
+                chunk: player_position.chunk.position.into(),
                 offset: player_position.offset.into(),
                 view_direction: player_orientation.forward().into(),
                 aspect: 1.0,

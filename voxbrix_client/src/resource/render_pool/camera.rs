@@ -5,6 +5,7 @@ use voxbrix_common::{
         Directions,
         Mat4F32,
         Vec3F32,
+        Vec3I32,
     },
 };
 use wgpu::util::{
@@ -16,22 +17,21 @@ const CAMERA_NEAR: f32 = 0.01;
 
 #[derive(Debug)]
 pub struct CameraParameters {
-    pub chunk: [i32; 3],
-    pub offset: [f32; 3],
-    pub view_direction: [f32; 3],
+    pub chunk: Vec3I32,
+    pub offset: Vec3F32,
+    pub view_direction: Vec3F32,
     pub aspect: f32,
     pub fovy: f32,
 }
 
 impl CameraParameters {
     fn calc_uniform(&self, animation_timer: u32) -> CameraUniform {
-        let look_to =
-            Mat4F32::look_to_lh(self.offset.into(), self.view_direction.into(), Vec3F32::UP);
+        let look_to = Mat4F32::look_to_lh(self.offset, self.view_direction, Vec3F32::UP);
 
         let perspective = Mat4F32::perspective_infinite_lh(self.fovy, self.aspect, CAMERA_NEAR);
 
         CameraUniform {
-            chunk: self.chunk,
+            chunk: self.chunk.into(),
             animation_timer,
             // offset converted to homogeneous
             view_position: [self.offset[0], self.offset[1], self.offset[2], 1.0],
@@ -110,7 +110,7 @@ impl Camera {
         }
     }
 
-    pub fn is_object_visible(&self, chunk: [i32; 3], offset: [f32; 3], radius: f32) -> bool {
+    pub fn is_object_visible(&self, chunk: Vec3I32, offset: Vec3F32, radius: f32) -> bool {
         let vec_to_object = Vec3F32::from_array([0, 1, 2].map(|i| {
             let chunk_diff = chunk[i] - self.parameters.chunk[i];
             chunk_diff as f32 * BLOCKS_IN_CHUNK_EDGE_F32 + (offset[i] - self.parameters.offset[i])
@@ -123,7 +123,7 @@ impl Camera {
             return true;
         }
 
-        let view_direction = Vec3F32::from_array(self.parameters.view_direction);
+        let view_direction = self.parameters.view_direction;
 
         let object_angle =
             (vec_to_object.dot(view_direction) / (object_dist * view_direction.length())).acos();
@@ -140,9 +140,9 @@ impl Camera {
 
     pub fn update(
         &mut self,
-        chunk: [i32; 3],
-        offset: [f32; 3],
-        view_direction: [f32; 3],
+        chunk: Vec3I32,
+        offset: Vec3F32,
+        view_direction: Vec3F32,
         dt: Duration,
     ) {
         self.animation_timer = self.animation_timer.wrapping_add(dt.as_millis() as u32);

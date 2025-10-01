@@ -283,7 +283,7 @@ impl ActorRenderSystemData<'_> {
 
             let sky_light = Block::from_chunk_offset(
                 position.chunk,
-                position.offset.to_array().map(|f| f.round_down()),
+                position.offset.to_array().map(|f| f.round_down()).into(),
             )
             .and_then(|(chunk, block)| self.sky_light_bc.get_chunk(&chunk).map(|c| *c.get(block)))
             .unwrap_or(SkyLight::MAX);

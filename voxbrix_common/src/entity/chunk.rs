@@ -1,9 +1,15 @@
-use crate::AsFromUsize;
+use crate::{
+    math::Vec3I32,
+    AsFromUsize,
+};
 use serde::{
     Deserialize,
     Serialize,
 };
-use std::cmp::Ordering;
+use std::{
+    cmp::Ordering,
+    iter,
+};
 
 #[derive(Serialize, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
 pub struct DimensionKind(pub u8);
@@ -46,7 +52,7 @@ impl Dimension {
 
 #[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Copy, Clone, Debug)]
 pub struct Chunk {
-    pub position: [i32; 3],
+    pub position: Vec3I32,
     pub dimension: Dimension,
 }
 
@@ -91,8 +97,8 @@ impl Chunk {
             return None;
         }
 
-        let min_chunk_pos = [0, 1, 2].map(|i| self.position[i].min(other.position[i]));
-        let max_chunk_pos = [0, 1, 2].map(|i| self.position[i].max(other.position[i]));
+        let min_chunk_pos = self.position.min(other.position);
+        let max_chunk_pos = self.position.max(other.position);
 
         Some(ChunkRadius {
             dimension: self.dimension,
@@ -101,103 +107,40 @@ impl Chunk {
         })
     }
 
-    pub fn checked_add(&self, offset: [i32; 3]) -> Option<Self> {
+    pub fn checked_add(&self, offset: Vec3I32) -> Option<Self> {
         Some(Self {
-            position: [
-                self.position[0].checked_add(offset[0])?,
-                self.position[1].checked_add(offset[1])?,
-                self.position[2].checked_add(offset[2])?,
-            ],
+            position: self.position.checked_add(offset)?,
             dimension: self.dimension,
         })
     }
 
-    pub fn checked_sub(&self, offset: [i32; 3]) -> Option<Self> {
+    pub fn checked_sub(&self, offset: Vec3I32) -> Option<Self> {
         Some(Self {
-            position: [
-                self.position[0].checked_sub(offset[0])?,
-                self.position[1].checked_sub(offset[1])?,
-                self.position[2].checked_sub(offset[2])?,
-            ],
+            position: self.position.checked_sub(offset)?,
             dimension: self.dimension,
         })
     }
 
-    pub fn saturating_add(&self, offset: [i32; 3]) -> Self {
+    pub fn saturating_add(&self, offset: Vec3I32) -> Self {
         Self {
-            position: [
-                self.position[0].saturating_add(offset[0]),
-                self.position[1].saturating_add(offset[1]),
-                self.position[2].saturating_add(offset[2]),
-            ],
+            position: self.position.saturating_add(offset),
             dimension: self.dimension,
         }
     }
 
-    pub fn saturating_sub(&self, offset: [i32; 3]) -> Self {
+    pub fn saturating_sub(&self, offset: Vec3I32) -> Self {
         Self {
-            position: [
-                self.position[0].saturating_sub(offset[0]),
-                self.position[1].saturating_sub(offset[1]),
-                self.position[2].saturating_sub(offset[2]),
-            ],
+            position: offset.saturating_sub(offset),
             dimension: self.dimension,
         }
-    }
-}
-
-pub trait ChunkPositionOperations
-where
-    Self: Sized,
-{
-    fn checked_add(&self, offset: Self) -> Option<Self>;
-
-    fn checked_sub(&self, offset: Self) -> Option<Self>;
-
-    fn saturating_add(&self, offset: Self) -> Self;
-
-    fn saturating_sub(&self, offset: Self) -> Self;
-}
-
-impl ChunkPositionOperations for [i32; 3] {
-    fn checked_add(&self, offset: Self) -> Option<Self> {
-        Some([
-            self[0].checked_add(offset[0])?,
-            self[1].checked_add(offset[1])?,
-            self[2].checked_add(offset[2])?,
-        ])
-    }
-
-    fn checked_sub(&self, offset: Self) -> Option<Self> {
-        Some([
-            self[0].checked_sub(offset[0])?,
-            self[1].checked_sub(offset[1])?,
-            self[2].checked_sub(offset[2])?,
-        ])
-    }
-
-    fn saturating_add(&self, offset: Self) -> Self {
-        [
-            self[0].saturating_add(offset[0]),
-            self[1].saturating_add(offset[1]),
-            self[2].saturating_add(offset[2]),
-        ]
-    }
-
-    fn saturating_sub(&self, offset: Self) -> Self {
-        [
-            self[0].saturating_sub(offset[0]),
-            self[1].saturating_sub(offset[1]),
-            self[2].saturating_sub(offset[2]),
-        ]
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct ChunkRadius {
     dimension: Dimension,
-    min_position: [i32; 3],
-    max_position: [i32; 3],
+    min_position: Vec3I32,
+    max_position: Vec3I32,
 }
 
 enum EitherIter<A, B, C> {
@@ -241,22 +184,20 @@ where
 impl ChunkRadius {
     pub fn is_within(&self, chunk: &Chunk) -> bool {
         chunk.dimension == self.dimension
-            && chunk.position[0] >= self.min_position[0]
-            && chunk.position[0] <= self.max_position[0]
-            && chunk.position[1] >= self.min_position[1]
-            && chunk.position[1] <= self.max_position[1]
-            && chunk.position[2] >= self.min_position[2]
-            && chunk.position[2] <= self.max_position[2]
+            && chunk.position.x >= self.min_position.x
+            && chunk.position.x <= self.max_position.x
+            && chunk.position.y >= self.min_position.y
+            && chunk.position.y <= self.max_position.y
+            && chunk.position.z >= self.min_position.z
+            && chunk.position.z <= self.max_position.z
     }
 
     pub fn into_iter_expanding(self) -> impl DoubleEndedIterator<Item = Chunk> {
         let min_diameter = self
-            .min_position
-            .iter()
-            .zip(self.max_position.iter())
-            .map(|(min, max)| max - min)
-            .min()
-            .unwrap();
+            .max_position
+            .checked_sub(self.min_position)
+            .and_then(|s| s.min_element().checked_add(1))
+            .expect("out of bounds");
 
         let max_step = {
             let dv = min_diameter / 2;
@@ -266,30 +207,26 @@ impl ChunkRadius {
         };
 
         (0 .. max_step)
-            .map(move |step| {
-                let min_z = self.min_position[2].saturating_add(step);
-                let max_z = self.max_position[2].saturating_sub(step);
-                let min_y = self.min_position[1].saturating_add(step);
-                let max_y = self.max_position[1].saturating_sub(step);
-                let min_x = self.min_position[0].saturating_add(step);
-                let max_x = self.max_position[0].saturating_sub(step);
-
-                (min_z, max_z, min_y, max_y, min_x, max_x)
+            .map(move |s| {
+                (
+                    self.min_position.map(|i| i + s),
+                    self.max_position.map(|i| i - s),
+                )
             })
             .rev()
-            .flat_map(move |(min_z, max_z, min_y, max_y, min_x, max_x)| {
-                (min_z ..= max_z).flat_map(move |z| {
-                    (min_y ..= max_y).flat_map(move |y| {
-                        if z == min_z || z == max_z || y == min_y || y == max_y {
-                            EitherIter::A(min_x ..= max_x)
-                        } else if min_x != max_x {
-                            EitherIter::B([min_x, max_x].into_iter())
+            .flat_map(move |(min, max)| {
+                (min.z ..= max.z).flat_map(move |z| {
+                    (min.y ..= max.y).flat_map(move |y| {
+                        if z == min.z || z == max.z || y == min.y || y == max.y {
+                            EitherIter::A(min.x ..= max.x)
+                        } else if min.x != max.x {
+                            EitherIter::B([min.x, max.x].into_iter())
                         } else {
-                            EitherIter::C([min_x].into_iter())
+                            EitherIter::C(iter::once(min.x))
                         }
                         .map(move |x| {
                             Chunk {
-                                position: [x, y, z],
+                                position: Vec3I32::new(x, y, z),
                                 dimension: self.dimension,
                             }
                         })
@@ -299,11 +236,11 @@ impl ChunkRadius {
     }
 
     pub fn into_iter_simple(self) -> impl Iterator<Item = Chunk> {
-        (self.min_position[2] ..= self.max_position[2]).flat_map(move |z| {
-            (self.min_position[1] ..= self.max_position[1]).flat_map(move |y| {
-                (self.min_position[0] ..= self.max_position[0]).map(move |x| {
+        (self.min_position.z ..= self.max_position.z).flat_map(move |z| {
+            (self.min_position.y ..= self.max_position.y).flat_map(move |y| {
+                (self.min_position.x ..= self.max_position.x).map(move |x| {
                     Chunk {
-                        position: [x, y, z],
+                        position: Vec3I32::new(x, y, z),
                         dimension: self.dimension,
                     }
                 })
@@ -318,16 +255,16 @@ mod tests {
 
     #[test]
     fn check_chunk_radius_expanding_iter() {
+        let position = [0, 0, 0];
+
         let dimension = Dimension {
             kind: DimensionKind(0),
             phase: 0,
         };
 
-        let position = [0, 0, 0];
-
         let radius = Chunk {
             dimension,
-            position,
+            position: Vec3I32::from_array(position),
         }
         .radius(5);
 
@@ -336,11 +273,21 @@ mod tests {
             .inspect(|chunk| assert!(radius.is_within(chunk)))
             .collect::<Vec<_>>();
 
-        assert_eq!(chunks_sorted.len(), 1000);
+        let ctrl = radius.into_iter_simple().collect::<Vec<_>>();
+
+        assert_eq!(chunks_sorted.len(), ctrl.len());
+
+        {
+            let mut chunks_sorted = chunks_sorted.clone();
+            chunks_sorted.sort();
+
+            assert_eq!(chunks_sorted, ctrl);
+        }
 
         let max_dist_for_index = |index: usize| {
             chunks_sorted[index]
                 .position
+                .to_array()
                 .iter()
                 .zip(position.iter())
                 .map(|(chunk_pos, position)| chunk_pos.abs_diff(*position))
@@ -377,5 +324,51 @@ mod tests {
 
             assert!(max_dist_1 <= max_dist_2 + 1);
         }
+    }
+
+    #[test]
+    fn check_chunk_radius_expanding_iter_bounds() {
+        fn test_expanding_iter(position: [i32; 3]) {
+            let dimension = Dimension {
+                kind: DimensionKind(0),
+                phase: 0,
+            };
+
+            let radius = Chunk {
+                dimension,
+                position: Vec3I32::from_array(position),
+            }
+            .radius(5);
+
+            let chunks_sorted = radius
+                .into_iter_expanding()
+                .inspect(|chunk| assert!(radius.is_within(chunk)))
+                .collect::<Vec<_>>();
+
+            let ctrl = radius.into_iter_simple().collect::<Vec<_>>();
+
+            assert_eq!(chunks_sorted.len(), ctrl.len());
+
+            {
+                let mut chunks_sorted = chunks_sorted.clone();
+                chunks_sorted.sort();
+
+                assert_eq!(chunks_sorted, ctrl);
+            }
+        }
+
+        test_expanding_iter([i32::MIN, 0, 0]);
+        test_expanding_iter([0, i32::MIN, 0]);
+        test_expanding_iter([0, i32::MIN, i32::MIN]);
+        test_expanding_iter([i32::MIN, 0, i32::MIN]);
+        test_expanding_iter([i32::MIN, i32::MIN, 0]);
+        test_expanding_iter([i32::MIN, i32::MIN, i32::MIN]);
+
+        test_expanding_iter([i32::MAX, 0, 0]);
+        test_expanding_iter([0, i32::MAX, 0]);
+        test_expanding_iter([0, i32::MAX, i32::MAX]);
+        test_expanding_iter([i32::MAX, 0, i32::MAX]);
+        test_expanding_iter([i32::MAX, i32::MAX, 0]);
+        test_expanding_iter([i32::MAX, i32::MAX, i32::MAX]);
     }
 }

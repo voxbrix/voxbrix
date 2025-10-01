@@ -12,6 +12,10 @@ use std::{
     num::NonZeroU64,
     time::Duration,
 };
+use voxbrix_common::math::{
+    Vec3F32,
+    Vec3I32,
+};
 
 mod camera;
 pub mod gpu_vec;
@@ -177,9 +181,9 @@ impl<'a> Renderer<'a> {
 }
 
 pub struct CameraUpdate {
-    pub chunk: [i32; 3],
-    pub offset: [f32; 3],
-    pub view_direction: [f32; 3],
+    pub chunk: Vec3I32,
+    pub offset: Vec3F32,
+    pub view_direction: Vec3F32,
     pub dt: Duration,
 }
 

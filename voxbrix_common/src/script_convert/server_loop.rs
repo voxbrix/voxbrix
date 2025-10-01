@@ -56,7 +56,7 @@ impl From<Dimension> for server_loop_api::Dimension {
 impl From<server_loop_api::Chunk> for Chunk {
     fn from(value: server_loop_api::Chunk) -> Self {
         Self {
-            position: value.position,
+            position: value.position.into(),
             dimension: value.dimension.into(),
         }
     }
@@ -65,7 +65,7 @@ impl From<server_loop_api::Chunk> for Chunk {
 impl From<Chunk> for server_loop_api::Chunk {
     fn from(value: Chunk) -> Self {
         Self {
-            position: value.position,
+            position: value.position.into(),
             dimension: value.dimension.into(),
         }
     }

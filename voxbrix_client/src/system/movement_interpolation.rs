@@ -17,10 +17,8 @@ use voxbrix_common::{
     },
     entity::{
         block::BLOCKS_IN_CHUNK_EDGE_F32,
-        chunk::ChunkPositionOperations,
         snapshot::ClientSnapshot,
     },
-    math::Vec3F32,
     resource::process_timer::ProcessTimer,
 };
 use voxbrix_world::{
@@ -74,13 +72,13 @@ impl MovementInterpolationSystemData<'_> {
                     continue;
                 }
 
-                let chunk_offset: Vec3F32 = target_position
+                let chunk_offset = target_position
                     .chunk
                     .position
                     .checked_sub(starting.chunk.position)
                     .expect("should not fail")
-                    .map(|i| i as f32 * BLOCKS_IN_CHUNK_EDGE_F32)
-                    .into();
+                    .as_vec3()
+                    * BLOCKS_IN_CHUNK_EDGE_F32;
 
                 let from_start_to_target =
                     chunk_offset + (target_position.offset - starting.offset);

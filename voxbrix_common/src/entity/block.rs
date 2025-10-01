@@ -1,4 +1,7 @@
-use crate::entity::chunk::Chunk;
+use crate::{
+    entity::chunk::Chunk,
+    math::Vec3I32,
+};
 use serde::{
     de::{
         Deserializer,
@@ -230,8 +233,10 @@ impl Block {
         }
     }
 
-    pub fn from_chunk_offset(chunk: Chunk, offset: [i32; 3]) -> Option<(Chunk, Block)> {
-        let chunks_blocks = offset.map(|offset| {
+    pub fn from_chunk_offset(chunk: Chunk, offset: Vec3I32) -> Option<(Chunk, Block)> {
+        let mut position = Vec3I32::ZERO;
+        let coords = [0, 1, 2].map(|i| {
+            let offset = offset[i];
             let mut chunk_offset = offset / BLOCKS_IN_CHUNK_EDGE_I32;
             let mut block = offset % BLOCKS_IN_CHUNK_EDGE_I32;
 
@@ -240,23 +245,16 @@ impl Block {
                 block += BLOCKS_IN_CHUNK_EDGE_I32;
             }
 
-            (chunk_offset, block)
+            position[i] = chunk_offset;
+            block as usize
         });
 
         let actual_chunk = Chunk {
-            position: [
-                chunks_blocks[0].0.checked_add(chunk.position[0])?,
-                chunks_blocks[1].0.checked_add(chunk.position[1])?,
-                chunks_blocks[2].0.checked_add(chunk.position[2])?,
-            ],
+            position: position.checked_add(chunk.position)?,
             dimension: chunk.dimension,
         };
 
-        let block = Self::from_coords([
-            chunks_blocks[0].1 as usize,
-            chunks_blocks[1].1 as usize,
-            chunks_blocks[2].1 as usize,
-        ]);
+        let block = Self::from_coords(coords);
 
         Some((actual_chunk, block))
     }

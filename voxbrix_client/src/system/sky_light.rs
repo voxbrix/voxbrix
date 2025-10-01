@@ -28,6 +28,7 @@ use voxbrix_common::{
         block::Neighbor,
         chunk::Chunk,
     },
+    math::Vec3I32,
 };
 use voxbrix_world::{
     System,
@@ -102,7 +103,7 @@ impl<'a> SkyLightSystemData<'a> {
                     [0, 0, -1],
                     [0, 0, 1],
                 ]
-                .map(|offset| chunk.checked_add(offset));
+                .map(|offset| chunk.checked_add(Vec3I32::from_array(offset)));
 
                 let neighbor_chunks = neighbor_chunk_ids
                     .into_iter()
@@ -241,7 +242,7 @@ impl<'a> SkyLightSystemData<'a> {
             .into_iter()
             .enumerate()
             .filter_map(|(side, offset)| {
-                let chunk = chunk.checked_add(offset)?;
+                let chunk = chunk.checked_add(Vec3I32::from_array(offset))?;
 
                 Some((side, chunk))
             });
@@ -281,7 +282,7 @@ impl<'a> SkyLightSystemData<'a> {
                 [0, 0, -1],
                 [0, 0, 1],
             ]
-            .map(|offset| chunk.checked_add(offset))
+            .map(|offset| chunk.checked_add(Vec3I32::from_array(offset)))
             .into_iter()
             .zip(neighbors_need_redraw)
             .filter_map(|(chunk, needs_redraw)| {
