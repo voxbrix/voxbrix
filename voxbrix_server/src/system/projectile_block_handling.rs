@@ -59,7 +59,7 @@ impl ProjectileBlockHandlingSystemData<'_> {
             .filter(|(_, c)| c.collides_with_block)
         {
             let Some(proj_ac) = self.projectile_ac.get(&proj_actor) else {
-                return;
+                continue;
             };
 
             for handler in proj_ac.handler_set.iter() {

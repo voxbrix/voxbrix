@@ -65,7 +65,7 @@ impl ProjectileActorHandlingSystemData<'_> {
             } = collision;
 
             let Some(proj_ac) = self.projectile_ac.get(&proj_actor) else {
-                return;
+                continue;
             };
 
             for handler in proj_ac.handler_set.iter() {
