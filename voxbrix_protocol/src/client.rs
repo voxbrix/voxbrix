@@ -109,10 +109,6 @@ use std::rc::Rc;
 #[cfg(feature = "multi")]
 use std::sync::Arc as Rc;
 use std::{
-    alloc::{
-        self,
-        Layout,
-    },
     collections::VecDeque,
     fmt,
     io::{
@@ -133,22 +129,12 @@ use tokio::{
 
 type Buffer = [u8; MAX_PACKET_SIZE];
 
-const ZEROED_BUFFER: Buffer = [0u8; MAX_PACKET_SIZE];
-
 type BoxBuffer = Box<Buffer>;
 
 fn allocate_buffer() -> BoxBuffer {
-    // SAFETY: fast and safe way to get Box of [0u8; MAX_PACKET_SIZE]
-    // without copying stack to heap (as would be with Box::new())
-    // https://doc.rust-lang.org/std/boxed/index.html#memory-layout
-    unsafe {
-        let layout = Layout::new::<Buffer>();
-        let ptr = alloc::alloc(layout);
-        if ptr.is_null() {
-            alloc::handle_alloc_error(layout);
-        }
-        Box::from_raw(ptr.cast())
-    }
+    let buf = Box::new_uninit();
+
+    unsafe { buf.assume_init() }
 }
 
 async fn send_ack(buffer: &mut Buffer, shared: &Shared, sequence: Sequence) -> Result<(), Error> {
@@ -237,9 +223,9 @@ impl Client {
             .try_into()
             .unwrap();
 
-        let mut buf = ZEROED_BUFFER;
+        let mut buf = allocate_buffer();
 
-        let mut write_cursor = Cursor::new(buf.as_mut());
+        let mut write_cursor = Cursor::new(buf.as_mut_slice());
 
         write_cursor.write_varint(NEW_CONNECTION_ID).unwrap();
         write_cursor.write_varint(Type::CONNECT).unwrap();
@@ -248,7 +234,7 @@ impl Client {
         transport.send(write_cursor.slice()).await?;
 
         let (peer_key, deciphered_peer_key, id) = loop {
-            let len = transport.recv(&mut buf).await?;
+            let len = transport.recv(buf.as_mut_slice()).await?;
 
             let mut read_cursor = Cursor::new(&buf[.. len]);
 
@@ -313,6 +299,7 @@ impl Client {
         let sender = Sender {
             unreliable: UnreliableSender {
                 shared: shared.clone(),
+                buffer: allocate_buffer(),
                 unreliable_split_id: 0,
             },
             reliable: ReliableSender {
@@ -340,7 +327,7 @@ struct Shared {
 
 impl Drop for Shared {
     fn drop(&mut self) {
-        let mut buffer = ZEROED_BUFFER;
+        let mut buffer = allocate_buffer();
 
         let mut write_cursor = Cursor::new(buffer.as_mut_slice());
 
@@ -728,21 +715,20 @@ impl Sender {
 /// Unreliable-sending part of the connection.
 pub struct UnreliableSender {
     shared: Rc<Shared>,
+    buffer: BoxBuffer,
     unreliable_split_id: u16,
 }
 
 impl UnreliableSender {
     async fn send_unreliable_one(
-        &self,
+        &mut self,
         channel: Channel,
         data: &[u8],
         message_type: u8,
         len_or_count: Option<usize>,
     ) -> Result<(), Error> {
-        let mut buffer = ZEROED_BUFFER;
-
         let (tag_start, len) =
-            crate::write_in_buffer(&mut buffer, self.shared.id, message_type, |cursor| {
+            crate::write_in_buffer(&mut self.buffer, self.shared.id, message_type, |cursor| {
                 cursor.write_varint(channel).unwrap();
                 if let Some(len_or_count) = len_or_count {
                     cursor.write_varint(self.unreliable_split_id).unwrap();
@@ -751,9 +737,9 @@ impl UnreliableSender {
                 cursor.write_all(data).unwrap();
             });
 
-        crate::encode_in_buffer(&mut buffer, &self.shared.cipher, tag_start, len);
+        crate::encode_in_buffer(&mut self.buffer, &self.shared.cipher, tag_start, len);
 
-        self.shared.transport.send(&buffer[.. len]).await?;
+        self.shared.transport.send(&self.buffer[.. len]).await?;
 
         Ok(())
     }

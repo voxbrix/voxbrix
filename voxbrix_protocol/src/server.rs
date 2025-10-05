@@ -145,12 +145,13 @@ pub const DEFAULT_MAX_CONNECTIONS: usize = 64;
 struct WriteBuffer(Rc<[u8; MAX_PACKET_SIZE]>);
 
 impl WriteBuffer {
-    pub fn new() -> Self {
-        // TODO use uninit_zeroed
-        WriteBuffer(Rc::new([0; MAX_PACKET_SIZE]))
+    fn new() -> Self {
+        let buf = Rc::new_uninit();
+        let buf = unsafe { buf.assume_init() };
+        WriteBuffer(buf)
     }
 
-    pub fn finish(self, start: usize, stop: usize) -> ReadBuffer {
+    fn finish(self, start: usize, stop: usize) -> ReadBuffer {
         ReadBuffer {
             buffer: self.0,
             start,
