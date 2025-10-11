@@ -137,22 +137,9 @@ macro_rules! seek_read_return {
     };
 }
 
-#[macro_export]
-macro_rules! seek_write {
-    ($e:expr, $c:literal) => {
-        match $e {
-            Ok(r) => r,
-            Err(_) => {
-                log::debug!("write {} error", $c);
-                continue;
-            },
-        }
-    };
-}
-
 type Id = u32;
-type Sequence = u8;
-type SplitId = u8;
+type Sequence = u128;
+type SplitId = u128;
 pub type Channel = u32;
 type Key = [u8; 33];
 const KEY_BUFFER: Key = [0; 33];
@@ -335,7 +322,23 @@ impl AsFixedBytes for u32 {
     }
 
     fn zeroed() -> Self::Bytes {
-        [0; 4]
+        [0; mem::size_of::<Self::Bytes>()]
+    }
+}
+
+impl AsFixedBytes for u128 {
+    type Bytes = [u8; 16];
+
+    fn to_bytes(self) -> Self::Bytes {
+        self.to_le_bytes()
+    }
+
+    fn from_bytes(bytes: Self::Bytes) -> Self {
+        Self::from_le_bytes(bytes)
+    }
+
+    fn zeroed() -> Self::Bytes {
+        [0; mem::size_of::<Self::Bytes>()]
     }
 }
 
@@ -368,12 +371,12 @@ trait ReadExt: Read {
 
 impl<T: Read> ReadExt for T {}
 
-trait ToU8 {
-    fn to_u8(self) -> u8;
+trait ToU128 {
+    fn to_u128(self) -> u128;
 }
 
-impl ToU8 for usize {
-    fn to_u8(self) -> u8 {
+impl ToU128 for usize {
+    fn to_u128(self) -> u128 {
         self.try_into().unwrap()
     }
 }
@@ -395,6 +398,12 @@ impl ToUsize for u32 {
 }
 
 impl ToUsize for u64 {
+    fn to_usize(self) -> usize {
+        self.try_into().unwrap()
+    }
+}
+
+impl ToUsize for u128 {
     fn to_usize(self) -> usize {
         self.try_into().unwrap()
     }

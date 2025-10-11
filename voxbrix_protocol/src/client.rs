@@ -52,7 +52,6 @@
 
 use crate::{
     seek_read,
-    seek_write,
     AsSlice,
     Channel,
     Id,
@@ -60,7 +59,7 @@ use crate::{
     ReadExt,
     Sequence,
     SplitId,
-    ToU8,
+    ToU128,
     ToUsize,
     Type,
     UnreliableBuffer,
@@ -159,8 +158,9 @@ pub enum Error {
     ReceiverWasDropped,
     /// Returned by the receiver in case the server dropped the connection handles.
     Disconnect,
-    /// Currently internal variant, should not be returned.
-    Timeout,
+    /// Connection is invalid and must be dropped and possibly restarted. Must not happen in
+    /// practice.
+    InvalidConnection,
     /// Peer sent message that is too large.
     PeerMessageTooLarge,
     /// Message is too large to be sent.
@@ -407,6 +407,12 @@ impl Receiver {
                 .and_then(|f| f.as_ref())
                 .is_some()
             {
+                // First try to increment to prevent theoretical overflow:
+                self.sequence = self
+                    .sequence
+                    .checked_add(1)
+                    .ok_or(Error::InvalidConnection)?;
+
                 let QueueEntry {
                     buffer: queue_buffer_box,
                     start,
@@ -416,7 +422,6 @@ impl Receiver {
                 } = self.reliable_queue.pop_front().flatten().unwrap();
 
                 self.reliable_queue.push_back(None);
-                self.sequence = self.sequence.wrapping_add(1);
 
                 // None means it's in the recv_buffer, we just received that packet in the previous
                 // iteration of the loop
@@ -633,32 +638,32 @@ impl Receiver {
                     let channel: Channel = seek_read!(read_cursor.read_bytes(), "channel");
                     let sequence: Sequence = seek_read!(read_cursor.read_bytes(), "sequence");
 
-                    let start = read_cursor.position().to_usize();
-                    // TODO verify correctness
-                    let index = sequence.wrapping_sub(self.sequence);
-                    if index < RELIABLE_QUEUE_LENGTH {
-                        let queue_place = self.reliable_queue.get_mut(index.to_usize()).unwrap();
+                    if let Some(index) = sequence.checked_sub(self.sequence) {
+                        let start = read_cursor.position().to_usize();
 
-                        *queue_place = Some(QueueEntry {
-                            buffer: if index == 0 {
-                                // Ready to give that message right away in the next loop
-                                // iteration, we don't want to allocate buffer to drop it right after
-                                None
-                            } else {
-                                Some(mem::replace(&mut self.recv_buffer, allocate_buffer()))
-                            },
-                            start,
-                            stop: len,
-                            channel,
-                            is_split: packet_type == Type::RELIABLE_SPLIT,
-                        });
+                        if index < RELIABLE_QUEUE_LENGTH {
+                            let queue_place =
+                                self.reliable_queue.get_mut(index.to_usize()).unwrap();
+
+                            *queue_place = Some(QueueEntry {
+                                buffer: if index == 0 {
+                                    // Ready to give that message right away in the next loop
+                                    // iteration, we don't want to allocate buffer to drop it right after
+                                    None
+                                } else {
+                                    Some(mem::replace(&mut self.recv_buffer, allocate_buffer()))
+                                },
+                                start,
+                                stop: len,
+                                channel,
+                                is_split: packet_type == Type::RELIABLE_SPLIT,
+                            });
+                        }
                     }
 
-                    // TODO: do not answer if the sequence is not previous, but random?
-                    seek_write!(
-                        send_ack(&mut self.send_buffer, self.shared.as_ref(), sequence).await,
-                        "ack message"
-                    );
+                    if sequence.abs_diff(self.sequence) <= RELIABLE_QUEUE_LENGTH {
+                        send_ack(&mut self.send_buffer, self.shared.as_ref(), sequence).await?;
+                    }
                 },
                 _ => {},
             }
@@ -739,7 +744,10 @@ impl UnreliableSender {
     /// Send a data slice unreliably.
     pub async fn send_unreliable(&mut self, channel: Channel, data: &[u8]) -> Result<(), Error> {
         if data.len() > MAX_DATA_SIZE {
-            self.unreliable_split_id = self.unreliable_split_id.wrapping_add(1);
+            self.unreliable_split_id = self
+                .unreliable_split_id
+                .checked_add(1)
+                .ok_or(Error::InvalidConnection)?;
             let length = (data.len() / MAX_DATA_SIZE + 1)
                 .try_into()
                 .map_err(|_| Error::MessageTooLarge)?;
@@ -790,17 +798,18 @@ pub struct ReliableSender {
 }
 
 impl ReliableSender {
-    fn pack_data(&mut self, channel: Channel, data: &[u8], packet_type: u8) -> (BoxBuffer, usize) {
+    fn pack_data(
+        &mut self,
+        packet_type: u8,
+        sequence: Sequence,
+        channel: Channel,
+        data: &[u8],
+    ) -> (BoxBuffer, usize) {
         let mut buffer = allocate_buffer();
 
         let len = crate::write_in_buffer(buffer.as_mut(), self.shared.id, packet_type, |cursor| {
             cursor.write_bytes(channel).unwrap();
-            cursor
-                .write_bytes(
-                    self.queue_front_sequence
-                        .wrapping_add(self.queue.len().to_u8()),
-                )
-                .unwrap();
+            cursor.write_bytes(sequence).unwrap();
             cursor.write_all(data).unwrap();
         });
 
@@ -842,7 +851,9 @@ impl ReliableSender {
                 }
             };
 
-            let index = ack.wrapping_sub(self.queue_front_sequence);
+            let Some(index) = ack.checked_sub(self.queue_front_sequence) else {
+                continue;
+            };
 
             if index < RELIABLE_QUEUE_LENGTH {
                 if let Some(queue_entry) = self.queue.get_mut(index.to_usize()) {
@@ -854,7 +865,8 @@ impl ReliableSender {
         // Getting rid of confirmed packets
         while matches!(self.queue.front(), Some(PacketState::Done)) {
             self.queue.pop_front();
-            self.queue_front_sequence = self.queue_front_sequence.wrapping_add(1);
+            // Correctness: adding into the back of the queue must be checked:
+            self.queue_front_sequence += 1;
         }
 
         let mut queue = mem::take(&mut self.queue);
@@ -902,8 +914,12 @@ impl ReliableSender {
                 must_wait = true;
                 continue;
             } else {
+                let sequence = self
+                    .queue_front_sequence
+                    .checked_add(self.queue.len().to_u128())
+                    .ok_or(Error::InvalidConnection)?;
                 // Finally send our latest packet and add that to waiting list
-                let (buffer, length) = self.pack_data(channel, data, packet_type);
+                let (buffer, length) = self.pack_data(packet_type, sequence, channel, data);
                 let result = self.shared.transport.send(&buffer[.. length]).await;
                 self.queue.push_back(PacketState::Pending {
                     sent_at: Instant::now(),
