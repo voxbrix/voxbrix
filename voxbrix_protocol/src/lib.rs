@@ -25,11 +25,12 @@ use chacha20poly1305::{
     },
     ChaCha20Poly1305,
 };
-use integer_encoding::VarIntWriter;
 use std::{
     io::{
         Cursor,
         Read,
+        Result as IoResult,
+        Write,
     },
     mem,
     time::Duration,
@@ -43,26 +44,27 @@ pub mod server;
 
 const MAX_PACKET_SIZE: usize = 508;
 
+// Unreliable split type has the longest header:
 const MAX_HEADER_SIZE: usize = mem::size_of::<Id>() // sender
     + 1 // type
     + TAG_SIZE // tag
     + NONCE_SIZE // nonce
-    + mem::size_of::<usize>()
-    + 2
-    + mem::size_of::<usize>();
+    + mem::size_of::<Channel>()
+    + mem::size_of::<SplitId>()
+    + mem::size_of::<u32>(); // count/length
 
 /// Maximum amount of data bytes that fits into one packet.
 /// Unreliable messages sent are recommended to be smaller that this.
 pub const MAX_DATA_SIZE: usize = MAX_PACKET_SIZE - MAX_HEADER_SIZE;
 /// Maximum amount of data per message.
-pub const MAX_SPLIT_DATA_SIZE: usize = MAX_SPLIT_PACKETS * MAX_DATA_SIZE;
+pub const MAX_SPLIT_DATA_SIZE: usize = MAX_SPLIT_PACKETS as usize * MAX_DATA_SIZE;
 
-const SERVER_ID: usize = 0;
-const NEW_CONNECTION_ID: usize = 1;
+const SERVER_ID: Id = 0;
+const NEW_CONNECTION_ID: Id = 1;
 const UNRELIABLE_BUFFERS: usize = 8;
-const RELIABLE_QUEUE_LENGTH: u16 = 64;
+const RELIABLE_QUEUE_LENGTH: Sequence = 64;
 const RELIABLE_RESEND_AFTER: Duration = Duration::from_millis(1000);
-const MAX_SPLIT_PACKETS: usize = 2000;
+const MAX_SPLIT_PACKETS: u32 = 2000;
 
 trait AsSlice<T> {
     fn slice(&self) -> &[T];
@@ -98,15 +100,15 @@ impl UnreliableBufferShard {
 }
 
 struct UnreliableBuffer {
-    split_id: u16,
+    split_id: SplitId,
     channel: Channel,
-    complete_shards: usize,
+    complete_shards: u32,
     shards: Vec<UnreliableBufferShard>,
 }
 
 impl UnreliableBuffer {
     fn is_complete(&self) -> bool {
-        self.complete_shards == self.shards.len()
+        TryInto::<usize>::try_into(self.complete_shards).unwrap() == self.shards.len()
     }
 }
 
@@ -148,10 +150,10 @@ macro_rules! seek_write {
     };
 }
 
-type Id = usize;
-type Sequence = u16;
-/// Channel id type
-pub type Channel = usize;
+type Id = u32;
+type Sequence = u8;
+type SplitId = u8;
+pub type Channel = u32;
 type Key = [u8; 33];
 const KEY_BUFFER: Key = [0; 33];
 type Secret = [u8; 32];
@@ -160,6 +162,10 @@ const TAG_SIZE: usize = 16;
 const TAG_BUFFER: [u8; TAG_SIZE] = [0; TAG_SIZE];
 const NONCE_SIZE: usize = 12;
 const NONCE_BUFFER: [u8; NONCE_SIZE] = [0; NONCE_SIZE];
+const TYPE_INDEX: usize = mem::size_of::<Id>();
+const TAG_START: usize = TYPE_INDEX + 1; // 1 is Type byte
+const TAG_STOP: usize = TAG_START + TAG_SIZE;
+const ENCRYPTION_START: usize = TAG_STOP + NONCE_SIZE;
 
 struct Type;
 
@@ -194,8 +200,8 @@ impl Type {
         // nonce: [u8; NONCE_SIZE],
         // encrypted fields:
         // channel: Channel,
-        // split_id: u16,
-        // length: usize,
+        // split_id: SplitId,
+        // length: u32,
         // data: &[u8],
 
     const UNRELIABLE_SPLIT: u8 = 6;
@@ -203,8 +209,8 @@ impl Type {
         // nonce: [u8; NONCE_SIZE],
         // encrypted fields:
         // channel: Channel,
-        // split_id: u16,
-        // count: usize,
+        // split_id: SplitId,
+        // count: u32,
         // data: &[u8],
 
     const RELIABLE: u8 = 7;
@@ -232,71 +238,50 @@ fn write_in_buffer<F>(
     sender: Id,
     packet_type: u8,
     mut f: F,
-) -> (usize, usize)
+) -> usize
 where
     F: FnMut(&mut Cursor<&mut [u8]>),
 {
     let mut cursor = Cursor::new(buffer.as_mut());
 
-    cursor.write_varint(sender).unwrap();
-    cursor.write_varint(packet_type).unwrap();
-    let tag_start = cursor.position() as usize;
-    cursor.set_position((tag_start + TAG_SIZE + NONCE_SIZE) as u64);
+    cursor.write(&sender.to_le_bytes()).unwrap();
+    cursor.write(&[packet_type]).unwrap();
+    cursor.set_position(const { (mem::size_of::<Id>() + 1 + TAG_SIZE + NONCE_SIZE) as u64 });
     f(&mut cursor);
 
-    (tag_start, cursor.position() as usize)
+    cursor.position() as usize
 }
 
-fn encode_in_buffer(
-    buffer: &mut [u8; MAX_PACKET_SIZE],
-    cipher: &ChaCha20Poly1305,
-    tag_start: usize,
-    length: usize,
-) {
+fn encode_in_buffer(buffer: &mut [u8; MAX_PACKET_SIZE], cipher: &ChaCha20Poly1305, length: usize) {
     let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
-    let tag_stop = tag_start + TAG_SIZE;
-    let encryption_start = tag_stop + NONCE_SIZE;
-    buffer[tag_stop .. encryption_start].copy_from_slice(&nonce);
+    buffer[TAG_STOP .. ENCRYPTION_START].copy_from_slice(&nonce);
 
     let buffer = &mut buffer[.. length];
 
-    let (buffer_pre_enc, buffer_enc) = buffer.split_at_mut(encryption_start);
+    let (buffer_pre_enc, buffer_enc) = buffer.split_at_mut(ENCRYPTION_START);
 
     let tag = cipher
-        .encrypt_in_place_detached(&nonce, &buffer_pre_enc[.. tag_start], buffer_enc)
+        .encrypt_in_place_detached(&nonce, &buffer_pre_enc[.. TAG_START], buffer_enc)
         .unwrap();
 
-    buffer[tag_start .. tag_stop].copy_from_slice(&tag);
+    buffer[TAG_START .. TAG_STOP].copy_from_slice(&tag);
 }
 
 /// Returns total data length.
-fn tag_sign_in_buffer(
-    buffer: &mut [u8; MAX_PACKET_SIZE],
-    cipher: &ChaCha20Poly1305,
-    tag_start: usize,
-) -> usize {
+fn tag_sign_in_buffer(buffer: &mut [u8; MAX_PACKET_SIZE], cipher: &ChaCha20Poly1305) {
     let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
-    let tag_stop = tag_start + TAG_SIZE;
-    let length = tag_stop + NONCE_SIZE;
-    buffer[tag_stop .. length].copy_from_slice(&nonce);
+    buffer[TAG_STOP .. ENCRYPTION_START].copy_from_slice(&nonce);
 
     let tag = cipher
-        .encrypt_in_place_detached(&nonce, &buffer[.. tag_start], &mut [])
+        .encrypt_in_place_detached(&nonce, &buffer[.. TAG_START], &mut [])
         .unwrap();
 
-    buffer[tag_start .. tag_stop].copy_from_slice(&tag);
-
-    length
+    buffer[TAG_START .. TAG_STOP].copy_from_slice(&tag);
 }
 
-/// Returns starting byte of the relevant data (that is right after the nonce).
-fn decode_in_buffer(
-    buffer: &mut [u8],
-    tag_start: usize,
-    cipher: &ChaCha20Poly1305,
-) -> Result<usize, ()> {
+fn decode_in_buffer(buffer: &mut [u8], cipher: &ChaCha20Poly1305) -> Result<(), ()> {
     let mut cursor = Cursor::new(&buffer);
-    cursor.set_position(tag_start as u64);
+    cursor.set_position(TAG_START as u64);
 
     let mut tag = TAG_BUFFER;
     seek_read_return!(cursor.read_exact(&mut tag), "tag");
@@ -304,11 +289,9 @@ fn decode_in_buffer(
     let mut nonce = NONCE_BUFFER;
     seek_read_return!(cursor.read_exact(&mut nonce), "nonce");
 
-    let encrypted_start = cursor.position() as usize;
-
     let (buffer_acc_data, buffer_encrypted) = {
-        let (buffer, buffer_encrypted) = buffer.split_at_mut(encrypted_start);
-        (&buffer[.. tag_start], buffer_encrypted)
+        let (buffer, buffer_encrypted) = buffer.split_at_mut(ENCRYPTION_START);
+        (&buffer[.. TAG_START], buffer_encrypted)
     };
 
     seek_read_return!(
@@ -321,7 +304,100 @@ fn decode_in_buffer(
         "decrypted"
     );
 
-    Ok(encrypted_start)
+    Ok(())
+}
+
+impl AsFixedBytes for u8 {
+    type Bytes = [u8; 1];
+
+    fn to_bytes(self) -> Self::Bytes {
+        [self]
+    }
+
+    fn from_bytes(bytes: Self::Bytes) -> Self {
+        bytes[0]
+    }
+
+    fn zeroed() -> Self::Bytes {
+        [0]
+    }
+}
+
+impl AsFixedBytes for u32 {
+    type Bytes = [u8; 4];
+
+    fn to_bytes(self) -> Self::Bytes {
+        self.to_le_bytes()
+    }
+
+    fn from_bytes(bytes: Self::Bytes) -> Self {
+        Self::from_le_bytes(bytes)
+    }
+
+    fn zeroed() -> Self::Bytes {
+        [0; 4]
+    }
+}
+
+trait AsFixedBytes {
+    type Bytes: AsRef<[u8]> + AsMut<[u8]>;
+    fn to_bytes(self) -> Self::Bytes;
+    fn from_bytes(bytes: Self::Bytes) -> Self;
+    fn zeroed() -> Self::Bytes;
+}
+
+trait WriteExt: Write {
+    fn write_bytes(&mut self, n: impl AsFixedBytes) -> IoResult<usize> {
+        self.write(n.to_bytes().as_ref())
+    }
+}
+
+impl<T: Write> WriteExt for T {}
+
+trait ReadExt: Read {
+    fn read_bytes<T>(&mut self) -> IoResult<T>
+    where
+        T: AsFixedBytes,
+    {
+        let mut buf = T::zeroed();
+        self.read_exact(buf.as_mut())?;
+
+        Ok(T::from_bytes(buf))
+    }
+}
+
+impl<T: Read> ReadExt for T {}
+
+trait ToU8 {
+    fn to_u8(self) -> u8;
+}
+
+impl ToU8 for usize {
+    fn to_u8(self) -> u8 {
+        self.try_into().unwrap()
+    }
+}
+
+trait ToUsize {
+    fn to_usize(self) -> usize;
+}
+
+impl ToUsize for u8 {
+    fn to_usize(self) -> usize {
+        self.try_into().unwrap()
+    }
+}
+
+impl ToUsize for u32 {
+    fn to_usize(self) -> usize {
+        self.try_into().unwrap()
+    }
+}
+
+impl ToUsize for u64 {
+    fn to_usize(self) -> usize {
+        self.try_into().unwrap()
+    }
 }
 
 #[cfg(test)]

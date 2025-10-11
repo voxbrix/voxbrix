@@ -57,10 +57,16 @@ use crate::{
     Channel,
     Id,
     Key,
+    ReadExt,
     Sequence,
+    SplitId,
+    ToU8,
+    ToUsize,
     Type,
     UnreliableBuffer,
     UnreliableBufferShard,
+    WriteExt,
+    ENCRYPTION_START,
     KEY_BUFFER,
     MAX_DATA_SIZE,
     MAX_PACKET_SIZE,
@@ -83,10 +89,6 @@ use flume::{
     Receiver as ChannelRx,
     Sender as ChannelTx,
     TryRecvError as TryReceiveError,
-};
-use integer_encoding::{
-    VarIntReader,
-    VarIntWriter,
 };
 use k256::{
     ecdh::EphemeralSecret,
@@ -138,11 +140,11 @@ fn allocate_buffer() -> BoxBuffer {
 }
 
 async fn send_ack(buffer: &mut Buffer, shared: &Shared, sequence: Sequence) -> Result<(), Error> {
-    let (tag_start, len) = crate::write_in_buffer(buffer, shared.id, Type::ACKNOWLEDGE, |cursor| {
-        cursor.write_varint(sequence).unwrap();
+    let len = crate::write_in_buffer(buffer, shared.id, Type::ACKNOWLEDGE, |cursor| {
+        cursor.write_bytes(sequence).unwrap();
     });
 
-    crate::encode_in_buffer(buffer, &shared.cipher, tag_start, len);
+    crate::encode_in_buffer(buffer, &shared.cipher, len);
 
     shared.transport.send(&buffer[.. len]).await?;
     Ok(())
@@ -161,6 +163,8 @@ pub enum Error {
     Timeout,
     /// Peer sent message that is too large.
     PeerMessageTooLarge,
+    /// Message is too large to be sent.
+    MessageTooLarge,
 }
 
 impl fmt::Display for Error {
@@ -227,8 +231,8 @@ impl Client {
 
         let mut write_cursor = Cursor::new(buf.as_mut_slice());
 
-        write_cursor.write_varint(NEW_CONNECTION_ID).unwrap();
-        write_cursor.write_varint(Type::CONNECT).unwrap();
+        write_cursor.write_bytes(NEW_CONNECTION_ID).unwrap();
+        write_cursor.write_bytes(Type::CONNECT).unwrap();
         write_cursor.write_all(&self_key).unwrap();
 
         transport.send(write_cursor.slice()).await?;
@@ -238,7 +242,7 @@ impl Client {
 
             let mut read_cursor = Cursor::new(&buf[.. len]);
 
-            let sender: usize = seek_read!(read_cursor.read_varint(), "sender");
+            let sender: Id = seek_read!(read_cursor.read_bytes(), "sender");
 
             if sender != SERVER_ID {
                 debug!("received non-server message");
@@ -255,7 +259,7 @@ impl Client {
                 let mut key = KEY_BUFFER;
 
                 seek_read!(read_cursor.read_exact(&mut key), "peer key");
-                let id: usize = seek_read!(read_cursor.read_varint(), "id");
+                let id: Id = seek_read!(read_cursor.read_bytes(), "id");
 
                 let deciphered_peer_key =
                     seek_read!(PublicKey::from_sec1_bytes(&key), "deciphered peer key");
@@ -331,14 +335,12 @@ impl Drop for Shared {
 
         let mut write_cursor = Cursor::new(buffer.as_mut_slice());
 
-        write_cursor.write_varint(self.id).unwrap();
-        write_cursor.write_varint(Type::DISCONNECT).unwrap();
+        write_cursor.write_bytes(self.id).unwrap();
+        write_cursor.write_bytes(Type::DISCONNECT).unwrap();
 
-        let tag_start = write_cursor.position();
+        crate::tag_sign_in_buffer(&mut buffer, &self.cipher);
 
-        let len = crate::tag_sign_in_buffer(&mut buffer, &self.cipher, tag_start as usize);
-
-        let _ = self.transport.try_send(&buffer[0 .. len]);
+        let _ = self.transport.try_send(&buffer[0 .. ENCRYPTION_START]);
     }
 }
 
@@ -484,43 +486,33 @@ impl Receiver {
 
             let mut read_cursor = Cursor::new(&self.recv_buffer[.. len]);
 
-            let sender: usize = seek_read!(read_cursor.read_varint(), "sender");
+            let sender: Id = seek_read!(read_cursor.read_bytes(), "sender");
 
             if sender != SERVER_ID {
                 continue;
             }
 
-            let mut packet_type = Type::UNDEFINED;
-            seek_read!(
-                read_cursor.read_exact(slice::from_mut(&mut packet_type)),
-                "type"
-            );
+            let packet_type: u8 = seek_read!(read_cursor.read_bytes(), "type");
 
-            let tag_start = read_cursor.position() as usize;
-
-            let decrypted_start = match crate::decode_in_buffer(
-                &mut self.recv_buffer[.. len],
-                tag_start,
-                &self.shared.cipher,
-            ) {
-                Ok(s) => s,
-                Err(()) => continue,
+            if crate::decode_in_buffer(&mut self.recv_buffer[.. len], &self.shared.cipher).is_err()
+            {
+                continue;
             };
 
             let mut read_cursor = Cursor::new(&self.recv_buffer[.. len]);
-            read_cursor.set_position(decrypted_start as u64);
+            read_cursor.set_position(ENCRYPTION_START as u64);
 
             match packet_type {
                 Type::ACKNOWLEDGE => {
-                    let sequence: Sequence = seek_read!(read_cursor.read_varint(), "sequence");
+                    let sequence: Sequence = seek_read!(read_cursor.read_bytes(), "sequence");
                     let _ = self.ack_sender.send(sequence);
                 },
                 Type::DISCONNECT => {
                     return Err(Error::Disconnect);
                 },
                 Type::UNRELIABLE => {
-                    let channel: Channel = seek_read!(read_cursor.read_varint(), "channel");
-                    let start = read_cursor.position() as usize;
+                    let channel: Channel = seek_read!(read_cursor.read_bytes(), "channel");
+                    let start = read_cursor.position().to_usize();
                     return Ok(ReceivedData {
                         channel,
                         is_reliable: false,
@@ -528,10 +520,10 @@ impl Receiver {
                     });
                 },
                 Type::UNRELIABLE_SPLIT_START => {
-                    let channel: Channel = seek_read!(read_cursor.read_varint(), "channel");
-                    let split_id: u16 = seek_read!(read_cursor.read_varint(), "split_id");
-                    let expected_packets: usize =
-                        seek_read!(read_cursor.read_varint(), "expected_packets");
+                    let channel: Channel = seek_read!(read_cursor.read_bytes(), "channel");
+                    let split_id: SplitId = seek_read!(read_cursor.read_bytes(), "split_id");
+                    let expected_packets: u32 =
+                        seek_read!(read_cursor.read_bytes(), "expected_packets");
 
                     if expected_packets > MAX_SPLIT_PACKETS {
                         log::debug!(
@@ -558,18 +550,18 @@ impl Receiver {
                         *b_channel = channel;
                         *b_complete_shards = 0;
                         b_shards.clear();
-                        b_shards.resize(expected_packets, UnreliableBufferShard::new());
+                        b_shards.resize(expected_packets.to_usize(), UnreliableBufferShard::new());
                         b
                     } else {
                         UnreliableBuffer {
                             split_id,
                             channel,
                             complete_shards: 0,
-                            shards: vec![UnreliableBufferShard::new(); expected_packets],
+                            shards: vec![UnreliableBufferShard::new(); expected_packets.to_usize()],
                         }
                     };
 
-                    let start = read_cursor.position() as usize;
+                    let start = read_cursor.position().to_usize();
 
                     let data_length = len - start;
 
@@ -584,10 +576,10 @@ impl Receiver {
                     self.unreliable_split_shards.push_front(split_buffer);
                 },
                 Type::UNRELIABLE_SPLIT => {
-                    let channel: Channel = seek_read!(read_cursor.read_varint(), "channel");
-                    let split_id: u16 = seek_read!(read_cursor.read_varint(), "split_id");
-                    let count: usize = seek_read!(read_cursor.read_varint(), "count");
-                    let start = read_cursor.position() as usize;
+                    let channel: Channel = seek_read!(read_cursor.read_bytes(), "channel");
+                    let split_id: SplitId = seek_read!(read_cursor.read_bytes(), "split_id");
+                    let count: u32 = seek_read!(read_cursor.read_bytes(), "count");
+                    let start = read_cursor.position().to_usize();
                     let data_length = len - start;
 
                     let split_buffer = match self.unreliable_split_shards.iter_mut().find(|b| {
@@ -600,7 +592,7 @@ impl Receiver {
                         },
                     };
 
-                    let shard = match split_buffer.shards.get_mut(count) {
+                    let shard = match split_buffer.shards.get_mut(count.to_usize()) {
                         Some(s) => s,
                         None => {
                             debug!("shard not found for count {}", count);
@@ -638,14 +630,14 @@ impl Receiver {
                     }
                 },
                 Type::RELIABLE | Type::RELIABLE_SPLIT => {
-                    let channel: Channel = seek_read!(read_cursor.read_varint(), "channel");
-                    let sequence: Sequence = seek_read!(read_cursor.read_varint(), "sequence");
+                    let channel: Channel = seek_read!(read_cursor.read_bytes(), "channel");
+                    let sequence: Sequence = seek_read!(read_cursor.read_bytes(), "sequence");
 
-                    let start = read_cursor.position() as usize;
+                    let start = read_cursor.position().to_usize();
                     // TODO verify correctness
                     let index = sequence.wrapping_sub(self.sequence);
                     if index < RELIABLE_QUEUE_LENGTH {
-                        let queue_place = self.reliable_queue.get_mut(index as usize).unwrap();
+                        let queue_place = self.reliable_queue.get_mut(index.to_usize()).unwrap();
 
                         *queue_place = Some(QueueEntry {
                             buffer: if index == 0 {
@@ -716,7 +708,7 @@ impl Sender {
 pub struct UnreliableSender {
     shared: Rc<Shared>,
     buffer: BoxBuffer,
-    unreliable_split_id: u16,
+    unreliable_split_id: SplitId,
 }
 
 impl UnreliableSender {
@@ -725,19 +717,19 @@ impl UnreliableSender {
         channel: Channel,
         data: &[u8],
         message_type: u8,
-        len_or_count: Option<usize>,
+        len_or_count: Option<u32>,
     ) -> Result<(), Error> {
-        let (tag_start, len) =
+        let len =
             crate::write_in_buffer(&mut self.buffer, self.shared.id, message_type, |cursor| {
-                cursor.write_varint(channel).unwrap();
+                cursor.write_bytes(channel).unwrap();
                 if let Some(len_or_count) = len_or_count {
-                    cursor.write_varint(self.unreliable_split_id).unwrap();
-                    cursor.write_varint(len_or_count).unwrap();
+                    cursor.write_bytes(self.unreliable_split_id).unwrap();
+                    cursor.write_bytes(len_or_count).unwrap();
                 }
                 cursor.write_all(data).unwrap();
             });
 
-        crate::encode_in_buffer(&mut self.buffer, &self.shared.cipher, tag_start, len);
+        crate::encode_in_buffer(&mut self.buffer, &self.shared.cipher, len);
 
         self.shared.transport.send(&self.buffer[.. len]).await?;
 
@@ -748,7 +740,9 @@ impl UnreliableSender {
     pub async fn send_unreliable(&mut self, channel: Channel, data: &[u8]) -> Result<(), Error> {
         if data.len() > MAX_DATA_SIZE {
             self.unreliable_split_id = self.unreliable_split_id.wrapping_add(1);
-            let length = data.len() / MAX_DATA_SIZE + 1;
+            let length = (data.len() / MAX_DATA_SIZE + 1)
+                .try_into()
+                .map_err(|_| Error::MessageTooLarge)?;
             self.send_unreliable_one(
                 channel,
                 &data[0 .. MAX_DATA_SIZE],
@@ -799,19 +793,18 @@ impl ReliableSender {
     fn pack_data(&mut self, channel: Channel, data: &[u8], packet_type: u8) -> (BoxBuffer, usize) {
         let mut buffer = allocate_buffer();
 
-        let (tag_start, len) =
-            crate::write_in_buffer(buffer.as_mut(), self.shared.id, packet_type, |cursor| {
-                cursor.write_varint(channel).unwrap();
-                cursor
-                    .write_varint(
-                        self.queue_front_sequence
-                            .wrapping_add(self.queue.len() as u16),
-                    )
-                    .unwrap();
-                cursor.write_all(data).unwrap();
-            });
+        let len = crate::write_in_buffer(buffer.as_mut(), self.shared.id, packet_type, |cursor| {
+            cursor.write_bytes(channel).unwrap();
+            cursor
+                .write_bytes(
+                    self.queue_front_sequence
+                        .wrapping_add(self.queue.len().to_u8()),
+                )
+                .unwrap();
+            cursor.write_all(data).unwrap();
+        });
 
-        crate::encode_in_buffer(buffer.as_mut(), &self.shared.cipher, tag_start, len);
+        crate::encode_in_buffer(buffer.as_mut(), &self.shared.cipher, len);
 
         (buffer, len)
     }
@@ -852,7 +845,7 @@ impl ReliableSender {
             let index = ack.wrapping_sub(self.queue_front_sequence);
 
             if index < RELIABLE_QUEUE_LENGTH {
-                if let Some(queue_entry) = self.queue.get_mut(index as usize) {
+                if let Some(queue_entry) = self.queue.get_mut(index.to_usize()) {
                     *queue_entry = PacketState::Done;
                 }
             }
@@ -903,7 +896,7 @@ impl ReliableSender {
                 .await?;
 
             if matches!(self.queue.front(), Some(PacketState::Pending { .. }))
-                && self.queue.len() >= RELIABLE_QUEUE_LENGTH as usize
+                && self.queue.len() >= const { RELIABLE_QUEUE_LENGTH as usize }
             {
                 // Waiting list is full
                 must_wait = true;

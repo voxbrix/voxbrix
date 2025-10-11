@@ -66,10 +66,16 @@ use crate::{
     Channel,
     Id,
     Key,
+    ReadExt,
     Sequence,
+    SplitId,
+    ToU8,
+    ToUsize,
     Type,
     UnreliableBuffer,
     UnreliableBufferShard,
+    WriteExt,
+    ENCRYPTION_START,
     KEY_BUFFER,
     MAX_DATA_SIZE,
     MAX_PACKET_SIZE,
@@ -80,6 +86,7 @@ use crate::{
     RELIABLE_RESEND_AFTER,
     SECRET_BUFFER,
     SERVER_ID,
+    TYPE_INDEX,
     UNRELIABLE_BUFFERS,
 };
 use chacha20poly1305::{
@@ -92,10 +99,6 @@ use flume::{
     Receiver as ChannelRx,
     Sender as ChannelTx,
     TryRecvError as TryReceiveError,
-};
-use integer_encoding::{
-    VarIntReader,
-    VarIntWriter,
 };
 use k256::{
     ecdh::EphemeralSecret,
@@ -139,7 +142,7 @@ use tokio::{
     time,
 };
 
-pub const DEFAULT_MAX_CONNECTIONS: usize = 64;
+pub const DEFAULT_MAX_CONNECTIONS: Id = 64;
 
 // NOT cloneable
 struct WriteBuffer(Rc<[u8; MAX_PACKET_SIZE]>);
@@ -205,6 +208,8 @@ pub enum Error {
     Timeout,
     /// Peer sent message that is too large.
     PeerMessageTooLarge,
+    /// Message is too large to be sent.
+    MessageTooLarge,
 }
 
 impl fmt::Display for Error {
@@ -257,9 +262,7 @@ impl AsRef<[u8]> for Packet {
 }
 
 struct InBuffer {
-    packet_type: u8,
     buffer: WriteBuffer,
-    tag_start: usize,
     stop: usize,
 }
 
@@ -347,12 +350,11 @@ async fn stream_send_ack(
 ) -> Result<(), Error> {
     let mut buffer = WriteBuffer::new();
 
-    let (tag_start, stop) =
-        crate::write_in_buffer(buffer.as_mut(), SERVER_ID, Type::ACKNOWLEDGE, |cursor| {
-            cursor.write_varint(sequence).unwrap();
-        });
+    let stop = crate::write_in_buffer(buffer.as_mut(), SERVER_ID, Type::ACKNOWLEDGE, |cursor| {
+        cursor.write_bytes(sequence).unwrap();
+    });
 
-    crate::encode_in_buffer(buffer.as_mut(), &shared.cipher, tag_start, stop);
+    crate::encode_in_buffer(buffer.as_mut(), &shared.cipher, stop);
 
     shared
         .transport_sender
@@ -424,7 +426,7 @@ impl StreamSender {
 /// Unreliable-sending part of the connection.
 pub struct StreamUnreliableSender {
     shared: Rc<Shared>,
-    unreliable_split_id: u16,
+    unreliable_split_id: SplitId,
     feedback: Feedback,
 }
 
@@ -434,21 +436,20 @@ impl StreamUnreliableSender {
         channel: Channel,
         data: &[u8],
         packet_type: u8,
-        len_or_count: Option<usize>,
+        len_or_count: Option<u32>,
     ) -> Result<(), Error> {
         let mut buffer = WriteBuffer::new();
 
-        let (tag_start, stop) =
-            crate::write_in_buffer(buffer.as_mut(), SERVER_ID, packet_type, |cursor| {
-                cursor.write_varint(channel).unwrap();
-                if let Some(len_or_count) = len_or_count {
-                    cursor.write_varint(self.unreliable_split_id).unwrap();
-                    cursor.write_varint(len_or_count).unwrap();
-                }
-                cursor.write_all(data).unwrap();
-            });
+        let stop = crate::write_in_buffer(buffer.as_mut(), SERVER_ID, packet_type, |cursor| {
+            cursor.write_bytes(channel).unwrap();
+            if let Some(len_or_count) = len_or_count {
+                cursor.write_bytes(self.unreliable_split_id).unwrap();
+                cursor.write_bytes(len_or_count).unwrap();
+            }
+            cursor.write_all(data).unwrap();
+        });
 
-        crate::encode_in_buffer(buffer.as_mut(), &self.shared.cipher, tag_start, stop);
+        crate::encode_in_buffer(buffer.as_mut(), &self.shared.cipher, stop);
 
         self.shared
             .transport_sender
@@ -468,7 +469,9 @@ impl StreamUnreliableSender {
     pub async fn send_unreliable(&mut self, channel: Channel, data: &[u8]) -> Result<(), Error> {
         if data.len() > MAX_DATA_SIZE {
             self.unreliable_split_id = self.unreliable_split_id.wrapping_add(1);
-            let length = data.len() / MAX_DATA_SIZE + 1;
+            let length = (data.len() / MAX_DATA_SIZE + 1)
+                .try_into()
+                .map_err(|_| Error::MessageTooLarge)?;
             self.send_unreliable_one(
                 channel,
                 &data[0 .. MAX_DATA_SIZE],
@@ -534,19 +537,18 @@ impl StreamReliableSender {
     fn pack_data(&mut self, channel: Channel, data: &[u8], packet_type: u8) -> ReadBuffer {
         let mut buffer = WriteBuffer::new();
 
-        let (tag_start, stop) =
-            crate::write_in_buffer(buffer.as_mut(), SERVER_ID, packet_type, |cursor| {
-                cursor.write_varint(channel).unwrap();
-                cursor
-                    .write_varint(
-                        self.queue_front_sequence
-                            .wrapping_add(self.queue.len() as u16),
-                    )
-                    .unwrap();
-                cursor.write_all(data).unwrap();
-            });
+        let stop = crate::write_in_buffer(buffer.as_mut(), SERVER_ID, packet_type, |cursor| {
+            cursor.write_bytes(channel).unwrap();
+            cursor
+                .write_bytes(
+                    self.queue_front_sequence
+                        .wrapping_add(self.queue.len().to_u8()),
+                )
+                .unwrap();
+            cursor.write_all(data).unwrap();
+        });
 
-        crate::encode_in_buffer(buffer.as_mut(), &self.shared.cipher, tag_start, stop);
+        crate::encode_in_buffer(buffer.as_mut(), &self.shared.cipher, stop);
 
         buffer.finish(0, stop)
     }
@@ -554,12 +556,7 @@ impl StreamReliableSender {
     async fn handle_acks_resend(&mut self, mut must_wait: bool) -> Result<(), Error> {
         loop {
             // Handling previous ACKs first
-            let InBuffer {
-                packet_type: _,
-                mut buffer,
-                tag_start,
-                stop,
-            } = if must_wait {
+            let InBuffer { mut buffer, stop } = if must_wait {
                 must_wait = false;
 
                 // TODO timeout retry limit?
@@ -591,22 +588,18 @@ impl StreamReliableSender {
                 }
             };
 
-            let decrypted_start = match crate::decode_in_buffer(
-                &mut buffer.as_mut()[.. stop],
-                tag_start,
-                &self.shared.cipher,
-            ) {
-                Ok(s) => s,
-                Err(()) => continue,
+            if crate::decode_in_buffer(&mut buffer.as_mut()[.. stop], &self.shared.cipher).is_err()
+            {
+                continue;
             };
 
-            let mut read_cursor = Cursor::new(&buffer.as_ref()[decrypted_start .. stop]);
-            let ack: Sequence = seek_read!(read_cursor.read_varint(), "sequence");
+            let mut read_cursor = Cursor::new(&buffer.as_ref()[ENCRYPTION_START .. stop]);
+            let ack: Sequence = seek_read!(read_cursor.read_bytes(), "sequence");
 
             let index = ack.wrapping_sub(self.queue_front_sequence);
 
             if index < RELIABLE_QUEUE_LENGTH {
-                if let Some(queue_entry) = self.queue.get_mut(index as usize) {
+                if let Some(queue_entry) = self.queue.get_mut(index.to_usize()) {
                     *queue_entry = PacketState::Done;
                 }
             }
@@ -650,7 +643,7 @@ impl StreamReliableSender {
                 .await?;
 
             if matches!(self.queue.front(), Some(PacketState::Pending { .. }))
-                && self.queue.len() >= RELIABLE_QUEUE_LENGTH as usize
+                && self.queue.len() >= const { RELIABLE_QUEUE_LENGTH as usize }
             {
                 // Waiting list is full
                 must_wait = true;
@@ -821,9 +814,7 @@ impl StreamReceiver {
             }
 
             let InBuffer {
-                packet_type,
                 buffer: mut in_buffer,
-                tag_start,
                 stop,
             } = {
                 #[cfg(feature = "single")]
@@ -838,16 +829,15 @@ impl StreamReceiver {
             .await
             .map_err(|_| Error::ServerWasDropped)?;
 
-            let start = match crate::decode_in_buffer(
-                &mut in_buffer.as_mut()[.. stop],
-                tag_start,
-                &self.shared.cipher,
-            ) {
-                Ok(s) => s,
-                Err(()) => continue,
+            let packet_type = in_buffer.as_ref()[TYPE_INDEX];
+
+            if crate::decode_in_buffer(&mut in_buffer.as_mut()[.. stop], &self.shared.cipher)
+                .is_err()
+            {
+                continue;
             };
 
-            let mut in_buffer = in_buffer.finish(start, stop);
+            let mut in_buffer = in_buffer.finish(ENCRYPTION_START, stop);
 
             let mut read_cursor = Cursor::new(in_buffer.as_ref());
 
@@ -856,8 +846,8 @@ impl StreamReceiver {
                     return Err(Error::Disconnect);
                 },
                 Type::UNRELIABLE => {
-                    let channel: Channel = seek_read!(read_cursor.read_varint(), "channel");
-                    in_buffer.start += read_cursor.position() as usize;
+                    let channel: Channel = seek_read!(read_cursor.read_bytes(), "channel");
+                    in_buffer.start += read_cursor.position().to_usize();
                     return Ok(ReceivedData {
                         channel,
                         is_reliable: false,
@@ -865,10 +855,10 @@ impl StreamReceiver {
                     });
                 },
                 Type::UNRELIABLE_SPLIT_START => {
-                    let channel: Channel = seek_read!(read_cursor.read_varint(), "channel");
-                    let split_id: u16 = seek_read!(read_cursor.read_varint(), "split_id");
-                    let expected_packets: usize =
-                        seek_read!(read_cursor.read_varint(), "expected_packets");
+                    let channel: Channel = seek_read!(read_cursor.read_bytes(), "channel");
+                    let split_id: SplitId = seek_read!(read_cursor.read_bytes(), "split_id");
+                    let expected_packets: u32 =
+                        seek_read!(read_cursor.read_bytes(), "expected_packets");
 
                     if expected_packets > MAX_SPLIT_PACKETS {
                         log::debug!(
@@ -895,18 +885,18 @@ impl StreamReceiver {
                         *b_channel = channel;
                         *b_complete_shards = 0;
                         b_shards.clear();
-                        b_shards.resize(expected_packets, UnreliableBufferShard::new());
+                        b_shards.resize(expected_packets.to_usize(), UnreliableBufferShard::new());
                         b
                     } else {
                         UnreliableBuffer {
                             split_id,
                             channel,
                             complete_shards: 0,
-                            shards: vec![UnreliableBufferShard::new(); expected_packets],
+                            shards: vec![UnreliableBufferShard::new(); expected_packets.to_usize()],
                         }
                     };
 
-                    in_buffer.start += read_cursor.position() as usize;
+                    in_buffer.start += read_cursor.position().to_usize();
                     let in_buffer: &[u8] = in_buffer.as_ref();
 
                     let shard = split_buffer.shards.get_mut(0).unwrap();
@@ -919,11 +909,11 @@ impl StreamReceiver {
                     self.unreliable_split_buffers.push_front(split_buffer);
                 },
                 Type::UNRELIABLE_SPLIT => {
-                    let channel: Channel = seek_read!(read_cursor.read_varint(), "channel");
-                    let split_id: u16 = seek_read!(read_cursor.read_varint(), "split_id");
-                    let count: usize = seek_read!(read_cursor.read_varint(), "count");
+                    let channel: Channel = seek_read!(read_cursor.read_bytes(), "channel");
+                    let split_id: SplitId = seek_read!(read_cursor.read_bytes(), "split_id");
+                    let count: u32 = seek_read!(read_cursor.read_bytes(), "count");
 
-                    in_buffer.start += read_cursor.position() as usize;
+                    in_buffer.start += read_cursor.position().to_usize();
                     let in_buffer: &[u8] = in_buffer.as_ref();
 
                     let split_buffer = match self.unreliable_split_buffers.iter_mut().find(|b| {
@@ -933,7 +923,7 @@ impl StreamReceiver {
                         None => continue,
                     };
 
-                    let shard = match split_buffer.shards.get_mut(count) {
+                    let shard = match split_buffer.shards.get_mut(count.to_usize()) {
                         Some(s) => s,
                         None => {
                             debug!("shard not found for count {}", count);
@@ -946,7 +936,7 @@ impl StreamReceiver {
                         continue;
                     }
 
-                    let shard = split_buffer.shards.get_mut(count).unwrap();
+                    let shard = split_buffer.shards.get_mut(count.to_usize()).unwrap();
 
                     shard.buffer[.. in_buffer.len()].copy_from_slice(in_buffer);
                     shard.length = in_buffer.len();
@@ -972,8 +962,8 @@ impl StreamReceiver {
                     }
                 },
                 Type::RELIABLE | Type::RELIABLE_SPLIT => {
-                    let channel: Channel = seek_read!(read_cursor.read_varint(), "channel");
-                    let sequence: Sequence = seek_read!(read_cursor.read_varint(), "sequence");
+                    let channel: Channel = seek_read!(read_cursor.read_bytes(), "channel");
+                    let sequence: Sequence = seek_read!(read_cursor.read_bytes(), "sequence");
 
                     // TODO: do not answer if the sequence is not previous, but random?
                     stream_send_ack(&self.shared, &mut self.feedback, sequence).await?;
@@ -981,10 +971,10 @@ impl StreamReceiver {
                     // TODO verify correctness
                     let index = sequence.wrapping_sub(self.sequence);
 
-                    in_buffer.start += read_cursor.position() as usize;
+                    in_buffer.start += read_cursor.position().to_usize();
 
                     if index < RELIABLE_QUEUE_LENGTH {
-                        let queue_place = self.reliable_queue.get_mut(index as usize).unwrap();
+                        let queue_place = self.reliable_queue.get_mut(index.to_usize()).unwrap();
 
                         *queue_place = Some(QueueEntry {
                             buffer: in_buffer,
@@ -1012,9 +1002,9 @@ struct Clients {
 
 impl Clients {
     // first two ids are reserved for server and a new connection
-    const ID_OFFSET: usize = 2;
+    const ID_OFFSET: Id = 2;
 
-    fn new(max_clients: usize) -> Self {
+    fn new(max_clients: Id) -> Self {
         Self {
             clients: (0 .. max_clients).map(|_| None).collect(),
             free_indices: (0 .. max_clients).rev().collect(),
@@ -1025,19 +1015,23 @@ impl Clients {
         if id < Self::ID_OFFSET {
             return None;
         }
-        self.clients.get(id - Self::ID_OFFSET)?.as_ref()
+        self.clients
+            .get((id - Self::ID_OFFSET).to_usize())?
+            .as_ref()
     }
 
     fn get_mut(&mut self, id: Id) -> Option<&mut Client> {
         if id < Self::ID_OFFSET {
             return None;
         }
-        self.clients.get_mut(id - Self::ID_OFFSET)?.as_mut()
+        self.clients
+            .get_mut((id - Self::ID_OFFSET).to_usize())?
+            .as_mut()
     }
 
-    fn push(&mut self, client: Client) -> Option<usize> {
+    fn push(&mut self, client: Client) -> Option<Id> {
         self.free_indices.pop().map(|idx| {
-            *self.clients.get_mut(idx).unwrap() = Some(client);
+            *self.clients.get_mut(idx.to_usize()).unwrap() = Some(client);
             idx + Self::ID_OFFSET
         })
     }
@@ -1048,7 +1042,7 @@ impl Clients {
         }
 
         let idx = id - Self::ID_OFFSET;
-        let res = mem::replace(self.clients.get_mut(idx)?, None);
+        let res = mem::replace(self.clients.get_mut(idx.to_usize())?, None);
 
         if res.is_some() {
             self.free_indices.push(idx);
@@ -1082,7 +1076,7 @@ pub struct Connection {
 #[derive(Debug)]
 pub struct ServerParameters {
     /// Maximum number of simultaneous connections that the server can have.
-    pub max_connections: usize,
+    pub max_connections: Id,
 }
 
 impl Default for ServerParameters {
@@ -1177,7 +1171,7 @@ impl Server {
             match next {
                 ServerPacket::In((len, addr)) => {
                     let mut read_cursor = Cursor::new(self.receive_buffer.as_ref());
-                    let sender: usize = seek_read!(read_cursor.read_varint(), "sender");
+                    let sender: Id = seek_read!(read_cursor.read_bytes(), "sender");
 
                     let mut packet_type = Type::UNDEFINED;
                     seek_read!(
@@ -1234,10 +1228,10 @@ impl Server {
 
                             let mut write_cursor = Cursor::new(self.receive_buffer.as_mut_slice());
 
-                            write_cursor.write_varint(SERVER_ID).unwrap();
-                            write_cursor.write_varint(Type::ACCEPT).unwrap();
+                            write_cursor.write_bytes(SERVER_ID).unwrap();
+                            write_cursor.write_bytes(Type::ACCEPT).unwrap();
                             write_cursor.write_all(&self_key).unwrap();
-                            write_cursor.write_varint(id).unwrap();
+                            write_cursor.write_bytes(id).unwrap();
 
                             if self
                                 .transport
@@ -1291,15 +1285,11 @@ impl Server {
                         },
                         Type::ACKNOWLEDGE => {
                             if let Some(client) = self.clients.get_mut(sender) {
-                                let tag_start = read_cursor.position() as usize;
-
                                 let data = InBuffer {
-                                    packet_type,
                                     buffer: mem::replace(
                                         &mut self.receive_buffer,
                                         WriteBuffer::new(),
                                     ),
-                                    tag_start,
                                     stop: len,
                                 };
 
@@ -1308,15 +1298,11 @@ impl Server {
                         },
                         _ => {
                             if let Some(client) = self.clients.get_mut(sender) {
-                                let tag_start = read_cursor.position() as usize;
-
                                 let data = InBuffer {
-                                    packet_type,
                                     buffer: mem::replace(
                                         &mut self.receive_buffer,
                                         WriteBuffer::new(),
                                     ),
-                                    tag_start,
                                     stop: len,
                                 };
 
@@ -1355,20 +1341,17 @@ impl Server {
                                 let mut write_cursor =
                                     Cursor::new(self.receive_buffer.as_mut_slice());
 
-                                write_cursor.write_varint(SERVER_ID).unwrap();
-                                write_cursor.write_varint(Type::DISCONNECT).unwrap();
+                                write_cursor.write_bytes(SERVER_ID).unwrap();
+                                write_cursor.write_bytes(Type::DISCONNECT).unwrap();
 
-                                let tag_start = write_cursor.position();
-
-                                let len = crate::tag_sign_in_buffer(
-                                    self.receive_buffer.as_mut(),
-                                    &cipher,
-                                    tag_start as usize,
-                                );
+                                crate::tag_sign_in_buffer(self.receive_buffer.as_mut(), &cipher);
 
                                 let _ = self
                                     .transport
-                                    .send_to(&self.receive_buffer.as_ref()[.. len], client.address)
+                                    .send_to(
+                                        &self.receive_buffer.as_ref()[.. ENCRYPTION_START],
+                                        client.address,
+                                    )
                                     .await;
                             }
                         },
