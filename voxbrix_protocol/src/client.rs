@@ -35,15 +35,14 @@
 //!
 //!     let send_future = async {
 //!         sender.send_reliable(b"Hello Server!").await;
-//!         loop {
-//!             // Senders send no data passively by themselves and resending lost messages
-//!             // in reliable data transfer happens lazily, right before sending a new one.
-//!             // Therefore, it is highly recommended to send some kind of "ping" or "keepalive"
-//!             // messages periodically, so the lost packets could be retransmitted even if you
-//!             // do not send any meaningful data.
-//!             time::sleep(Duration::from_secs(1)).await;
-//!             sender.send_reliable(b"keepalive").await;
-//!         }
+//!
+//!         // Senders send no data passively by themselves and resending lost messages
+//!         // in reliable data transfer happens lazily, right before sending a new one.
+//!         // To make sure all messages are delivered, there must be either a periodical
+//!         // "keepalive" message or a [`wait_complete`] call.
+//!         // [`wait_complete`] resends lost messages and only completes when all messages
+//!         // are delivered.
+//!         sender.wait_complete().await;
 //!     };
 //!
 //!     future::or(recv_future, send_future).await;
