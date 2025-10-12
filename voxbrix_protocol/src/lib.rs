@@ -49,7 +49,6 @@ const MAX_HEADER_SIZE: usize = mem::size_of::<Id>() // sender
     + 1 // type
     + TAG_SIZE // tag
     + NONCE_SIZE // nonce
-    + mem::size_of::<Channel>()
     + mem::size_of::<SplitId>()
     + mem::size_of::<u32>(); // count/length
 
@@ -84,19 +83,17 @@ impl<T> AsSlice<T> for Cursor<&mut [T]> {
 
 struct UnreliableBuffer<B> {
     split_id: SplitId,
-    channel: Channel,
     complete_shards: u32,
     shards: Vec<Option<B>>,
 }
 
 impl<B> UnreliableBuffer<B> {
-    fn new(split_id: SplitId, channel: Channel, expected_packets: u32) -> Self {
+    fn new(split_id: SplitId, expected_packets: u32) -> Self {
         let mut shards = Vec::new();
         shards.resize_with(expected_packets.to_usize(), || None);
 
         Self {
             split_id,
-            channel,
             complete_shards: 0,
             shards,
         }
@@ -106,9 +103,8 @@ impl<B> UnreliableBuffer<B> {
         TryInto::<usize>::try_into(self.complete_shards).unwrap() == self.shards.len()
     }
 
-    fn clear(&mut self, split_id: SplitId, channel: Channel, expected_packets: u32) {
+    fn clear(&mut self, split_id: SplitId, expected_packets: u32) {
         self.split_id = split_id;
-        self.channel = channel;
         self.complete_shards = 0;
         self.shards.clear();
         self.shards
@@ -144,7 +140,6 @@ macro_rules! seek_read_return {
 type Id = u32;
 type Sequence = u128;
 type SplitId = u128;
-pub type Channel = u32;
 type Key = [u8; 33];
 const KEY_BUFFER: Key = [0; 33];
 type Secret = [u8; 32];
@@ -183,14 +178,12 @@ impl Type {
         // tag: [u8; TAG_SIZE],
         // nonce: [u8; NONCE_SIZE],
         // encrypted fields:
-        // channel: Channel,
         // data: &[u8],
 
     const UNRELIABLE_SPLIT_START: u8 = 5;
         // tag: [u8; TAG_SIZE],
         // nonce: [u8; NONCE_SIZE],
         // encrypted fields:
-        // channel: Channel,
         // split_id: SplitId,
         // length: u32,
         // data: &[u8],
@@ -199,7 +192,6 @@ impl Type {
         // tag: [u8; TAG_SIZE],
         // nonce: [u8; NONCE_SIZE],
         // encrypted fields:
-        // channel: Channel,
         // split_id: SplitId,
         // count: u32,
         // data: &[u8],
@@ -208,7 +200,6 @@ impl Type {
         // tag: [u8; TAG_SIZE],
         // nonce: [u8; NONCE_SIZE],
         // encrypted fields:
-        // channel: Channel,
         // sequence: Sequence,
         // data: &[u8],
 
@@ -216,7 +207,6 @@ impl Type {
         // tag: [u8; TAG_SIZE],
         // nonce: [u8; NONCE_SIZE],
         // encrypted fields:
-        // channel: Channel,
         // sequence: Sequence,
         // data: &[u8],
 
@@ -513,14 +503,13 @@ mod tests {
                         } = server.accept().await.expect("connection accepted");
 
                         *task.borrow_mut() = Some(task::spawn_local(async move {
-                            tx.send_unreliable(0, b"1HelloWorld1")
+                            tx.send_unreliable(b"1HelloWorld1")
                                 .await
                                 .expect("server sent packet");
 
                             let msg = rx.recv().await.unwrap();
 
                             assert_eq!(msg.data().as_ref(), b"2HelloWorld2");
-                            assert_eq!(msg.channel(), 1);
                         }));
                     }
                 });
@@ -543,9 +532,8 @@ mod tests {
                 let msg = rx.recv().await.expect("client message receive");
 
                 assert_eq!(msg.data().as_ref(), b"1HelloWorld1");
-                assert_eq!(msg.channel(), 0);
 
-                tx.send_unreliable(1, b"2HelloWorld2")
+                tx.send_unreliable(b"2HelloWorld2")
                     .await
                     .expect("client sent packet");
 
@@ -584,9 +572,7 @@ mod tests {
                             server.accept().await.expect("connection accepted");
 
                         task::spawn_local(async move {
-                            tx.send_unreliable(0, data)
-                                .await
-                                .expect("server sent packet");
+                            tx.send_unreliable(data).await.expect("server sent packet");
                         });
                     }
                 });
@@ -607,7 +593,6 @@ mod tests {
                 let msg = rx.recv().await.expect("client message receive");
 
                 assert_eq!(msg.data().as_ref(), data.as_slice());
-                assert_eq!(msg.channel(), 0);
             })
             .await;
     }
@@ -647,7 +632,6 @@ mod tests {
                             let msg = rx.recv().await.expect("server received data");
 
                             assert_eq!(msg.data().as_ref(), data.as_slice());
-                            assert_eq!(msg.channel(), 1);
                         }));
                     }
                 });
@@ -663,9 +647,7 @@ mod tests {
                     .await
                     .expect("client connection");
 
-                tx.send_unreliable(1, &data)
-                    .await
-                    .expect("client sent data");
+                tx.send_unreliable(&data).await.expect("client sent data");
 
                 task.borrow_mut().take().unwrap().await.unwrap();
             })
@@ -716,7 +698,6 @@ mod tests {
                                         .collect::<Vec<u8>>()
                                         .as_slice()
                                 );
-                                assert_eq!(msg.channel(), 2);
                             }
                         }));
                     }
@@ -735,7 +716,6 @@ mod tests {
 
                 for i in 0 .. 10 {
                     tx.send_unreliable(
-                        2,
                         [data.as_slice(), &[i]]
                             .into_iter()
                             .flatten()
@@ -788,7 +768,6 @@ mod tests {
                         *task.borrow_mut() = Some(task::spawn_local(async move {
                             for i in 20 .. 30 {
                                 tx.send_unreliable(
-                                    5,
                                     [data.as_slice(), &[i]]
                                         .into_iter()
                                         .flatten()
@@ -801,7 +780,6 @@ mod tests {
                             }
                             for i in 50 .. 60 {
                                 tx.send_unreliable(
-                                    5,
                                     [data.as_slice(), &[i]]
                                         .into_iter()
                                         .flatten()
@@ -824,7 +802,6 @@ mod tests {
                                         .collect::<Vec<u8>>()
                                         .as_slice()
                                 );
-                                assert_eq!(msg.channel(), 7);
                             }
                             for i in 90 .. 100 {
                                 let msg = rx.recv().await.expect("server received data");
@@ -838,7 +815,6 @@ mod tests {
                                         .collect::<Vec<u8>>()
                                         .as_slice()
                                 );
-                                assert_eq!(msg.channel(), 7);
                             }
                         }));
                     }
@@ -871,7 +847,6 @@ mod tests {
                             .collect::<Vec<u8>>()
                             .as_slice()
                     );
-                    assert_eq!(msg.channel(), 5);
                 }
 
                 for i in 50 .. 60 {
@@ -886,12 +861,10 @@ mod tests {
                             .collect::<Vec<u8>>()
                             .as_slice()
                     );
-                    assert_eq!(msg.channel(), 5);
                 }
 
                 for i in 0 .. 10 {
                     tx.send_unreliable(
-                        7,
                         [data.as_slice(), &[i]]
                             .into_iter()
                             .flatten()
@@ -905,7 +878,6 @@ mod tests {
 
                 for i in 90 .. 100 {
                     tx.send_unreliable(
-                        7,
                         [data.as_slice(), &[i]]
                             .into_iter()
                             .flatten()
@@ -949,7 +921,7 @@ mod tests {
                         task::spawn_local(async move { while let Ok(_) = rx.recv().await {} });
 
                         *task.borrow_mut() = Some(task::spawn_local(async move {
-                            tx.send_reliable(0, b"HelloWorld")
+                            tx.send_reliable(b"HelloWorld")
                                 .await
                                 .expect("server sent packet");
                         }));
@@ -972,7 +944,6 @@ mod tests {
                 let msg = rx.recv().await.expect("client message receive");
 
                 assert_eq!(msg.data(), b"HelloWorld");
-                assert_eq!(msg.channel(), 0);
 
                 task.borrow_mut().take().unwrap().await.unwrap();
             })
@@ -1001,7 +972,7 @@ mod tests {
                             server.accept().await.expect("connection accepted");
 
                         *task.borrow_mut() = Some(task::spawn_local(async move {
-                            tx.send_reliable(0, b"HelloWorld")
+                            tx.send_reliable(b"HelloWorld")
                                 .await
                                 .expect("server sent packet");
                         }));
@@ -1024,7 +995,6 @@ mod tests {
                 let msg = rx.recv().await.expect("client message receive");
 
                 assert_eq!(msg.data(), b"HelloWorld");
-                assert_eq!(msg.channel(), 0);
 
                 task.borrow_mut().take().unwrap().await.unwrap();
             })
@@ -1054,7 +1024,7 @@ mod tests {
 
                         *task.borrow_mut() = Some(task::spawn_local(async move {
                             for i in 0 .. 1000 {
-                                tx.send_reliable(0, format!("HelloWorld{}", i).as_bytes())
+                                tx.send_reliable(format!("HelloWorld{}", i).as_bytes())
                                     .await
                                     .expect("server sent packet");
                             }
@@ -1078,7 +1048,6 @@ mod tests {
                 for i in 0 .. 1000 {
                     let msg = rx.recv().await.expect("client message receive");
                     assert_eq!(msg.data(), format!("HelloWorld{}", i).as_bytes());
-                    assert_eq!(msg.channel(), 0);
                 }
 
                 task.borrow_mut().take().unwrap().await.unwrap();
@@ -1113,7 +1082,7 @@ mod tests {
 
                         *task.borrow_mut() = Some(task::spawn_local(async move {
                             for i in 0 .. 1000 {
-                                tx.send_reliable(0, format!("HelloWorld{}", i).as_bytes())
+                                tx.send_reliable(format!("HelloWorld{}", i).as_bytes())
                                     .await
                                     .expect("server sent packet");
                             }
@@ -1124,7 +1093,6 @@ mod tests {
                                     msg.data().as_ref(),
                                     format!("HelloWorld{}", i).as_bytes()
                                 );
-                                assert_eq!(msg.channel(), 0);
                             }
                         }));
                     }
@@ -1148,13 +1116,12 @@ mod tests {
                 for i in 0 .. 1000 {
                     let msg = rx.recv().await.expect("client message receive");
                     assert_eq!(msg.data(), format!("HelloWorld{}", i).as_bytes());
-                    assert_eq!(msg.channel(), 0);
                 }
 
                 task::spawn_local(async move { while let Ok(_) = rx.recv().await {} });
 
                 for i in 0 .. 1000 {
-                    tx.send_reliable(0, format!("HelloWorld{}", i).as_bytes())
+                    tx.send_reliable(format!("HelloWorld{}", i).as_bytes())
                         .await
                         .expect("server sent packet");
                 }
@@ -1198,13 +1165,12 @@ mod tests {
                         } = server.accept().await.expect("connection accepted");
 
                         *task.borrow_mut() = Some(task::spawn_local(async move {
-                            tx.send_reliable(0, data.as_ref())
+                            tx.send_reliable(data.as_ref())
                                 .await
                                 .expect("server sent packet");
 
                             let msg = rx.recv().await.expect("client message receive");
                             assert_eq!(msg.data().as_ref(), data.as_slice());
-                            assert_eq!(msg.channel(), 0);
                         }));
                     }
                 });
@@ -1226,11 +1192,10 @@ mod tests {
 
                 let msg = rx.recv().await.expect("client message receive");
                 assert_eq!(msg.data().as_ref(), data.as_slice());
-                assert_eq!(msg.channel(), 0);
 
                 task::spawn_local(async move { while let Ok(_) = rx.recv().await {} });
 
-                tx.send_reliable(0, data.as_ref())
+                tx.send_reliable(data.as_ref())
                     .await
                     .expect("server sent packet");
 
@@ -1276,7 +1241,7 @@ mod tests {
                                         .collect::<Vec<_>>()
                                 }));
 
-                                tx.send_reliable(0, data.as_ref())
+                                tx.send_reliable(data.as_ref())
                                     .await
                                     .expect("server sent packet");
                             }
@@ -1294,7 +1259,6 @@ mod tests {
                                 }));
 
                                 assert_eq!(msg.data().as_ref(), data.as_slice());
-                                assert_eq!(msg.channel(), 0);
                             }
                         }));
                     }
@@ -1328,7 +1292,6 @@ mod tests {
                     }));
 
                     assert_eq!(msg.data().as_ref(), data.as_slice());
-                    assert_eq!(msg.channel(), 0);
                 }
 
                 task::spawn_local(async move { while let Ok(_) = rx.recv().await {} });
@@ -1342,7 +1305,7 @@ mod tests {
                             .cloned()
                             .collect::<Vec<_>>()
                     }));
-                    tx.send_reliable(0, data.as_ref())
+                    tx.send_reliable(data.as_ref())
                         .await
                         .expect("server sent packet");
                 }
@@ -1393,7 +1356,7 @@ mod tests {
                             let mut tx = tx;
                             let mut rx = rx;
                             for i in 0 .. amount {
-                                tx.send_reliable(0, format!("HelloWorld{}", i).as_bytes())
+                                tx.send_reliable(format!("HelloWorld{}", i).as_bytes())
                                     .await
                                     .expect("server sent packet");
                             }
@@ -1402,7 +1365,7 @@ mod tests {
                                 let mut tx = tx;
                                 loop {
                                     time::sleep(Duration::from_millis(500)).await;
-                                    tx.send_reliable(0, "serv_ping".as_bytes())
+                                    tx.send_reliable("serv_ping".as_bytes())
                                         .await
                                         .expect("server sent packet");
                                 }
@@ -1414,7 +1377,6 @@ mod tests {
                                     msg.data().as_ref(),
                                     format!("HelloWorld{}", i).as_bytes()
                                 );
-                                assert_eq!(msg.channel(), 0);
                             }
                         }));
                     }
@@ -1433,13 +1395,12 @@ mod tests {
                 for i in 0 .. amount {
                     let msg = rx.recv().await.expect("client message receive");
                     assert_eq!(msg.data(), format!("HelloWorld{}", i).as_bytes());
-                    assert_eq!(msg.channel(), 0);
                 }
 
                 task::spawn_local(async move { while let Ok(_) = rx.recv().await {} });
 
                 for i in 0 .. amount {
-                    tx.send_reliable(0, format!("HelloWorld{}", i).as_bytes())
+                    tx.send_reliable(format!("HelloWorld{}", i).as_bytes())
                         .await
                         .expect("server sent packet");
                 }
@@ -1448,7 +1409,7 @@ mod tests {
                     let mut tx = tx;
                     loop {
                         time::sleep(Duration::from_millis(500)).await;
-                        tx.send_reliable(0, "cl_ping".as_bytes())
+                        tx.send_reliable("cl_ping".as_bytes())
                             .await
                             .expect("server sent packet");
                     }
@@ -1512,7 +1473,7 @@ mod tests {
                             let mut tx = tx;
                             let mut rx = rx;
                             for i in 0 .. amount {
-                                tx.send_reliable(0, format!("HelloWorld{}", i).as_bytes())
+                                tx.send_reliable(format!("HelloWorld{}", i).as_bytes())
                                     .await
                                     .expect("server sent packet");
                             }
@@ -1525,7 +1486,6 @@ mod tests {
                                     msg.data().as_ref(),
                                     format!("HelloWorld{}", i).as_bytes()
                                 );
-                                assert_eq!(msg.channel(), 0);
                             }
                         }));
                     }
@@ -1544,13 +1504,12 @@ mod tests {
                 for i in 0 .. amount {
                     let msg = rx.recv().await.expect("client message receive");
                     assert_eq!(msg.data(), format!("HelloWorld{}", i).as_bytes());
-                    assert_eq!(msg.channel(), 0);
                 }
 
                 task::spawn_local(async move { while let Ok(_) = rx.recv().await {} });
 
                 for i in 0 .. amount {
-                    tx.send_reliable(0, format!("HelloWorld{}", i).as_bytes())
+                    tx.send_reliable(format!("HelloWorld{}", i).as_bytes())
                         .await
                         .expect("server sent packet");
                 }
@@ -1608,7 +1567,7 @@ mod tests {
                             let mut tx = tx;
                             let mut rx = rx;
                             for i in 0 .. amount {
-                                tx.send_reliable(0, format!("HelloWorld{}", i).as_bytes())
+                                tx.send_reliable(format!("HelloWorld{}", i).as_bytes())
                                     .await
                                     .expect("server sent packet");
                             }
@@ -1621,7 +1580,6 @@ mod tests {
                                     msg.data().as_ref(),
                                     format!("HelloWorld{}", i).as_bytes()
                                 );
-                                assert_eq!(msg.channel(), 0);
                             }
 
                             task::spawn_local(async move { while let Ok(_) = rx.recv().await {} });
@@ -1642,13 +1600,12 @@ mod tests {
                 for i in 0 .. amount {
                     let msg = rx.recv().await.expect("client message receive");
                     assert_eq!(msg.data(), format!("HelloWorld{}", i).as_bytes());
-                    assert_eq!(msg.channel(), 0);
                 }
 
                 task::spawn_local(async move { while let Ok(_) = rx.recv().await {} });
 
                 for i in 0 .. amount {
-                    tx.send_reliable(0, format!("HelloWorld{}", i).as_bytes())
+                    tx.send_reliable(format!("HelloWorld{}", i).as_bytes())
                         .await
                         .expect("server sent packet");
                 }
@@ -1691,7 +1648,7 @@ mod tests {
 
                 let task = async move {
                     for i in 0 .. 200000 {
-                        tx.send_reliable(0, format!("HelloWorld{}", i).as_bytes())
+                        tx.send_reliable(format!("HelloWorld{}", i).as_bytes())
                             .await
                             .expect("server sent packet");
                     }
@@ -1699,7 +1656,6 @@ mod tests {
                     for i in 0 .. 200000 {
                         let msg = rx.recv().await.expect("client message receive");
                         assert_eq!(msg.data().as_ref(), format!("HelloWorld{}", i).as_bytes());
-                        assert_eq!(msg.channel(), 0);
                     }
                 };
 
@@ -1737,7 +1693,6 @@ mod tests {
             for i in 0 .. 200000 {
                 let msg = rx.recv().await.expect("client message receive");
                 assert_eq!(msg.data(), format!("HelloWorld{}", i).as_bytes());
-                assert_eq!(msg.channel(), 0);
             }
 
             task::spawn_local(async move {
@@ -1746,7 +1701,7 @@ mod tests {
             });
 
             for i in 0 .. 200000 {
-                tx.send_reliable(0, format!("HelloWorld{}", i).as_bytes())
+                tx.send_reliable(format!("HelloWorld{}", i).as_bytes())
                     .await
                     .expect("server sent packet");
             }

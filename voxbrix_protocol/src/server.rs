@@ -28,16 +28,12 @@
 //!
 //!     let recv_future = async {
 //!         while let Ok(msg) = receiver.recv().await {
-//!             println!(
-//!                 "channel: {}, data: {:?}",
-//!                 msg.channel(),
-//!                 msg.data().as_ref()
-//!             );
+//!             println!("data: {:?}", msg.data().as_ref());
 //!         }
 //!     };
 //!
 //!     let send_future = async {
-//!         sender.send_reliable(0, b"Hello Server!").await;
+//!         sender.send_reliable(b"Hello Server!").await;
 //!         loop {
 //!             // Senders send no data passively by themselves and resending lost messages
 //!             // in reliable data transfer happens lazily, right before sending a new one.
@@ -45,7 +41,7 @@
 //!             // messages periodically, so the lost packets could be retransmitted even if you
 //!             // do not send any meaningful data.
 //!             time::sleep(Duration::from_secs(1)).await;
-//!             sender.send_reliable(0, b"keepalive").await;
+//!             sender.send_reliable(b"keepalive").await;
 //!         }
 //!     };
 //!
@@ -63,7 +59,6 @@
 use crate::{
     seek_read,
     AsSlice,
-    Channel,
     Id,
     Key,
     ReadExt,
@@ -393,16 +388,16 @@ pub struct StreamSender {
 
 impl StreamSender {
     /// Send a data slice unreliably.
-    pub async fn send_unreliable(&mut self, channel: Channel, data: &[u8]) -> Result<(), Error> {
-        self.unreliable.send_unreliable(channel, data).await
+    pub async fn send_unreliable(&mut self, data: &[u8]) -> Result<(), Error> {
+        self.unreliable.send_unreliable(data).await
     }
 
     /// Send a data slice reliably.
     ///
     /// **Lazily sends previous undelivered reliable messages before trying to send a new one.
     /// It is highly recommended to send keepalive packets periodically to have lost messages retransmitted.**
-    pub async fn send_reliable(&mut self, channel: Channel, data: &[u8]) -> Result<(), Error> {
-        self.reliable.send_reliable(channel, data).await
+    pub async fn send_reliable(&mut self, data: &[u8]) -> Result<(), Error> {
+        self.reliable.send_reliable(data).await
     }
 
     /// Wait for all transmitted data to be delivered.
@@ -432,15 +427,13 @@ pub struct StreamUnreliableSender {
 impl StreamUnreliableSender {
     async fn send_unreliable_one(
         &mut self,
-        channel: Channel,
-        data: &[u8],
         packet_type: u8,
+        data: &[u8],
         len_or_count: Option<u32>,
     ) -> Result<(), Error> {
         let mut buffer = WriteBuffer::new();
 
         let stop = crate::write_in_buffer(buffer.as_mut(), SERVER_ID, packet_type, |cursor| {
-            cursor.write_bytes(channel).unwrap();
             if let Some(len_or_count) = len_or_count {
                 cursor.write_bytes(self.unreliable_split_id).unwrap();
                 cursor.write_bytes(len_or_count).unwrap();
@@ -465,7 +458,7 @@ impl StreamUnreliableSender {
     }
 
     /// Send a data slice unreliably.
-    pub async fn send_unreliable(&mut self, channel: Channel, data: &[u8]) -> Result<(), Error> {
+    pub async fn send_unreliable(&mut self, data: &[u8]) -> Result<(), Error> {
         if data.len() > MAX_DATA_SIZE {
             self.unreliable_split_id = self
                 .unreliable_split_id
@@ -475,9 +468,8 @@ impl StreamUnreliableSender {
                 .try_into()
                 .map_err(|_| Error::MessageTooLarge)?;
             self.send_unreliable_one(
-                channel,
-                &data[0 .. MAX_DATA_SIZE],
                 Type::UNRELIABLE_SPLIT_START,
+                &data[0 .. MAX_DATA_SIZE],
                 Some(length),
             )
             .await?;
@@ -485,20 +477,14 @@ impl StreamUnreliableSender {
             let mut start = MAX_DATA_SIZE;
             for count in 1 .. length {
                 let stop = start + (data.len() - start).min(MAX_DATA_SIZE);
-                self.send_unreliable_one(
-                    channel,
-                    &data[start .. stop],
-                    Type::UNRELIABLE_SPLIT,
-                    Some(count),
-                )
-                .await?;
+                self.send_unreliable_one(Type::UNRELIABLE_SPLIT, &data[start .. stop], Some(count))
+                    .await?;
                 start = stop;
             }
 
             Ok(())
         } else {
-            self.send_unreliable_one(channel, data, Type::UNRELIABLE, None)
-                .await
+            self.send_unreliable_one(Type::UNRELIABLE, data, None).await
         }
     }
 }
@@ -536,17 +522,10 @@ impl StreamReliableSender {
         Ok(())
     }
 
-    fn pack_data(
-        &mut self,
-        packet_type: u8,
-        sequence: Sequence,
-        channel: Channel,
-        data: &[u8],
-    ) -> ReadBuffer {
+    fn pack_data(&mut self, packet_type: u8, sequence: Sequence, data: &[u8]) -> ReadBuffer {
         let mut buffer = WriteBuffer::new();
 
         let stop = crate::write_in_buffer(buffer.as_mut(), SERVER_ID, packet_type, |cursor| {
-            cursor.write_bytes(channel).unwrap();
             cursor.write_bytes(sequence).unwrap();
             cursor.write_all(data).unwrap();
         });
@@ -637,12 +616,7 @@ impl StreamReliableSender {
         Ok(())
     }
 
-    async fn send_reliable_one(
-        &mut self,
-        packet_type: u8,
-        channel: Channel,
-        data: &[u8],
-    ) -> Result<(), Error> {
+    async fn send_reliable_one(&mut self, packet_type: u8, data: &[u8]) -> Result<(), Error> {
         let mut must_wait = false;
         loop {
             self.handle_acks_resend(mem::replace(&mut must_wait, false))
@@ -660,7 +634,7 @@ impl StreamReliableSender {
                     .checked_add(self.queue.len().to_u128())
                     .ok_or(Error::InvalidConnection)?;
                 // Finally send our latest packet and add that to waiting list
-                let buffer = self.pack_data(packet_type, sequence, channel, data);
+                let buffer = self.pack_data(packet_type, sequence, data);
                 self.queue.push_back(PacketState::Pending {
                     sent_at: Instant::now(),
                     buffer: buffer.clone(),
@@ -676,18 +650,18 @@ impl StreamReliableSender {
     ///
     /// **Lazily sends previous undelivered reliable messages before trying to send a new one.
     /// It is highly recommended to send keepalive packets periodically to have lost messages retransmitted.**
-    pub async fn send_reliable(&mut self, channel: Channel, data: &[u8]) -> Result<(), Error> {
+    pub async fn send_reliable(&mut self, data: &[u8]) -> Result<(), Error> {
         let mut start = 0;
 
         while data.len() - start > MAX_DATA_SIZE {
             let stop = start + MAX_DATA_SIZE;
-            self.send_reliable_one(Type::RELIABLE_SPLIT, channel, &data[start .. stop])
+            self.send_reliable_one(Type::RELIABLE_SPLIT, &data[start .. stop])
                 .await?;
 
             start = stop;
         }
 
-        self.send_reliable_one(Type::RELIABLE, channel, &data[start ..])
+        self.send_reliable_one(Type::RELIABLE, &data[start ..])
             .await?;
 
         Ok(())
@@ -707,23 +681,16 @@ impl StreamReliableSender {
 #[derive(Clone)]
 struct QueueEntry {
     buffer: ReadBuffer,
-    channel: Channel,
     is_split: bool,
 }
 
 /// Received message with metadata.
 pub struct ReceivedData {
-    channel: Channel,
     is_reliable: bool,
     data: Packet,
 }
 
 impl ReceivedData {
-    /// Get channel of this message.
-    pub fn channel(&self) -> Channel {
-        self.channel
-    }
-
     /// If this data was sent as a reliable or unreliable message.
     pub fn is_reliable(&self) -> bool {
         self.is_reliable
@@ -741,7 +708,7 @@ pub struct StreamReceiver {
     sequence: Sequence,
     reliable_queue: VecDeque<Option<QueueEntry>>,
     reliable_split_buffer: Vec<u8>,
-    reliable_split_channel: Option<Channel>,
+    reliable_split_ongoing: bool,
     unreliable_split_buffers: VecDeque<UnreliableBuffer<ReadBuffer>>,
     transport_receiver: ChannelRx<InBuffer>,
     feedback: Feedback,
@@ -767,23 +734,16 @@ impl StreamReceiver {
 
                 let QueueEntry {
                     buffer: queue_buffer,
-                    channel,
                     is_split,
                 } = self.reliable_queue.pop_front().flatten().unwrap();
 
                 self.reliable_queue.push_back(None);
 
                 if is_split {
-                    // Split started, if not started - cleanup & start,
-                    // if we already started - check the channel
-                    if self.reliable_split_channel.is_none() {
-                        self.reliable_split_channel = Some(channel);
+                    // Split started, if not started - cleanup & start
+                    if !self.reliable_split_ongoing {
+                        self.reliable_split_ongoing = true;
                         self.reliable_split_buffer.clear();
-                    } else if let Some(reliable_split_channel) = self.reliable_split_channel {
-                        if reliable_split_channel != channel {
-                            debug!("skipping mishappened packet with channel {}", channel);
-                            continue;
-                        }
                     }
 
                     if self.reliable_split_buffer.len() + queue_buffer.as_ref().len()
@@ -797,31 +757,26 @@ impl StreamReceiver {
 
                     continue;
                 } else {
-                    let buf = if let Some(reliable_split_channel) = self.reliable_split_channel {
+                    let buf = if self.reliable_split_ongoing {
                         // Split just completed, extending and returning
-                        if reliable_split_channel == channel {
-                            if self.reliable_split_buffer.len() + queue_buffer.as_ref().len()
-                                > MAX_SPLIT_DATA_SIZE
-                            {
-                                return Err(Error::PeerMessageTooLarge);
-                            }
-
-                            self.reliable_split_buffer
-                                .extend_from_slice(queue_buffer.as_ref());
-
-                            self.reliable_split_channel = None;
-
-                            mem::take(&mut self.reliable_split_buffer).into()
-                        } else {
-                            continue;
+                        if self.reliable_split_buffer.len() + queue_buffer.as_ref().len()
+                            > MAX_SPLIT_DATA_SIZE
+                        {
+                            return Err(Error::PeerMessageTooLarge);
                         }
+
+                        self.reliable_split_buffer
+                            .extend_from_slice(queue_buffer.as_ref());
+
+                        self.reliable_split_ongoing = false;
+
+                        mem::take(&mut self.reliable_split_buffer).into()
                     } else {
                         // Non-split packet arrived
                         queue_buffer.into()
                     };
 
                     return Ok(ReceivedData {
-                        channel,
                         is_reliable: true,
                         data: buf,
                     });
@@ -861,16 +816,13 @@ impl StreamReceiver {
                     return Err(Error::Disconnect);
                 },
                 Type::UNRELIABLE => {
-                    let channel: Channel = seek_read!(read_cursor.read_bytes(), "channel");
                     in_buffer.start += read_cursor.position().to_usize();
                     return Ok(ReceivedData {
-                        channel,
                         is_reliable: false,
                         data: in_buffer.into(),
                     });
                 },
                 Type::UNRELIABLE_SPLIT_START => {
-                    let channel: Channel = seek_read!(read_cursor.read_bytes(), "channel");
                     let split_id: SplitId = seek_read!(read_cursor.read_bytes(), "split_id");
                     let expected_packets: u32 =
                         seek_read!(read_cursor.read_bytes(), "expected_packets");
@@ -894,7 +846,7 @@ impl StreamReceiver {
                     let mut split_buffer = if let Some(index) = complete_index {
                         self.unreliable_split_buffers.remove(index).unwrap()
                     } else if self.unreliable_split_buffers.len() < UNRELIABLE_BUFFERS {
-                        UnreliableBuffer::new(split_id, channel, expected_packets)
+                        UnreliableBuffer::new(split_id, expected_packets)
                     } else {
                         let (index, min_split_id) = self
                             .unreliable_split_buffers
@@ -911,7 +863,7 @@ impl StreamReceiver {
                         self.unreliable_split_buffers.remove(index).unwrap()
                     };
 
-                    split_buffer.clear(split_id, channel, expected_packets);
+                    split_buffer.clear(split_id, expected_packets);
 
                     in_buffer.start += read_cursor.position().to_usize();
 
@@ -923,15 +875,16 @@ impl StreamReceiver {
                     self.unreliable_split_buffers.push_front(split_buffer);
                 },
                 Type::UNRELIABLE_SPLIT => {
-                    let channel: Channel = seek_read!(read_cursor.read_bytes(), "channel");
                     let split_id: SplitId = seek_read!(read_cursor.read_bytes(), "split_id");
                     let count: u32 = seek_read!(read_cursor.read_bytes(), "count");
 
                     in_buffer.start += read_cursor.position().to_usize();
 
-                    let split_buffer = match self.unreliable_split_buffers.iter_mut().find(|b| {
-                        b.split_id == split_id && b.channel == channel && !b.is_complete()
-                    }) {
+                    let split_buffer = match self
+                        .unreliable_split_buffers
+                        .iter_mut()
+                        .find(|b| b.split_id == split_id && !b.is_complete())
+                    {
                         Some(b) => b,
                         None => continue,
                     };
@@ -964,14 +917,12 @@ impl StreamReceiver {
                         // MAX_PACKET_SIZE before continuing
 
                         return Ok(ReceivedData {
-                            channel,
                             is_reliable: false,
                             data: buf.into(),
                         });
                     }
                 },
                 Type::RELIABLE | Type::RELIABLE_SPLIT => {
-                    let channel: Channel = seek_read!(read_cursor.read_bytes(), "channel");
                     let sequence: Sequence = seek_read!(read_cursor.read_bytes(), "sequence");
 
                     if let Some(index) = sequence.checked_sub(self.sequence) {
@@ -983,7 +934,6 @@ impl StreamReceiver {
 
                             *queue_place = Some(QueueEntry {
                                 buffer: in_buffer,
-                                channel,
                                 is_split: packet_type == Type::RELIABLE_SPLIT,
                             });
                         }
@@ -1284,7 +1234,7 @@ impl Server {
                                     reliable_queue: vec![None; RELIABLE_QUEUE_LENGTH as usize]
                                         .into(),
                                     reliable_split_buffer: Vec::new(),
-                                    reliable_split_channel: None,
+                                    reliable_split_ongoing: false,
                                     unreliable_split_buffers: VecDeque::with_capacity(
                                         UNRELIABLE_BUFFERS,
                                     ),

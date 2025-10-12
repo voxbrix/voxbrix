@@ -33,14 +33,12 @@ Other fields depend on the `type`:
         // tag: [u8; TAG_SIZE],
         // nonce: [u8; NONCE_SIZE],
         // encrypted fields:
-        // channel: Channel,
         // data: &[u8],
 
     const UNRELIABLE_SPLIT_START: u8 = 5;
         // tag: [u8; TAG_SIZE],
         // nonce: [u8; NONCE_SIZE],
         // encrypted fields:
-        // channel: Channel,
         // split_id: SplitId,
         // length: u32,
         // data: &[u8],
@@ -49,7 +47,6 @@ Other fields depend on the `type`:
         // tag: [u8; TAG_SIZE],
         // nonce: [u8; NONCE_SIZE],
         // encrypted fields:
-        // channel: Channel,
         // split_id: SplitId,
         // count: u32,
         // data: &[u8],
@@ -58,7 +55,6 @@ Other fields depend on the `type`:
         // tag: [u8; TAG_SIZE],
         // nonce: [u8; NONCE_SIZE],
         // encrypted fields:
-        // channel: Channel,
         // sequence: Sequence,
         // data: &[u8],
 
@@ -66,7 +62,6 @@ Other fields depend on the `type`:
         // tag: [u8; TAG_SIZE],
         // nonce: [u8; NONCE_SIZE],
         // encrypted fields:
-        // channel: Channel,
         // sequence: Sequence,
         // data: &[u8],
 ```
