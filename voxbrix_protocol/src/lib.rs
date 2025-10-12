@@ -82,33 +82,37 @@ impl<T> AsSlice<T> for Cursor<&mut [T]> {
     }
 }
 
-#[derive(Clone, Copy)]
-struct UnreliableBufferShard {
-    written: bool,
-    length: usize,
-    buffer: [u8; MAX_DATA_SIZE],
-}
-
-impl UnreliableBufferShard {
-    fn new() -> Self {
-        Self {
-            written: false,
-            length: 0,
-            buffer: [0u8; MAX_DATA_SIZE],
-        }
-    }
-}
-
-struct UnreliableBuffer {
+struct UnreliableBuffer<B> {
     split_id: SplitId,
     channel: Channel,
     complete_shards: u32,
-    shards: Vec<UnreliableBufferShard>,
+    shards: Vec<Option<B>>,
 }
 
-impl UnreliableBuffer {
+impl<B> UnreliableBuffer<B> {
+    fn new(split_id: SplitId, channel: Channel, expected_packets: u32) -> Self {
+        let mut shards = Vec::new();
+        shards.resize_with(expected_packets.to_usize(), || None);
+
+        Self {
+            split_id,
+            channel,
+            complete_shards: 0,
+            shards,
+        }
+    }
+
     fn is_complete(&self) -> bool {
         TryInto::<usize>::try_into(self.complete_shards).unwrap() == self.shards.len()
+    }
+
+    fn clear(&mut self, split_id: SplitId, channel: Channel, expected_packets: u32) {
+        self.split_id = split_id;
+        self.channel = channel;
+        self.complete_shards = 0;
+        self.shards.clear();
+        self.shards
+            .resize_with(expected_packets.to_usize(), || None);
     }
 }
 

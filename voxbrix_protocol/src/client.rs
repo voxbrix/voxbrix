@@ -63,7 +63,6 @@ use crate::{
     ToUsize,
     Type,
     UnreliableBuffer,
-    UnreliableBufferShard,
     WriteExt,
     ENCRYPTION_START,
     KEY_BUFFER,
@@ -378,6 +377,18 @@ impl ReceivedData<'_> {
     }
 }
 
+struct LimitedBoxBuffer {
+    buffer: BoxBuffer,
+    start: usize,
+    stop: usize,
+}
+
+impl AsRef<[u8]> for LimitedBoxBuffer {
+    fn as_ref(&self) -> &[u8] {
+        &self.buffer[self.start .. self.stop]
+    }
+}
+
 /// Message-receiving part of the connection.
 pub struct Receiver {
     shared: Rc<Shared>,
@@ -388,7 +399,7 @@ pub struct Receiver {
     recv_buffer: BoxBuffer,
     send_buffer: BoxBuffer,
     ack_sender: ChannelTx<Sequence>,
-    unreliable_split_shards: VecDeque<UnreliableBuffer>,
+    unreliable_split_shards: VecDeque<UnreliableBuffer<LimitedBoxBuffer>>,
     unreliable_split_buffer: Vec<u8>,
 }
 
@@ -539,42 +550,44 @@ impl Receiver {
                         continue;
                     }
 
-                    let mut split_buffer = if self.unreliable_split_shards.len()
-                        == UNRELIABLE_BUFFERS
-                        || self.unreliable_split_shards.back().is_some()
-                            && self.unreliable_split_shards.back().unwrap().is_complete()
-                    {
-                        let mut b = self.unreliable_split_shards.pop_back().unwrap();
-                        let UnreliableBuffer {
-                            split_id: b_split_id,
-                            channel: b_channel,
-                            complete_shards: b_complete_shards,
-                            shards: b_shards,
-                        } = &mut b;
-                        *b_split_id = split_id;
-                        *b_channel = channel;
-                        *b_complete_shards = 0;
-                        b_shards.clear();
-                        b_shards.resize(expected_packets.to_usize(), UnreliableBufferShard::new());
-                        b
+                    let complete_index = self
+                        .unreliable_split_shards
+                        .iter()
+                        .enumerate()
+                        .find(|(_, b)| b.is_complete())
+                        .map(|(i, _)| i);
+
+                    let mut split_buffer = if let Some(index) = complete_index {
+                        self.unreliable_split_shards.remove(index).unwrap()
+                    } else if self.unreliable_split_shards.len() < UNRELIABLE_BUFFERS {
+                        UnreliableBuffer::new(split_id, channel, expected_packets)
                     } else {
-                        UnreliableBuffer {
-                            split_id,
-                            channel,
-                            complete_shards: 0,
-                            shards: vec![UnreliableBufferShard::new(); expected_packets.to_usize()],
+                        let (index, min_split_id) = self
+                            .unreliable_split_shards
+                            .iter()
+                            .enumerate()
+                            .min_by_key(|(_, b)| b.split_id)
+                            .map(|(i, b)| (i, b.split_id))
+                            .unwrap();
+
+                        if min_split_id >= split_id {
+                            continue;
                         }
+
+                        self.unreliable_split_shards.remove(index).unwrap()
                     };
+
+                    split_buffer.clear(split_id, channel, expected_packets);
 
                     let start = read_cursor.position().to_usize();
 
-                    let data_length = len - start;
-
                     let shard = split_buffer.shards.get_mut(0).unwrap();
 
-                    shard.buffer[.. data_length].copy_from_slice(&self.recv_buffer[start .. len]);
-                    shard.length = data_length;
-                    shard.written = true;
+                    *shard = Some(LimitedBoxBuffer {
+                        buffer: mem::replace(&mut self.recv_buffer, allocate_buffer()),
+                        start,
+                        stop: len,
+                    });
 
                     split_buffer.complete_shards += 1;
 
@@ -585,7 +598,6 @@ impl Receiver {
                     let split_id: SplitId = seek_read!(read_cursor.read_bytes(), "split_id");
                     let count: u32 = seek_read!(read_cursor.read_bytes(), "count");
                     let start = read_cursor.position().to_usize();
-                    let data_length = len - start;
 
                     let split_buffer = match self.unreliable_split_shards.iter_mut().find(|b| {
                         b.split_id == split_id && b.channel == channel && !b.is_complete()
@@ -605,14 +617,16 @@ impl Receiver {
                         },
                     };
 
-                    if shard.written {
+                    if shard.is_some() {
                         debug!("shard is already written for count {}", count);
                         continue;
                     }
 
-                    shard.buffer[.. data_length].copy_from_slice(&self.recv_buffer[start .. len]);
-                    shard.length = data_length;
-                    shard.written = true;
+                    *shard = Some(LimitedBoxBuffer {
+                        buffer: mem::replace(&mut self.recv_buffer, allocate_buffer()),
+                        start,
+                        stop: len,
+                    });
 
                     split_buffer.complete_shards += 1;
 
@@ -621,7 +635,7 @@ impl Receiver {
 
                         for shard in split_buffer.shards.iter() {
                             self.unreliable_split_buffer
-                                .extend_from_slice(&shard.buffer[.. shard.length]);
+                                .extend_from_slice(shard.as_ref().unwrap().as_ref());
                         }
 
                         // TODO: also check CRC and if it's incorrect restore buf length to

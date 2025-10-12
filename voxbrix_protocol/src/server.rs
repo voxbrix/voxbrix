@@ -73,7 +73,6 @@ use crate::{
     ToUsize,
     Type,
     UnreliableBuffer,
-    UnreliableBufferShard,
     WriteExt,
     ENCRYPTION_START,
     KEY_BUFFER,
@@ -743,7 +742,7 @@ pub struct StreamReceiver {
     reliable_queue: VecDeque<Option<QueueEntry>>,
     reliable_split_buffer: Vec<u8>,
     reliable_split_channel: Option<Channel>,
-    unreliable_split_buffers: VecDeque<UnreliableBuffer>,
+    unreliable_split_buffers: VecDeque<UnreliableBuffer<ReadBuffer>>,
     transport_receiver: ChannelRx<InBuffer>,
     feedback: Feedback,
 }
@@ -885,41 +884,40 @@ impl StreamReceiver {
                         continue;
                     }
 
-                    let mut split_buffer = if self.unreliable_split_buffers.len()
-                        == UNRELIABLE_BUFFERS
-                        || self.unreliable_split_buffers.back().is_some()
-                            && self.unreliable_split_buffers.back().unwrap().is_complete()
-                    {
-                        let mut b = self.unreliable_split_buffers.pop_back().unwrap();
-                        let UnreliableBuffer {
-                            split_id: b_split_id,
-                            channel: b_channel,
-                            complete_shards: b_complete_shards,
-                            shards: b_shards,
-                        } = &mut b;
-                        *b_split_id = split_id;
-                        *b_channel = channel;
-                        *b_complete_shards = 0;
-                        b_shards.clear();
-                        b_shards.resize(expected_packets.to_usize(), UnreliableBufferShard::new());
-                        b
+                    let complete_index = self
+                        .unreliable_split_buffers
+                        .iter()
+                        .enumerate()
+                        .find(|(_, b)| b.is_complete())
+                        .map(|(i, _)| i);
+
+                    let mut split_buffer = if let Some(index) = complete_index {
+                        self.unreliable_split_buffers.remove(index).unwrap()
+                    } else if self.unreliable_split_buffers.len() < UNRELIABLE_BUFFERS {
+                        UnreliableBuffer::new(split_id, channel, expected_packets)
                     } else {
-                        UnreliableBuffer {
-                            split_id,
-                            channel,
-                            complete_shards: 0,
-                            shards: vec![UnreliableBufferShard::new(); expected_packets.to_usize()],
+                        let (index, min_split_id) = self
+                            .unreliable_split_buffers
+                            .iter()
+                            .enumerate()
+                            .min_by_key(|(_, b)| b.split_id)
+                            .map(|(i, b)| (i, b.split_id))
+                            .unwrap();
+
+                        if min_split_id >= split_id {
+                            continue;
                         }
+
+                        self.unreliable_split_buffers.remove(index).unwrap()
                     };
 
+                    split_buffer.clear(split_id, channel, expected_packets);
+
                     in_buffer.start += read_cursor.position().to_usize();
-                    let in_buffer: &[u8] = in_buffer.as_ref();
 
                     let shard = split_buffer.shards.get_mut(0).unwrap();
 
-                    shard.buffer[.. in_buffer.len()].copy_from_slice(in_buffer);
-                    shard.length = in_buffer.len();
-                    shard.written = true;
+                    *shard = Some(in_buffer);
 
                     split_buffer.complete_shards += 1;
                     self.unreliable_split_buffers.push_front(split_buffer);
@@ -930,7 +928,6 @@ impl StreamReceiver {
                     let count: u32 = seek_read!(read_cursor.read_bytes(), "count");
 
                     in_buffer.start += read_cursor.position().to_usize();
-                    let in_buffer: &[u8] = in_buffer.as_ref();
 
                     let split_buffer = match self.unreliable_split_buffers.iter_mut().find(|b| {
                         b.split_id == split_id && b.channel == channel && !b.is_complete()
@@ -947,16 +944,12 @@ impl StreamReceiver {
                         },
                     };
 
-                    if shard.written {
+                    if shard.is_some() {
                         debug!("shard is already written for count {}", count);
                         continue;
                     }
 
-                    let shard = split_buffer.shards.get_mut(count.to_usize()).unwrap();
-
-                    shard.buffer[.. in_buffer.len()].copy_from_slice(in_buffer);
-                    shard.length = in_buffer.len();
-                    shard.written = true;
+                    *shard = Some(in_buffer);
 
                     split_buffer.complete_shards += 1;
 
@@ -964,7 +957,7 @@ impl StreamReceiver {
                         let mut buf = Vec::with_capacity(MAX_DATA_SIZE * split_buffer.shards.len());
 
                         for shard in split_buffer.shards.iter() {
-                            buf.extend_from_slice(&shard.buffer[.. shard.length]);
+                            buf.extend_from_slice(shard.as_ref().unwrap().as_ref());
                         }
 
                         // TODO: also check CRC and if it's incorrect restore buf length to
