@@ -22,7 +22,6 @@ use crate::{
         },
     },
     entity::player::Player,
-    BASE_CHANNEL,
 };
 use std::sync::Arc;
 use voxbrix_common::{
@@ -84,7 +83,6 @@ impl ChunkAddSystemData<'_> {
             if client
                 .tx
                 .send(ClientEvent::SendDataReliable {
-                    channel: BASE_CHANNEL,
                     data: SendData::Arc(data_encoded.clone()),
                 })
                 .is_err()

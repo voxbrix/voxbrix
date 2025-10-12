@@ -10,7 +10,6 @@ use crate::{
         IntoData,
         IntoDataSized,
     },
-    BASE_CHANNEL,
     CLIENT_CONNECTION_TIMEOUT,
     PLAYER_CHUNK_VIEW_RADIUS,
     PLAYER_TABLE,
@@ -66,12 +65,9 @@ use voxbrix_common::{
     },
     pack::Packer,
 };
-use voxbrix_protocol::{
-    server::{
-        Connection,
-        ReceivedData,
-    },
-    Channel,
+use voxbrix_protocol::server::{
+    Connection,
+    ReceivedData,
 };
 
 enum LoopEvent {
@@ -154,7 +150,7 @@ impl ClientLoop {
 
         time::timeout(CLIENT_CONNECTION_TIMEOUT, async {
             reliable_tx
-                .send_reliable(BASE_CHANNEL, &buffer)
+                .send_reliable(&buffer)
                 .await
                 .map_err(|_| Error::SendError)
         })
@@ -229,7 +225,7 @@ impl ClientLoop {
                         packer.pack(&LoginResult::Failure(failure), &mut buffer);
                         let _ = time::timeout(CLIENT_CONNECTION_TIMEOUT, async {
                             reliable_tx
-                                .send_reliable(BASE_CHANNEL, &buffer)
+                                .send_reliable(&buffer)
                                 .await
                                 .map_err(|_| Error::SendError)
                         })
@@ -318,7 +314,7 @@ impl ClientLoop {
                         packer.pack(&RegisterResult::Failure(failure), &mut buffer);
                         let _ = time::timeout(CLIENT_CONNECTION_TIMEOUT, async {
                             reliable_tx
-                                .send_reliable(BASE_CHANNEL, &buffer)
+                                .send_reliable(&buffer)
                                 .await
                                 .map_err(|_| Error::SendError)
                         })
@@ -346,11 +342,11 @@ impl ClientLoop {
         };
 
         let (unreliable_loop_tx, mut unreliable_loop_rx) =
-            local_channel::mpsc::channel::<(Channel, SendData)>();
+            local_channel::mpsc::channel::<SendData>();
         let unrel_send_task = stream::once_future(async move {
-            while let Ok((channel, data)) = unreliable_loop_rx.recv().await {
+            while let Ok(data) = unreliable_loop_rx.recv().await {
                 unreliable_tx
-                    .send_unreliable(channel, data.as_slice())
+                    .send_unreliable(data.as_slice())
                     .await
                     .map_err(|err| {
                         warn!("client_loop: send_unreliable error {:?}", err);
@@ -363,8 +359,7 @@ impl ClientLoop {
             Ok(LoopEvent::Exit)
         });
 
-        let (reliable_loop_tx, mut reliable_loop_rx) =
-            local_channel::mpsc::channel::<(Channel, SendData)>();
+        let (reliable_loop_tx, mut reliable_loop_rx) = local_channel::mpsc::channel::<SendData>();
         let rel_send_task = stream::once_future(async move {
             loop {
                 let msg = (async { Ok(reliable_loop_rx.recv().await) })
@@ -378,13 +373,13 @@ impl ClientLoop {
                     })
                     .await?;
 
-                let Ok((channel, data)) = msg else {
+                let Ok(data) = msg else {
                     // Server loop closed the connection
                     return Ok(LoopEvent::Exit);
                 };
 
                 reliable_tx
-                    .send_reliable(channel, data.as_slice())
+                    .send_reliable(data.as_slice())
                     .await
                     .map_err(|err| {
                         warn!("client_loop: send_reliable error {:?}", err);
@@ -431,7 +426,7 @@ impl ClientLoop {
 
         // Finalize successful connection
         if reliable_loop_tx
-            .send((BASE_CHANNEL, SendData::Owned(init_data_response)))
+            .send(SendData::Owned(init_data_response))
             .is_err()
         {
             return Ok(());
@@ -441,11 +436,11 @@ impl ClientLoop {
             match event? {
                 LoopEvent::ServerLoop(event) => {
                     match event {
-                        ClientEvent::SendDataUnreliable { channel, data } => {
-                            let _ = unreliable_loop_tx.send((channel, data));
+                        ClientEvent::SendDataUnreliable { data } => {
+                            let _ = unreliable_loop_tx.send(data);
                         },
-                        ClientEvent::SendDataReliable { channel, data } => {
-                            let _ = reliable_loop_tx.send((channel, data));
+                        ClientEvent::SendDataReliable { data } => {
+                            let _ = reliable_loop_tx.send(data);
                         },
                         _ => {},
                     }

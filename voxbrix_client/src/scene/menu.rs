@@ -244,7 +244,7 @@ where
     let (send_res, recv_res) = time::timeout(CONNECTION_TIMEOUT, async {
         future::zip(
             async {
-                tx.send_reliable(0, &buf)
+                tx.send_reliable(&buf)
                     .await
                     .map_err(|_| "Unable to send initialization request")?;
 

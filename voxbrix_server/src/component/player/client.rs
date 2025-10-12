@@ -9,7 +9,6 @@ use voxbrix_common::entity::{
         ServerSnapshot,
     },
 };
-use voxbrix_protocol::Channel;
 
 pub type ClientPlayerComponent = PlayerComponent<Client>;
 
@@ -30,8 +29,8 @@ impl SendData {
 // Client loop input
 pub enum ClientEvent {
     AssignActor { actor: Actor },
-    SendDataUnreliable { channel: Channel, data: SendData },
-    SendDataReliable { channel: Channel, data: SendData },
+    SendDataUnreliable { data: SendData },
+    SendDataReliable { data: SendData },
 }
 
 pub struct Client {

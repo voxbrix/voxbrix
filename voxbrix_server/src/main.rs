@@ -39,12 +39,8 @@ use voxbrix_common::{
         chunk::Chunk,
     },
 };
-use voxbrix_protocol::{
-    server::ServerParameters,
-    Channel,
-};
+use voxbrix_protocol::server::ServerParameters;
 
-const BASE_CHANNEL: Channel = 0;
 const PLAYER_CHUNK_VIEW_RADIUS: i32 = 8;
 const PROCESS_INTERVAL: Duration = Duration::from_millis(50);
 const CLIENT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);

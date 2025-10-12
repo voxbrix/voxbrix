@@ -295,7 +295,7 @@ impl GameScene {
 
             async_ext::spawn_scoped(async move {
                 while let Ok(msg) = unreliable_rx.recv_async().await {
-                    let result = unreliable.send_unreliable(0, &msg).await;
+                    let result = unreliable.send_unreliable(&msg).await;
 
                     if let Err(err) = result {
                         let _ = event_high_prio_tx.send(Event::NetworkInput(Err(err)));
@@ -322,7 +322,7 @@ impl GameScene {
                 {
                     // https://github.com/rust-lang/rust/issues/70142
                     let result =
-                        match time::timeout(CONNECTION_TIMEOUT, reliable.send_reliable(0, &msg))
+                        match time::timeout(CONNECTION_TIMEOUT, reliable.send_reliable(&msg))
                             .await
                             .map_err(|_| ClientError::Io(StdIoErrorKind::TimedOut.into()))
                         {

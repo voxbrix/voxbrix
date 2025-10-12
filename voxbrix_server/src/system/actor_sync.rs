@@ -20,7 +20,6 @@ use crate::{
         },
     },
     entity::player::Player,
-    BASE_CHANNEL,
 };
 use voxbrix_common::{
     entity::{
@@ -247,7 +246,6 @@ impl ActorSyncSystemData<'_> {
             if client
                 .tx
                 .send(ClientEvent::SendDataUnreliable {
-                    channel: BASE_CHANNEL,
                     data: SendData::Owned(data),
                 })
                 .is_err()

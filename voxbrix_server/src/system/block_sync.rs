@@ -23,7 +23,6 @@ use crate::{
         StorageThread,
     },
     Database,
-    BASE_CHANNEL,
     BLOCK_CLASS_TABLE,
 };
 use std::sync::Arc;
@@ -141,7 +140,6 @@ impl BlockSyncSystemData<'_> {
             if client
                 .tx
                 .send(ClientEvent::SendDataReliable {
-                    channel: BASE_CHANNEL,
                     data: SendData::Owned(self.packer.pack_to_vec(&data)),
                 })
                 .is_err()

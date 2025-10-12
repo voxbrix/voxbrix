@@ -14,7 +14,6 @@ use crate::{
         },
     },
     entity::player::Player,
-    BASE_CHANNEL,
 };
 use voxbrix_common::resource::removal_queue::RemovalQueue;
 use voxbrix_world::{
@@ -67,7 +66,6 @@ impl ChunkSendingSystemData<'_> {
                 if client
                     .tx
                     .send(ClientEvent::SendDataReliable {
-                        channel: BASE_CHANNEL,
                         data: SendData::Arc(chunk_data.clone().into_inner()),
                     })
                     .is_err()
