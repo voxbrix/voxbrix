@@ -255,6 +255,7 @@ impl AsRef<[u8]> for Packet {
 struct InBuffer {
     buffer: WriteBuffer,
     stop: usize,
+    address_change: Option<SocketAddr>,
 }
 
 enum Out {
@@ -262,6 +263,10 @@ enum Out {
         peer: Id,
         buffer: ReadBuffer,
         result_tx: FeedbackSender,
+    },
+    ChangeAddress {
+        peer: Id,
+        address: SocketAddr,
     },
     DropClient {
         peer: Id,
@@ -554,7 +559,11 @@ impl StreamReliableSender {
     async fn handle_acks_resend(&mut self, mut must_wait: bool) -> Result<(), Error> {
         loop {
             // Handling previous ACKs first
-            let InBuffer { mut buffer, stop } = if must_wait {
+            let InBuffer {
+                mut buffer,
+                stop,
+                address_change: _,
+            } = if must_wait {
                 must_wait = false;
 
                 // TODO timeout retry limit?
@@ -721,10 +730,12 @@ impl ReceivedData {
 /// Message-receiving part of the connection.
 pub struct StreamReceiver {
     shared: Rc<Shared>,
-    sequence: Sequence,
+    reliable_latest_sequence: Sequence,
+    reliable_queue_front_sequence: Sequence,
     reliable_queue: VecDeque<Option<QueueEntry>>,
     reliable_split_buffer: Vec<u8>,
     reliable_split_ongoing: bool,
+    unreliable_latest_sequence: Sequence,
     unreliable_split_buffers: VecDeque<UnreliableBuffer<ReadBuffer>>,
     transport_receiver: ChannelRx<InBuffer>,
     feedback: Feedback,
@@ -743,8 +754,8 @@ impl StreamReceiver {
                 .is_some()
             {
                 // First try to increment to prevent theoretical overflow:
-                self.sequence = self
-                    .sequence
+                self.reliable_queue_front_sequence = self
+                    .reliable_queue_front_sequence
                     .checked_add(1)
                     .ok_or(Error::InvalidConnection)?;
 
@@ -802,6 +813,7 @@ impl StreamReceiver {
             let InBuffer {
                 buffer: mut in_buffer,
                 stop,
+                address_change,
             } = {
                 #[cfg(feature = "single")]
                 {
@@ -833,8 +845,28 @@ impl StreamReceiver {
 
             let sequence: Sequence = seek_read!(read_cursor.read_bytes(), "sequence");
 
+            let address_change = |latest_sequence: &mut Sequence| -> Result<(), Error> {
+                if let Some(address) = address_change {
+                    if *latest_sequence < sequence {
+                        self.shared
+                            .transport_sender
+                            .send(Out::ChangeAddress {
+                                peer: self.shared.peer,
+                                address,
+                            })
+                            .map_err(|_| Error::ServerWasDropped)?;
+                    }
+                }
+
+                *latest_sequence = sequence.max(*latest_sequence);
+
+                Ok(())
+            };
+
             match packet_type {
                 Type::UNRELIABLE => {
+                    address_change(&mut self.unreliable_latest_sequence)?;
+
                     in_buffer.start += read_cursor.position().to_usize();
                     return Ok(ReceivedData {
                         is_reliable: false,
@@ -842,6 +874,8 @@ impl StreamReceiver {
                     });
                 },
                 Type::UNRELIABLE_SPLIT_START => {
+                    address_change(&mut self.unreliable_latest_sequence)?;
+
                     let expected_packets: u32 =
                         seek_read!(read_cursor.read_bytes(), "expected_packets");
 
@@ -898,6 +932,8 @@ impl StreamReceiver {
                     self.unreliable_split_buffers.push_front(split_buffer);
                 },
                 Type::UNRELIABLE_SPLIT => {
+                    address_change(&mut self.unreliable_latest_sequence)?;
+
                     in_buffer.start += read_cursor.position().to_usize();
 
                     let Some(split_buffer) = self
@@ -941,7 +977,9 @@ impl StreamReceiver {
                     }
                 },
                 Type::RELIABLE | Type::RELIABLE_SPLIT => {
-                    if let Some(index) = sequence.checked_sub(self.sequence) {
+                    address_change(&mut self.reliable_latest_sequence)?;
+
+                    if let Some(index) = sequence.checked_sub(self.reliable_queue_front_sequence) {
                         in_buffer.start += read_cursor.position().to_usize();
 
                         if index < RELIABLE_QUEUE_LENGTH {
@@ -955,7 +993,9 @@ impl StreamReceiver {
                         }
                     }
 
-                    if sequence.abs_diff(self.sequence) <= RELIABLE_QUEUE_LENGTH {
+                    if sequence.abs_diff(self.reliable_queue_front_sequence)
+                        <= RELIABLE_QUEUE_LENGTH
+                    {
                         stream_send_ack(&self.shared, &mut self.feedback, sequence).await?;
                     }
                 },
@@ -1246,11 +1286,13 @@ impl Server {
                                 },
                                 receiver: StreamReceiver {
                                     shared,
-                                    sequence: 0,
+                                    reliable_latest_sequence: 0,
+                                    reliable_queue_front_sequence: 0,
                                     reliable_queue: vec![None; RELIABLE_QUEUE_LENGTH as usize]
                                         .into(),
                                     reliable_split_buffer: Vec::new(),
                                     reliable_split_ongoing: false,
+                                    unreliable_latest_sequence: 0,
                                     unreliable_split_buffers: VecDeque::with_capacity(
                                         UNRELIABLE_BUFFERS,
                                     ),
@@ -1260,26 +1302,28 @@ impl Server {
                             });
                         },
                         Type::ACKNOWLEDGE => {
-                            if let Some(client) = self.clients.get_mut(sender) {
+                            if let Some(client) = self.clients.get(sender) {
                                 let data = InBuffer {
                                     buffer: mem::replace(
                                         &mut self.receive_buffer,
                                         WriteBuffer::new(),
                                     ),
                                     stop: len,
+                                    address_change: (client.address != addr).then_some(addr),
                                 };
 
                                 let _ = client.ack_sender.send(data);
                             }
                         },
                         _ => {
-                            if let Some(client) = self.clients.get_mut(sender) {
+                            if let Some(client) = self.clients.get(sender) {
                                 let data = InBuffer {
                                     buffer: mem::replace(
                                         &mut self.receive_buffer,
                                         WriteBuffer::new(),
                                     ),
                                     stop: len,
+                                    address_change: (client.address != addr).then_some(addr),
                                 };
 
                                 let _ = client.in_queue.send(data);
@@ -1310,6 +1354,11 @@ impl Server {
                                 let _ = result_tx.send(Err(err.into()));
                             } else {
                                 let _ = result_tx.send(Ok(()));
+                            }
+                        },
+                        Out::ChangeAddress { peer, address } => {
+                            if let Some(client) = self.clients.get_mut(peer) {
+                                client.address = address;
                             }
                         },
                         Out::DropClient { peer, cipher } => {
