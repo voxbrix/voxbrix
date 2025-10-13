@@ -56,13 +56,12 @@ use crate::{
     Key,
     ReadExt,
     Sequence,
-    SplitId,
     ToU128,
     ToUsize,
     Type,
     UnreliableBuffer,
     WriteExt,
-    ENCRYPTION_START,
+    ENCRYPTED_START,
     KEY_BUFFER,
     MAX_DATA_SIZE,
     MAX_PACKET_SIZE,
@@ -136,9 +135,7 @@ fn allocate_buffer() -> BoxBuffer {
 }
 
 async fn send_ack(buffer: &mut Buffer, shared: &Shared, sequence: Sequence) -> Result<(), Error> {
-    let len = crate::write_in_buffer(buffer, shared.id, Type::ACKNOWLEDGE, |cursor| {
-        cursor.write_bytes(sequence).unwrap();
-    });
+    let len = crate::write_in_buffer(buffer, shared.id, Type::ACKNOWLEDGE, sequence, |_| {});
 
     crate::encode_in_buffer(buffer, &shared.cipher, len);
 
@@ -293,7 +290,7 @@ impl Client {
             recv_buffer: allocate_buffer(),
             send_buffer: allocate_buffer(),
             ack_sender,
-            unreliable_split_shards: VecDeque::with_capacity(UNRELIABLE_BUFFERS),
+            unreliable_split_buffers: VecDeque::with_capacity(UNRELIABLE_BUFFERS),
             unreliable_split_buffer: Vec::new(),
         };
 
@@ -301,7 +298,7 @@ impl Client {
             unreliable: UnreliableSender {
                 shared: shared.clone(),
                 buffer: allocate_buffer(),
-                unreliable_split_id: 0,
+                sequence: 0,
             },
             reliable: ReliableSender {
                 shared,
@@ -337,7 +334,7 @@ impl Drop for Shared {
 
         crate::tag_sign_in_buffer(&mut buffer, &self.cipher);
 
-        let _ = self.transport.try_send(&buffer[0 .. ENCRYPTION_START]);
+        let _ = self.transport.try_send(&buffer[0 .. ENCRYPTED_START]);
     }
 }
 
@@ -390,7 +387,7 @@ pub struct Receiver {
     recv_buffer: BoxBuffer,
     send_buffer: BoxBuffer,
     ack_sender: ChannelTx<Sequence>,
-    unreliable_split_shards: VecDeque<UnreliableBuffer<LimitedBoxBuffer>>,
+    unreliable_split_buffers: VecDeque<UnreliableBuffer<LimitedBoxBuffer>>,
     unreliable_split_buffer: Vec<u8>,
 }
 
@@ -494,16 +491,18 @@ impl Receiver {
                 continue;
             };
 
+            if packet_type == Type::DISCONNECT {
+                return Err(Error::Disconnect);
+            }
+
             let mut read_cursor = Cursor::new(&self.recv_buffer[.. len]);
-            read_cursor.set_position(ENCRYPTION_START as u64);
+            read_cursor.set_position(ENCRYPTED_START as u64);
+
+            let sequence: Sequence = seek_read!(read_cursor.read_bytes(), "sequence");
 
             match packet_type {
                 Type::ACKNOWLEDGE => {
-                    let sequence: Sequence = seek_read!(read_cursor.read_bytes(), "sequence");
                     let _ = self.ack_sender.send(sequence);
-                },
-                Type::DISCONNECT => {
-                    return Err(Error::Disconnect);
                 },
                 Type::UNRELIABLE => {
                     let start = read_cursor.position().to_usize();
@@ -513,9 +512,13 @@ impl Receiver {
                     });
                 },
                 Type::UNRELIABLE_SPLIT_START => {
-                    let split_id: SplitId = seek_read!(read_cursor.read_bytes(), "split_id");
                     let expected_packets: u32 =
                         seek_read!(read_cursor.read_bytes(), "expected_packets");
+
+                    if sequence.checked_add(expected_packets.to_u128()).is_none() {
+                        log::debug!("dropping uncompletable split packet");
+                        continue;
+                    }
 
                     if expected_packets > MAX_SPLIT_PACKETS {
                         log::debug!(
@@ -527,33 +530,33 @@ impl Receiver {
                     }
 
                     let complete_index = self
-                        .unreliable_split_shards
+                        .unreliable_split_buffers
                         .iter()
                         .enumerate()
                         .find(|(_, b)| b.is_complete())
                         .map(|(i, _)| i);
 
                     let mut split_buffer = if let Some(index) = complete_index {
-                        self.unreliable_split_shards.remove(index).unwrap()
-                    } else if self.unreliable_split_shards.len() < UNRELIABLE_BUFFERS {
-                        UnreliableBuffer::new(split_id, expected_packets)
+                        self.unreliable_split_buffers.remove(index).unwrap()
+                    } else if self.unreliable_split_buffers.len() < UNRELIABLE_BUFFERS {
+                        UnreliableBuffer::new(sequence, expected_packets)
                     } else {
-                        let (index, min_split_id) = self
-                            .unreliable_split_shards
+                        let (index, min_start_seq) = self
+                            .unreliable_split_buffers
                             .iter()
                             .enumerate()
-                            .min_by_key(|(_, b)| b.split_id)
-                            .map(|(i, b)| (i, b.split_id))
+                            .min_by_key(|(_, b)| b.start_sequence)
+                            .map(|(i, b)| (i, b.start_sequence))
                             .unwrap();
 
-                        if min_split_id >= split_id {
+                        if min_start_seq >= sequence {
                             continue;
                         }
 
-                        self.unreliable_split_shards.remove(index).unwrap()
+                        self.unreliable_split_buffers.remove(index).unwrap()
                     };
 
-                    split_buffer.clear(split_id, expected_packets);
+                    split_buffer.clear(sequence, expected_packets);
 
                     let start = read_cursor.position().to_usize();
 
@@ -567,32 +570,25 @@ impl Receiver {
 
                     split_buffer.complete_shards += 1;
 
-                    self.unreliable_split_shards.push_front(split_buffer);
+                    self.unreliable_split_buffers.push_front(split_buffer);
                 },
                 Type::UNRELIABLE_SPLIT => {
-                    let split_id: SplitId = seek_read!(read_cursor.read_bytes(), "split_id");
-                    let count: u32 = seek_read!(read_cursor.read_bytes(), "count");
                     let start = read_cursor.position().to_usize();
 
-                    let split_buffer = match self
-                        .unreliable_split_shards
+                    let Some(split_buffer) = self
+                        .unreliable_split_buffers
                         .iter_mut()
-                        .find(|b| b.split_id == split_id && !b.is_complete())
-                    {
-                        Some(b) => b,
-                        None => {
-                            debug!("split buffer not found for split {}", split_id);
-                            continue;
-                        },
-                    };
+                        .find(|b| {
+                            sequence > b.start_sequence
+                                // Correctness: boundaries must be checked in
+                                // UNRELIABLE_SPLIT_START handler
+                                && sequence < b.start_sequence.checked_add(b.shards.len().to_u128()).unwrap()
+                                && !b.is_complete()
+                        }) else { continue };
 
-                    let shard = match split_buffer.shards.get_mut(count.to_usize()) {
-                        Some(s) => s,
-                        None => {
-                            debug!("shard not found for count {}", count);
-                            continue;
-                        },
-                    };
+                    let count = (sequence - split_buffer.start_sequence).to_usize();
+
+                    let shard = split_buffer.shards.get_mut(count).unwrap();
 
                     if shard.is_some() {
                         debug!("shard is already written for count {}", count);
@@ -625,8 +621,6 @@ impl Receiver {
                     }
                 },
                 Type::RELIABLE | Type::RELIABLE_SPLIT => {
-                    let sequence: Sequence = seek_read!(read_cursor.read_bytes(), "sequence");
-
                     if let Some(index) = sequence.checked_sub(self.sequence) {
                         let start = read_cursor.position().to_usize();
 
@@ -701,24 +695,37 @@ impl Sender {
 pub struct UnreliableSender {
     shared: Rc<Shared>,
     buffer: BoxBuffer,
-    unreliable_split_id: SplitId,
+    sequence: Sequence,
 }
 
 impl UnreliableSender {
     async fn send_unreliable_one(
         &mut self,
-        data: &[u8],
         message_type: u8,
-        len_or_count: Option<u32>,
+        len: Option<u32>,
+        data: &[u8],
     ) -> Result<(), Error> {
-        let len =
-            crate::write_in_buffer(&mut self.buffer, self.shared.id, message_type, |cursor| {
-                if let Some(len_or_count) = len_or_count {
-                    cursor.write_bytes(self.unreliable_split_id).unwrap();
-                    cursor.write_bytes(len_or_count).unwrap();
+        let sequence = {
+            let prev = self.sequence;
+            self.sequence = self
+                .sequence
+                .checked_add(1)
+                .ok_or(Error::InvalidConnection)?;
+            prev
+        };
+
+        let len = crate::write_in_buffer(
+            &mut self.buffer,
+            self.shared.id,
+            message_type,
+            sequence,
+            |cursor| {
+                if let Some(len) = len {
+                    cursor.write_bytes(len).unwrap();
                 }
                 cursor.write_all(data).unwrap();
-            });
+            },
+        );
 
         crate::encode_in_buffer(&mut self.buffer, &self.shared.cipher, len);
 
@@ -730,31 +737,27 @@ impl UnreliableSender {
     /// Send a data slice unreliably.
     pub async fn send_unreliable(&mut self, data: &[u8]) -> Result<(), Error> {
         if data.len() > MAX_DATA_SIZE {
-            self.unreliable_split_id = self
-                .unreliable_split_id
-                .checked_add(1)
-                .ok_or(Error::InvalidConnection)?;
             let length = (data.len() / MAX_DATA_SIZE + 1)
                 .try_into()
                 .map_err(|_| Error::MessageTooLarge)?;
             self.send_unreliable_one(
-                &data[0 .. MAX_DATA_SIZE],
                 Type::UNRELIABLE_SPLIT_START,
                 Some(length),
+                &data[0 .. MAX_DATA_SIZE],
             )
             .await?;
 
             let mut start = MAX_DATA_SIZE;
-            for count in 1 .. length {
+            for _ in 1 .. length {
                 let stop = start + (data.len() - start).min(MAX_DATA_SIZE);
-                self.send_unreliable_one(&data[start .. stop], Type::UNRELIABLE_SPLIT, Some(count))
+                self.send_unreliable_one(Type::UNRELIABLE_SPLIT, None, &data[start .. stop])
                     .await?;
                 start = stop;
             }
 
             Ok(())
         } else {
-            self.send_unreliable_one(data, Type::UNRELIABLE, None).await
+            self.send_unreliable_one(Type::UNRELIABLE, None, data).await
         }
     }
 }
@@ -785,10 +788,15 @@ impl ReliableSender {
     ) -> (BoxBuffer, usize) {
         let mut buffer = allocate_buffer();
 
-        let len = crate::write_in_buffer(buffer.as_mut(), self.shared.id, packet_type, |cursor| {
-            cursor.write_bytes(sequence).unwrap();
-            cursor.write_all(data).unwrap();
-        });
+        let len = crate::write_in_buffer(
+            buffer.as_mut(),
+            self.shared.id,
+            packet_type,
+            sequence,
+            |cursor| {
+                cursor.write_all(data).unwrap();
+            },
+        );
 
         crate::encode_in_buffer(buffer.as_mut(), &self.shared.cipher, len);
 

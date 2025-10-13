@@ -62,13 +62,12 @@ use crate::{
     Key,
     ReadExt,
     Sequence,
-    SplitId,
     ToU128,
     ToUsize,
     Type,
     UnreliableBuffer,
     WriteExt,
-    ENCRYPTION_START,
+    ENCRYPTED_START,
     KEY_BUFFER,
     MAX_DATA_SIZE,
     MAX_PACKET_SIZE,
@@ -343,9 +342,13 @@ async fn stream_send_ack(
 ) -> Result<(), Error> {
     let mut buffer = WriteBuffer::new();
 
-    let stop = crate::write_in_buffer(buffer.as_mut(), SERVER_ID, Type::ACKNOWLEDGE, |cursor| {
-        cursor.write_bytes(sequence).unwrap();
-    });
+    let stop = crate::write_in_buffer(
+        buffer.as_mut(),
+        SERVER_ID,
+        Type::ACKNOWLEDGE,
+        sequence,
+        |_| {},
+    );
 
     crate::encode_in_buffer(buffer.as_mut(), &shared.cipher, stop);
 
@@ -419,7 +422,7 @@ impl StreamSender {
 /// Unreliable-sending part of the connection.
 pub struct StreamUnreliableSender {
     shared: Rc<Shared>,
-    unreliable_split_id: SplitId,
+    sequence: Sequence,
     feedback: Feedback,
 }
 
@@ -427,18 +430,31 @@ impl StreamUnreliableSender {
     async fn send_unreliable_one(
         &mut self,
         packet_type: u8,
+        len: Option<u32>,
         data: &[u8],
-        len_or_count: Option<u32>,
     ) -> Result<(), Error> {
         let mut buffer = WriteBuffer::new();
+        let sequence = {
+            let prev = self.sequence;
+            self.sequence = self
+                .sequence
+                .checked_add(1)
+                .ok_or(Error::InvalidConnection)?;
+            prev
+        };
 
-        let stop = crate::write_in_buffer(buffer.as_mut(), SERVER_ID, packet_type, |cursor| {
-            if let Some(len_or_count) = len_or_count {
-                cursor.write_bytes(self.unreliable_split_id).unwrap();
-                cursor.write_bytes(len_or_count).unwrap();
-            }
-            cursor.write_all(data).unwrap();
-        });
+        let stop = crate::write_in_buffer(
+            buffer.as_mut(),
+            SERVER_ID,
+            packet_type,
+            sequence,
+            |cursor| {
+                if let Some(len) = len {
+                    cursor.write_bytes(len).unwrap();
+                }
+                cursor.write_all(data).unwrap();
+            },
+        );
 
         crate::encode_in_buffer(buffer.as_mut(), &self.shared.cipher, stop);
 
@@ -459,31 +475,27 @@ impl StreamUnreliableSender {
     /// Send a data slice unreliably.
     pub async fn send_unreliable(&mut self, data: &[u8]) -> Result<(), Error> {
         if data.len() > MAX_DATA_SIZE {
-            self.unreliable_split_id = self
-                .unreliable_split_id
-                .checked_add(1)
-                .ok_or(Error::InvalidConnection)?;
             let length = (data.len() / MAX_DATA_SIZE + 1)
                 .try_into()
                 .map_err(|_| Error::MessageTooLarge)?;
             self.send_unreliable_one(
                 Type::UNRELIABLE_SPLIT_START,
-                &data[0 .. MAX_DATA_SIZE],
                 Some(length),
+                &data[0 .. MAX_DATA_SIZE],
             )
             .await?;
 
             let mut start = MAX_DATA_SIZE;
-            for count in 1 .. length {
+            for _ in 1 .. length {
                 let stop = start + (data.len() - start).min(MAX_DATA_SIZE);
-                self.send_unreliable_one(Type::UNRELIABLE_SPLIT, &data[start .. stop], Some(count))
+                self.send_unreliable_one(Type::UNRELIABLE_SPLIT, None, &data[start .. stop])
                     .await?;
                 start = stop;
             }
 
             Ok(())
         } else {
-            self.send_unreliable_one(Type::UNRELIABLE, data, None).await
+            self.send_unreliable_one(Type::UNRELIABLE, None, data).await
         }
     }
 }
@@ -524,10 +536,15 @@ impl StreamReliableSender {
     fn pack_data(&mut self, packet_type: u8, sequence: Sequence, data: &[u8]) -> ReadBuffer {
         let mut buffer = WriteBuffer::new();
 
-        let stop = crate::write_in_buffer(buffer.as_mut(), SERVER_ID, packet_type, |cursor| {
-            cursor.write_bytes(sequence).unwrap();
-            cursor.write_all(data).unwrap();
-        });
+        let stop = crate::write_in_buffer(
+            buffer.as_mut(),
+            SERVER_ID,
+            packet_type,
+            sequence,
+            |cursor| {
+                cursor.write_all(data).unwrap();
+            },
+        );
 
         crate::encode_in_buffer(buffer.as_mut(), &self.shared.cipher, stop);
 
@@ -574,7 +591,7 @@ impl StreamReliableSender {
                 continue;
             };
 
-            let mut read_cursor = Cursor::new(&buffer.as_ref()[ENCRYPTION_START .. stop]);
+            let mut read_cursor = Cursor::new(&buffer.as_ref()[ENCRYPTED_START .. stop]);
             let ack: Sequence = seek_read!(read_cursor.read_bytes(), "sequence");
 
             let Some(index) = ack.checked_sub(self.queue_front_sequence) else {
@@ -806,14 +823,17 @@ impl StreamReceiver {
                 continue;
             };
 
-            let mut in_buffer = in_buffer.finish(ENCRYPTION_START, stop);
+            if packet_type == Type::DISCONNECT {
+                return Err(Error::Disconnect);
+            }
+
+            let mut in_buffer = in_buffer.finish(ENCRYPTED_START, stop);
 
             let mut read_cursor = Cursor::new(in_buffer.as_ref());
 
+            let sequence: Sequence = seek_read!(read_cursor.read_bytes(), "sequence");
+
             match packet_type {
-                Type::DISCONNECT => {
-                    return Err(Error::Disconnect);
-                },
                 Type::UNRELIABLE => {
                     in_buffer.start += read_cursor.position().to_usize();
                     return Ok(ReceivedData {
@@ -822,9 +842,13 @@ impl StreamReceiver {
                     });
                 },
                 Type::UNRELIABLE_SPLIT_START => {
-                    let split_id: SplitId = seek_read!(read_cursor.read_bytes(), "split_id");
                     let expected_packets: u32 =
                         seek_read!(read_cursor.read_bytes(), "expected_packets");
+
+                    if sequence.checked_add(expected_packets.to_u128()).is_none() {
+                        log::debug!("dropping uncompletable split packet");
+                        continue;
+                    }
 
                     if expected_packets > MAX_SPLIT_PACKETS {
                         log::debug!(
@@ -845,24 +869,24 @@ impl StreamReceiver {
                     let mut split_buffer = if let Some(index) = complete_index {
                         self.unreliable_split_buffers.remove(index).unwrap()
                     } else if self.unreliable_split_buffers.len() < UNRELIABLE_BUFFERS {
-                        UnreliableBuffer::new(split_id, expected_packets)
+                        UnreliableBuffer::new(sequence, expected_packets)
                     } else {
-                        let (index, min_split_id) = self
+                        let (index, min_start_seq) = self
                             .unreliable_split_buffers
                             .iter()
                             .enumerate()
-                            .min_by_key(|(_, b)| b.split_id)
-                            .map(|(i, b)| (i, b.split_id))
+                            .min_by_key(|(_, b)| b.start_sequence)
+                            .map(|(i, b)| (i, b.start_sequence))
                             .unwrap();
 
-                        if min_split_id >= split_id {
+                        if min_start_seq >= sequence {
                             continue;
                         }
 
                         self.unreliable_split_buffers.remove(index).unwrap()
                     };
 
-                    split_buffer.clear(split_id, expected_packets);
+                    split_buffer.clear(sequence, expected_packets);
 
                     in_buffer.start += read_cursor.position().to_usize();
 
@@ -874,27 +898,22 @@ impl StreamReceiver {
                     self.unreliable_split_buffers.push_front(split_buffer);
                 },
                 Type::UNRELIABLE_SPLIT => {
-                    let split_id: SplitId = seek_read!(read_cursor.read_bytes(), "split_id");
-                    let count: u32 = seek_read!(read_cursor.read_bytes(), "count");
-
                     in_buffer.start += read_cursor.position().to_usize();
 
-                    let split_buffer = match self
+                    let Some(split_buffer) = self
                         .unreliable_split_buffers
                         .iter_mut()
-                        .find(|b| b.split_id == split_id && !b.is_complete())
-                    {
-                        Some(b) => b,
-                        None => continue,
-                    };
+                        .find(|b| {
+                            sequence > b.start_sequence
+                                // Correctness: boundaries must be checked in
+                                // UNRELIABLE_SPLIT_START handler
+                                && sequence < b.start_sequence.checked_add(b.shards.len().to_u128()).unwrap()
+                                && !b.is_complete()
+                        }) else { continue };
 
-                    let shard = match split_buffer.shards.get_mut(count.to_usize()) {
-                        Some(s) => s,
-                        None => {
-                            debug!("shard not found for count {}", count);
-                            continue;
-                        },
-                    };
+                    let count = (sequence - split_buffer.start_sequence).to_usize();
+
+                    let shard = split_buffer.shards.get_mut(count).unwrap();
 
                     if shard.is_some() {
                         debug!("shard is already written for count {}", count);
@@ -922,8 +941,6 @@ impl StreamReceiver {
                     }
                 },
                 Type::RELIABLE | Type::RELIABLE_SPLIT => {
-                    let sequence: Sequence = seek_read!(read_cursor.read_bytes(), "sequence");
-
                     if let Some(index) = sequence.checked_sub(self.sequence) {
                         in_buffer.start += read_cursor.position().to_usize();
 
@@ -1216,7 +1233,7 @@ impl Server {
                                 sender: StreamSender {
                                     unreliable: StreamUnreliableSender {
                                         shared: shared.clone(),
-                                        unreliable_split_id: 0,
+                                        sequence: 0,
                                         feedback: Feedback::new(),
                                     },
                                     reliable: StreamReliableSender {
@@ -1308,7 +1325,7 @@ impl Server {
                                 let _ = self
                                     .transport
                                     .send_to(
-                                        &self.receive_buffer.as_ref()[.. ENCRYPTION_START],
+                                        &self.receive_buffer.as_ref()[.. ENCRYPTED_START],
                                         client.address,
                                     )
                                     .await;
