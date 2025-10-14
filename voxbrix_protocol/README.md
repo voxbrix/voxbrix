@@ -33,13 +33,14 @@ Other fields depend on the `type`:
         // tag: [u8; TAG_SIZE],
         // nonce: [u8; NONCE_SIZE],
         // encrypted fields:
+        // sequence: Sequence,
         // data: &[u8],
 
     const UNRELIABLE_SPLIT_START: u8 = 5;
         // tag: [u8; TAG_SIZE],
         // nonce: [u8; NONCE_SIZE],
         // encrypted fields:
-        // split_id: SplitId,
+        // sequence: Sequence,
         // length: u32,
         // data: &[u8],
 
@@ -47,8 +48,7 @@ Other fields depend on the `type`:
         // tag: [u8; TAG_SIZE],
         // nonce: [u8; NONCE_SIZE],
         // encrypted fields:
-        // split_id: SplitId,
-        // count: u32,
+        // sequence: Sequence,
         // data: &[u8],
 
     const RELIABLE: u8 = 7;
@@ -66,7 +66,9 @@ Other fields depend on the `type`:
         // data: &[u8],
 ```
   
-Types used are either integers or byte arrays/slices. Integers are encoded with variable length integer encoding (by using `integer-encoding` crate), which is used in Google's Protocol Buffers.
+Types used are either integers or byte arrays/slices. Integers are encoded as little-endian bytes.
+The only variable-length field is `data`, which has length not explicitly encoded, but derived from the
+complete message length.
   
 ## Authenticated Encryption With Associated Data
 To form a new connection ECDH handshake is used:

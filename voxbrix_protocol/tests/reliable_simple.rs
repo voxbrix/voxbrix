@@ -1,5 +1,9 @@
+use futures_lite::{
+    future,
+    FutureExt,
+};
 use std::{
-    cell::RefCell,
+    future::Future,
     iter,
     sync::atomic::{
         AtomicU16,
@@ -7,13 +11,7 @@ use std::{
     },
     time::Duration,
 };
-use tokio::{
-    task::{
-        self,
-        LocalSet,
-    },
-    time,
-};
+use tokio::time;
 use voxbrix_protocol::{
     client::{
         self,
@@ -27,420 +25,190 @@ use voxbrix_protocol::{
 
 static TEST_NUM_DISPENCER: AtomicU16 = AtomicU16::new(1000);
 
-#[tokio::test]
-async fn reliable_test_0() {
-    let _ = env_logger::try_init();
-
+async fn client_server_test<'s, 'c>(
+    mut server_check: impl AsyncFnMut(&mut server::Connection) + 's,
+    mut client_check: impl AsyncFnMut(&mut client::Connection) + 'c,
+) -> (impl Future<Output = ()> + 's, impl Future<Output = ()> + 'c) {
     let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
 
     let client_port = 30000 + test_num * 10 + 1;
     let server_port = 30000 + test_num * 10;
 
-    let task: &_ = Box::leak(Box::new(RefCell::new(None)));
-    LocalSet::new()
-        .run_until(async move {
-            task::spawn_local(async move {
-                let mut server = ServerParameters::default()
-                    .bind(([127, 0, 0, 1], server_port))
-                    .await
-                    .expect("server socket bind");
-                loop {
-                    let server::Connection {
-                        sender: mut tx,
-                        receiver: mut rx,
-                        ..
-                    } = server.accept().await.expect("connection accepted");
+    let client_addr = ([127, 0, 0, 1], client_port);
+    let server_addr = ([127, 0, 0, 1], server_port);
 
-                    task::spawn_local(async move { while let Ok(_) = rx.recv().await {} });
+    let mut server = ServerParameters::default()
+        .bind(server_addr)
+        .await
+        .expect("server socket bind");
 
-                    *task.borrow_mut() = Some(task::spawn_local(async move {
-                        tx.send_reliable(b"HelloWorld")
-                            .await
-                            .expect("server sent packet");
-                    }));
-                }
-            });
+    let server_task = async move {
+        let mut conn = server.accept().await.expect("connection accepted");
 
-            time::sleep(Duration::from_millis(5)).await;
-
-            let client = Client::bind(([127, 0, 0, 1], client_port))
-                .await
-                .expect("client bound");
-
-            let client::Connection {
-                receiver: mut rx, ..
-            } = client
-                .connect(([127, 0, 0, 1], server_port))
-                .await
-                .expect("client connection");
-
-            let msg = rx.recv().await.expect("client message receive");
-
-            assert_eq!(msg.data(), b"HelloWorld");
-
-            task.borrow_mut().take().unwrap().await.unwrap();
+        async move {
+            server_check(&mut conn).await;
+        }
+        .or(async {
+            loop {
+                server.accept().await.unwrap();
+            }
         })
-        .await;
+        .await
+    };
+
+    let client_task = async move {
+        time::sleep(Duration::from_millis(5)).await;
+
+        let client = Client::bind(client_addr).await.expect("client bound");
+
+        let mut conn = client
+            .connect(server_addr)
+            .await
+            .expect("client connection");
+
+        client_check(&mut conn).await;
+    };
+
+    (server_task, client_task)
+}
+
+#[tokio::test]
+async fn reliable_test_0() {
+    let _ = env_logger::try_init();
+
+    let server_check = async |conn: &mut server::Connection| {
+        conn.sender
+            .send_reliable(b"HelloWorld")
+            .await
+            .expect("server sent packet");
+    };
+
+    let client_check = async |conn: &mut client::Connection| {
+        let msg = conn.receiver.recv().await.expect("client message receive");
+
+        assert_eq!(msg.data(), b"HelloWorld");
+    };
+
+    let (server_task, client_task) = client_server_test(server_check, client_check).await;
+
+    future::zip(server_task, client_task).await;
 }
 
 #[tokio::test]
 async fn reliable_test_1() {
     let _ = env_logger::try_init();
 
-    let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
-
-    let client_port = 30000 + test_num * 10 + 1;
-    let server_port = 30000 + test_num * 10;
-
-    let task: &_ = Box::leak(Box::new(RefCell::new(None)));
-    LocalSet::new()
-        .run_until(async move {
-            task::spawn_local(async move {
-                let mut server = ServerParameters::default()
-                    .bind(([127, 0, 0, 1], server_port))
-                    .await
-                    .expect("server socket bind");
-                loop {
-                    let server::Connection { sender: mut tx, .. } =
-                        server.accept().await.expect("connection accepted");
-
-                    *task.borrow_mut() = Some(task::spawn_local(async move {
-                        tx.send_reliable(b"HelloWorld")
-                            .await
-                            .expect("server sent packet");
-                    }));
-                }
-            });
-
-            time::sleep(Duration::from_millis(5)).await;
-
-            let client = Client::bind(([127, 0, 0, 1], client_port))
+    let server_check = async |conn: &mut server::Connection| {
+        for i in 0 .. 1000 {
+            conn.sender
+                .send_reliable(format!("HelloWorld{}", i).as_bytes())
                 .await
-                .expect("client bound");
+                .expect("server sent packet");
+        }
+    };
 
-            let client::Connection {
-                receiver: mut rx, ..
-            } = client
-                .connect(([127, 0, 0, 1], server_port))
-                .await
-                .expect("client connection");
+    let client_check = async |conn: &mut client::Connection| {
+        for i in 0 .. 1000 {
+            let msg = conn.receiver.recv().await.expect("client message receive");
+            assert_eq!(msg.data(), format!("HelloWorld{}", i).as_bytes());
+        }
+    };
 
-            let msg = rx.recv().await.expect("client message receive");
+    let (server_task, client_task) = client_server_test(server_check, client_check).await;
 
-            assert_eq!(msg.data(), b"HelloWorld");
-
-            task.borrow_mut().take().unwrap().await.unwrap();
-        })
-        .await;
+    future::zip(server_task, client_task).await;
 }
 
 #[tokio::test]
 async fn reliable_test_2() {
     let _ = env_logger::try_init();
 
-    let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
-
-    let client_port = 30000 + test_num * 10 + 1;
-    let server_port = 30000 + test_num * 10;
-
-    let task: &_ = Box::leak(Box::new(RefCell::new(None)));
-    LocalSet::new()
-        .run_until(async move {
-            task::spawn_local(async move {
-                let mut server = ServerParameters::default()
-                    .bind(([127, 0, 0, 1], server_port))
-                    .await
-                    .expect("server socket bind");
-                loop {
-                    let server::Connection { sender: mut tx, .. } =
-                        server.accept().await.expect("connection accepted");
-
-                    *task.borrow_mut() = Some(task::spawn_local(async move {
-                        for i in 0 .. 1000 {
-                            tx.send_reliable(format!("HelloWorld{}", i).as_bytes())
-                                .await
-                                .expect("server sent packet");
-                        }
-                    }));
-                }
-            });
-
-            time::sleep(Duration::from_millis(5)).await;
-
-            let client = Client::bind(([127, 0, 0, 1], client_port))
+    let server_check = async |conn: &mut server::Connection| {
+        for i in 0 .. 1000 {
+            conn.sender
+                .send_reliable(format!("HelloWorld{}", i).as_bytes())
                 .await
-                .expect("client bound");
+                .expect("server sent packet");
+        }
 
-            let client::Connection {
-                receiver: mut rx, ..
-            } = client
-                .connect(([127, 0, 0, 1], server_port))
-                .await
-                .expect("client connection");
+        for i in 0 .. 1000 {
+            let msg = conn.receiver.recv().await.expect("client message receive");
+            assert_eq!(msg.data().as_ref(), format!("HelloWorld{}", i).as_bytes());
+        }
+    };
 
+    let client_check = async |conn: &mut client::Connection| {
+        for i in 0 .. 1000 {
+            let msg = conn.receiver.recv().await.expect("client message receive");
+            assert_eq!(msg.data(), format!("HelloWorld{}", i).as_bytes());
+        }
+
+        let send_task = async {
             for i in 0 .. 1000 {
-                let msg = rx.recv().await.expect("client message receive");
-                assert_eq!(msg.data(), format!("HelloWorld{}", i).as_bytes());
+                conn.sender
+                    .send_reliable(format!("HelloWorld{}", i).as_bytes())
+                    .await
+                    .expect("server sent packet");
             }
+        };
 
-            task.borrow_mut().take().unwrap().await.unwrap();
-        })
-        .await;
+        let ack_task = async { while let Ok(_) = conn.receiver.recv().await {} };
+
+        send_task.or(ack_task).await;
+    };
+
+    let (server_task, client_task) = client_server_test(server_check, client_check).await;
+
+    future::zip(server_task, client_task).await;
 }
 
 #[tokio::test]
 async fn reliable_test_3() {
     let _ = env_logger::try_init();
 
-    let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
+    let data_slice = &[1, 2, 3, 4, 5];
 
-    let client_port = 30000 + test_num * 10 + 1;
-    let server_port = 30000 + test_num * 10;
+    let data = iter::repeat(data_slice)
+        .take(3000)
+        .flatten()
+        .cloned()
+        .collect::<Vec<_>>();
 
-    let task: &_ = Box::leak(Box::new(RefCell::new(None)));
-    LocalSet::new()
-        .run_until(async move {
-            task::spawn_local(async move {
-                let mut server = ServerParameters::default()
-                    .bind(([127, 0, 0, 1], server_port))
-                    .await
-                    .expect("server socket bind");
-
-                loop {
-                    let server::Connection {
-                        sender: mut tx,
-                        receiver: mut rx,
-                        ..
-                    } = server.accept().await.expect("connection accepted");
-
-                    *task.borrow_mut() = Some(task::spawn_local(async move {
-                        for i in 0 .. 1000 {
-                            tx.send_reliable(format!("HelloWorld{}", i).as_bytes())
-                                .await
-                                .expect("server sent packet");
-                        }
-
-                        for i in 0 .. 1000 {
-                            let msg = rx.recv().await.expect("client message receive");
-                            assert_eq!(msg.data().as_ref(), format!("HelloWorld{}", i).as_bytes());
-                        }
-                    }));
-                }
-            });
-
-            time::sleep(Duration::from_millis(5)).await;
-
-            let client = Client::bind(([127, 0, 0, 1], client_port))
-                .await
-                .expect("client bound");
-
-            let client::Connection {
-                sender: mut tx,
-                receiver: mut rx,
-                ..
-            } = client
-                .connect(([127, 0, 0, 1], server_port))
-                .await
-                .expect("client connection");
-
-            for i in 0 .. 1000 {
-                let msg = rx.recv().await.expect("client message receive");
-                assert_eq!(msg.data(), format!("HelloWorld{}", i).as_bytes());
-            }
-
-            task::spawn_local(async move { while let Ok(_) = rx.recv().await {} });
-
-            for i in 0 .. 1000 {
-                tx.send_reliable(format!("HelloWorld{}", i).as_bytes())
-                    .await
-                    .expect("server sent packet");
-            }
-
-            task.borrow_mut().take().unwrap().await.unwrap();
-        })
-        .await;
-}
-
-#[tokio::test]
-async fn reliable_test_4() {
-    let _ = env_logger::try_init();
-
-    let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
-
-    let client_port = 30000 + test_num * 10 + 1;
-    let server_port = 30000 + test_num * 10;
-
-    let task: &_ = Box::leak(Box::new(RefCell::new(None)));
-    let data: &_ = Box::leak(Box::new({
-        let data_slice = &[1, 2, 3, 4, 5];
-        iter::repeat(data_slice)
-            .take(300)
-            .flatten()
-            .cloned()
-            .collect::<Vec<_>>()
-    }));
-    LocalSet::new()
-        .run_until(async move {
-            task::spawn_local(async move {
-                let mut server = ServerParameters::default()
-                    .bind(([127, 0, 0, 1], server_port))
-                    .await
-                    .expect("server socket bind");
-
-                loop {
-                    let server::Connection {
-                        sender: mut tx,
-                        receiver: mut rx,
-                        ..
-                    } = server.accept().await.expect("connection accepted");
-
-                    *task.borrow_mut() = Some(task::spawn_local(async move {
-                        tx.send_reliable(data.as_ref())
-                            .await
-                            .expect("server sent packet");
-
-                        let msg = rx.recv().await.expect("client message receive");
-                        assert_eq!(msg.data().as_ref(), data.as_slice());
-                    }));
-                }
-            });
-
-            time::sleep(Duration::from_millis(5)).await;
-
-            let client = Client::bind(([127, 0, 0, 1], client_port))
-                .await
-                .expect("client bound");
-
-            let client::Connection {
-                sender: mut tx,
-                receiver: mut rx,
-                ..
-            } = client
-                .connect(([127, 0, 0, 1], server_port))
-                .await
-                .expect("client connection");
-
-            let msg = rx.recv().await.expect("client message receive");
-            assert_eq!(msg.data().as_ref(), data.as_slice());
-
-            task::spawn_local(async move { while let Ok(_) = rx.recv().await {} });
-
-            tx.send_reliable(data.as_ref())
+    let server_check = async |conn: &mut server::Connection| {
+        for _ in 0 .. 10 {
+            conn.sender
+                .send_reliable(&data)
                 .await
                 .expect("server sent packet");
+        }
 
-            task.borrow_mut().take().unwrap().await.unwrap();
-        })
-        .await;
-}
+        for _ in 0 .. 10 {
+            let msg = conn.receiver.recv().await.expect("client message receive");
+            assert_eq!(msg.data().as_ref(), &data);
+        }
+    };
 
-#[tokio::test]
-async fn reliable_test_5() {
-    let _ = env_logger::try_init();
+    let client_check = async |conn: &mut client::Connection| {
+        for _ in 0 .. 10 {
+            let msg = conn.receiver.recv().await.expect("client message receive");
+            assert_eq!(msg.data(), &data);
+        }
 
-    let test_num = TEST_NUM_DISPENCER.fetch_add(1, Ordering::Relaxed);
-
-    let client_port = 30000 + test_num * 10 + 1;
-    let server_port = 30000 + test_num * 10;
-
-    let task: &_ = Box::leak(Box::new(RefCell::new(None)));
-
-    LocalSet::new()
-        .run_until(async move {
-            task::spawn_local(async move {
-                let mut server = ServerParameters::default()
-                    .bind(([127, 0, 0, 1], server_port))
-                    .await
-                    .expect("server socket bind");
-
-                loop {
-                    let server::Connection {
-                        sender: mut tx,
-                        receiver: mut rx,
-                        ..
-                    } = server.accept().await.expect("connection accepted");
-
-                    *task.borrow_mut() = Some(task::spawn_local(async move {
-                        for i in 0 .. 10 {
-                            let data: &_ = Box::leak(Box::new({
-                                let data_slice = &[i + 1, i + 2, i + 3, i + 4, i + 5];
-                                iter::repeat(data_slice)
-                                    .take(300)
-                                    .flatten()
-                                    .cloned()
-                                    .collect::<Vec<_>>()
-                            }));
-
-                            tx.send_reliable(data.as_ref())
-                                .await
-                                .expect("server sent packet");
-                        }
-
-                        for i in 0 .. 10 {
-                            let msg = rx.recv().await.expect("client message receive");
-
-                            let data: &_ = Box::leak(Box::new({
-                                let data_slice = &[i + 1, i + 2, i + 3, i + 4, i + 5];
-                                iter::repeat(data_slice)
-                                    .take(300)
-                                    .flatten()
-                                    .cloned()
-                                    .collect::<Vec<_>>()
-                            }));
-
-                            assert_eq!(msg.data().as_ref(), data.as_slice());
-                        }
-                    }));
-                }
-            });
-
-            time::sleep(Duration::from_millis(5)).await;
-
-            let client = Client::bind(([127, 0, 0, 1], client_port))
-                .await
-                .expect("client bound");
-
-            let client::Connection {
-                sender: mut tx,
-                receiver: mut rx,
-                ..
-            } = client
-                .connect(([127, 0, 0, 1], server_port))
-                .await
-                .expect("client connection");
-
-            for i in 0 .. 10 {
-                let msg = rx.recv().await.expect("client message receive");
-
-                let data: &_ = Box::leak(Box::new({
-                    let data_slice = &[i + 1, i + 2, i + 3, i + 4, i + 5];
-                    iter::repeat(data_slice)
-                        .take(300)
-                        .flatten()
-                        .cloned()
-                        .collect::<Vec<_>>()
-                }));
-
-                assert_eq!(msg.data().as_ref(), data.as_slice());
-            }
-
-            task::spawn_local(async move { while let Ok(_) = rx.recv().await {} });
-
-            for i in 0 .. 10 {
-                let data: &_ = Box::leak(Box::new({
-                    let data_slice = &[i + 1, i + 2, i + 3, i + 4, i + 5];
-                    iter::repeat(data_slice)
-                        .take(300)
-                        .flatten()
-                        .cloned()
-                        .collect::<Vec<_>>()
-                }));
-                tx.send_reliable(data.as_ref())
+        let send_task = async {
+            for _ in 0 .. 10 {
+                conn.sender
+                    .send_reliable(&data)
                     .await
                     .expect("server sent packet");
             }
+        };
 
-            task.borrow_mut().take().unwrap().await.unwrap();
-        })
-        .await;
+        let ack_task = async { while let Ok(_) = conn.receiver.recv().await {} };
+
+        send_task.or(ack_task).await;
+    };
+
+    let (server_task, client_task) = client_server_test(server_check, client_check).await;
+
+    future::zip(server_task, client_task).await;
 }
