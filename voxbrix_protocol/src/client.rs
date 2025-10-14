@@ -50,7 +50,6 @@
 //! ```
 
 use crate::{
-    seek_read,
     AsSlice,
     Id,
     Key,
@@ -62,7 +61,6 @@ use crate::{
     UnreliableBuffer,
     WriteExt,
     ENCRYPTED_START,
-    KEY_BUFFER,
     MAX_DATA_SIZE,
     MAX_PACKET_SIZE,
     MAX_SPLIT_DATA_SIZE,
@@ -111,12 +109,10 @@ use std::{
     io::{
         Cursor,
         Error as StdIoError,
-        Read,
         Write,
     },
     mem,
     net::SocketAddr,
-    slice,
     time::Instant,
 };
 use tokio::{
@@ -159,6 +155,8 @@ pub enum Error {
     PeerMessageTooLarge,
     /// Message is too large to be sent.
     MessageTooLarge,
+    /// Peer sent incorrect message.
+    IncompatibleProtocol,
 }
 
 impl fmt::Display for Error {
@@ -236,27 +234,36 @@ impl Client {
 
             let mut read_cursor = Cursor::new(&buf[.. len]);
 
-            let sender: Id = seek_read!(read_cursor.read_bytes(), "sender");
+            let Ok(sender) = read_cursor.read_bytes::<Id>() else {
+                debug!("unable to read sender");
+                continue;
+            };
 
             if sender != SERVER_ID {
                 debug!("received non-server message");
                 continue;
             }
 
-            let mut packet_type = Type::UNDEFINED;
-            seek_read!(
-                read_cursor.read_exact(slice::from_mut(&mut packet_type)),
-                "type"
-            );
+            let Ok(packet_type) = read_cursor.read_bytes::<u8>() else {
+                debug!("unable to read type");
+                continue;
+            };
 
             if packet_type == Type::ACCEPT {
-                let mut key = KEY_BUFFER;
+                let Ok(key) = read_cursor.read_bytes::<Key>() else {
+                    debug!("unable to read peer key");
+                    continue;
+                };
 
-                seek_read!(read_cursor.read_exact(&mut key), "peer key");
-                let id: Id = seek_read!(read_cursor.read_bytes(), "id");
+                let Ok(id) = read_cursor.read_bytes::<Id>() else {
+                    debug!("unable to read assigned id");
+                    continue;
+                };
 
-                let deciphered_peer_key =
-                    seek_read!(PublicKey::from_sec1_bytes(&key), "deciphered peer key");
+                let Ok(deciphered_peer_key) = PublicKey::from_sec1_bytes(&key) else {
+                    debug!("unable to desipher peer key");
+                    continue;
+                };
 
                 break (key, deciphered_peer_key, id);
             }
@@ -476,18 +483,30 @@ impl Receiver {
                 .recv(self.recv_buffer.as_mut())
                 .await?;
 
-            let mut read_cursor = Cursor::new(&self.recv_buffer[.. len]);
-
-            let sender: Id = seek_read!(read_cursor.read_bytes(), "sender");
-
-            if sender != SERVER_ID {
+            if len < ENCRYPTED_START {
+                debug!("message too short");
                 continue;
             }
 
-            let packet_type: u8 = seek_read!(read_cursor.read_bytes(), "type");
+            let mut read_cursor = Cursor::new(&self.recv_buffer[.. len]);
 
-            if crate::decode_in_buffer(&mut self.recv_buffer[.. len], &self.shared.cipher).is_err()
-            {
+            let Ok(sender) = read_cursor.read_bytes::<Id>() else {
+                debug!("unable to read id");
+                continue;
+            };
+
+            if sender != SERVER_ID {
+                debug!("received non-server message");
+                continue;
+            }
+
+            let Ok(packet_type) = read_cursor.read_bytes::<u8>() else {
+                debug!("unable to read type");
+                continue;
+            };
+
+            if crate::decode_in_buffer(&mut self.recv_buffer, &self.shared.cipher, len).is_err() {
+                debug!("message authentication/decryption failed");
                 continue;
             };
 
@@ -498,7 +517,10 @@ impl Receiver {
             let mut read_cursor = Cursor::new(&self.recv_buffer[.. len]);
             read_cursor.set_position(ENCRYPTED_START as u64);
 
-            let sequence: Sequence = seek_read!(read_cursor.read_bytes(), "sequence");
+            let sequence: Sequence = read_cursor.read_bytes().map_err(|_| {
+                debug!("unable to read sequence");
+                Error::IncompatibleProtocol
+            })?;
 
             match packet_type {
                 Type::ACKNOWLEDGE => {
@@ -512,21 +534,35 @@ impl Receiver {
                     });
                 },
                 Type::UNRELIABLE_SPLIT_START => {
-                    let expected_packets: u32 =
-                        seek_read!(read_cursor.read_bytes(), "expected_packets");
-
-                    if sequence.checked_add(expected_packets.to_u128()).is_none() {
-                        log::debug!("dropping uncompletable split packet");
+                    if self
+                        .unreliable_split_buffers
+                        .iter()
+                        .any(|b| b.start_sequence == sequence)
+                    {
                         continue;
                     }
 
+                    let expected_packets: u32 = read_cursor.read_bytes().map_err(|_| {
+                        debug!("unable to read sequence");
+                        Error::IncompatibleProtocol
+                    })?;
+
+                    if expected_packets < 2 {
+                        debug!("split expected packets too low");
+                        return Err(Error::IncompatibleProtocol);
+                    }
+
+                    if sequence.checked_add(expected_packets.to_u128()).is_none() {
+                        debug!("uncompletable split packet");
+                        return Err(Error::IncompatibleProtocol);
+                    }
+
                     if expected_packets > MAX_SPLIT_PACKETS {
-                        log::debug!(
-                            "dropping packet with packet length {} more than maximum {}",
-                            expected_packets,
-                            MAX_SPLIT_PACKETS,
+                        debug!(
+                            "length {} more than maximum {}",
+                            expected_packets, MAX_SPLIT_PACKETS,
                         );
-                        continue;
+                        return Err(Error::IncompatibleProtocol);
                     }
 
                     let complete_index = self
@@ -737,9 +773,14 @@ impl UnreliableSender {
     /// Send a data slice unreliably.
     pub async fn send_unreliable(&mut self, data: &[u8]) -> Result<(), Error> {
         if data.len() > MAX_DATA_SIZE {
-            let length = (data.len() / MAX_DATA_SIZE + 1)
+            let length: u32 = (data.len() / MAX_DATA_SIZE + 1)
                 .try_into()
                 .map_err(|_| Error::MessageTooLarge)?;
+
+            self.sequence
+                .checked_add(length.to_u128())
+                .ok_or(Error::MessageTooLarge)?;
+
             self.send_unreliable_one(
                 Type::UNRELIABLE_SPLIT_START,
                 Some(length),

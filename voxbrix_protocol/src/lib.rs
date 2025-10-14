@@ -112,31 +112,6 @@ impl<B> UnreliableBuffer<B> {
     }
 }
 
-#[macro_export]
-macro_rules! seek_read {
-    ($e:expr, $c:literal) => {
-        match $e {
-            Ok(r) => r,
-            Err(_) => {
-                log::debug!("read {} error", $c);
-                continue;
-            },
-        }
-    };
-}
-
-macro_rules! seek_read_return {
-    ($e:expr, $c:literal) => {
-        match $e {
-            Ok(r) => r,
-            Err(_) => {
-                log::debug!("read {} error", $c);
-                return Err(());
-            },
-        }
-    };
-}
-
 type Id = u32;
 type Sequence = u128;
 type Key = [u8; 33];
@@ -149,10 +124,7 @@ const NONCE_START: usize = TAG_START + TAG_SIZE;
 const NONCE_SIZE: usize = 12;
 const ENCRYPTED_START: usize = NONCE_START + NONCE_SIZE;
 
-const KEY_BUFFER: Key = [0; 33];
 const SECRET_BUFFER: Secret = [0; 32];
-const TAG_BUFFER: [u8; TAG_SIZE] = [0; TAG_SIZE];
-const NONCE_BUFFER: [u8; NONCE_SIZE] = [0; NONCE_SIZE];
 
 struct Type;
 
@@ -210,8 +182,6 @@ impl Type {
         // encrypted fields:
         // sequence: Sequence,
         // data: &[u8],
-
-    const UNDEFINED: u8 = u8::MAX;
 }
 
 /// Returns tag start byte and total data length.
@@ -263,30 +233,24 @@ fn tag_sign_in_buffer(buffer: &mut [u8; MAX_PACKET_SIZE], cipher: &ChaCha20Poly1
     buffer[TAG_START .. NONCE_START].copy_from_slice(&tag);
 }
 
-fn decode_in_buffer(buffer: &mut [u8], cipher: &ChaCha20Poly1305) -> Result<(), ()> {
-    let mut cursor = Cursor::new(&buffer);
-    cursor.set_position(TAG_START as u64);
+fn decode_in_buffer(
+    buffer: &mut [u8; MAX_PACKET_SIZE],
+    cipher: &ChaCha20Poly1305,
+    length: usize,
+) -> Result<(), ()> {
+    if length < ENCRYPTED_START {
+        return Err(());
+    }
 
-    let mut tag = TAG_BUFFER;
-    seek_read_return!(cursor.read_exact(&mut tag), "tag");
+    let buffer = &mut buffer[.. length];
 
-    let mut nonce = NONCE_BUFFER;
-    seek_read_return!(cursor.read_exact(&mut nonce), "nonce");
+    let (acc_data, buffer) = buffer.split_at_mut(TAG_START);
+    let (tag, buffer) = buffer.split_at_mut(TAG_SIZE);
+    let (nonce, encrypted) = buffer.split_at_mut(NONCE_SIZE);
 
-    let (buffer_acc_data, buffer_encrypted) = {
-        let (buffer, buffer_encrypted) = buffer.split_at_mut(ENCRYPTED_START);
-        (&buffer[.. TAG_START], buffer_encrypted)
-    };
-
-    seek_read_return!(
-        cipher.decrypt_in_place_detached(
-            (&nonce).into(),
-            buffer_acc_data,
-            buffer_encrypted,
-            (&tag).into(),
-        ),
-        "decrypted"
-    );
+    cipher
+        .decrypt_in_place_detached((&*nonce).into(), acc_data, encrypted, (&*tag).into())
+        .map_err(|_| ())?;
 
     Ok(())
 }
@@ -336,6 +300,22 @@ impl AsFixedBytes for u128 {
 
     fn zeroed() -> Self::Bytes {
         [0; mem::size_of::<Self::Bytes>()]
+    }
+}
+
+impl<const N: usize> AsFixedBytes for [u8; N] {
+    type Bytes = [u8; N];
+
+    fn to_bytes(self) -> Self::Bytes {
+        self
+    }
+
+    fn from_bytes(bytes: Self::Bytes) -> Self {
+        bytes
+    }
+
+    fn zeroed() -> Self::Bytes {
+        [0; N]
     }
 }
 
