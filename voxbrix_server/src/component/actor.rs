@@ -195,7 +195,12 @@ where
 
         self.packer = Some(packer);
     }
+}
 
+impl<T> ActorComponentPackable<T>
+where
+    T: PartialEq,
+{
     pub fn insert(&mut self, actor: Actor, new: T, snapshot: ServerSnapshot) -> Option<T> {
         let (changed, prev_value) = match self.storage.entry(actor) {
             hash_map::Entry::Occupied(mut slot) => {

@@ -19,6 +19,7 @@ use voxbrix_common::{
 };
 
 pub mod block_collision;
+pub mod health;
 pub mod hitbox;
 pub mod model;
 
@@ -79,6 +80,33 @@ impl<T> PackableOverridableActorClassComponent<T> {
                 .map(|o| o.as_ref())
                 .flatten()
         })
+    }
+}
+
+impl<T> PackableOverridableActorClassComponent<T>
+where
+    T: PartialEq,
+{
+    /// Returns previous override for the actor, if any.
+    pub fn insert(
+        &mut self,
+        class: &ActorClass,
+        actor: &Actor,
+        value: T,
+        snapshot: ServerSnapshot,
+    ) {
+        let override_value = self.overrides.get(actor);
+        let class_value = self.classes.get(class.as_usize()).and_then(|o| o.as_ref());
+
+        if override_value
+            .or(class_value)
+            .is_some_and(|prev| prev != &value)
+            || override_value.is_none() && class_value.is_none()
+        {
+            self.overrides.insert(*actor, value, snapshot);
+        } else if class_value.is_some_and(|prev| prev == &value) {
+            self.overrides.remove(actor, snapshot);
+        }
     }
 }
 

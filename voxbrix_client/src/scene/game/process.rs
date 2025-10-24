@@ -11,6 +11,7 @@ use crate::{
         actor_render::ActorRenderSystem,
         block_render::BlockRenderSystem,
         chunk_presence::ChunkPresenceSystem,
+        hud::HUDSystem,
         interface_render::InterfaceRenderSystem,
         inventory_window::InventoryWindowSystem,
         movement_interpolation::MovementInterpolationSystem,
@@ -46,7 +47,9 @@ impl Process<'_> {
 
         world.get_resource_mut::<Interface>().initialize(&mut frame);
 
-        world.get_data::<InventoryWindowSystem>().run();
+        let (inventory, hud) = world.get_data::<(InventoryWindowSystem, HUDSystem)>();
+
+        rayon::join(|| inventory.run(), || hud.run());
 
         world.get_data::<UpdateRenderPoolSystem>().run(frame);
 

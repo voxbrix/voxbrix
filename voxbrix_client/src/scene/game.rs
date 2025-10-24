@@ -19,6 +19,7 @@ use crate::{
         },
         actor_class::{
             block_collision::BlockCollisionActorClassComponent,
+            health::HealthActorClassComponent,
             model::ModelActorClassComponent,
         },
         actor_model::builder::{
@@ -136,7 +137,10 @@ use voxbrix_common::{
             position::Position,
             velocity::Velocity,
         },
-        actor_class::block_collision::BlockCollision,
+        actor_class::{
+            block_collision::BlockCollision,
+            health::Health,
+        },
         block::sky_light::SkyLightBlockComponent,
         block_class::{
             collision::{
@@ -476,6 +480,16 @@ impl GameScene {
             },
         )?;
 
+        let health_acc = HealthActorClassComponent::new(
+            label_library.get("actor_health").unwrap(),
+            player_actor,
+            false,
+            &actor_class_component_map,
+            &label_library,
+            "health",
+            |desc: Health| Ok(desc),
+        )?;
+
         let block_collision_acc = BlockCollisionActorClassComponent::new(
             label_library.get("actor_block_collision").unwrap(),
             player_actor,
@@ -596,6 +610,7 @@ impl GameScene {
 
         world.add(block_collision_acc);
         world.add(model_acc);
+        world.add(health_acc);
 
         world.add(class_bc);
         world.add(sky_light_bc);

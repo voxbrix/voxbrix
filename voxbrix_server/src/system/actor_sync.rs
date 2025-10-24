@@ -7,7 +7,10 @@ use crate::{
             position::PositionActorComponent,
             velocity::VelocityActorComponent,
         },
-        actor_class::model::ModelActorClassComponent,
+        actor_class::{
+            health::HealthActorClassComponent,
+            model::ModelActorClassComponent,
+        },
         player::{
             actor::ActorPlayerComponent,
             chunk_view::ChunkViewPlayerComponent,
@@ -67,6 +70,7 @@ pub struct ActorSyncSystemData<'a> {
     orientation_ac: &'a mut OrientationActorComponent,
 
     model_acc: &'a mut ModelActorClassComponent,
+    health_acc: &'a mut HealthActorClassComponent,
 
     packer: &'a mut Packer,
     updates_packer: &'a mut UpdatesPacker,
@@ -156,7 +160,16 @@ impl ActorSyncSystemData<'_> {
                     &mut self.updates_packer,
                     *self.snapshot,
                     client.last_server_snapshot,
-                    Some(player_actor),
+                    None,
+                    self.position_ac.actors_full_update(),
+                    self.position_ac.actors_partial_update(),
+                );
+
+                self.health_acc.pack_changes(
+                    &mut self.updates_packer,
+                    *self.snapshot,
+                    client.last_server_snapshot,
+                    None,
                     self.position_ac.actors_full_update(),
                     self.position_ac.actors_partial_update(),
                 );
@@ -204,6 +217,12 @@ impl ActorSyncSystemData<'_> {
                 );
 
                 self.model_acc.pack_full(
+                    &mut self.updates_packer,
+                    None,
+                    self.position_ac.actors_full_update(),
+                );
+
+                self.health_acc.pack_full(
                     &mut self.updates_packer,
                     None,
                     self.position_ac.actors_full_update(),

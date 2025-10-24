@@ -18,6 +18,7 @@ use voxbrix_common::{
 };
 
 pub mod block_collision;
+pub mod health;
 pub mod model;
 
 /// Works as both Actor component and ActorClass component.

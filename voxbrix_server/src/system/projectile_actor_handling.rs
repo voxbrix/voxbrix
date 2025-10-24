@@ -9,9 +9,11 @@ use crate::{
             Trigger,
         },
         actor::{
+            class::ClassActorComponent,
             effect::EffectActorComponent,
             projectile::ProjectileActorComponent,
         },
+        actor_class::health::HealthActorClassComponent,
     },
     resource::projectile_actor_collisions::{
         ProjectileActorCollision,
@@ -43,6 +45,8 @@ impl System for ProjectileActorHandlingSystem {
 pub struct ProjectileActorHandlingSystemData<'a> {
     snapshot: &'a ServerSnapshot,
     effect_ac: &'a mut EffectActorComponent,
+    class_ac: &'a ClassActorComponent,
+    health_acc: &'a mut HealthActorClassComponent,
     projectile_ac: &'a ProjectileActorComponent,
     projectile_actor_collisions: &'a ProjectileActorCollisions,
     actor_rq: &'a mut RemovalQueue<Actor>,
@@ -61,7 +65,7 @@ impl ProjectileActorHandlingSystemData<'_> {
         for collision in self.projectile_actor_collisions.iter() {
             let ProjectileActorCollision {
                 projectile: proj_actor,
-                target: _targ_actor,
+                target: targ_actor,
             } = collision;
 
             let Some(proj_ac) = self.projectile_ac.get(&proj_actor) else {
@@ -121,6 +125,26 @@ impl ProjectileActorHandlingSystemData<'_> {
                                 *effect,
                                 discriminant,
                                 Default::default(),
+                                *self.snapshot,
+                            );
+                        },
+                        Alteration::DamageTargetActor { damage } => {
+                            let Some(targ_class) = self.class_ac.get(targ_actor) else {
+                                continue;
+                            };
+
+                            let Some(mut targ_health) =
+                                self.health_acc.get(targ_class, targ_actor).cloned()
+                            else {
+                                continue;
+                            };
+
+                            targ_health.damage(*damage);
+
+                            self.health_acc.insert(
+                                targ_class,
+                                targ_actor,
+                                targ_health,
                                 *self.snapshot,
                             );
                         },

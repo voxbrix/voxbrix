@@ -4,6 +4,7 @@ pub mod block_render;
 pub mod chunk_changes_accept;
 pub mod chunk_presence;
 pub mod entity_removal;
+pub mod hud;
 pub mod interface_render;
 pub mod inventory_window;
 pub mod movement_interpolation;

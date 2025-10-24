@@ -118,6 +118,7 @@ impl ProjectileBlockHandlingSystemData<'_> {
                                 *self.snapshot,
                             );
                         },
+                        Alteration::DamageTargetActor { .. } => {},
                         Alteration::RemoveSourceActorEffect { effect } => {
                             let Some(source_actor) = proj_ac.source_actor else {
                                 continue;

@@ -75,6 +75,7 @@
               "trigger": "AnyCollision",
               "condition": { "kind": "Always" },
               "alterations": [
+                { "kind": "DamageTargetActor", "damage": 20 },
                 { "kind": "RemoveSelf" }
               ]
             }

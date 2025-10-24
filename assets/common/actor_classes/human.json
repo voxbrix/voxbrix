@@ -4,6 +4,10 @@
     "radius_blocks": [0.45, 0.45, 0.95]
   },
   "model": "human",
+  "health": {
+    "current": 100,
+    "maximum": 100
+  },
   "hitbox": {
     "kind": "Sphere",
     "radius_blocks": 0.75

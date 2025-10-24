@@ -26,6 +26,9 @@ pub enum Alteration {
         discriminant: EffectDiscriminantType,
         state: EffectStateType,
     },
+    DamageTargetActor {
+        damage: u32,
+    },
     RemoveSourceActorEffect {
         effect: Effect,
     },
@@ -146,6 +149,9 @@ pub enum AlterationDescriptor {
         discriminant: EffectDiscriminantType,
         state: EffectStateType,
     },
+    DamageTargetActor {
+        damage: u32,
+    },
     RemoveSourceActorEffect {
         effect: String,
     },
@@ -170,6 +176,7 @@ impl AlterationDescriptor {
                     state: *state,
                 }
             },
+            Self::DamageTargetActor { damage } => Alteration::DamageTargetActor { damage: *damage },
             Self::RemoveSourceActorEffect { effect } => {
                 Alteration::RemoveSourceActorEffect {
                     effect: label_lib

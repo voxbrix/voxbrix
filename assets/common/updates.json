@@ -6,5 +6,6 @@
   "actor_model",
   "actor_effect",
   "actor_block_collision",
+  "actor_health",
   "actor_hitbox"
 ]

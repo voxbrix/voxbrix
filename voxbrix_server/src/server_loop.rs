@@ -24,6 +24,7 @@ use crate::{
         },
         actor_class::{
             block_collision::BlockCollisionActorClassComponent,
+            health::HealthActorClassComponent,
             hitbox::{
                 Hitbox,
                 HitboxActorClassComponent,
@@ -103,7 +104,10 @@ use voxbrix_common::{
         UPDATE_LIST_PATH,
     },
     component::{
-        actor_class::block_collision::BlockCollision,
+        actor_class::{
+            block_collision::BlockCollision,
+            health::Health,
+        },
         block_class::collision::{
             Collision,
             CollisionBlockClassComponent,
@@ -249,6 +253,15 @@ impl ServerLoop {
         )
         .expect("unable to load ModelActorClassComponent");
 
+        let health_acc = HealthActorClassComponent::new(
+            &actor_class_component_map,
+            &label_library,
+            label_library.get("actor_health").unwrap(),
+            "health",
+            |desc: Health| Ok(desc),
+        )
+        .expect("unable to load HealthActorClassComponent");
+
         let hitbox_acc = HitboxActorClassComponent::new(
             &actor_class_component_map,
             &label_library,
@@ -347,6 +360,7 @@ impl ServerLoop {
 
         world.add(block_collision_acc);
         world.add(model_acc);
+        world.add(health_acc);
         world.add(hitbox_acc);
 
         world.add(class_bc);

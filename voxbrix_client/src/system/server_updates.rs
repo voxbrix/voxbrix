@@ -9,7 +9,10 @@ use crate::component::{
         velocity::VelocityActorComponent,
         TargetQueue,
     },
-    actor_class::model::ModelActorClassComponent,
+    actor_class::{
+        health::HealthActorClassComponent,
+        model::ModelActorClassComponent,
+    },
 };
 use std::time::Instant;
 use voxbrix_common::{
@@ -46,6 +49,7 @@ pub struct ServerUpdatesSystemData<'a> {
     class_ac: &'a mut ClassActorComponent,
     effect_ac: &'a mut EffectActorComponent,
     model_acc: &'a mut ModelActorClassComponent,
+    health_acc: &'a mut HealthActorClassComponent,
     position_ac: &'a mut PositionActorComponent,
     target_position_ac: &'a mut TargetPositionActorComponent,
     orientation_ac: &'a mut OrientationActorComponent,
@@ -67,6 +71,7 @@ impl ServerUpdatesSystemData<'_> {
         self.class_ac.unpack(&updates);
         self.effect_ac.unpack(&updates);
         self.model_acc.unpack(&updates);
+        self.health_acc.unpack(&updates);
         self.velocity_ac.unpack(&updates);
         self.orientation_ac.unpack_target(&updates);
         self.target_orientation_ac.unpack_convert(
