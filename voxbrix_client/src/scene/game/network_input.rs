@@ -1,6 +1,10 @@
 use crate::{
     component::{
-        block::class::ClassBlockComponent,
+        block::{
+            class::ClassBlockComponent,
+            environment::EnvironmentBlockComponent,
+            metadata::MetadataBlockComponent,
+        },
         chunk::sky_light_data::SkyLightDataChunkComponent,
     },
     resource::confirmed_snapshots::ConfirmedSnapshots,
@@ -70,10 +74,18 @@ impl NetworkInput<'_> {
                     ClientAccept::ChunkData(ChunkData {
                         chunk,
                         block_classes,
+                        block_environment,
+                        block_metadata,
                     }) => {
                         world
                             .get_resource_mut::<ClassBlockComponent>()
                             .insert_chunk(chunk, block_classes);
+                        world
+                            .get_resource_mut::<EnvironmentBlockComponent>()
+                            .insert_chunk(chunk, block_environment);
+                        world
+                            .get_resource_mut::<MetadataBlockComponent>()
+                            .insert_chunk(chunk, block_metadata);
                         world
                             .get_resource_mut::<StatusChunkComponent>()
                             .insert(chunk, ChunkStatus::Active);
@@ -82,10 +94,14 @@ impl NetworkInput<'_> {
                             .get_resource_mut::<SkyLightDataChunkComponent>()
                             .enqueue_chunk(chunk);
                     },
-                    ClientAccept::ChunkChanges(changes) => {
+                    ClientAccept::ChunkChanges {
+                        block_class,
+                        block_environment,
+                        block_metadata,
+                    } => {
                         if world
                             .get_data::<ChunkChangesAcceptSystem>()
-                            .run(changes)
+                            .run(block_class, block_environment, block_metadata)
                             .is_err()
                         {
                             error!("unable to decode chunk changes");

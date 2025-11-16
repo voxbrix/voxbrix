@@ -13,9 +13,13 @@ pub mod system;
 use ahash::AHashMap;
 use anyhow::Context;
 use arrayvec::ArrayVec;
-use component::block::BlocksVec;
+use component::block::{
+    metadata::BlockMetadata,
+    BlocksVec,
+};
 use entity::{
     block_class::BlockClass,
+    block_environment::BlockEnvironment,
     chunk::Chunk,
 };
 use serde::{
@@ -256,6 +260,8 @@ impl LabelLibrary {
 pub struct ChunkData {
     pub chunk: Chunk,
     pub block_classes: BlocksVec<BlockClass>,
+    pub block_environment: BlocksVec<BlockEnvironment>,
+    pub block_metadata: BlocksVec<BlockMetadata>,
 }
 
 pub trait ArrayExt<T, const N: usize> {

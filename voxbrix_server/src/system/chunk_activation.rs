@@ -8,7 +8,11 @@ use crate::{
             player::PlayerActorComponent,
             position::PositionActorComponent,
         },
-        block::class::ClassBlockComponent,
+        block::{
+            class::ClassBlockComponent,
+            environment::EnvironmentBlockComponent,
+            metadata::MetadataBlockComponent,
+        },
         chunk::{
             cache::CacheChunkComponent,
             status::{
@@ -23,6 +27,8 @@ use crate::{
     },
     storage::IntoDataSized,
     BLOCK_CLASS_TABLE,
+    BLOCK_ENVIRONMENT_TABLE,
+    BLOCK_METADATA_TABLE,
 };
 use ahash::AHashMap;
 use flume::Sender;
@@ -59,6 +65,8 @@ pub struct ChunkActivationSystemData<'a> {
     chunk_generation_tx: &'a Sender<ChunkGenerationRequest>,
 
     class_bc: &'a mut ClassBlockComponent,
+    environment_bc: &'a mut EnvironmentBlockComponent,
+    metadata_bc: &'a mut MetadataBlockComponent,
     cache_cc: &'a mut CacheChunkComponent,
     player_ac: &'a PlayerActorComponent,
     actor_rq: &'a mut RemovalQueue<Actor>,
@@ -152,19 +160,41 @@ impl ChunkActivationSystemData<'_> {
                 let mut packer = Packer::new();
 
                 let db_read = database.begin_read().unwrap();
-                let table = db_read
+                let class_table = db_read
                     .open_table(BLOCK_CLASS_TABLE)
                     .expect("server_loop: database read");
 
-                let block_classes = table
+                let environment_table = db_read
+                    .open_table(BLOCK_ENVIRONMENT_TABLE)
+                    .expect("server_loop: database read");
+
+                let metadata_table = db_read
+                    .open_table(BLOCK_METADATA_TABLE)
+                    .expect("server_loop: database read");
+
+                let block_classes = class_table
                     .get(chunk.into_data_sized())
                     .unwrap()
                     .map(|bytes| bytes.value().into_inner(&mut packer));
 
                 if let Some(block_classes) = block_classes {
+                    let block_environment = environment_table
+                        .get(chunk.into_data_sized())
+                        .unwrap()
+                        .map(|bytes| bytes.value().into_inner(&mut packer))
+                        .expect("environment not found for existing chunk");
+
+                    let block_metadata = metadata_table
+                        .get(chunk.into_data_sized())
+                        .unwrap()
+                        .map(|bytes| bytes.value().into_inner(&mut packer))
+                        .expect("metadata not found for existing chunk");
+
                     let data = ChunkData {
                         chunk,
                         block_classes,
+                        block_environment,
+                        block_metadata,
                     };
 
                     let data_encoded = packer
@@ -187,6 +217,8 @@ impl ChunkActivationSystemData<'_> {
             if !retain {
                 self.cache_cc.remove(chunk);
                 self.class_bc.remove_chunk(chunk);
+                self.environment_bc.remove_chunk(chunk);
+                self.metadata_bc.remove_chunk(chunk);
 
                 // Removing actors on inactivated chunks
                 for actor in self

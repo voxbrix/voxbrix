@@ -1,7 +1,11 @@
 use crate::{
     component::{
         actor::position::PositionActorComponent,
-        block::class::ClassBlockComponent,
+        block::{
+            class::ClassBlockComponent,
+            environment::EnvironmentBlockComponent,
+            metadata::MetadataBlockComponent,
+        },
         chunk::cache::{
             CacheChunkComponent,
             ChunkCache,
@@ -49,6 +53,8 @@ impl System for BlockSyncSystem {
 #[derive(SystemData)]
 pub struct BlockSyncSystemData<'a> {
     class_bc: &'a mut ClassBlockComponent,
+    environment_bc: &'a mut EnvironmentBlockComponent,
+    metadata_bc: &'a mut MetadataBlockComponent,
     actor_pc: &'a ActorPlayerComponent,
     chunk_view_pc: &'a ChunkViewPlayerComponent,
     client_pc: &'a ClientPlayerComponent,
@@ -63,15 +69,29 @@ pub struct BlockSyncSystemData<'a> {
 impl BlockSyncSystemData<'_> {
     pub fn run(self) {
         for chunk_changes in self.class_bc.changed_chunks() {
-            let blocks_cache = self
+            let block_classes = self
                 .class_bc
+                .get_chunk(chunk_changes.chunk)
+                .unwrap()
+                .clone();
+
+            let block_environment = self
+                .environment_bc
+                .get_chunk(chunk_changes.chunk)
+                .unwrap()
+                .clone();
+
+            let block_metadata = self
+                .metadata_bc
                 .get_chunk(chunk_changes.chunk)
                 .unwrap()
                 .clone();
 
             let cache_data = ClientAccept::ChunkData(ChunkData {
                 chunk: *chunk_changes.chunk,
-                block_classes: blocks_cache,
+                block_classes,
+                block_environment,
+                block_metadata,
             });
 
             self.cache_cc.insert(
@@ -103,7 +123,9 @@ impl BlockSyncSystemData<'_> {
             });
         }
 
-        let mut change_buffer = Vec::new();
+        let mut classes_buffer = Vec::new();
+        let mut environment_buffer = Vec::new();
+        let mut metadata_buffer = Vec::new();
 
         // Sending block class changes to players
         for (player, client, curr_radius) in self.actor_pc.iter().filter_map(|(player, actor)| {
@@ -114,6 +136,7 @@ impl BlockSyncSystemData<'_> {
 
             Some((player, client, curr_radius))
         }) {
+            // Class changes
             let chunk_iter = self
                 .class_bc
                 .changed_chunks()
@@ -121,7 +144,7 @@ impl BlockSyncSystemData<'_> {
 
             let chunk_amount = chunk_iter.clone().count();
 
-            let mut change_encoder = ChunkChanges::encode_chunks(chunk_amount, &mut change_buffer);
+            let mut change_encoder = ChunkChanges::encode_chunks(chunk_amount, &mut classes_buffer);
 
             for chunk_change in chunk_iter {
                 let mut block_encoder =
@@ -134,9 +157,62 @@ impl BlockSyncSystemData<'_> {
                 change_encoder = block_encoder.finish_chunk();
             }
 
-            let changes = change_encoder.finish();
+            let block_class = change_encoder.finish();
 
-            let data = ClientAccept::ChunkChanges(changes);
+            // Environment changes
+            let chunk_iter = self
+                .environment_bc
+                .changed_chunks()
+                .filter(|change| curr_radius.is_within(change.chunk));
+
+            let chunk_amount = chunk_iter.clone().count();
+
+            let mut change_encoder =
+                ChunkChanges::encode_chunks(chunk_amount, &mut environment_buffer);
+
+            for chunk_change in chunk_iter {
+                let mut block_encoder =
+                    change_encoder.start_chunk(chunk_change.chunk, chunk_change.changes().len());
+
+                for (block, block_class) in chunk_change.changes() {
+                    block_encoder.add_change(*block, *block_class);
+                }
+
+                change_encoder = block_encoder.finish_chunk();
+            }
+
+            let block_environment = change_encoder.finish();
+
+            // Metadata changes
+            let chunk_iter = self
+                .metadata_bc
+                .changed_chunks()
+                .filter(|change| curr_radius.is_within(change.chunk));
+
+            let chunk_amount = chunk_iter.clone().count();
+
+            let mut change_encoder =
+                ChunkChanges::encode_chunks(chunk_amount, &mut metadata_buffer);
+
+            for chunk_change in chunk_iter {
+                let mut block_encoder =
+                    change_encoder.start_chunk(chunk_change.chunk, chunk_change.changes().len());
+
+                for (block, block_class) in chunk_change.changes() {
+                    block_encoder.add_change(*block, *block_class);
+                }
+
+                change_encoder = block_encoder.finish_chunk();
+            }
+
+            let block_metadata = change_encoder.finish();
+
+            let data = ClientAccept::ChunkChanges {
+                block_class,
+                block_environment,
+                block_metadata,
+            };
+
             if client
                 .tx
                 .send(ClientEvent::SendDataReliable {

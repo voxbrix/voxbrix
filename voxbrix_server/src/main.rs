@@ -33,9 +33,13 @@ use tokio::{
     },
 };
 use voxbrix_common::{
-    component::block::BlocksVec,
+    component::block::{
+        metadata::BlockMetadata,
+        BlocksVec,
+    },
     entity::{
         block_class::BlockClass,
+        block_environment::BlockEnvironment,
         chunk::Chunk,
     },
 };
@@ -46,6 +50,12 @@ const PROCESS_INTERVAL: Duration = Duration::from_millis(50);
 const CLIENT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 const BLOCK_CLASS_TABLE: TableDefinition<DataSized<Chunk>, Data<BlocksVec<BlockClass>>> =
     TableDefinition::new("block_class");
+const BLOCK_ENVIRONMENT_TABLE: TableDefinition<
+    DataSized<Chunk>,
+    Data<BlocksVec<BlockEnvironment>>,
+> = TableDefinition::new("block_environment");
+const BLOCK_METADATA_TABLE: TableDefinition<DataSized<Chunk>, Data<BlocksVec<BlockMetadata>>> =
+    TableDefinition::new("block_metadata");
 const PLAYER_TABLE: TableDefinition<DataSized<Player>, Data<PlayerProfile>> =
     TableDefinition::new("player");
 const USERNAME_TABLE: TableDefinition<&str, DataSized<Player>> = TableDefinition::new("username");
@@ -69,6 +79,8 @@ fn main() -> Result<()> {
         write_tx.open_table(USERNAME_TABLE)?;
         write_tx.open_table(PLAYER_TABLE)?;
         write_tx.open_table(BLOCK_CLASS_TABLE)?;
+        write_tx.open_table(BLOCK_ENVIRONMENT_TABLE)?;
+        write_tx.open_table(BLOCK_METADATA_TABLE)?;
     }
     write_tx.commit()?;
 

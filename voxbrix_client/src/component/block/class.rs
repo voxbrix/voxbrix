@@ -5,4 +5,5 @@ use voxbrix_common::{
     },
     entity::block_class::BlockClass,
 };
+
 pub type ClassBlockComponent = BlockComponentSimple<BlocksVec<BlockClass>>;

@@ -2,11 +2,21 @@ use hash::Hasher64;
 use paste::paste;
 
 type BlockClass = u16;
+type BlockEnvironment = u8;
 
 extern "C" {
     fn get_blocks_in_chunk_edge() -> u32;
     fn get_block_class(ptr: *const u8, len: u32) -> u32;
-    fn push_block(block_class: u32);
+    fn get_block_environment(ptr: *const u8, len: u32) -> u32;
+    fn push_block(block_data: u32);
+}
+
+pub fn pack_block_data(
+    block_class: BlockClass,
+    block_environment: BlockEnvironment,
+    block_metadata: u8,
+) -> u32 {
+    (block_class as u32) << 16 | (block_environment as u32) << 8 | block_metadata as u32
 }
 
 macro_rules! block_class {
@@ -27,6 +37,24 @@ macro_rules! block_class {
     };
 }
 
+macro_rules! block_environment {
+    ($name:ident) => {
+        unsafe {
+            paste! {
+                static [<$name:upper _NAME>]: &'static str = stringify!($name);
+                static mut [<$name:upper>]: Option<BlockEnvironment> = None;
+                if [<$name:upper>].is_none() {
+                    [<$name:upper>] = Some(get_block_environment(
+                        [<$name:upper _NAME>].as_ptr(),
+                        [<$name:upper _NAME>].len() as u32,
+                    ) as BlockEnvironment)
+                }
+                [<$name:upper>].unwrap()
+            }
+        }
+    };
+}
+
 #[no_mangle]
 pub extern "C" fn generate_chunk(seed: u64, phase: u64, chunk_x: i32, chunk_y: i32, chunk_z: i32) {
     let blocks_in_chunk_edge = unsafe {
@@ -37,13 +65,11 @@ pub extern "C" fn generate_chunk(seed: u64, phase: u64, chunk_x: i32, chunk_y: i
         BICE.unwrap()
     };
 
-    let air = block_class!(air);
+    let empty = block_class!(empty);
     let grass = block_class!(grass);
     let stone = block_class!(stone);
 
-    let push_block = |block_class: BlockClass| unsafe {
-        push_block(block_class as u32);
-    };
+    let air = block_environment!(air);
 
     let mut hasher = Hasher64::new(seed);
     hasher.write(&phase.to_le_bytes());
@@ -63,18 +89,22 @@ pub extern "C" fn generate_chunk(seed: u64, phase: u64, chunk_x: i32, chunk_y: i
 
                 let ground_block_z = blocks_in_chunk_edge - 1;
 
-                if chunk_z % 32 == 0 && (0 ..= ground_block_z).contains(&block_z) {
+                let data = if chunk_z % 32 == 0 && (0 ..= ground_block_z).contains(&block_z) {
                     let width_coef = block_z as f64 / ground_block_z as f64;
 
                     let block_value = (1.0 - block_value.abs()) * (0.8 + 0.2 * width_coef);
 
                     if block_value > 0.95 {
-                        push_block(grass);
+                        pack_block_data(grass, air, 0)
                     } else {
-                        push_block(air);
+                        pack_block_data(empty, air, 0)
                     }
                 } else {
-                    push_block(air);
+                    pack_block_data(empty, air, 0)
+                };
+
+                unsafe {
+                    push_block(data);
                 }
             }
         }

@@ -1,8 +1,10 @@
 use crate::{
+    component::block::metadata::BlockMetadata,
     entity::{
         actor::Actor,
         block::Block,
         block_class::BlockClass,
+        block_environment::BlockEnvironment,
         chunk::Chunk,
         snapshot::{
             ClientSnapshot,
@@ -21,9 +23,11 @@ use crate::{
     ChunkData,
 };
 use serde::{
+    de::DeserializeOwned,
     Deserialize,
     Serialize,
 };
+use std::marker::PhantomData;
 
 #[derive(Serialize, Deserialize)]
 pub struct InitResponse {
@@ -81,53 +85,65 @@ impl Pack for RegisterResult {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct ChunkChanges<'a>(&'a [u8]);
+pub struct ChunkChanges<'a, T> {
+    buffer: &'a [u8],
+    _component: PhantomData<T>,
+}
 
-impl<'a> ChunkChanges<'a> {
-    pub fn decode_chunks(self) -> Result<ChunkChangesChunkDecoder<'a>, UnpackError> {
-        let (length, offset) = pack::decode_from_slice::<u64>(self.0).ok_or(UnpackError)?;
+impl<'a, T> ChunkChanges<'a, T> {
+    pub fn decode_chunks(self) -> Result<ChunkChangesChunkDecoder<'a, T>, UnpackError> {
+        let (length, offset) = pack::decode_from_slice::<u64>(self.buffer).ok_or(UnpackError)?;
 
         let length = length.try_into().unwrap();
 
         Ok(ChunkChangesChunkDecoder {
             length,
             position: 0,
-            data: &self.0[offset ..],
+            data: &self.buffer[offset ..],
+            _component: PhantomData,
         })
     }
 
     pub fn encode_chunks(
         chunk_amount: usize,
         buffer: &'a mut Vec<u8>,
-    ) -> ChunkChangesChunkEncoder<'a> {
+    ) -> ChunkChangesChunkEncoder<'a, T> {
         buffer.clear();
 
         let chunk_amount: u64 = chunk_amount.try_into().unwrap();
         pack::encode_write(&chunk_amount, buffer);
 
-        ChunkChangesChunkEncoder(buffer)
+        ChunkChangesChunkEncoder {
+            buffer,
+            _component: PhantomData,
+        }
     }
 }
 
-pub struct ChunkChangesBlockDecoder<'origin, 'data> {
-    origin: &'origin mut ChunkChangesChunkDecoder<'data>,
+pub struct ChunkChangesBlockDecoder<'origin, 'data, T> {
+    origin: &'origin mut ChunkChangesChunkDecoder<'data, T>,
     chunk: Chunk,
     length: usize,
     position: usize,
+    _component: PhantomData<T>,
 }
 
-impl ChunkChangesBlockDecoder<'_, '_> {
+impl<T> ChunkChangesBlockDecoder<'_, '_, T> {
     pub fn chunk(&self) -> Chunk {
         self.chunk
     }
+}
 
-    pub fn decode_block(&mut self) -> Option<Result<(Block, BlockClass), UnpackError>> {
+impl<T> ChunkChangesBlockDecoder<'_, '_, T>
+where
+    T: DeserializeOwned,
+{
+    pub fn decode_block(&mut self) -> Option<Result<(Block, T), UnpackError>> {
         if self.position >= self.length {
             return None;
         }
 
-        let (value, offset) = match pack::decode_from_slice::<(Block, BlockClass)>(self.origin.data)
-        {
+        let (value, offset) = match pack::decode_from_slice::<(Block, T)>(self.origin.data) {
             Some(v) => v,
             None => return Some(Err(UnpackError)),
         };
@@ -140,16 +156,17 @@ impl ChunkChangesBlockDecoder<'_, '_> {
     }
 }
 
-pub struct ChunkChangesChunkDecoder<'a> {
+pub struct ChunkChangesChunkDecoder<'a, T> {
     length: usize,
     position: usize,
     data: &'a [u8],
+    _component: PhantomData<T>,
 }
 
-impl<'a> ChunkChangesChunkDecoder<'a> {
+impl<'a, T> ChunkChangesChunkDecoder<'a, T> {
     pub fn decode_chunk<'b>(
         &'b mut self,
-    ) -> Option<Result<ChunkChangesBlockDecoder<'b, 'a>, UnpackError>> {
+    ) -> Option<Result<ChunkChangesBlockDecoder<'b, 'a, T>, UnpackError>> {
         if self.position >= self.length {
             return None;
         }
@@ -175,39 +192,58 @@ impl<'a> ChunkChangesChunkDecoder<'a> {
             origin: self,
             length: length.try_into().unwrap(),
             position: 0,
+            _component: PhantomData,
         }))
     }
 }
 
-pub struct ChunkChangesBlockEncoder<'a>(&'a mut Vec<u8>);
+pub struct ChunkChangesBlockEncoder<'a, T> {
+    buffer: &'a mut Vec<u8>,
+    _component: PhantomData<T>,
+}
 
-impl<'a> ChunkChangesBlockEncoder<'a> {
-    pub fn add_change(&mut self, block: Block, block_class: BlockClass) {
-        pack::encode_write(&(block, block_class), self.0);
+impl<'a, T> ChunkChangesBlockEncoder<'a, T>
+where
+    T: Serialize,
+{
+    pub fn add_change(&mut self, block: Block, block_component: T) {
+        pack::encode_write(&(block, block_component), self.buffer);
     }
 
-    pub fn finish_chunk(self) -> ChunkChangesChunkEncoder<'a> {
-        ChunkChangesChunkEncoder(self.0)
+    pub fn finish_chunk(self) -> ChunkChangesChunkEncoder<'a, T> {
+        ChunkChangesChunkEncoder {
+            buffer: self.buffer,
+            _component: PhantomData,
+        }
     }
 }
 
-pub struct ChunkChangesChunkEncoder<'a>(&'a mut Vec<u8>);
+pub struct ChunkChangesChunkEncoder<'a, T> {
+    buffer: &'a mut Vec<u8>,
+    _component: PhantomData<T>,
+}
 
-impl<'a> ChunkChangesChunkEncoder<'a> {
+impl<'a, T> ChunkChangesChunkEncoder<'a, T> {
     pub fn start_chunk(
         self,
         chunk: &Chunk,
         block_changes_amount: usize,
-    ) -> ChunkChangesBlockEncoder<'a> {
+    ) -> ChunkChangesBlockEncoder<'a, T> {
         let block_changes_amount: u64 = block_changes_amount.try_into().unwrap();
-        pack::encode_write(chunk, self.0);
-        pack::encode_write(&block_changes_amount, self.0);
+        pack::encode_write(chunk, self.buffer);
+        pack::encode_write(&block_changes_amount, self.buffer);
 
-        ChunkChangesBlockEncoder(self.0)
+        ChunkChangesBlockEncoder {
+            buffer: self.buffer,
+            _component: PhantomData,
+        }
     }
 
-    pub fn finish(self) -> ChunkChanges<'a> {
-        ChunkChanges(self.0)
+    pub fn finish(self) -> ChunkChanges<'a, T> {
+        ChunkChanges {
+            buffer: self.buffer,
+            _component: PhantomData,
+        }
     }
 }
 
@@ -226,7 +262,14 @@ pub struct ServerState<'a> {
 pub enum ClientAccept<'a> {
     State(ServerState<'a>),
     ChunkData(ChunkData),
-    ChunkChanges(#[serde(borrow)] ChunkChanges<'a>),
+    ChunkChanges {
+        #[serde(borrow)]
+        block_class: ChunkChanges<'a, BlockClass>,
+        #[serde(borrow)]
+        block_environment: ChunkChanges<'a, BlockEnvironment>,
+        #[serde(borrow)]
+        block_metadata: ChunkChanges<'a, BlockMetadata>,
+    },
 }
 
 impl Pack for ClientAccept<'_> {

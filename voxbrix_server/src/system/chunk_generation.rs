@@ -11,6 +11,8 @@ use crate::{
     },
     system::map_loading::Map,
     BLOCK_CLASS_TABLE,
+    BLOCK_ENVIRONMENT_TABLE,
+    BLOCK_METADATA_TABLE,
 };
 use anyhow::{
     Context,
@@ -27,12 +29,14 @@ use std::{
 use tokio::task;
 use voxbrix_common::{
     component::block::{
+        metadata::BlockMetadata,
         BlocksVec,
         BlocksVecBuilder,
     },
     entity::{
         block::BLOCKS_IN_CHUNK_EDGE,
         block_class::BlockClass,
+        block_environment::BlockEnvironment,
         chunk::{
             Chunk,
             Dimension,
@@ -73,20 +77,36 @@ impl System for ChunkGenerationSystem {
 
 struct GenerationData {
     block_class_label_map: LabelMap<BlockClass>,
+    block_environment_label_map: LabelMap<BlockEnvironment>,
     block_classes: BlocksVecBuilder<BlockClass>,
+    block_environment: BlocksVecBuilder<BlockEnvironment>,
+    block_metadata: BlocksVecBuilder<BlockMetadata>,
 }
 
 impl ChunkGenerationSystemData<'_> {
     #[must_use]
     pub async fn spawn(
         self,
-        send_chunk_data: impl Fn(Chunk, BlocksVec<BlockClass>, &mut Packer) + Send + 'static,
+        send_chunk_data: impl Fn(
+                Chunk,
+                BlocksVec<BlockClass>,
+                BlocksVec<BlockEnvironment>,
+                BlocksVec<BlockMetadata>,
+                &mut Packer,
+            ) + Send
+            + 'static,
     ) -> Sender<ChunkGenerationRequest> {
         let database = self.database.clone();
+
         let block_class_label_map = self
             .label_library
             .get_label_map_for::<BlockClass>()
             .expect("block class label map not found");
+        let block_environment_label_map = self
+            .label_library
+            .get_label_map_for::<BlockEnvironment>()
+            .expect("block environment label map not found");
+
         let dimension_kind_label_map = self
             .label_library
             .get_label_map_for::<DimensionKind>()
@@ -176,19 +196,58 @@ impl ChunkGenerationSystemData<'_> {
             linker
                 .func_wrap(
                     "env",
+                    "get_block_environment",
+                    move |mut caller: Caller<'_, GenerationData>, ptr: u32, len: u32| -> u32 {
+                        let ptr = ptr as usize;
+                        let len = len as usize;
+                        let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
+                        let label =
+                            std::str::from_utf8(&memory.data(&caller)[ptr .. ptr + len]).unwrap();
+                        caller
+                            .data()
+                            .block_environment_label_map
+                            .get(label)
+                            .expect("block class label not found")
+                            .0 as u32
+                    },
+                )
+                .unwrap();
+
+            linker
+                .func_wrap(
+                    "env",
                     "push_block",
-                    |mut caller: Caller<'_, GenerationData>, block_class: u32| {
+                    |mut caller: Caller<'_, GenerationData>, block_data: u32| {
                         let bclm_len = caller.data().block_class_label_map.len();
-                        let block_class: u16 = block_class
-                            .try_into()
-                            .ok()
-                            .filter(|bc| (*bc as usize) < bclm_len)
-                            .expect("incorrect block class generated");
+                        let bmedlm_len = caller.data().block_environment_label_map.len();
+
+                        let block_class = ((block_data >> 16) & 0xFF) as u16;
+                        let block_environment = ((block_data >> 8) & 0xF) as u8;
+                        let block_metadata = (block_data & 0xF) as u8;
+
+                        assert!(
+                            (block_class as usize) < bclm_len,
+                            "incorrect block class generated"
+                        );
+                        assert!(
+                            (block_environment as usize) < bmedlm_len,
+                            "incorrect block environment generated"
+                        );
 
                         caller
                             .data_mut()
                             .block_classes
                             .push(BlockClass(block_class));
+
+                        caller
+                            .data_mut()
+                            .block_environment
+                            .push(BlockEnvironment(block_environment));
+
+                        caller
+                            .data_mut()
+                            .block_metadata
+                            .push(BlockMetadata(block_metadata));
                     },
                 )
                 .unwrap();
@@ -226,7 +285,10 @@ impl ChunkGenerationSystemData<'_> {
                     &engine,
                     GenerationData {
                         block_class_label_map: block_class_label_map.clone(),
+                        block_environment_label_map: block_environment_label_map.clone(),
                         block_classes: BlocksVecBuilder::new(),
+                        block_environment: BlocksVecBuilder::new(),
+                        block_metadata: BlocksVecBuilder::new(),
                     },
                 );
 
@@ -257,6 +319,18 @@ impl ChunkGenerationSystemData<'_> {
                     mem::replace(&mut store.data_mut().block_classes, BlocksVecBuilder::new())
                         .build();
 
+                let block_environment = mem::replace(
+                    &mut store.data_mut().block_environment,
+                    BlocksVecBuilder::new(),
+                )
+                .build();
+
+                let block_metadata = mem::replace(
+                    &mut store.data_mut().block_metadata,
+                    BlocksVecBuilder::new(),
+                )
+                .build();
+
                 let db_write = database.begin_write().unwrap();
                 {
                     let mut table = db_write.open_table(BLOCK_CLASS_TABLE).unwrap();
@@ -266,10 +340,32 @@ impl ChunkGenerationSystemData<'_> {
                             block_classes.into_data(&mut packer),
                         )
                         .expect("server_loop: database write");
+
+                    let mut table = db_write.open_table(BLOCK_ENVIRONMENT_TABLE).unwrap();
+                    table
+                        .insert(
+                            chunk.into_data_sized(),
+                            block_environment.into_data(&mut packer),
+                        )
+                        .expect("server_loop: database write");
+
+                    let mut table = db_write.open_table(BLOCK_METADATA_TABLE).unwrap();
+                    table
+                        .insert(
+                            chunk.into_data_sized(),
+                            block_metadata.into_data(&mut packer),
+                        )
+                        .expect("server_loop: database write");
                 }
                 db_write.commit().unwrap();
 
-                send_chunk_data(chunk, block_classes, &mut packer);
+                send_chunk_data(
+                    chunk,
+                    block_classes,
+                    block_environment,
+                    block_metadata,
+                    &mut packer,
+                );
             }
         });
 

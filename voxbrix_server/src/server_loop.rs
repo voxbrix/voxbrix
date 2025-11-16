@@ -31,7 +31,11 @@ use crate::{
             },
             model::ModelActorClassComponent,
         },
-        block::class::ClassBlockComponent,
+        block::{
+            class::ClassBlockComponent,
+            environment::EnvironmentBlockComponent,
+            metadata::MetadataBlockComponent,
+        },
         chunk::{
             cache::CacheChunkComponent,
             status::StatusChunkComponent,
@@ -100,6 +104,8 @@ use voxbrix_common::{
         ACTOR_MODEL_LIST_PATH,
         BLOCK_CLASS_DIR,
         BLOCK_CLASS_LIST_PATH,
+        BLOCK_ENVIRONMENT_DIR,
+        BLOCK_ENVIRONMENT_LIST_PATH,
         EFFECT_LIST_PATH,
         UPDATE_LIST_PATH,
     },
@@ -120,6 +126,7 @@ use voxbrix_common::{
         actor_class::ActorClass,
         actor_model::ActorModel,
         block_class::BlockClass,
+        block_environment::BlockEnvironment,
         chunk::DimensionKind,
         effect::Effect,
         snapshot::ServerSnapshot,
@@ -195,6 +202,11 @@ impl ServerLoop {
             .expect("BlockClass list loading error");
 
         label_library
+            .load::<BlockEnvironment>(BLOCK_ENVIRONMENT_LIST_PATH)
+            .await
+            .expect("BlockEnvironment list loading error");
+
+        label_library
             .load::<ActorModel>(ACTOR_MODEL_LIST_PATH)
             .await
             .expect("ActorModel list loading error");
@@ -223,6 +235,11 @@ impl ServerLoop {
             ComponentMap::<BlockClass>::load_data(BLOCK_CLASS_DIR, &label_library)
                 .await
                 .expect("loading block classes");
+
+        let _block_environment_component_map =
+            ComponentMap::<BlockEnvironment>::load_data(BLOCK_ENVIRONMENT_DIR, &label_library)
+                .await
+                .expect("loading block environment");
 
         let effect_component_map = ComponentMap::load_data(EFFECTS_DIR, &label_library)
             .await
@@ -284,6 +301,9 @@ impl ServerLoop {
         let cache_cc = CacheChunkComponent::new();
 
         let class_bc = ClassBlockComponent::new();
+        let environment_bc = EnvironmentBlockComponent::new();
+        let metadata_bc = MetadataBlockComponent::new();
+
         let collision_bcc = CollisionBlockClassComponent::new(
             &block_class_component_map,
             &label_library,
@@ -364,6 +384,8 @@ impl ServerLoop {
         world.add(hitbox_acc);
 
         world.add(class_bc);
+        world.add(environment_bc);
+        world.add(metadata_bc);
 
         world.add(collision_bcc);
 
@@ -376,18 +398,23 @@ impl ServerLoop {
 
         let chunk_generation_system = world
             .get_data::<ChunkGenerationSystem>()
-            .spawn(move |chunk, block_classes, packer| {
-                let data = ChunkData {
-                    chunk,
-                    block_classes,
-                };
+            .spawn(
+                move |chunk, block_classes, block_environment, block_metadata, packer| {
+                    let data = ChunkData {
+                        chunk,
+                        block_classes,
+                        block_environment,
+                        block_metadata,
+                    };
 
-                let data_encoded = packer
-                    .pack_to_vec(&ClientAccept::ChunkData(data.clone()))
-                    .into();
+                    let data_encoded = packer
+                        .pack_to_vec(&ClientAccept::ChunkData(data.clone()))
+                        .into();
 
-                let _ = shared_event_tx_clone.send(SharedEvent::ChunkLoaded { data, data_encoded });
-            })
+                    let _ =
+                        shared_event_tx_clone.send(SharedEvent::ChunkLoaded { data, data_encoded });
+                },
+            )
             .await;
 
         world.add(chunk_generation_system);

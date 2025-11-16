@@ -28,6 +28,7 @@ use std::{
     fmt,
 };
 
+pub mod metadata;
 pub mod sky_light;
 
 pub trait BlockComponent<T> {

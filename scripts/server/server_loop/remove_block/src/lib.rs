@@ -41,11 +41,11 @@ pub extern "C" fn run() {
         return;
     };
 
-    let air = api::block_class!(air);
+    let empty = api::block_class!(empty);
 
     api::set_class_of_block(SetClassOfBlockRequest {
         chunk: target.chunk,
         block: target.block,
-        block_class: air,
+        block_class: empty,
     });
 }

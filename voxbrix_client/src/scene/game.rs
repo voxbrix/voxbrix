@@ -26,8 +26,13 @@ use crate::{
             ActorModelBuilderDescriptor,
             BuilderActorModelComponent,
         },
-        block::class::ClassBlockComponent,
+        block::{
+            class::ClassBlockComponent,
+            environment::EnvironmentBlockComponent,
+            metadata::MetadataBlockComponent,
+        },
         block_class::model::ModelBlockClassComponent,
+        block_environment::model::ModelBlockEnvironmentComponent,
         block_model::{
             builder::{
                 BlockModelBuilderDescriptor,
@@ -36,6 +41,10 @@ use crate::{
             culling::{
                 Culling,
                 CullingBlockModelComponent,
+            },
+            opacity::{
+                Opacity as BlockModelOpacity,
+                OpacityBlockModelComponent,
             },
         },
         chunk::{
@@ -125,6 +134,8 @@ use voxbrix_common::{
         ACTOR_MODEL_LIST_PATH,
         BLOCK_CLASS_DIR,
         BLOCK_CLASS_LIST_PATH,
+        BLOCK_ENVIRONMENT_DIR,
+        BLOCK_ENVIRONMENT_LIST_PATH,
         UPDATE_LIST_PATH,
     },
     async_ext::{
@@ -160,6 +171,7 @@ use voxbrix_common::{
         actor_class::ActorClass,
         actor_model::ActorModel,
         block_class::BlockClass,
+        block_environment::BlockEnvironment,
         chunk::{
             Chunk,
             Dimension,
@@ -265,6 +277,11 @@ impl GameScene {
             .load::<BlockClass>(BLOCK_CLASS_LIST_PATH)
             .await
             .context("BlockClass list loading error")?;
+
+        label_library
+            .load::<BlockEnvironment>(BLOCK_ENVIRONMENT_LIST_PATH)
+            .await
+            .context("BlockEnvironment list loading error")?;
 
         label_library
             .load::<BlockModel>(BLOCK_MODEL_LIST_PATH)
@@ -384,6 +401,10 @@ impl GameScene {
         let block_class_component_map =
             ComponentMap::<BlockClass>::load_data(BLOCK_CLASS_DIR, &label_library).await?;
 
+        let block_environment_component_map =
+            ComponentMap::<BlockEnvironment>::load_data(BLOCK_ENVIRONMENT_DIR, &label_library)
+                .await?;
+
         let block_model_component_map =
             ComponentMap::<BlockModel>::load_data(BLOCK_MODEL_DIR, &label_library).await?;
 
@@ -406,13 +427,36 @@ impl GameScene {
             |value: Culling| Ok(value),
         )?;
 
+        let opacity_bmc = OpacityBlockModelComponent::new(
+            &block_model_component_map,
+            &label_library,
+            "opacity",
+            |value: BlockModelOpacity| Ok(value),
+        )?;
+
         let status_cc = StatusChunkComponent::new();
 
         let class_bc = ClassBlockComponent::new();
+        let environment_bc = EnvironmentBlockComponent::new();
+        let metadata_bc = MetadataBlockComponent::new();
         let sky_light_bc = SkyLightBlockComponent::new();
 
         let model_bcc = ModelBlockClassComponent::new(
             &block_class_component_map,
+            &label_library,
+            "model",
+            |model_label: String| {
+                label_library.get(&model_label).ok_or_else(|| {
+                    anyhow::Error::msg(format!(
+                        "block texture with label \"{}\" is undefined",
+                        model_label
+                    ))
+                })
+            },
+        )?;
+
+        let model_bec = ModelBlockEnvironmentComponent::new(
+            &block_environment_component_map,
             &label_library,
             "model",
             |model_label: String| {
@@ -613,11 +657,15 @@ impl GameScene {
         world.add(health_acc);
 
         world.add(class_bc);
+        world.add(environment_bc);
+        world.add(metadata_bc);
         world.add(sky_light_bc);
 
         world.add(collision_bcc);
         world.add(model_bcc);
         world.add(opacity_bcc);
+
+        world.add(model_bec);
 
         world.add(status_cc);
         world.add(RenderDataChunkComponent::new());
@@ -625,6 +673,7 @@ impl GameScene {
 
         world.add(builder_bmc);
         world.add(culling_bmc);
+        world.add(opacity_bmc);
 
         world.add(player_input);
         world.add(sky_light_system);
