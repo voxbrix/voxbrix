@@ -23,12 +23,12 @@ impl GpuVec {
     }
 
     /// Will panic if length is 0.
-    pub fn get_writer<'a>(
-        &'a mut self,
+    pub fn get_writer(
+        &mut self,
         device: &wgpu::Device,
-        queue: &'a wgpu::Queue,
+        queue: &wgpu::Queue,
         length: wgpu::BufferAddress,
-    ) -> wgpu::QueueWriteBufferView<'a> {
+    ) -> wgpu::QueueWriteBufferView {
         self.length = length;
         let capacity = self.buffer.size();
 

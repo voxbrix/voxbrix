@@ -114,7 +114,7 @@ impl RenderPoolDescriptor {
 }
 
 pub struct Renderer<'a> {
-    is_first_pass: bool,
+    pub is_first_pass: bool,
     pub encoder: &'a mut wgpu::CommandEncoder,
     pub view: &'a wgpu::TextureView,
     pub device: &'a wgpu::Device,
@@ -122,7 +122,7 @@ pub struct Renderer<'a> {
     /// Only the last renderer will have this present:
     pub ui_renderer: Option<&'a mut UiRenderer>,
     pub camera: &'a Camera,
-    depth_texture_view: &'a wgpu::TextureView,
+    pub depth_texture_view: &'a wgpu::TextureView,
 }
 
 impl<'a> Renderer<'a> {
@@ -156,6 +156,7 @@ impl<'a> Renderer<'a> {
                     },
                     store: wgpu::StoreOp::Store,
                 },
+                depth_slice: None,
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: depth_texture_view,

@@ -27,10 +27,10 @@ voxbrix_common = { path = "../voxbrix_common" }
 voxbrix_world = { path = "../voxbrix_world" }
 local_channel = { path = "../local_channel" }
 winit = "0.30"
-wgpu = { version = "25.0", default-features = false, features = ["vulkan", "metal", "wgsl"] }
-egui = { version = "0.32", default-features = false }
-egui-winit = { version = "0.32", default-features = false, features = ["clipboard", "wayland"] }
-egui-wgpu = "0.32"
+wgpu = { version = "27.0", default-features = false, features = ["vulkan", "metal", "wgsl"] }
+egui = { version = "0.33", default-features = false }
+egui-winit = { version = "0.33", default-features = false, features = ["clipboard", "wayland"] }
+egui-wgpu = "0.33"
 bytemuck = { version = "1", features = ["derive"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 bitflags = "2"

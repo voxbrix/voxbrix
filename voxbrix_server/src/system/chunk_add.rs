@@ -4,7 +4,11 @@ use crate::{
             chunk_activation::ChunkActivationActorComponent,
             position::PositionActorComponent,
         },
-        block::class::ClassBlockComponent,
+        block::{
+            class::ClassBlockComponent,
+            environment::EnvironmentBlockComponent,
+            metadata::MetadataBlockComponent,
+        },
         chunk::{
             cache::CacheChunkComponent,
             status::{
@@ -43,6 +47,8 @@ pub struct ChunkAddSystemData<'a> {
     client_pc: &'a ClientPlayerComponent,
 
     class_bc: &'a mut ClassBlockComponent,
+    environment_bc: &'a mut EnvironmentBlockComponent,
+    metadata_bc: &'a mut MetadataBlockComponent,
     cache_cc: &'a mut CacheChunkComponent,
 
     player_rq: &'a mut RemovalQueue<Player>,
@@ -65,6 +71,11 @@ impl ChunkAddSystemData<'_> {
 
         self.class_bc
             .insert_chunk(chunk_data.chunk, chunk_data.block_classes);
+        self.environment_bc
+            .insert_chunk(chunk_data.chunk, chunk_data.block_environment);
+        self.metadata_bc
+            .insert_chunk(chunk_data.chunk, chunk_data.block_metadata);
+
         self.cache_cc
             .insert(chunk_data.chunk, data_encoded.clone().into());
 

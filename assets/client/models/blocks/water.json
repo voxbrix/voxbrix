@@ -1,0 +1,330 @@
+{
+  "culling": {
+    "kind": "Full"
+  },
+  "builder": {
+    "grid_size": [
+      1,
+      1,
+      1
+    ],
+    "texture_grid_size": [
+      1,
+      1
+    ],
+    "quads": [
+      {
+        "texture_label": "water",
+        "culling_neighbor": {
+          "kind": "NegativeX"
+        },
+        "vertices": [
+          {
+            "position": [
+              0,
+              0,
+              1
+            ],
+            "texture_position": [
+              0,
+              0
+            ]
+          },
+          {
+            "position": [
+              0,
+              1,
+              1
+            ],
+            "texture_position": [
+              1,
+              0
+            ]
+          },
+          {
+            "position": [
+              0,
+              1,
+              0
+            ],
+            "texture_position": [
+              1,
+              1
+            ]
+          },
+          {
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "texture_position": [
+              0,
+              1
+            ]
+          }
+        ]
+      },
+      {
+        "texture_label": "water",
+        "culling_neighbor": {
+          "kind": "PositiveX"
+        },
+        "vertices": [
+          {
+            "position": [
+              1,
+              1,
+              1
+            ],
+            "texture_position": [
+              0,
+              0
+            ]
+          },
+          {
+            "position": [
+              1,
+              0,
+              1
+            ],
+            "texture_position": [
+              1,
+              0
+            ]
+          },
+          {
+            "position": [
+              1,
+              0,
+              0
+            ],
+            "texture_position": [
+              1,
+              1
+            ]
+          },
+          {
+            "position": [
+              1,
+              1,
+              0
+            ],
+            "texture_position": [
+              0,
+              1
+            ]
+          }
+        ]
+      },
+      {
+        "texture_label": "water",
+        "culling_neighbor": {
+          "kind": "NegativeY"
+        },
+        "vertices": [
+          {
+            "position": [
+              1,
+              0,
+              1
+            ],
+            "texture_position": [
+              0,
+              0
+            ]
+          },
+          {
+            "position": [
+              0,
+              0,
+              1
+            ],
+            "texture_position": [
+              1,
+              0
+            ]
+          },
+          {
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "texture_position": [
+              1,
+              1
+            ]
+          },
+          {
+            "position": [
+              1,
+              0,
+              0
+            ],
+            "texture_position": [
+              0,
+              1
+            ]
+          }
+        ]
+      },
+      {
+        "texture_label": "water",
+        "culling_neighbor": {
+          "kind": "PositiveY"
+        },
+        "vertices": [
+          {
+            "position": [
+              0,
+              1,
+              1
+            ],
+            "texture_position": [
+              0,
+              0
+            ]
+          },
+          {
+            "position": [
+              1,
+              1,
+              1
+            ],
+            "texture_position": [
+              1,
+              0
+            ]
+          },
+          {
+            "position": [
+              1,
+              1,
+              0
+            ],
+            "texture_position": [
+              1,
+              1
+            ]
+          },
+          {
+            "position": [
+              0,
+              1,
+              0
+            ],
+            "texture_position": [
+              0,
+              1
+            ]
+          }
+        ]
+      },
+      {
+        "texture_label": "water",
+        "culling_neighbor": {
+          "kind": "NegativeZ"
+        },
+        "vertices": [
+          {
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "texture_position": [
+              0,
+              0
+            ]
+          },
+          {
+            "position": [
+              0,
+              1,
+              0
+            ],
+            "texture_position": [
+              1,
+              0
+            ]
+          },
+          {
+            "position": [
+              1,
+              1,
+              0
+            ],
+            "texture_position": [
+              1,
+              1
+            ]
+          },
+          {
+            "position": [
+              1,
+              0,
+              0
+            ],
+            "texture_position": [
+              0,
+              1
+            ]
+          }
+        ]
+      },
+      {
+        "texture_label": "water",
+        "culling_neighbor": {
+          "kind": "PositiveZ"
+        },
+        "vertices": [
+          {
+            "position": [
+              1,
+              0,
+              1
+            ],
+            "texture_position": [
+              0,
+              0
+            ]
+          },
+          {
+            "position": [
+              1,
+              1,
+              1
+            ],
+            "texture_position": [
+              1,
+              0
+            ]
+          },
+          {
+            "position": [
+              0,
+              1,
+              1
+            ],
+            "texture_position": [
+              1,
+              1
+            ]
+          },
+          {
+            "position": [
+              0,
+              0,
+              1
+            ],
+            "texture_position": [
+              0,
+              1
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

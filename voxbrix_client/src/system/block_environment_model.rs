@@ -1,7 +1,7 @@
 use crate::{
     component::{
-        block::class::ClassBlockComponent,
-        block_class::model::ModelBlockClassComponent,
+        block::environment::EnvironmentBlockComponent,
+        block_environment::model::ModelBlockEnvironmentComponent,
         block_model::{
             builder::{
                 BuilderBlockModelComponent,
@@ -12,7 +12,7 @@ use crate::{
                 CullingBlockModelComponent,
             },
         },
-        chunk::render_data::BlkRenderDataChunkComponent,
+        chunk::render_data::EnvRenderDataChunkComponent,
     },
     resource::render_pool::primitives::Vertex,
 };
@@ -28,7 +28,7 @@ use voxbrix_common::{
     },
     entity::{
         block::Neighbor,
-        block_class::BlockClass,
+        block_environment::BlockEnvironment,
         chunk::Chunk,
     },
     math::Vec3I32,
@@ -40,9 +40,9 @@ use voxbrix_world::{
 
 fn neighbors_to_cull_flags(
     neighbors: &[Neighbor; 6],
-    this_chunk: &BlocksVec<BlockClass>,
-    neighbor_chunks: &[Option<&BlocksVec<BlockClass>>; 6],
-    model_bcc: &ModelBlockClassComponent,
+    this_chunk: &BlocksVec<BlockEnvironment>,
+    neighbor_chunks: &[Option<&BlocksVec<BlockEnvironment>>; 6],
+    model_bcc: &ModelBlockEnvironmentComponent,
     culling_bmc: &CullingBlockModelComponent,
 ) -> CullFlags {
     let mut cull_flags = CullFlags::all();
@@ -52,9 +52,9 @@ fn neighbors_to_cull_flags(
 
         match neighbor {
             Neighbor::ThisChunk(n) => {
-                let class = this_chunk.get(*n);
+                let environment = this_chunk.get(*n);
                 let culling = model_bcc
-                    .get(class)
+                    .get(environment)
                     .and_then(|model| culling_bmc.get(model));
                 match culling {
                     Some(Culling::Full) => {
@@ -65,9 +65,9 @@ fn neighbors_to_cull_flags(
             },
             Neighbor::OtherChunk(n) => {
                 if let Some(chunk) = neighbor_chunk {
-                    let class = chunk.get(*n);
+                    let environment = chunk.get(*n);
                     let culling = model_bcc
-                        .get(class)
+                        .get(environment)
                         .and_then(|model| culling_bmc.get(model));
                     match culling {
                         Some(Culling::Full) => {
@@ -87,8 +87,8 @@ fn neighbors_to_cull_flags(
 
 fn build_chunk_buffer_shard<'a>(
     chunk: &'a Chunk,
-    class_bc: &'a ClassBlockComponent,
-    model_bcc: &'a ModelBlockClassComponent,
+    environment_bc: &'a EnvironmentBlockComponent,
+    model_bcc: &'a ModelBlockEnvironmentComponent,
     builder_bmc: &'a BuilderBlockModelComponent,
     culling_bmc: &'a CullingBlockModelComponent,
     sky_light_bc: &'a SkyLightBlockComponent,
@@ -103,13 +103,13 @@ fn build_chunk_buffer_shard<'a>(
     ]
     .map(|offset| chunk.checked_add(Vec3I32::from_array(offset)));
 
-    let this_chunk_class = class_bc.get_chunk(chunk).unwrap();
+    let this_chunk_environment = environment_bc.get_chunk(chunk).unwrap();
     let this_chunk_light = sky_light_bc.get_chunk(chunk).unwrap();
 
-    let neighbor_chunk_class = neighbor_chunk_ids.map(|chunk| {
-        let block_classes = class_bc.get_chunk(&chunk?)?;
+    let neighbor_chunk_environment = neighbor_chunk_ids.map(|chunk| {
+        let block_environmentes = environment_bc.get_chunk(&chunk?)?;
 
-        Some(block_classes)
+        Some(block_environmentes)
     });
 
     let neighbor_chunk_light = neighbor_chunk_ids.map(|chunk| {
@@ -118,11 +118,11 @@ fn build_chunk_buffer_shard<'a>(
         Some(block_light)
     });
 
-    this_chunk_class
+    this_chunk_environment
         .par_iter()
-        .flat_map_iter(move |(block, block_class)| {
+        .flat_map_iter(move |(block, block_environment)| {
             model_bcc
-                .get(block_class)
+                .get(block_environment)
                 .and_then(|m| builder_bmc.get(m))
                 .into_iter()
                 .flat_map(move |model_builder| {
@@ -130,8 +130,8 @@ fn build_chunk_buffer_shard<'a>(
 
                     let cull_flags = neighbors_to_cull_flags(
                         &neighbors,
-                        this_chunk_class,
-                        &neighbor_chunk_class,
+                        this_chunk_environment,
+                        &neighbor_chunk_environment,
                         model_bcc,
                         culling_bmc,
                     );
@@ -155,26 +155,27 @@ fn build_chunk_buffer_shard<'a>(
         })
 }
 
-pub struct BlockModelSystem;
+pub struct BlockEnvironmentModelSystem;
 
-impl System for BlockModelSystem {
-    type Data<'a> = BlockModelSystemData<'a>;
+impl System for BlockEnvironmentModelSystem {
+    type Data<'a> = BlockEnvironmentModelSystemData<'a>;
 }
 
 #[derive(SystemData)]
-pub struct BlockModelSystemData<'a> {
-    class_bc: &'a ClassBlockComponent,
-    model_bcc: &'a ModelBlockClassComponent,
+pub struct BlockEnvironmentModelSystemData<'a> {
+    environment_bc: &'a EnvironmentBlockComponent,
+    model_bcc: &'a ModelBlockEnvironmentComponent,
     builder_bmc: &'a BuilderBlockModelComponent,
     culling_bmc: &'a CullingBlockModelComponent,
     sky_light_bc: &'a SkyLightBlockComponent,
-    render_data_cc: &'a mut BlkRenderDataChunkComponent,
+    render_data_cc: &'a mut EnvRenderDataChunkComponent,
 }
 
-impl BlockModelSystemData<'_> {
+impl BlockEnvironmentModelSystemData<'_> {
     pub fn run(self) {
         let chunk_exists = |chunk: &Chunk| -> bool {
-            self.class_bc.get_chunk(chunk).is_some() && self.sky_light_bc.get_chunk(chunk).is_some()
+            self.environment_bc.get_chunk(chunk).is_some()
+                && self.sky_light_bc.get_chunk(chunk).is_some()
         };
 
         let selected_chunks = self.render_data_cc.select_chunks(chunk_exists);
@@ -182,7 +183,7 @@ impl BlockModelSystemData<'_> {
         let par_iter = selected_chunks.into_par_iter().map(|(chunk, mut shard)| {
             shard.par_extend(build_chunk_buffer_shard(
                 &chunk,
-                self.class_bc,
+                self.environment_bc,
                 self.model_bcc,
                 self.builder_bmc,
                 self.culling_bmc,

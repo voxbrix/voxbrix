@@ -1,4 +1,6 @@
 pub mod actor_render;
+pub mod block_environment_model;
+pub mod block_environment_render;
 pub mod block_model;
 pub mod block_render;
 pub mod chunk_changes_accept;

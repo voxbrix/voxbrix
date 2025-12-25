@@ -9,6 +9,7 @@ use crate::{
     },
     system::{
         actor_render::ActorRenderSystem,
+        block_environment_render::BlockEnvironmentRenderSystem,
         block_render::BlockRenderSystem,
         chunk_presence::ChunkPresenceSystem,
         hud::HUDSystem,
@@ -55,15 +56,18 @@ impl Process<'_> {
 
         let mut render_pool = world.take_resource::<RenderPool>();
 
-        let (mut block_rd, mut target_block_hl, mut actor_rd, mut interface_rd) = world
-            .get_data::<(
+        let (mut block_rd, mut target_block_hl, mut actor_rd, mut block_env_rd, mut interface_rd) =
+            world.get_data::<(
                 BlockRenderSystem,
                 TargetBlockHightlightSystem,
                 ActorRenderSystem,
+                BlockEnvironmentRenderSystem,
                 InterfaceRenderSystem,
             )>();
 
-        let render_systems: [&mut (dyn FnMut(Renderer) + Send); 4] = [
+        const RENDER_LENGTH: usize = 5;
+
+        let render_systems: [&mut (dyn FnMut(Renderer) + Send); RENDER_LENGTH] = [
             &mut |renderer| {
                 block_rd.run(renderer);
             },
@@ -74,13 +78,16 @@ impl Process<'_> {
                 actor_rd.run(renderer);
             },
             &mut |renderer| {
+                block_env_rd.run(renderer);
+            },
+            &mut |renderer| {
                 // Interface must be the last because only the last renderer has UI renderer:
                 interface_rd.run(renderer);
             },
         ];
 
         render_pool
-            .get_renderers::<4>()
+            .get_renderers::<RENDER_LENGTH>()
             .into_iter()
             .zip(render_systems.into_iter())
             .par_bridge()

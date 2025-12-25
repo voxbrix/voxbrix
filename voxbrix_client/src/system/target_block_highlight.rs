@@ -1,5 +1,5 @@
 use crate::{
-    assets::SHADERS_PATH,
+    assets::ACTOR_BLOCK_SHADER_PATH,
     component::{
         actor::{
             orientation::OrientationActorComponent,
@@ -52,7 +52,7 @@ impl<'a> TargetBlockHightlightSystemDescriptor<'a> {
             block_texture_label_map,
         } = self;
 
-        let shaders = voxbrix_common::read_file_async(SHADERS_PATH)
+        let shaders = voxbrix_common::read_file_async(ACTOR_BLOCK_SHADER_PATH)
             .await
             .expect("unable to read shaders file");
 
@@ -95,7 +95,7 @@ impl<'a> TargetBlockHightlightSystemDescriptor<'a> {
                         entry_point: Some("fs_main"),
                         targets: &[Some(wgpu::ColorTargetState {
                             format: texture_format,
-                            blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                            blend: Some(wgpu::BlendState::REPLACE),
                             write_mask: wgpu::ColorWrites::ALL,
                         })],
                         compilation_options: Default::default(),

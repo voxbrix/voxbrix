@@ -3,7 +3,10 @@ use crate::{
         actor::position::PositionActorComponent,
         block::class::ClassBlockComponent,
         chunk::{
-            render_data::RenderDataChunkComponent,
+            render_data::{
+                BlkRenderDataChunkComponent,
+                EnvRenderDataChunkComponent,
+            },
             sky_light_data::SkyLightDataChunkComponent,
         },
     },
@@ -34,7 +37,8 @@ pub struct ChunkPresenceSystemData<'a> {
     status_cc: &'a mut StatusChunkComponent,
     class_bc: &'a mut ClassBlockComponent,
     sky_light_bc: &'a mut SkyLightBlockComponent,
-    render_data_cc: &'a mut RenderDataChunkComponent,
+    blk_render_data_cc: &'a mut BlkRenderDataChunkComponent,
+    env_render_data_cc: &'a mut EnvRenderDataChunkComponent,
     sky_light_data_cc: &'a mut SkyLightDataChunkComponent,
 }
 
@@ -52,7 +56,8 @@ impl ChunkPresenceSystemData<'_> {
             if !retain {
                 self.class_bc.remove_chunk(&chunk);
                 self.sky_light_bc.remove_chunk(&chunk);
-                self.render_data_cc.remove_chunk(&chunk);
+                self.blk_render_data_cc.remove_chunk(&chunk);
+                self.env_render_data_cc.remove_chunk(&chunk);
                 self.sky_light_data_cc.remove_chunk(&chunk);
             }
             retain

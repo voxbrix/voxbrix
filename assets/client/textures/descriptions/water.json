@@ -1,0 +1,7 @@
+{
+  "animation": {
+    "frames": 3,
+    "ms_per_frame": 1000,
+    "interpolate": true
+  }
+}

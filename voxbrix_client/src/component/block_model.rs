@@ -9,7 +9,6 @@ use voxbrix_common::{
 
 pub mod builder;
 pub mod culling;
-pub mod opacity;
 
 pub struct BlockModelComponent<T> {
     data: Vec<Option<T>>,

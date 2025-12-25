@@ -1,7 +1,10 @@
 use crate::component::{
     block::class::ClassBlockComponent,
     chunk::{
-        render_data::RenderDataChunkComponent,
+        render_data::{
+            BlkRenderDataChunkComponent,
+            EnvRenderDataChunkComponent,
+        },
         sky_light_data::{
             BlockQueue,
             SkyLightDataChunkComponent,
@@ -64,7 +67,8 @@ pub struct SkyLightSystemData<'a> {
     opacity_bcc: &'a OpacityBlockClassComponent,
     sky_light_bc: &'a mut SkyLightBlockComponent,
     sky_light_data_cc: &'a mut SkyLightDataChunkComponent,
-    render_data_cc: &'a mut RenderDataChunkComponent,
+    blk_render_data_cc: &'a mut BlkRenderDataChunkComponent,
+    env_render_data_cc: &'a mut EnvRenderDataChunkComponent,
 }
 
 impl<'a> SkyLightSystemData<'a> {
@@ -272,7 +276,8 @@ impl<'a> SkyLightSystemData<'a> {
             self.sky_light_data_cc
                 .insert_block_queue(chunk, block_queue);
 
-            self.render_data_cc.enqueue_chunk(chunk);
+            self.blk_render_data_cc.enqueue_chunk(chunk);
+            self.env_render_data_cc.enqueue_chunk(chunk);
 
             let need_redraw_iter = [
                 [-1, 0, 0],
@@ -293,7 +298,8 @@ impl<'a> SkyLightSystemData<'a> {
             });
 
             for chunk in need_redraw_iter {
-                self.render_data_cc.enqueue_chunk(chunk);
+                self.blk_render_data_cc.enqueue_chunk(chunk);
+                self.env_render_data_cc.enqueue_chunk(chunk);
             }
         }
     }

@@ -12,6 +12,10 @@ use rayon::prelude::*;
 use std::{
     collections::VecDeque,
     iter,
+    ops::{
+        Deref,
+        DerefMut,
+    },
 };
 use voxbrix_common::{
     entity::{
@@ -30,6 +34,50 @@ use voxbrix_common::{
         Vec3I32,
     },
 };
+
+pub struct BlkRenderDataChunkComponent(RenderData);
+
+impl BlkRenderDataChunkComponent {
+    pub fn new() -> Self {
+        Self(RenderData::new())
+    }
+}
+
+impl Deref for BlkRenderDataChunkComponent {
+    type Target = RenderData;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for BlkRenderDataChunkComponent {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+pub struct EnvRenderDataChunkComponent(RenderData);
+
+impl Deref for EnvRenderDataChunkComponent {
+    type Target = RenderData;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for EnvRenderDataChunkComponent {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl EnvRenderDataChunkComponent {
+    pub fn new() -> Self {
+        Self(RenderData::new())
+    }
+}
 
 pub struct VertexBuffer {
     num_vertices: IndexType,
@@ -124,7 +172,7 @@ fn slice_buffers<'a>(chunk_info: &mut [ChunkInfo<'a>], mut vertex_buffer: &'a mu
     }
 }
 
-pub struct RenderDataChunkComponent {
+pub struct RenderData {
     block_change_queue: VecDeque<Chunk>,
     block_change_neighbors: AHashMap<Chunk, [bool; 6]>,
     chunk_queue: VecDeque<Chunk>,
@@ -137,8 +185,8 @@ pub struct RenderDataChunkComponent {
     free_vertex_buffers: Vec<VertexBuffer>,
 }
 
-impl RenderDataChunkComponent {
-    pub fn new() -> Self {
+impl RenderData {
+    fn new() -> Self {
         Self {
             block_change_queue: Default::default(),
             block_change_neighbors: Default::default(),
@@ -146,7 +194,7 @@ impl RenderDataChunkComponent {
             enqueued_chunks: Default::default(),
             chunk_buffer_shards: Default::default(),
             free_shards: Default::default(),
-            superchunk_side_size: 4,
+            superchunk_side_size: 2,
             prepared_vertex_buffers: Default::default(),
             updated_vertex_buffers: Default::default(),
             free_vertex_buffers: Default::default(),

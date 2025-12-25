@@ -2,6 +2,7 @@ use super::Transition;
 use crate::{
     resource::chunk_calculation_data::ChunkCalculationData,
     system::{
+        block_environment_model::BlockEnvironmentModelSystem,
         block_model::BlockModelSystem,
         sky_light::SkyLightSystem,
     },
@@ -14,23 +15,23 @@ pub struct ChunkCalculation<'a> {
 }
 impl ChunkCalculation<'_> {
     pub fn run(self) -> Transition {
-        let mut turn = self.world.get_resource_ref::<ChunkCalculationData>().turn;
+        let turn = self.world.get_resource_ref::<ChunkCalculationData>().turn;
 
-        turn = match turn {
-            0 => {
-                self.world.get_data::<SkyLightSystem>().run(BLOCKS_IN_CHUNK);
-
-                1
+        let work_array = [
+            |world: &mut World| {
+                world.get_data::<SkyLightSystem>().run(BLOCKS_IN_CHUNK);
             },
-            1 => {
-                self.world.get_data::<BlockModelSystem>().run();
-
-                0
+            |world: &mut World| {
+                world.get_data::<BlockModelSystem>().run();
             },
-            _ => unreachable!(),
-        };
+            |world: &mut World| {
+                world.get_data::<BlockEnvironmentModelSystem>().run();
+            },
+        ];
 
-        self.world.get_resource_mut::<ChunkCalculationData>().turn = turn;
+        work_array[turn](self.world);
+
+        self.world.get_resource_mut::<ChunkCalculationData>().turn = (turn + 1) % work_array.len();
 
         Transition::None
     }

@@ -1,5 +1,5 @@
 use crate::{
-    assets::SHADERS_PATH,
+    assets::ACTOR_BLOCK_SHADER_PATH,
     component::{
         actor::{
             animation_state::{
@@ -70,18 +70,18 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
             actor_texture_bind_group,
         } = self;
 
-        let shaders = voxbrix_common::read_file_async(SHADERS_PATH)
+        let shader = voxbrix_common::read_file_async(ACTOR_BLOCK_SHADER_PATH)
             .await
-            .expect("unable to read shaders file");
+            .expect("unable to read shader file");
 
-        let shaders =
-            std::str::from_utf8(&shaders).expect("unable to convert binary file to UTF-8 string");
+        let shader =
+            std::str::from_utf8(&shader).expect("unable to convert binary file to UTF-8 string");
 
-        let shaders = window
+        let shader = window
             .device()
             .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("Actor Shaders"),
-                source: wgpu::ShaderSource::Wgsl(shaders.into()),
+                source: wgpu::ShaderSource::Wgsl(shader.into()),
             });
 
         let render_pipeline_layout =
@@ -103,17 +103,17 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
                     label: Some("Render Pipeline"),
                     layout: Some(&render_pipeline_layout),
                     vertex: wgpu::VertexState {
-                        module: &shaders,
+                        module: &shader,
                         entry_point: Some("vs_main"),
                         buffers: &[Vertex::desc()],
                         compilation_options: Default::default(),
                     },
                     fragment: Some(wgpu::FragmentState {
-                        module: &shaders,
+                        module: &shader,
                         entry_point: Some("fs_main"),
                         targets: &[Some(wgpu::ColorTargetState {
                             format: texture_format,
-                            blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                            blend: Some(wgpu::BlendState::REPLACE),
                             write_mask: wgpu::ColorWrites::ALL,
                         })],
                         compilation_options: Default::default(),

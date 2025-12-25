@@ -65,7 +65,7 @@ var textures: binding_array<texture_2d_array<u32>>;
 var<storage, read> texture_parameters: array<TextureParameters>;
 
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+fn fs_main(in: VertexOutput) -> @location(0) vec4<u32> {
     let dimensions = textureDimensions(textures[in.texture_index]);
     let layers = textureNumLayers(textures[in.texture_index]);
 
@@ -84,9 +84,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         0
     );
 
-    if uint_output[3] == 0 {
-        discard;
-    }
+    // Alpha (8 bits) is divided in 2 channels:
+    // - 4 least significant bits are emission from 0 to 15;
+    // - 4 most significant bits are opacity from 0 to 15.
+    // 
+    // Examples:
+    // - Alpha of 255 is fully opaque and emissive;
+    // - Alpha of 240 is fully opaque but completely non-emissive;
+    // - Alpha of 15 is completely transparent and fully emissive.
+    let uint_output_emission = uint_output[3] & 0xF;
+    let uint_output_opacity = uint_output[3] >> 4 & 0xF;
 
     // 0.0 or 1.0 for false or true
     let interpolate = f32(parameters.mpf_interp & 0x1);
@@ -103,23 +110,32 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         0
     );
 
+    let uint_output_next_emission = uint_output_next[3] & 0xF;
+    let uint_output_next_opacity = uint_output_next[3] >> 4 & 0xF;
+
+    // Interpolate RGB:
     var output = vec3<f32>(uint_output.xyz) * interp_coef;
     let output_next = vec3<f32>(uint_output_next.xyz) * interp_coef_next;
 
     output += output_next;
     output /= 255.0;
 
-    // Alpha channel of texture has 2 special values:
-    // * 0 for fully transparent pixel that is discarded above; 
-    // * 255 for fully opaque non-emissive texture.
-    // All other alpha values mean emissive texture:
-    // * 1 for minimal emission;
-    // * 254 for maximum emission.
-    let emission = f32(uint_output[3] % 255) / 254.0;
+    // Interpolate emission and opacity as separate channels:
+    var output_emission_opacity = vec2<f32>(
+        f32(uint_output_emission),
+        f32(uint_output_opacity)
+    ) * interp_coef;
+    let output_emission_opacity_next = vec2<f32>(
+        f32(uint_output_next_emission),
+	f32(uint_output_next_opacity)
+    ) * interp_coef_next;
 
-    let sky_light_coef = min(emission + in.sky_light_level, 1.0);
+    output_emission_opacity += output_emission_opacity_next;
+    output_emission_opacity /= 15.0;
+
+    let sky_light_coef = min(output_emission_opacity[0] + in.sky_light_level, 1.0);
 
     output *= sky_light_coef;
 
-    return vec4<f32>(output, 1.0);
+    return vec4<u32>(vec4<f32>(output, output_emission_opacity[1]) * 255.0);
 }

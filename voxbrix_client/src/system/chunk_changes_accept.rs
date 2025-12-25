@@ -5,7 +5,10 @@ use crate::component::{
         metadata::MetadataBlockComponent,
     },
     chunk::{
-        render_data::RenderDataChunkComponent,
+        render_data::{
+            BlkRenderDataChunkComponent,
+            EnvRenderDataChunkComponent,
+        },
         sky_light_data::SkyLightDataChunkComponent,
     },
 };
@@ -44,14 +47,16 @@ pub struct ChunkChangesAcceptSystemData<'a> {
     environment_bc: &'a mut EnvironmentBlockComponent,
     metadata_bc: &'a mut MetadataBlockComponent,
     sky_light_data_cc: &'a mut SkyLightDataChunkComponent,
-    render_data_cc: &'a mut RenderDataChunkComponent,
+    blk_render_data_cc: &'a mut BlkRenderDataChunkComponent,
+    env_render_data_cc: &'a mut EnvRenderDataChunkComponent,
 }
 
 fn run_inner<T>(
     changes: ChunkChanges<'_, T>,
     component: &mut BlockComponentSimple<BlocksVec<T>>,
     sky_light_data_cc: &mut SkyLightDataChunkComponent,
-    render_data_cc: &mut RenderDataChunkComponent,
+    blk_render_data_cc: &mut BlkRenderDataChunkComponent,
+    env_render_data_cc: &mut EnvRenderDataChunkComponent,
 ) -> Result<(), Error>
 where
     T: DeserializeOwned,
@@ -80,7 +85,8 @@ where
             if let Some(ref mut component) = component {
                 *component.get_mut(block) = block_class;
                 sky_light_data_cc.block_change(&chunk, block);
-                render_data_cc.block_change(&chunk, block);
+                blk_render_data_cc.block_change(&chunk, block);
+                env_render_data_cc.block_change(&chunk, block);
             }
         }
     }
@@ -99,19 +105,22 @@ impl ChunkChangesAcceptSystemData<'_> {
             block_class,
             &mut self.class_bc,
             &mut self.sky_light_data_cc,
-            &mut self.render_data_cc,
+            &mut self.blk_render_data_cc,
+            &mut self.env_render_data_cc,
         )?;
         run_inner(
             block_environment,
             &mut self.environment_bc,
             &mut self.sky_light_data_cc,
-            &mut self.render_data_cc,
+            &mut self.blk_render_data_cc,
+            &mut self.env_render_data_cc,
         )?;
         run_inner(
             block_metadata,
             &mut self.metadata_bc,
             &mut self.sky_light_data_cc,
-            &mut self.render_data_cc,
+            &mut self.blk_render_data_cc,
+            &mut self.env_render_data_cc,
         )?;
 
         Ok(())

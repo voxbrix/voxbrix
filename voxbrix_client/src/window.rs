@@ -117,6 +117,7 @@ impl ApplicationHandler<Frame> for App {
                     label: None,
                     memory_hints: Default::default(),
                     trace: wgpu::Trace::Off,
+                    experimental_features: Default::default(),
                 }))
                 .expect("unable to get requested device");
 
@@ -175,7 +176,7 @@ impl ApplicationHandler<Frame> for App {
             window.set_cursor_visible(cursor_visible);
 
             let renderer =
-                egui_wgpu::Renderer::new(&shared.device, surface_config.format, None, 1, false);
+                egui_wgpu::Renderer::new(&shared.device, surface_config.format, Default::default());
 
             let _ = request_tx.try_send(Frame {
                 encoders: Vec::new(),

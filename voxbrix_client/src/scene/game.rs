@@ -42,13 +42,12 @@ use crate::{
                 Culling,
                 CullingBlockModelComponent,
             },
-            opacity::{
-                Opacity as BlockModelOpacity,
-                OpacityBlockModelComponent,
-            },
         },
         chunk::{
-            render_data::RenderDataChunkComponent,
+            render_data::{
+                BlkRenderDataChunkComponent,
+                EnvRenderDataChunkComponent,
+            },
             sky_light_data::SkyLightDataChunkComponent,
         },
     },
@@ -80,6 +79,7 @@ use crate::{
     },
     system::{
         actor_render::ActorRenderSystemDescriptor,
+        block_environment_render::BlockEnvironmentRenderSystemDescriptor,
         block_render::BlockRenderSystemDescriptor,
         entity_removal::{
             EntityRemovalCheckSystem,
@@ -427,13 +427,6 @@ impl GameScene {
             |value: Culling| Ok(value),
         )?;
 
-        let opacity_bmc = OpacityBlockModelComponent::new(
-            &block_model_component_map,
-            &label_library,
-            "opacity",
-            |value: BlockModelOpacity| Ok(value),
-        )?;
-
         let status_cc = StatusChunkComponent::new();
 
         let class_bc = ClassBlockComponent::new();
@@ -448,7 +441,7 @@ impl GameScene {
             |model_label: String| {
                 label_library.get(&model_label).ok_or_else(|| {
                     anyhow::Error::msg(format!(
-                        "block texture with label \"{}\" is undefined",
+                        "block model with label \"{}\" is undefined",
                         model_label
                     ))
                 })
@@ -462,7 +455,7 @@ impl GameScene {
             |model_label: String| {
                 label_library.get(&model_label).ok_or_else(|| {
                     anyhow::Error::msg(format!(
-                        "block texture with label \"{}\" is undefined",
+                        "block model with label \"{}\" is undefined",
                         model_label
                     ))
                 })
@@ -632,6 +625,14 @@ impl GameScene {
         .build(window)
         .await;
 
+        let block_environment_render_system = BlockEnvironmentRenderSystemDescriptor {
+            render_parameters,
+            block_texture_bind_group_layout: texture_loading_system.bind_group_layout(),
+            block_texture_bind_group: texture_loading_system.bind_group(),
+        }
+        .build(window)
+        .await;
+
         let frame_source = window.get_frame_source();
         let input_source = window.get_input_source();
 
@@ -668,12 +669,12 @@ impl GameScene {
         world.add(model_bec);
 
         world.add(status_cc);
-        world.add(RenderDataChunkComponent::new());
+        world.add(BlkRenderDataChunkComponent::new());
+        world.add(EnvRenderDataChunkComponent::new());
         world.add(SkyLightDataChunkComponent::new());
 
         world.add(builder_bmc);
         world.add(culling_bmc);
-        world.add(opacity_bmc);
 
         world.add(player_input);
         world.add(sky_light_system);
@@ -681,6 +682,7 @@ impl GameScene {
         world.add(render_pool);
         world.add(actor_render_system);
         world.add(block_render_system);
+        world.add(block_environment_render_system);
         world.add(target_block_highlight_system);
 
         world.add(PlayerActor(player_actor));
@@ -741,14 +743,18 @@ impl GameScene {
                 #[derive(SystemData)]
                 struct ChunkCalculationCheckData<'a> {
                     sky_light_data_cc: &'a SkyLightDataChunkComponent,
-                    render_data_cc: &'a RenderDataChunkComponent,
+                    blk_render_data_cc: &'a BlkRenderDataChunkComponent,
+                    env_render_data_cc: &'a EnvRenderDataChunkComponent,
                 }
 
                 let data = world.get_data::<ChunkCalculationCheck>();
 
                 // This works because the only update can come from the previous iteration of the
-                // loop
-                if data.sky_light_data_cc.is_queue_empty() && data.render_data_cc.is_queue_empty() {
+                // loop, so we do not need to register waker anywhere.
+                if data.sky_light_data_cc.is_queue_empty()
+                    && data.blk_render_data_cc.is_queue_empty()
+                    && data.env_render_data_cc.is_queue_empty()
+                {
                     return Poll::Pending;
                 }
 

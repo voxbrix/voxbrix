@@ -1,6 +1,6 @@
 use crate::{
-    assets::SHADERS_PATH,
-    component::chunk::render_data::RenderDataChunkComponent,
+    assets::ACTOR_BLOCK_SHADER_PATH,
+    component::chunk::render_data::BlkRenderDataChunkComponent,
     resource::render_pool::{
         new_quad_index_buffer,
         primitives::Vertex,
@@ -35,18 +35,18 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
             block_texture_bind_group,
         } = self;
 
-        let shaders = voxbrix_common::read_file_async(SHADERS_PATH)
+        let shader = voxbrix_common::read_file_async(ACTOR_BLOCK_SHADER_PATH)
             .await
-            .expect("unable to read shaders file");
+            .expect("unable to read shader file");
 
-        let shaders =
-            std::str::from_utf8(&shaders).expect("unable to convert binary file to UTF-8 string");
+        let shader =
+            std::str::from_utf8(&shader).expect("unable to convert binary file to UTF-8 string");
 
-        let shaders = window
+        let shader = window
             .device()
             .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("Block Shaders"),
-                source: wgpu::ShaderSource::Wgsl(shaders.into()),
+                source: wgpu::ShaderSource::Wgsl(shader.into()),
             });
 
         let render_pipeline_layout =
@@ -68,17 +68,17 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
                     label: Some("Render Pipeline"),
                     layout: Some(&render_pipeline_layout),
                     vertex: wgpu::VertexState {
-                        module: &shaders,
+                        module: &shader,
                         entry_point: Some("vs_main"),
                         buffers: &[Vertex::desc()],
                         compilation_options: Default::default(),
                     },
                     fragment: Some(wgpu::FragmentState {
-                        module: &shaders,
+                        module: &shader,
                         entry_point: Some("fs_main"),
                         targets: &[Some(wgpu::ColorTargetState {
                             format: texture_format,
-                            blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                            blend: Some(wgpu::BlendState::REPLACE),
                             write_mask: wgpu::ColorWrites::ALL,
                         })],
                         compilation_options: Default::default(),
@@ -132,7 +132,7 @@ impl System for BlockRenderSystem {
 #[derive(SystemData)]
 pub struct BlockRenderSystemData<'a> {
     system: &'a mut BlockRenderSystem,
-    render_data_cc: &'a mut RenderDataChunkComponent,
+    render_data_cc: &'a mut BlkRenderDataChunkComponent,
 }
 
 impl BlockRenderSystemData<'_> {
