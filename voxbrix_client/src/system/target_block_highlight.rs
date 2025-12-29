@@ -45,7 +45,6 @@ impl<'a> TargetBlockHightlightSystemDescriptor<'a> {
             render_parameters:
                 RenderParameters {
                     camera_bind_group_layout,
-                    texture_format,
                 },
             block_texture_bind_group_layout,
             block_texture_bind_group,
@@ -94,7 +93,7 @@ impl<'a> TargetBlockHightlightSystemDescriptor<'a> {
                         module: &shaders,
                         entry_point: Some("fs_main"),
                         targets: &[Some(wgpu::ColorTargetState {
-                            format: texture_format,
+                            format: window.surface_view_format(),
                             blend: Some(wgpu::BlendState::REPLACE),
                             write_mask: wgpu::ColorWrites::ALL,
                         })],

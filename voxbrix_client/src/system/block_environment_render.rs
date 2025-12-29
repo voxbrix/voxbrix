@@ -33,7 +33,6 @@ impl<'a> BlockEnvironmentRenderSystemDescriptor<'a> {
             render_parameters:
                 RenderParameters {
                     camera_bind_group_layout,
-                    texture_format,
                 },
             block_texture_bind_group_layout,
             block_texture_bind_group,
@@ -172,7 +171,7 @@ impl<'a> BlockEnvironmentRenderSystemDescriptor<'a> {
                         module: &shader,
                         entry_point: Some("fs_main"),
                         targets: &[Some(wgpu::ColorTargetState {
-                            format: texture_format,
+                            format: window.surface_view_format(),
                             blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                             write_mask: wgpu::ColorWrites::ALL,
                         })],

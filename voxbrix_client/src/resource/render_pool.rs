@@ -104,7 +104,6 @@ impl RenderPoolDescriptor {
 
         RenderPool {
             camera,
-            texture_format: window.texture_format(),
             depth_texture_view,
             depth_texture_size,
             window,
@@ -191,12 +190,10 @@ pub struct CameraUpdate {
 #[derive(Clone, Copy)]
 pub struct RenderParameters<'a> {
     pub camera_bind_group_layout: &'a wgpu::BindGroupLayout,
-    pub texture_format: wgpu::TextureFormat,
 }
 
 pub struct RenderPool {
     camera: Camera,
-    texture_format: wgpu::TextureFormat,
     depth_texture_view: wgpu::TextureView,
     depth_texture_size: wgpu::Extent3d,
     window: Window,
@@ -207,7 +204,6 @@ impl RenderPool {
     pub fn get_render_parameters(&self) -> RenderParameters<'_> {
         RenderParameters {
             camera_bind_group_layout: self.camera.get_bind_group_layout(),
-            texture_format: self.texture_format,
         }
     }
 

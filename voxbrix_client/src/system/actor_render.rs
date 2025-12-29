@@ -64,7 +64,6 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
             render_parameters:
                 RenderParameters {
                     camera_bind_group_layout,
-                    texture_format,
                 },
             actor_texture_bind_group_layout,
             actor_texture_bind_group,
@@ -80,7 +79,7 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
         let shader = window
             .device()
             .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("Actor Shaders"),
+                label: Some("actor_shader"),
                 source: wgpu::ShaderSource::Wgsl(shader.into()),
             });
 
@@ -88,7 +87,7 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
             window
                 .device()
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("Render Pipeline Layout"),
+                    label: Some("actor_render_pipeline_layout"),
                     bind_group_layouts: &[
                         &camera_bind_group_layout,
                         &actor_texture_bind_group_layout,
@@ -100,7 +99,7 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
             window
                 .device()
                 .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: Some("Render Pipeline"),
+                    label: Some("actor_render_pipeline"),
                     layout: Some(&render_pipeline_layout),
                     vertex: wgpu::VertexState {
                         module: &shader,
@@ -112,7 +111,7 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
                         module: &shader,
                         entry_point: Some("fs_main"),
                         targets: &[Some(wgpu::ColorTargetState {
-                            format: texture_format,
+                            format: window.surface_view_format(),
                             blend: Some(wgpu::BlendState::REPLACE),
                             write_mask: wgpu::ColorWrites::ALL,
                         })],

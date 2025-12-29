@@ -34,7 +34,12 @@ use winit::{
     },
 };
 
-const SURFACE_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+// Ordered in preference:
+const SURFACE_TEXTURE_FORMATS: &[wgpu::TextureFormat] = &[
+    wgpu::TextureFormat::Bgra8Unorm,
+    wgpu::TextureFormat::Bgra8UnormSrgb,
+];
+const SURFACE_TEXTURE_VIEW_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
 
 enum App {
     Initialized(Initialized),
@@ -123,15 +128,14 @@ impl ApplicationHandler<Frame> for App {
 
             let capabilities = surface.get_capabilities(&adapter);
 
-            let format = capabilities
-                .formats
+            let surface_format = SURFACE_TEXTURE_FORMATS
                 .iter()
                 .copied()
-                .find(|f| *f == SURFACE_TEXTURE_FORMAT)
+                .find(|f| capabilities.formats.contains(f))
                 .unwrap_or_else(|| {
                     panic!(
-                        "The GPU does not support {:?} texture format",
-                        SURFACE_TEXTURE_FORMAT
+                        "The GPU does not support {:?} texture formats",
+                        SURFACE_TEXTURE_FORMATS
                     )
                 });
 
@@ -139,13 +143,13 @@ impl ApplicationHandler<Frame> for App {
 
             let surface_config = wgpu::SurfaceConfiguration {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format,
+                format: surface_format,
                 width: surface_size.width,
                 height: surface_size.height,
                 present_mode: wgpu::PresentMode::Fifo,
                 desired_maximum_frame_latency: 2,
                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                view_formats: vec![format],
+                view_formats: vec![SURFACE_TEXTURE_VIEW_FORMAT],
             };
 
             surface.configure(&device, &surface_config);
@@ -175,14 +179,20 @@ impl ApplicationHandler<Frame> for App {
                 .or_else(|_| window.set_cursor_grab(CursorGrabMode::Locked));
             window.set_cursor_visible(cursor_visible);
 
-            let renderer =
-                egui_wgpu::Renderer::new(&shared.device, surface_config.format, Default::default());
+            let renderer = egui_wgpu::Renderer::new(
+                &shared.device,
+                SURFACE_TEXTURE_VIEW_FORMAT,
+                Default::default(),
+            );
 
             let _ = request_tx.try_send(Frame {
                 encoders: Vec::new(),
                 view: surface_texture
                     .texture
-                    .create_view(&wgpu::TextureViewDescriptor::default()),
+                    .create_view(&wgpu::TextureViewDescriptor {
+                        format: Some(SURFACE_TEXTURE_VIEW_FORMAT),
+                        ..Default::default()
+                    }),
                 ui_renderer: UiRenderer {
                     shared: shared.clone(),
                     context: ui_context.clone(),
@@ -200,7 +210,7 @@ impl ApplicationHandler<Frame> for App {
                     submit_tx,
                     request_rx,
                     ui_context,
-                    texture_format: surface_config.format,
+                    surface_view_format: SURFACE_TEXTURE_VIEW_FORMAT,
                     cursor_visible,
                 })
                 .expect("window handle receiver dropped");
@@ -343,7 +353,10 @@ impl ApplicationHandler<Frame> for App {
             encoders,
             view: surface_texture
                 .texture
-                .create_view(&wgpu::TextureViewDescriptor::default()),
+                .create_view(&wgpu::TextureViewDescriptor {
+                    format: Some(SURFACE_TEXTURE_VIEW_FORMAT),
+                    ..Default::default()
+                }),
             ui_renderer,
             cursor_visible: app.cursor_visible,
         });
@@ -430,7 +443,7 @@ pub struct Window {
     submit_tx: EventLoopProxy<Frame>,
     request_rx: Receiver<Frame>,
     ui_context: egui::Context,
-    texture_format: wgpu::TextureFormat,
+    surface_view_format: wgpu::TextureFormat,
     pub cursor_visible: bool,
 }
 
@@ -467,8 +480,8 @@ impl Window {
         &self.ui_context
     }
 
-    pub fn texture_format(&self) -> wgpu::TextureFormat {
-        self.texture_format
+    pub fn surface_view_format(&self) -> wgpu::TextureFormat {
+        self.surface_view_format
     }
 
     pub fn device(&self) -> &wgpu::Device {

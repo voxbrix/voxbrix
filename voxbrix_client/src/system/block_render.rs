@@ -29,7 +29,6 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
             render_parameters:
                 RenderParameters {
                     camera_bind_group_layout,
-                    texture_format,
                 },
             block_texture_bind_group_layout,
             block_texture_bind_group,
@@ -53,7 +52,7 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
             window
                 .device()
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("Render Pipeline Layout"),
+                    label: Some("block_render_pipeline_layout"),
                     bind_group_layouts: &[
                         &camera_bind_group_layout,
                         &block_texture_bind_group_layout,
@@ -65,7 +64,7 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
             window
                 .device()
                 .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: Some("Render Pipeline"),
+                    label: Some("block_render_pipeline"),
                     layout: Some(&render_pipeline_layout),
                     vertex: wgpu::VertexState {
                         module: &shader,
@@ -77,7 +76,7 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
                         module: &shader,
                         entry_point: Some("fs_main"),
                         targets: &[Some(wgpu::ColorTargetState {
-                            format: texture_format,
+                            format: window.surface_view_format(),
                             blend: Some(wgpu::BlendState::REPLACE),
                             write_mask: wgpu::ColorWrites::ALL,
                         })],
