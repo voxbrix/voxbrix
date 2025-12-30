@@ -24,16 +24,16 @@ use voxbrix_common::{
             Neighbor,
             BLOCKS_IN_CHUNK_EDGE_F32,
         },
-        chunk::{
-            Chunk,
-            Dimension,
-        },
+        chunk::Chunk,
     },
     math::{
         Vec3F32,
         Vec3I32,
     },
 };
+
+const CHUNK_VISIBILITY_RADIUS: f32 = 1.73205077648162841796875f32 * BLOCKS_IN_CHUNK_EDGE_F32;
+const CHUNK_CENTER_OFFSET: Vec3F32 = Vec3F32::splat(BLOCKS_IN_CHUNK_EDGE_F32 / 2.0);
 
 pub struct BlkRenderDataChunkComponent(RenderData);
 
@@ -94,94 +94,14 @@ impl VertexBuffer {
     }
 }
 
-#[derive(Clone, Hash, PartialEq, Eq)]
-struct SuperChunk {
-    position: Vec3I32,
-    dimension: Dimension,
-}
-
-impl SuperChunk {
-    fn chunks(&self, side: i32) -> impl Iterator<Item = Chunk> {
-        let chunk_coord_base = self.position.map(|i| i * side);
-        let dimension = self.dimension;
-
-        (0 .. side)
-            .flat_map(move |z| {
-                (0 .. side).flat_map(move |y| (0 .. side).map(move |x| Vec3I32::new(x, y, z)))
-            })
-            .map(move |add| {
-                Chunk {
-                    position: chunk_coord_base + add,
-                    dimension,
-                }
-            })
-    }
-
-    fn center(&self, side: i32) -> (Chunk, Vec3F32) {
-        let center_chunk = self.position.map(|i| i * side + side / 2);
-
-        let center_offset = Vec3F32::splat((side % 2) as f32 * BLOCKS_IN_CHUNK_EDGE_F32);
-
-        (
-            Chunk {
-                position: center_chunk,
-                dimension: self.dimension,
-            },
-            center_offset,
-        )
-    }
-
-    /// Max (diagonal) radius, in blocks
-    fn radius(side: i32) -> f32 {
-        // Cube diagonal is side * 3.0.sqrt()
-        const COEF: f32 = 1.73205077648162841796875f32 * BLOCKS_IN_CHUNK_EDGE_F32;
-        side as f32 * COEF
-    }
-
-    fn of_chunk(side: i32, chunk: &Chunk) -> Self {
-        let position = chunk.position.map(|i| {
-            let mut quot = i / side;
-            let rem = i % side;
-
-            if i < 0 && rem != 0 {
-                quot -= 1;
-            }
-
-            quot
-        });
-
-        Self {
-            position,
-            dimension: chunk.dimension,
-        }
-    }
-}
-
-struct ChunkInfo<'a> {
-    chunk_shard: &'a Vec<Vertex>,
-    vertex_length: usize,
-    vertex_buffer: Option<&'a mut [u8]>,
-}
-
-fn slice_buffers<'a>(chunk_info: &mut [ChunkInfo<'a>], mut vertex_buffer: &'a mut [u8]) {
-    for chunk in chunk_info.iter_mut() {
-        let (vertex_buffer_shard, residue) =
-            vertex_buffer.split_at_mut(chunk.vertex_length * const { Vertex::size() as usize });
-        vertex_buffer = residue;
-        chunk.vertex_buffer = Some(vertex_buffer_shard);
-    }
-}
-
 pub struct RenderData {
     block_change_queue: VecDeque<Chunk>,
     block_change_neighbors: AHashMap<Chunk, [bool; 6]>,
     chunk_queue: VecDeque<Chunk>,
     enqueued_chunks: AHashSet<Chunk>,
-    chunk_buffer_shards: AHashMap<Chunk, Vec<Vertex>>,
     free_shards: Vec<Vec<Vertex>>,
-    superchunk_side_size: i32,
-    prepared_vertex_buffers: AHashMap<SuperChunk, VertexBuffer>,
-    updated_vertex_buffers: AHashSet<SuperChunk>,
+    prepared_vertex_buffers: AHashMap<Chunk, VertexBuffer>,
+    updated_vertex_buffers: AHashMap<Chunk, Vec<Vertex>>,
     free_vertex_buffers: Vec<VertexBuffer>,
 }
 
@@ -192,9 +112,7 @@ impl RenderData {
             block_change_neighbors: Default::default(),
             chunk_queue: Default::default(),
             enqueued_chunks: Default::default(),
-            chunk_buffer_shards: Default::default(),
             free_shards: Default::default(),
-            superchunk_side_size: 2,
             prepared_vertex_buffers: Default::default(),
             updated_vertex_buffers: Default::default(),
             free_vertex_buffers: Default::default(),
@@ -260,19 +178,11 @@ impl RenderData {
     pub fn remove_chunk(&mut self, chunk: &Chunk) {
         self.enqueued_chunks.remove(chunk);
         self.block_change_neighbors.remove(chunk);
-        if let Some(shard) = self.chunk_buffer_shards.remove(chunk) {
+        if let Some(shard) = self.updated_vertex_buffers.remove(chunk) {
             self.free_shards.push(shard);
-            let superchunk = SuperChunk::of_chunk(self.superchunk_side_size, chunk);
-            if superchunk
-                .chunks(self.superchunk_side_size)
-                .find(|chunk| self.chunk_buffer_shards.contains_key(chunk))
-                .is_none()
-            {
-                if let Some(vertex_buffer) = self.prepared_vertex_buffers.remove(&superchunk) {
-                    self.free_vertex_buffers.push(vertex_buffer);
-                }
-                self.updated_vertex_buffers.remove(&superchunk);
-            }
+        }
+        if let Some(vertex_buffer) = self.prepared_vertex_buffers.remove(chunk) {
+            self.free_vertex_buffers.push(vertex_buffer);
         }
     }
 
@@ -282,7 +192,7 @@ impl RenderData {
     ) -> Vec<(Chunk, Vec<Vertex>)> {
         let mut get_shard = |chunk: Chunk| -> (Chunk, Vec<Vertex>) {
             let mut shard = self
-                .chunk_buffer_shards
+                .updated_vertex_buffers
                 .remove(&chunk)
                 .or_else(|| self.free_shards.pop())
                 .unwrap_or_default();
@@ -339,11 +249,6 @@ impl RenderData {
                 .take(to_add),
         );
 
-        for (chunk, _) in selected_chunks.iter() {
-            let superchunk = SuperChunk::of_chunk(self.superchunk_side_size, chunk);
-            self.updated_vertex_buffers.insert(superchunk);
-        }
-
         selected_chunks
     }
 
@@ -351,72 +256,59 @@ impl RenderData {
         &mut self,
         par_iter: impl ParallelIterator<Item = (Chunk, Vec<Vertex>)>,
     ) {
-        self.chunk_buffer_shards.par_extend(par_iter);
+        self.updated_vertex_buffers.par_extend(par_iter);
     }
 
     /// Returns maximum vertices for a single mesh among updated ones.
     pub fn prepare_render(&mut self, renderer: &Renderer) -> u32 {
         let mut max_vertices = 0;
 
-        // Rendering:
-        for superchunk in self.updated_vertex_buffers.drain() {
-            let mut vertices_len = 0;
+        // Copy queued buffers into GPU:
+        // TODO: parallelize?
+        let free_shards_iter = self
+            .updated_vertex_buffers
+            .drain()
+            .map(|(chunk, vertices)| {
+                let vertex_buffer_byte_size = vertices.len() as u64 * Vertex::size();
+                let vertices_len: IndexType = vertices.len().try_into().unwrap();
 
-            let mut chunk_info = superchunk
-                .chunks(self.superchunk_side_size)
-                .filter_map(|chunk| self.chunk_buffer_shards.get(&chunk))
-                .map(|vertices| {
-                    vertices_len += vertices.len();
-
-                    ChunkInfo {
-                        chunk_shard: vertices,
-                        vertex_length: vertices.len(),
-                        vertex_buffer: None,
+                if vertices_len == 0 {
+                    if let Some(vertex_buffer) = self.prepared_vertex_buffers.remove(&chunk) {
+                        self.free_vertex_buffers.push(vertex_buffer);
                     }
-                })
-                .collect::<Vec<_>>();
+                } else {
+                    let vertex_buffer =
+                        self.prepared_vertex_buffers
+                            .entry(chunk)
+                            .or_insert_with(|| {
+                                self.free_vertex_buffers.pop().unwrap_or_else(|| {
+                                    VertexBuffer {
+                                        num_vertices: vertices_len,
+                                        buffer: GpuVec::new(
+                                            renderer.device,
+                                            wgpu::BufferUsages::VERTEX,
+                                        ),
+                                    }
+                                })
+                            });
 
-            let vertex_buffer_byte_size = vertices_len as u64 * Vertex::size();
-            let vertices_len: IndexType = vertices_len.try_into().unwrap();
+                    let mut writer = vertex_buffer.buffer.get_writer(
+                        renderer.device,
+                        renderer.queue,
+                        vertex_buffer_byte_size,
+                    );
 
-            if vertices_len == 0 {
-                if let Some(vertex_buffer) = self.prepared_vertex_buffers.remove(&superchunk) {
-                    self.free_vertex_buffers.push(vertex_buffer);
+                    writer.copy_from_slice(bytemuck::cast_slice(&vertices));
+
+                    max_vertices = max_vertices.max(vertices_len);
+
+                    vertex_buffer.num_vertices = vertices_len;
                 }
-            } else {
-                let vertex_buffer = self
-                    .prepared_vertex_buffers
-                    .entry(superchunk)
-                    .or_insert_with(|| {
-                        self.free_vertex_buffers.pop().unwrap_or_else(|| {
-                            VertexBuffer {
-                                num_vertices: vertices_len,
-                                buffer: GpuVec::new(renderer.device, wgpu::BufferUsages::VERTEX),
-                            }
-                        })
-                    });
 
-                let mut writer = vertex_buffer.buffer.get_writer(
-                    renderer.device,
-                    renderer.queue,
-                    vertex_buffer_byte_size,
-                );
+                vertices
+            });
 
-                slice_buffers(&mut chunk_info, writer.as_mut());
-
-                chunk_info.par_iter_mut().for_each(|chunk| {
-                    chunk
-                        .vertex_buffer
-                        .as_mut()
-                        .unwrap()
-                        .copy_from_slice(bytemuck::cast_slice(chunk.chunk_shard));
-                });
-
-                max_vertices = max_vertices.max(vertices_len);
-
-                vertex_buffer.num_vertices = vertices_len;
-            }
-        }
+        self.free_shards.extend(free_shards_iter);
 
         max_vertices
     }
@@ -431,12 +323,8 @@ impl RenderData {
     ) -> impl Iterator<Item = &'a VertexBuffer> + 'a {
         self.prepared_vertex_buffers
             .iter()
-            .filter(move |(superchunk, _)| {
-                let (chunk, offset) = superchunk.center(self.superchunk_side_size);
-
-                let radius = SuperChunk::radius(self.superchunk_side_size);
-
-                is_visible(chunk.position, offset, radius)
+            .filter(move |(chunk, _)| {
+                is_visible(chunk.position, CHUNK_CENTER_OFFSET, CHUNK_VISIBILITY_RADIUS)
             })
             .map(|(_, qb)| qb)
     }
