@@ -14,7 +14,7 @@ use crate::{
         },
         chunk::render_data::EnvRenderDataChunkComponent,
     },
-    resource::render_pool::primitives::Vertex,
+    resource::render_pool::primitives::block::Vertex,
 };
 use arrayvec::ArrayVec;
 use rayon::prelude::*;
@@ -150,7 +150,7 @@ fn build_chunk_buffer_shard<'a>(
                         .into_inner()
                         .unwrap_or_else(|_| unreachable!());
 
-                    model_builder.build(chunk, block, cull_flags, sky_light_levels)
+                    model_builder.build(block, cull_flags, sky_light_levels)
                 })
         })
 }

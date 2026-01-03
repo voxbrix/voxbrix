@@ -1,6 +1,6 @@
 use crate::resource::render_pool::{
     gpu_vec::GpuVec,
-    primitives::Vertex,
+    primitives::block::Vertex,
     IndexType,
     Renderer,
 };
@@ -320,12 +320,11 @@ impl RenderData {
     pub fn get_visible_buffers<'a>(
         &'a self,
         is_visible: impl Fn(Vec3I32, Vec3F32, f32) -> bool + 'a,
-    ) -> impl Iterator<Item = &'a VertexBuffer> + 'a {
+    ) -> impl Iterator<Item = (&'a Chunk, &'a VertexBuffer)> + 'a {
         self.prepared_vertex_buffers
             .iter()
             .filter(move |(chunk, _)| {
                 is_visible(chunk.position, CHUNK_CENTER_OFFSET, CHUNK_VISIBILITY_RADIUS)
             })
-            .map(|(_, qb)| qb)
     }
 }

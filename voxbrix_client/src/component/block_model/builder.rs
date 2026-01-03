@@ -1,17 +1,14 @@
 use crate::{
     component::block_model::BlockModelComponent,
     entity::texture::Texture,
-    resource::render_pool::primitives::Vertex,
+    resource::render_pool::primitives::block::Vertex,
 };
 use anyhow::Error;
 use bitflags::bitflags;
 use serde::Deserialize;
 use voxbrix_common::{
     component::block::sky_light::SkyLight,
-    entity::{
-        block::Block,
-        chunk::Chunk,
-    },
+    entity::block::Block,
     ArrayExt,
     LabelLibrary,
 };
@@ -165,7 +162,6 @@ pub struct BlockModelBuilder {
 impl BlockModelBuilder {
     pub fn build<'a>(
         &'a self,
-        chunk: &'a Chunk,
         block: Block,
         cull_mask: CullFlags,
         sky_light_level: [SkyLight; 6],
@@ -188,9 +184,8 @@ impl BlockModelBuilder {
             .flat_map(move |pb| {
                 pb.vertices.map_ref(|vxb| {
                     Vertex {
-                        chunk: chunk.position.into(),
-                        texture_index: pb.texture_index,
                         offset: [0, 1, 2].map(|i| vxb.position[i] + block[i]),
+                        texture_index: pb.texture_index,
                         texture_position: vxb.texture_position,
                         light_parameters: {
                             let sky_light_level = match pb.culling_neighbor {

@@ -10,6 +10,7 @@ pub const TEXTURE_BITMAP_DIR: &str = "assets/client/textures/bitmaps";
 pub const TEXTURE_DESCRIPTION_DIR: &str = "assets/client/textures/descriptions";
 
 pub const DEFAULT_FONT_PATH: &str = "assets/client/fonts/LanaPixel.ttf";
-pub const ACTOR_BLOCK_SHADER_PATH: &str = "assets/client/shaders/actor_block.wgsl";
+pub const ACTOR_SHADER_PATH: &str = "assets/client/shaders/actor.wgsl";
+pub const BLOCK_SHADER_PATH: &str = "assets/client/shaders/block.wgsl";
 pub const BLOCK_ENVIRONMENT_SHADER_PATH: &str = "assets/client/shaders/block_environment.wgsl";
 pub const BLOCK_ENVIRONMENT_OVERLAY_SHADER_PATH: &str = "assets/client/shaders/overlay.wgsl";

@@ -1,5 +1,5 @@
 use crate::{
-    assets::ACTOR_BLOCK_SHADER_PATH,
+    assets::BLOCK_SHADER_PATH,
     component::{
         actor::{
             orientation::OrientationActorComponent,
@@ -12,7 +12,10 @@ use crate::{
         player_actor::PlayerActor,
         render_pool::{
             new_quad_index_buffer,
-            primitives::Vertex,
+            primitives::block::{
+                Vertex,
+                VertexConstants,
+            },
             RenderParameters,
             Renderer,
             INDEX_FORMAT,
@@ -51,7 +54,7 @@ impl<'a> TargetBlockHightlightSystemDescriptor<'a> {
             block_texture_label_map,
         } = self;
 
-        let shaders = voxbrix_common::read_file_async(ACTOR_BLOCK_SHADER_PATH)
+        let shaders = voxbrix_common::read_file_async(BLOCK_SHADER_PATH)
             .await
             .expect("unable to read shaders file");
 
@@ -74,7 +77,10 @@ impl<'a> TargetBlockHightlightSystemDescriptor<'a> {
                         &camera_bind_group_layout,
                         &block_texture_bind_group_layout,
                     ],
-                    push_constant_ranges: &[],
+                    push_constant_ranges: &[wgpu::PushConstantRange {
+                        range: 0 .. VertexConstants::size_bytes(),
+                        stages: wgpu::ShaderStages::VERTEX,
+                    }],
                 });
 
         let render_pipeline =
@@ -255,9 +261,8 @@ impl TargetBlockHightlightSystemData<'_> {
 
         let vertex = [0, 1, 2, 3].map(|i| {
             Vertex {
-                chunk: chunk.position.into(),
-                texture_index: self.system.highlight_texture_index,
                 offset: positions[i],
+                texture_index: self.system.highlight_texture_index,
                 texture_position: self.system.highlight_texture_coords[i],
                 light_parameters: 0,
             }
@@ -273,6 +278,14 @@ impl TargetBlockHightlightSystemData<'_> {
             &self.system.target_highlight_vertex_buffer,
             0,
             bytemuck::cast_slice(&vertex),
+        );
+
+        render_pass.set_push_constants(
+            wgpu::ShaderStages::VERTEX,
+            0,
+            bytemuck::bytes_of(&VertexConstants {
+                chunk: chunk.position.into(),
+            }),
         );
 
         render_pass.set_vertex_buffer(0, self.system.target_highlight_vertex_buffer.slice(..));

@@ -70,7 +70,7 @@ var textures: binding_array<texture_2d_array<u32>>;
 var<storage, read> texture_parameters: array<TextureParameters>;
 
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<u32> {
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let dimensions = textureDimensions(textures[in.texture_index]);
     let layers = textureNumLayers(textures[in.texture_index]);
 
@@ -99,6 +99,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<u32> {
     // - Alpha of 15 is completely transparent and fully emissive.
     let uint_output_emission = uint_output[3] & 0xF;
     let uint_output_opacity = uint_output[3] >> 4 & 0xF;
+
+    // In this shader we discard fully transparent pixels,
+    // other pixels will NOT be transparent even partially.
+    if uint_output_opacity == 0 {
+        discard;
+    }
 
     // 0.0 or 1.0 for false or true
     let interpolate = f32(parameters.mpf_interp & 0x1);
@@ -142,5 +148,5 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<u32> {
 
     output *= sky_light_coef;
 
-    return vec4<u32>(vec4<f32>(output, output_emission_opacity[1]) * 255.0);
+    return vec4<f32>(output, 1.0);
 }

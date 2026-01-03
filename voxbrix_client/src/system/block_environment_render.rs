@@ -6,7 +6,10 @@ use crate::{
     component::chunk::render_data::EnvRenderDataChunkComponent,
     resource::render_pool::{
         new_quad_index_buffer,
-        primitives::Vertex,
+        primitives::block::{
+            Vertex,
+            VertexConstants,
+        },
         RenderParameters,
         Renderer,
         INDEX_FORMAT,
@@ -61,7 +64,10 @@ impl<'a> BlockEnvironmentRenderSystemDescriptor<'a> {
                         &camera_bind_group_layout,
                         &block_texture_bind_group_layout,
                     ],
-                    push_constant_ranges: &[],
+                    push_constant_ranges: &[wgpu::PushConstantRange {
+                        range: 0 .. VertexConstants::size_bytes(),
+                        stages: wgpu::ShaderStages::VERTEX,
+                    }],
                 });
 
         let render_pipeline =
@@ -334,7 +340,14 @@ impl BlockEnvironmentRenderSystemData<'_> {
 
         render_pass.set_bind_group(1, &self.system.block_texture_bind_group, &[]);
 
-        for vertex_buffer in buffers_to_render {
+        for (chunk, vertex_buffer) in buffers_to_render {
+            render_pass.set_push_constants(
+                wgpu::ShaderStages::VERTEX,
+                0,
+                bytemuck::bytes_of(&VertexConstants {
+                    chunk: chunk.position.into(),
+                }),
+            );
             render_pass.set_vertex_buffer(0, vertex_buffer.get_slice());
             let num_indices = vertex_buffer.num_vertices() / 4 * 6;
             render_pass.set_index_buffer(

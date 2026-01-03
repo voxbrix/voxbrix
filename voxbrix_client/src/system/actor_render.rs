@@ -1,5 +1,5 @@
 use crate::{
-    assets::ACTOR_BLOCK_SHADER_PATH,
+    assets::ACTOR_SHADER_PATH,
     component::{
         actor::{
             animation_state::{
@@ -20,7 +20,7 @@ use crate::{
         render_pool::{
             gpu_vec::GpuVec,
             new_quad_index_buffer,
-            primitives::Vertex,
+            primitives::actor::Vertex,
             IndexType,
             RenderParameters,
             Renderer,
@@ -69,7 +69,7 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
             actor_texture_bind_group,
         } = self;
 
-        let shader = voxbrix_common::read_file_async(ACTOR_BLOCK_SHADER_PATH)
+        let shader = voxbrix_common::read_file_async(ACTOR_SHADER_PATH)
             .await
             .expect("unable to read shader file");
 

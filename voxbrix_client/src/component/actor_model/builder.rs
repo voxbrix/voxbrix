@@ -7,7 +7,7 @@ use crate::{
         },
         texture::Texture,
     },
-    resource::render_pool::primitives::Vertex,
+    resource::render_pool::primitives::actor::Vertex,
 };
 use anyhow::Error;
 use nohash_hasher::IntMap;
