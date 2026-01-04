@@ -456,7 +456,10 @@ impl ServerLoop {
                     client_tx,
                     session_id,
                 } => {
-                    // TODO remove player
+                    world
+                        .get_resource_mut::<RemovalQueue<Player>>()
+                        .enqueue(player);
+                    world.get_data::<EntityRemovalSystem>().run();
                     world.get_data::<PlayerAddSystem>().run(PlayerAddData {
                         player,
                         tx: client_tx,
