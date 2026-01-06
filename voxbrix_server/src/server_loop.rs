@@ -1,16 +1,12 @@
 use crate::{
     assets::{
-        ACTION_HANDLER_MAP,
         DIMENSION_KIND_LIST,
         EFFECTS_DIR,
         SERVER_LOOP_SCRIPT_DIR,
         SERVER_LOOP_SCRIPT_LIST,
     },
     component::{
-        action::handler::{
-            HandlerActionComponent,
-            HandlerSetDescriptor,
-        },
+        action::handler::HandlerActionComponent,
         actor::{
             chunk_activation::ChunkActivationActorComponent,
             class::ClassActorComponent,
@@ -70,7 +66,6 @@ use crate::{
             EntityRemovalCheckSystem,
             EntityRemovalSystem,
         },
-        map_loading::Map,
         player_add::{
             PlayerAddData,
             PlayerAddSystem,
@@ -328,14 +323,8 @@ impl ServerLoop {
 
         label_library.add_label_map(script_registry.script_label_map().clone());
 
-        let action_handler_map = Map::<HandlerSetDescriptor>::load(ACTION_HANDLER_MAP)
+        let handler_action_component = HandlerActionComponent::load(&label_library)
             .await
-            .expect("failed to load action-script map");
-
-        let handler_action_component =
-            HandlerActionComponent::load_from_descriptor(&label_library, &|label| {
-                action_handler_map.get(label)
-            })
             .expect("failed to map actions to scripts");
 
         let shared_event_tx_clone = shared_event_tx.clone();

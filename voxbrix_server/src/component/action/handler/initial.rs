@@ -55,10 +55,6 @@ pub struct Handler {
 pub struct HandlerSet(Vec<Handler>);
 
 impl HandlerSet {
-    pub const fn noop() -> Self {
-        Self(Vec::new())
-    }
-
     pub fn iter<'a>(&'a self) -> impl ExactSizeIterator<Item = &'a Handler> + Send + Sync + 'a {
         self.0.iter()
     }

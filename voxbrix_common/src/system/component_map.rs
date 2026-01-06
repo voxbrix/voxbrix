@@ -1,5 +1,5 @@
 use crate::{
-    read_data_file,
+    parse_file,
     AsFromUsize,
     LabelLibrary,
     LabelMap,
@@ -43,7 +43,7 @@ where
             for (entity, entity_label) in label_map.iter() {
                 let file_name = format!("{}.json", entity_label);
 
-                let descriptor: ComponentMapDescriptor = read_data_file(path.join(file_name))?;
+                let descriptor: ComponentMapDescriptor = parse_file(path.join(file_name))?;
 
                 for (component_label, component_value) in descriptor.into_iter() {
                     let component_vec = match components.get_mut(&component_label) {

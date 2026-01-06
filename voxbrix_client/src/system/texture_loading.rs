@@ -20,7 +20,7 @@ use std::{
 };
 use tokio::task;
 use voxbrix_common::{
-    read_data_file,
+    parse_file_async,
     LabelMap,
 };
 use wgpu::util::DeviceExt;
@@ -91,10 +91,7 @@ impl TextureLoadingSystem {
     }
 
     pub async fn load_data(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Self, Error> {
-        let texture_list: Vec<String> =
-            task::spawn_blocking(move || read_data_file(TEXTURE_LIST_PATH))
-                .await
-                .unwrap()?;
+        let texture_list: Vec<String> = parse_file_async(TEXTURE_LIST_PATH).await?;
 
         let label_map = LabelMap::from_list(&texture_list);
 

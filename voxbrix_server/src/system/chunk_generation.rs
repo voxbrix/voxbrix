@@ -26,7 +26,6 @@ use std::{
     sync::Arc,
     thread,
 };
-use tokio::task;
 use voxbrix_common::{
     component::block::{
         metadata::BlockMetadata,
@@ -45,7 +44,7 @@ use voxbrix_common::{
         script::Script,
     },
     pack::Packer,
-    read_data_file,
+    parse_file_async,
     AsFromUsize,
     LabelLibrary,
     LabelMap,
@@ -114,15 +113,10 @@ impl ChunkGenerationSystemData<'_> {
 
         let (new_chunks_tx, new_chunks_rx) = flume::unbounded();
 
-        let list = {
-            task::spawn_blocking(move || {
-                read_data_file::<Vec<String>>(CHUNK_GENERATION_SCRIPT_LIST)
-            })
+        let list = parse_file_async::<Vec<String>>(CHUNK_GENERATION_SCRIPT_LIST)
             .await
-            .unwrap()
-        }
-        .with_context(|| format!("unable to load list \"{:?}\"", CHUNK_GENERATION_SCRIPT_LIST))
-        .unwrap();
+            .with_context(|| format!("unable to load list \"{:?}\"", CHUNK_GENERATION_SCRIPT_LIST))
+            .unwrap();
 
         let script_labels = LabelMap::<Script>::from_list(&list);
 

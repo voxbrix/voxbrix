@@ -38,6 +38,8 @@ use std::{
 };
 use tokio::task;
 
+pub const CONFIG_EXTENSION: &str = "json";
+
 /// Moves the block with the data in the brackets into the rayon threadpool and awaits for the data
 /// to be returned.
 #[macro_export]
@@ -60,14 +62,13 @@ macro_rules! compute {
 }
 
 /// Blocking IO, must not be used directly in async
-pub fn read_data_file<T>(path: impl AsRef<Path> + std::fmt::Debug) -> Result<T, anyhow::Error>
+pub fn parse_file<T>(path: impl AsRef<Path> + std::fmt::Debug) -> Result<T, anyhow::Error>
 where
     T: DeserializeOwned,
 {
-    let string =
-        fs::read_to_string(path.as_ref()).with_context(|| format!("reading {:?}", &path))?;
+    let bytes = fs::read(path.as_ref()).with_context(|| format!("reading {:?}", &path))?;
     let data =
-        serde_json::from_str::<T>(&string).with_context(|| format!("parsing {:?}", &path))?;
+        serde_json::from_slice::<T>(&bytes).with_context(|| format!("parsing {:?}", &path))?;
 
     Ok(data)
 }
@@ -80,6 +81,27 @@ pub async fn read_file_async(
     })
     .await
     .expect("unable to join blocking task")
+}
+
+pub async fn parse_file_async<T>(
+    path: impl AsRef<Path> + std::fmt::Debug,
+) -> Result<T, anyhow::Error>
+where
+    T: DeserializeOwned,
+{
+    let bytes = {
+        let path = path.as_ref().to_owned();
+        task::spawn_blocking(move || {
+            fs::read(&path).with_context(|| format!("reading {:?}", &path))
+        })
+        .await
+        .expect("unable to join blocking task")?
+    };
+
+    let data =
+        serde_json::from_slice::<T>(&bytes).with_context(|| format!("parsing {:?}", &path))?;
+
+    Ok(data)
 }
 
 pub trait AsFromUsize {
@@ -190,9 +212,8 @@ impl LabelLibrary {
     {
         let read_path = path.as_ref().to_owned();
 
-        let list = task::spawn_blocking(move || read_data_file::<Vec<String>>(read_path))
+        let list = parse_file_async::<Vec<String>>(read_path)
             .await
-            .unwrap()
             .with_context(|| {
                 format!(
                     "unable to load list \"{:?}\"",

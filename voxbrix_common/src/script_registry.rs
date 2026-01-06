@@ -1,7 +1,7 @@
 use crate::{
     entity::script::Script,
     pack,
-    read_data_file,
+    parse_file_async,
     LabelMap,
 };
 use anyhow::{
@@ -158,14 +158,9 @@ impl<T> ScriptRegistryBuilder<T> {
         list_path: impl 'static + AsRef<Path> + Debug + Send + Clone,
         dir_path: impl 'static + AsRef<Path> + Debug + Send,
     ) -> Result<Self, Error> {
-        let list = {
-            let list_path = list_path.clone();
-
-            task::spawn_blocking(move || read_data_file::<Vec<String>>(list_path))
-                .await
-                .unwrap()
-        }
-        .with_context(|| format!("unable to load list \"{:?}\"", list_path))?;
+        let list = parse_file_async::<Vec<String>>(list_path.as_ref())
+            .await
+            .with_context(|| format!("unable to load list \"{:?}\"", list_path.as_ref()))?;
 
         let engine_clone = engine.clone();
 

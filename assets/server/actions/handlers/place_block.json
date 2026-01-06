@@ -1,0 +1,13 @@
+[
+  {
+    "condition": {
+      "kind": "Always"
+    },
+    "alterations": [
+      {
+        "kind": "Scripted",
+        "script": "place_block"
+      }
+    ]
+  }
+]

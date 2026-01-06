@@ -1,0 +1,13 @@
+[
+  {
+    "condition": {
+      "kind": "Always"
+    },
+    "alterations": [
+      {
+        "kind": "Scripted",
+        "script": "remove_block"
+      }
+    ]
+  }
+]
