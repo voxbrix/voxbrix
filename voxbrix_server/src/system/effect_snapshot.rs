@@ -5,6 +5,7 @@ use crate::{
             position::PositionActorComponent,
         },
         block::class::ClassBlockComponent,
+        dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
         effect::snapshot_handler::{
             Alteration,
             Condition,
@@ -12,7 +13,6 @@ use crate::{
         },
         player::{
             actor::ActorPlayerComponent,
-            chunk_view::ChunkViewPlayerComponent,
             dispatches_packer::DispatchesPackerPlayerComponent,
         },
     },
@@ -84,9 +84,10 @@ pub struct EffectSnapshotSystemData<'a> {
 
     label_library: &'a LabelLibrary,
     dispatches_packer_pc: &'a mut DispatchesPackerPlayerComponent,
-    chunk_view_pc: &'a ChunkViewPlayerComponent,
     class_bc: &'a mut ClassBlockComponent,
     collision_bcc: &'a CollisionBlockClassComponent,
+
+    player_chunk_view_dkc: &'a PlayerChunkViewDimensionKindComponent,
 }
 
 impl EffectSnapshotSystemData<'_> {
@@ -116,7 +117,7 @@ impl EffectSnapshotSystemData<'_> {
                                 snapshot: *self.snapshot,
                                 actor_pc: &self.actor_pc,
                                 dispatches_packer_pc: &mut self.dispatches_packer_pc,
-                                chunk_view_pc: &self.chunk_view_pc,
+                                player_chunk_view_dkc: self.player_chunk_view_dkc,
                                 position_ac: &self.position_ac,
                                 label_library: &self.label_library,
                                 class_bc: &mut self.class_bc,

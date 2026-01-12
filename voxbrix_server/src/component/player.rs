@@ -3,7 +3,6 @@ use nohash_hasher::IntMap;
 
 pub mod actor;
 pub mod chunk_update;
-pub mod chunk_view;
 pub mod client;
 pub mod dispatches_packer;
 

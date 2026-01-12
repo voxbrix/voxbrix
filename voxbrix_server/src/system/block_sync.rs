@@ -10,9 +10,9 @@ use crate::{
             CacheChunkComponent,
             ChunkCache,
         },
+        dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
         player::{
             actor::ActorPlayerComponent,
-            chunk_view::ChunkViewPlayerComponent,
             client::{
                 ClientEvent,
                 ClientPlayerComponent,
@@ -56,10 +56,10 @@ pub struct BlockSyncSystemData<'a> {
     environment_bc: &'a mut EnvironmentBlockComponent,
     metadata_bc: &'a mut MetadataBlockComponent,
     actor_pc: &'a ActorPlayerComponent,
-    chunk_view_pc: &'a ChunkViewPlayerComponent,
     client_pc: &'a ClientPlayerComponent,
     position_ac: &'a PositionActorComponent,
     cache_cc: &'a mut CacheChunkComponent,
+    player_chunk_view_dkc: &'a PlayerChunkViewDimensionKindComponent,
     database: &'a Arc<Database>,
     storage: &'a StorageThread,
     player_rq: &'a mut RemovalQueue<Player>,
@@ -131,8 +131,10 @@ impl BlockSyncSystemData<'_> {
         for (player, client, curr_radius) in self.actor_pc.iter().filter_map(|(player, actor)| {
             let client = self.client_pc.get(&player)?;
             let position = self.position_ac.get(&actor)?;
-            let curr_view = self.chunk_view_pc.get(&player)?;
-            let curr_radius = position.chunk.radius(curr_view.radius);
+            let curr_view = self
+                .player_chunk_view_dkc
+                .get(&position.chunk.dimension.kind);
+            let curr_radius = curr_view.into_chunk_radius(&position.chunk);
 
             Some((player, client, curr_radius))
         }) {

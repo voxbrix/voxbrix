@@ -10,10 +10,6 @@ use crate::{
         },
         player::{
             actor::ActorPlayerComponent,
-            chunk_view::{
-                ChunkView,
-                ChunkViewPlayerComponent,
-            },
             client::{
                 Client,
                 ClientEvent,
@@ -66,7 +62,6 @@ pub struct PlayerAddSystemData<'a> {
 
     actor_pc: &'a mut ActorPlayerComponent,
     client_pc: &'a mut ClientPlayerComponent,
-    chunk_view_pc: &'a mut ChunkViewPlayerComponent,
     dispatches_packer_pc: &'a mut DispatchesPackerPlayerComponent,
 
     actor_registry: &'a mut ActorRegistry,
@@ -115,13 +110,6 @@ impl PlayerAddSystemData<'_> {
         );
 
         self.actor_pc.insert(player, actor);
-
-        self.chunk_view_pc.insert(
-            player,
-            ChunkView {
-                radius: PLAYER_CHUNK_VIEW_RADIUS,
-            },
-        );
 
         self.dispatches_packer_pc
             .insert(player, DispatchesPacker::new());

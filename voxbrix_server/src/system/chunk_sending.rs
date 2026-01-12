@@ -2,10 +2,10 @@ use crate::{
     component::{
         actor::position::PositionActorComponent,
         chunk::cache::CacheChunkComponent,
+        dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
         player::{
             actor::ActorPlayerComponent,
             chunk_update::ChunkUpdatePlayerComponent,
-            chunk_view::ChunkViewPlayerComponent,
             client::{
                 ClientEvent,
                 ClientPlayerComponent,
@@ -30,12 +30,12 @@ impl System for ChunkSendingSystem {
 #[derive(SystemData)]
 pub struct ChunkSendingSystemData<'a> {
     actor_pc: &'a ActorPlayerComponent,
-    chunk_view_pc: &'a ChunkViewPlayerComponent,
     chunk_update_pc: &'a mut ChunkUpdatePlayerComponent,
     client_pc: &'a ClientPlayerComponent,
     position_ac: &'a PositionActorComponent,
     cache_cc: &'a CacheChunkComponent,
     player_rq: &'a mut RemovalQueue<Player>,
+    player_chunk_view_dkc: &'a PlayerChunkViewDimensionKindComponent,
 }
 
 impl ChunkSendingSystemData<'_> {
@@ -43,15 +43,16 @@ impl ChunkSendingSystemData<'_> {
         for (player, client, prev_radius, curr_radius) in
             self.chunk_update_pc
                 .drain()
-                .filter_map(|(player, prev_view)| {
+                .filter_map(|(player, chunk_update)| {
                     let actor = self.actor_pc.get(&player)?;
                     let client = self.client_pc.get(&player)?;
                     let position = self.position_ac.get(&actor)?;
-                    let curr_view = self.chunk_view_pc.get(&player)?;
-                    let curr_radius = position.chunk.radius(curr_view.radius);
-                    let prev_radius = prev_view.previous_view.map(|v| v.chunk.radius(v.radius));
+                    let curr_view = self
+                        .player_chunk_view_dkc
+                        .get(&position.chunk.dimension.kind);
+                    let curr_radius = curr_view.into_chunk_radius(&position.chunk);
 
-                    Some((player, client, prev_radius, curr_radius))
+                    Some((player, client, chunk_update.previous_view, curr_radius))
                 })
         {
             for chunk_data in curr_radius.into_iter_expanding().filter_map(|chunk| {

@@ -1,0 +1,9 @@
+{
+  "sky_light": {
+    "side": 5
+  },
+  "player_chunk_view": {
+    "min": [-10, -10, -10],
+    "max": [10, 10, 10]
+  }
+}

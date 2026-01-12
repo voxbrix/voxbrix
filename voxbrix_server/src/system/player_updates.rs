@@ -5,14 +5,13 @@ use crate::{
             position::PositionActorComponent,
             velocity::VelocityActorComponent,
         },
+        dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
         player::{
             actor::ActorPlayerComponent,
             chunk_update::{
                 ChunkUpdate,
                 ChunkUpdatePlayerComponent,
-                FullChunkView,
             },
-            chunk_view::ChunkViewPlayerComponent,
             client::ClientPlayerComponent,
         },
     },
@@ -52,12 +51,13 @@ pub struct PlayerUpdatesSystemData<'a> {
     actor_pc: &'a ActorPlayerComponent,
     client_pc: &'a mut ClientPlayerComponent,
     chunk_update_pc: &'a mut ChunkUpdatePlayerComponent,
-    chunk_view_pc: &'a mut ChunkViewPlayerComponent,
     updates_unpacker: &'a mut UpdatesUnpacker,
 
     position_ac: &'a mut PositionActorComponent,
     velocity_ac: &'a mut VelocityActorComponent,
     orientation_ac: &'a mut OrientationActorComponent,
+
+    player_chunk_view_dkc: &'a PlayerChunkViewDimensionKindComponent,
 }
 
 impl PlayerUpdatesSystemData<'_> {
@@ -107,16 +107,10 @@ impl PlayerUpdatesSystemData<'_> {
                     .last_confirmed_chunk = Some(chunk);
 
                 if old_value.is_none() || old_value.is_some() && old_value.unwrap().chunk != chunk {
-                    let prev_view_radius = match self.chunk_view_pc.get(&player) {
-                        Some(r) => r.radius,
-                        None => return,
-                    };
-
                     let previous_view = old_value.map(|old_pos| {
-                        FullChunkView {
-                            chunk: old_pos.chunk,
-                            radius: prev_view_radius,
-                        }
+                        self.player_chunk_view_dkc
+                            .get(&old_pos.chunk.dimension.kind)
+                            .into_chunk_radius(&old_pos.chunk)
                     });
 
                     if self.chunk_update_pc.get(&player).is_some() {

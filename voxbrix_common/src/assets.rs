@@ -13,4 +13,7 @@ pub const UPDATE_LIST_PATH: &str = "assets/common/updates.json";
 pub const ACTION_LIST_PATH: &str = "assets/common/actions.json";
 pub const DISPATCH_LIST_PATH: &str = "assets/common/dispatches.json";
 
+pub const DIMENSION_KIND_DIR: &str = "assets/common/dimension_kinds";
+pub const DIMENSION_KIND_LIST_PATH: &str = "assets/common/dimension_kind_list.json";
+
 pub const EFFECT_LIST_PATH: &str = "assets/common/effect_list.json";

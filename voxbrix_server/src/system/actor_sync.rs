@@ -11,9 +11,9 @@ use crate::{
             health::HealthActorClassComponent,
             model::ModelActorClassComponent,
         },
+        dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
         player::{
             actor::ActorPlayerComponent,
-            chunk_view::ChunkViewPlayerComponent,
             client::{
                 ClientEvent,
                 ClientPlayerComponent,
@@ -59,7 +59,6 @@ pub struct ActorSyncSystemData<'a> {
 
     dispatches_packer_pc: &'a mut DispatchesPackerPlayerComponent,
     actor_pc: &'a ActorPlayerComponent,
-    chunk_view_pc: &'a ChunkViewPlayerComponent,
     client_pc: &'a ClientPlayerComponent,
     player_rq: &'a mut RemovalQueue<Player>,
 
@@ -71,6 +70,8 @@ pub struct ActorSyncSystemData<'a> {
 
     model_acc: &'a mut ModelActorClassComponent,
     health_acc: &'a mut HealthActorClassComponent,
+
+    player_chunk_view_dkc: &'a PlayerChunkViewDimensionKindComponent,
 
     packer: &'a mut Packer,
     updates_packer: &'a mut UpdatesPacker,
@@ -99,12 +100,11 @@ impl ActorSyncSystemData<'_> {
                 None => continue,
             };
 
-            let chunk_view_radius = match self.chunk_view_pc.get(&player) {
-                Some(v) => v.radius,
-                None => continue,
-            };
+            let chunk_view_radius = self
+                .player_chunk_view_dkc
+                .get(&position_chunk.dimension.kind);
 
-            let chunk_radius = position_chunk.radius(chunk_view_radius);
+            let chunk_radius = chunk_view_radius.into_chunk_radius(&position_chunk);
 
             let client_is_outdated = client.last_server_snapshot == ServerSnapshot(0)
                 || self.snapshot.0 - client.last_server_snapshot.0 > MAX_SNAPSHOT_DIFF;
@@ -114,7 +114,7 @@ impl ActorSyncSystemData<'_> {
                 // Enforces full update for the outdated clients
                 .filter(|_| !client_is_outdated)
                 // TODO Should be `previous_view` if the view is runtime-variable.
-                .map(|c| c.radius(chunk_view_radius))
+                .map(|c| chunk_view_radius.into_chunk_radius(&c))
             {
                 let chunk_within_intersection = |chunk: Option<&Chunk>| -> bool {
                     let chunk = match chunk {

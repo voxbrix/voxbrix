@@ -136,6 +136,8 @@ use voxbrix_common::{
         BLOCK_CLASS_LIST_PATH,
         BLOCK_ENVIRONMENT_DIR,
         BLOCK_ENVIRONMENT_LIST_PATH,
+        DIMENSION_KIND_DIR,
+        DIMENSION_KIND_LIST_PATH,
         UPDATE_LIST_PATH,
     },
     async_ext::{
@@ -164,6 +166,10 @@ use voxbrix_common::{
             },
         },
         chunk::status::StatusChunkComponent,
+        dimension_kind::sky_light_config::{
+            SkyLightConfig,
+            SkyLightConfigDimensionKindComponent,
+        },
     },
     compute,
     entity::{
@@ -175,6 +181,7 @@ use voxbrix_common::{
         chunk::{
             Chunk,
             Dimension,
+            DimensionKind,
         },
         snapshot::{
             ClientSnapshot,
@@ -292,6 +299,11 @@ impl GameScene {
             .load::<Update>(UPDATE_LIST_PATH)
             .await
             .context("Update list loading error")?;
+
+        label_library
+            .load::<DimensionKind>(DIMENSION_KIND_LIST_PATH)
+            .await
+            .context("DimensionKind list loading error")?;
 
         let (_reliable_tx, reliable_rx) = flume::unbounded::<Vec<u8>>();
         let (unreliable_tx, unreliable_rx) = flume::unbounded::<Vec<u8>>();
@@ -571,6 +583,16 @@ impl GameScene {
             snapshot,
         );
 
+        let dimension_kind_component_map =
+            ComponentMap::load_data(DIMENSION_KIND_DIR, &label_library).await?;
+
+        let sky_light_config_dkc = SkyLightConfigDimensionKindComponent::new(
+            &dimension_kind_component_map,
+            &label_library,
+            "sky_light",
+            |v: Option<SkyLightConfig>| Ok(v),
+        )?;
+
         window.cursor_visible = false;
 
         let interface = Interface::new();
@@ -675,6 +697,8 @@ impl GameScene {
 
         world.add(builder_bmc);
         world.add(culling_bmc);
+
+        world.add(sky_light_config_dkc);
 
         world.add(player_input);
         world.add(sky_light_system);

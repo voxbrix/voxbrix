@@ -1,6 +1,5 @@
 use crate::{
     assets::{
-        DIMENSION_KIND_LIST,
         EFFECTS_DIR,
         SERVER_LOOP_SCRIPT_DIR,
         SERVER_LOOP_SCRIPT_LIST,
@@ -36,11 +35,14 @@ use crate::{
             cache::CacheChunkComponent,
             status::StatusChunkComponent,
         },
+        dimension_kind::player_chunk_view::{
+            PlayerChunkView,
+            PlayerChunkViewDimensionKindComponent,
+        },
         effect::snapshot_handler::SnapshotHandlerEffectComponent,
         player::{
             actor::ActorPlayerComponent,
             chunk_update::ChunkUpdatePlayerComponent,
-            chunk_view::ChunkViewPlayerComponent,
             client::{
                 ClientEvent,
                 ClientPlayerComponent,
@@ -101,6 +103,8 @@ use voxbrix_common::{
         BLOCK_CLASS_LIST_PATH,
         BLOCK_ENVIRONMENT_DIR,
         BLOCK_ENVIRONMENT_LIST_PATH,
+        DIMENSION_KIND_DIR,
+        DIMENSION_KIND_LIST_PATH,
         EFFECT_LIST_PATH,
         UPDATE_LIST_PATH,
     },
@@ -217,7 +221,7 @@ impl ServerLoop {
             .expect("Action list loading error");
 
         label_library
-            .load::<DimensionKind>(DIMENSION_KIND_LIST)
+            .load::<DimensionKind>(DIMENSION_KIND_LIST_PATH)
             .await
             .expect("DimensionKind list loading error");
 
@@ -307,6 +311,19 @@ impl ServerLoop {
         )
         .expect("unable to load CollisionBlockClassComponent");
 
+        let dimension_kind_component_map =
+            ComponentMap::load_data(DIMENSION_KIND_DIR, &label_library)
+                .await
+                .expect("unable to load DimensionKind component map");
+
+        let player_chunk_view_dkc = PlayerChunkViewDimensionKindComponent::new(
+            &dimension_kind_component_map,
+            &label_library,
+            "player_chunk_view",
+            |v: PlayerChunkView| Ok(v),
+        )
+        .expect("unable to load PlayerChunkViewDimensionKindComponent");
+
         let mut engine_config = wasmtime::Config::new();
 
         engine_config
@@ -351,7 +368,6 @@ impl ServerLoop {
         world.add(DispatchesPackerPlayerComponent::new());
         world.add(ActorPlayerComponent::new());
         world.add(ChunkUpdatePlayerComponent::new());
-        world.add(ChunkViewPlayerComponent::new());
 
         world.add(class_ac);
         world.add(position_ac);
@@ -377,6 +393,8 @@ impl ServerLoop {
         world.add(metadata_bc);
 
         world.add(collision_bcc);
+
+        world.add(player_chunk_view_dkc);
 
         world.add(snapshot_handler_ec);
 

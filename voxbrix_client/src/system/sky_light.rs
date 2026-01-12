@@ -26,6 +26,7 @@ use voxbrix_common::{
             Opacity,
             OpacityBlockClassComponent,
         },
+        dimension_kind::sky_light_config::SkyLightConfigDimensionKindComponent,
     },
     entity::{
         block::Neighbor,
@@ -38,8 +39,12 @@ use voxbrix_world::{
     SystemData,
 };
 
-const SKY_SIDE: usize = 5;
-const GROUND_SIDE: usize = 4;
+fn opposite_side(side: usize) -> usize {
+    let axis = side / 2;
+    let direction = side % 2;
+
+    axis * 2 + direction ^ 1
+}
 
 pub struct SkyLightSystem {
     buffer: Vec<(
@@ -65,6 +70,7 @@ pub struct SkyLightSystemData<'a> {
     system: &'a mut SkyLightSystem,
     class_bc: &'a ClassBlockComponent,
     opacity_bcc: &'a OpacityBlockClassComponent,
+    sky_light_dkc: &'a SkyLightConfigDimensionKindComponent,
     sky_light_bc: &'a mut SkyLightBlockComponent,
     sky_light_data_cc: &'a mut SkyLightDataChunkComponent,
     blk_render_data_cc: &'a mut BlkRenderDataChunkComponent,
@@ -87,6 +93,13 @@ impl<'a> SkyLightSystemData<'a> {
         self.system.buffer.par_iter_mut().for_each(
             |(chunk, sky_light, block_queue, neighbors_need_redraw)| {
                 let is_new_chunk = sky_light.is_none();
+
+                let sky_side = self
+                    .sky_light_dkc
+                    .get(&chunk.dimension.kind)
+                    .as_ref()
+                    .map(|c| c.side);
+                let ground_side = sky_side.map(|s| opposite_side(s));
 
                 if sky_light.is_none() {
                     *sky_light = Some(BlocksVec::new_cloned(SkyLight::MIN));
@@ -155,22 +168,25 @@ impl<'a> SkyLightSystemData<'a> {
                                         match neighbor_chunks[side] {
                                             Some((_, block_light)) => *block_light.get(block),
                                             None => {
-                                                if side == GROUND_SIDE {
-                                                    SkyLight::MIN
-                                                } else {
-                                                    SkyLight::MAX
+                                                match sky_side {
+                                                    Some(sky_side) if side == sky_side => {
+                                                        SkyLight::MAX
+                                                    },
+                                                    _ => SkyLight::MIN,
                                                 }
                                             },
                                         }
                                     },
                                 };
 
-                                let new_light =
-                                    if side == SKY_SIDE && neighbor_light == SkyLight::MAX {
+                                let new_light = match sky_side {
+                                    Some(sky_side)
+                                        if side == sky_side && neighbor_light == SkyLight::MAX =>
+                                    {
                                         SkyLight::MAX
-                                    } else {
-                                        neighbor_light.fade()
-                                    };
+                                    },
+                                    _ => neighbor_light.fade(),
+                                };
 
                                 light = light.max(new_light);
                             }
@@ -194,10 +210,9 @@ impl<'a> SkyLightSystemData<'a> {
                                 match neighbor_chunks[side] {
                                     Some((_, block_light)) => *block_light.get(block),
                                     None => {
-                                        if side == GROUND_SIDE {
-                                            SkyLight::MIN
-                                        } else {
-                                            SkyLight::MAX
+                                        match sky_side {
+                                            Some(sky_side) if side == sky_side => SkyLight::MAX,
+                                            _ => SkyLight::MIN,
                                         }
                                     },
                                 }
@@ -215,7 +230,11 @@ impl<'a> SkyLightSystemData<'a> {
                             || light < prev_light
                                 && light <= neighbor_light
                                 && (prev_light > neighbor_light
-                                    || side == GROUND_SIDE && neighbor_light == SkyLight::MAX)
+                                    || ground_side
+                                        .map(|ground_side| {
+                                            side == ground_side && neighbor_light == SkyLight::MAX
+                                        })
+                                        .unwrap_or(false))
                         {
                             match neighbor {
                                 Neighbor::ThisChunk(block) => block_queue.push_this_chunk(block),

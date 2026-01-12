@@ -143,6 +143,16 @@ pub struct ChunkRadius {
     max_position: Vec3I32,
 }
 
+impl ChunkRadius {
+    pub fn from_boundaries(dimension: Dimension, min: Vec3I32, max: Vec3I32) -> Self {
+        Self {
+            dimension,
+            min_position: min,
+            max_position: max - 1,
+        }
+    }
+}
+
 enum EitherIter<A, B, C> {
     A(A),
     B(B),

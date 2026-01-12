@@ -1,9 +1,9 @@
 use crate::component::{
     actor::position::PositionActorComponent,
     block::class::ClassBlockComponent,
+    dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
     player::{
         actor::ActorPlayerComponent,
-        chunk_view::ChunkViewPlayerComponent,
         dispatches_packer::DispatchesPackerPlayerComponent,
     },
 };
@@ -45,7 +45,7 @@ pub struct ScriptSharedDataRef<'a> {
     pub label_library: &'a LabelLibrary,
     pub actor_pc: &'a ActorPlayerComponent,
     pub dispatches_packer_pc: &'a mut DispatchesPackerPlayerComponent,
-    pub chunk_view_pc: &'a ChunkViewPlayerComponent,
+    pub player_chunk_view_dkc: &'a PlayerChunkViewDimensionKindComponent,
     pub position_ac: &'a PositionActorComponent,
     pub class_bc: &'a mut ClassBlockComponent,
     pub collision_bcc: &'a CollisionBlockClassComponent,
@@ -222,12 +222,12 @@ pub fn setup_script_registry(
             .get(&action_actor)
             .expect("acting actor has no position");
 
-        for player in sd.chunk_view_pc.iter().filter_map(|(player, chunk_view)| {
-            let position = sd.position_ac.get(sd.actor_pc.get(&player)?)?;
+        for player in sd.actor_pc.iter().filter_map(|(player, actor)| {
+            let position = sd.position_ac.get(actor)?;
+            let chunk_view = sd.player_chunk_view_dkc.get(&position.chunk.dimension.kind);
 
-            position
-                .chunk
-                .radius(chunk_view.radius)
+            chunk_view
+                .into_chunk_radius(&position.chunk)
                 .is_within(&acting_position.chunk)
                 .then_some(())?;
 
