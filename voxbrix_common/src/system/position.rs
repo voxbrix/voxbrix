@@ -174,26 +174,24 @@ where
                     {
                         if let Some(block_class) = class_bc.get_chunk(&chunk).map(|b| b.get(block))
                         {
-                            if let Some(collision) = collision_bcc.get(block_class) {
-                                match collision {
-                                    Collision::SolidCube => {
-                                        collide_block_callback(&chunk, block);
+                            match collision_bcc.get(block_class) {
+                                Collision::None => {
+                                    traverse_block_callback(&chunk, block);
+                                },
+                                Collision::SolidCube => {
+                                    collide_block_callback(&chunk, block);
 
-                                        let collision_dist = (block_a0 as f32 + 0.5
-                                            - start_position[a0])
-                                            .powi(2)
+                                    let collision_dist =
+                                        (block_a0 as f32 + 0.5 - start_position[a0]).powi(2)
                                             + (block_a1 as f32 + 0.5 - start_position[a1]).powi(2)
                                             + (block_a2 as f32 + 0.5 - start_position[a2]).powi(2);
 
-                                        min_collision_dist = Some(
-                                            min_collision_dist
-                                                .map(|mcd| mcd.min(collision_dist))
-                                                .unwrap_or(collision_dist),
-                                        );
-                                    },
-                                }
-                            } else {
-                                traverse_block_callback(&chunk, block);
+                                    min_collision_dist = Some(
+                                        min_collision_dist
+                                            .map(|mcd| mcd.min(collision_dist))
+                                            .unwrap_or(collision_dist),
+                                    );
+                                },
                             }
                         } else {
                             // TODO chunk not loaded

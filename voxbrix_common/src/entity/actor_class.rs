@@ -1,4 +1,12 @@
-use crate::AsFromUsize;
+use crate::{
+    assets::{
+        ACTOR_CLASS_DIR,
+        ACTOR_CLASS_LIST_PATH,
+    },
+    resource::component_map::ComponentMapEntity,
+    AsFromUsize,
+    StaticEntity,
+};
 use serde::{
     Deserialize,
     Serialize,
@@ -15,4 +23,12 @@ impl AsFromUsize for ActorClass {
     fn from_usize(i: usize) -> Self {
         Self(i.try_into().unwrap())
     }
+}
+
+impl ComponentMapEntity for ActorClass {
+    const COMPONENT_MAP_DIR: &str = ACTOR_CLASS_DIR;
+}
+
+impl StaticEntity for ActorClass {
+    const LIST_PATH: &str = ACTOR_CLASS_LIST_PATH;
 }

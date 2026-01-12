@@ -1,6 +1,12 @@
 use crate::{
+    assets::{
+        DIMENSION_KIND_DIR,
+        DIMENSION_KIND_LIST_PATH,
+    },
     math::Vec3I32,
+    resource::component_map::ComponentMapEntity,
     AsFromUsize,
+    StaticEntity,
 };
 use serde::{
     Deserialize,
@@ -22,6 +28,14 @@ impl AsFromUsize for DimensionKind {
     fn from_usize(i: usize) -> Self {
         Self(i.try_into().unwrap())
     }
+}
+
+impl ComponentMapEntity for DimensionKind {
+    const COMPONENT_MAP_DIR: &str = DIMENSION_KIND_DIR;
+}
+
+impl StaticEntity for DimensionKind {
+    const LIST_PATH: &str = DIMENSION_KIND_LIST_PATH;
 }
 
 #[derive(Serialize, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]

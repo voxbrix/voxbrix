@@ -1,4 +1,8 @@
-use crate::AsFromUsize;
+use crate::{
+    assets::DISPATCH_LIST_PATH,
+    AsFromUsize,
+    StaticEntity,
+};
 use serde::{
     Deserialize,
     Serialize,
@@ -20,4 +24,8 @@ impl AsFromUsize for Dispatch {
     fn from_usize(i: usize) -> Self {
         Self(i.try_into().unwrap())
     }
+}
+
+impl StaticEntity for Dispatch {
+    const LIST_PATH: &str = DISPATCH_LIST_PATH;
 }

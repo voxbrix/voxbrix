@@ -8,6 +8,7 @@ pub const BLOCK_ENVIRONMENT_DIR: &str = "assets/common/block_environments";
 pub const BLOCK_ENVIRONMENT_LIST_PATH: &str = "assets/common/block_environments.json";
 
 pub const ACTOR_MODEL_LIST_PATH: &str = "assets/common/models/actors.json";
+pub const ACTOR_MODEL_DIR: &str = "assets/client/models/actors";
 
 pub const UPDATE_LIST_PATH: &str = "assets/common/updates.json";
 pub const ACTION_LIST_PATH: &str = "assets/common/actions.json";
@@ -17,3 +18,4 @@ pub const DIMENSION_KIND_DIR: &str = "assets/common/dimension_kinds";
 pub const DIMENSION_KIND_LIST_PATH: &str = "assets/common/dimension_kind_list.json";
 
 pub const EFFECT_LIST_PATH: &str = "assets/common/effect_list.json";
+pub const EFFECT_DIR: &str = "assets/server/effects";

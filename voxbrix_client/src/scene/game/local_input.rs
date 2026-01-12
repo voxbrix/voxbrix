@@ -18,7 +18,10 @@ use crate::{
     },
 };
 use voxbrix_common::{
-    component::block_class::collision::CollisionBlockClassComponent,
+    component::block_class::collision::{
+        Collision,
+        CollisionBlockClassComponent,
+    },
     entity::{
         action::Action,
         block::Block,
@@ -142,7 +145,10 @@ impl LocalInput<'_> {
                                             .get_chunk(&chunk)
                                             .map(|blocks| {
                                                 let class = blocks.get(block);
-                                                sd.collision_bcc.get(class).is_some()
+                                                !matches!(
+                                                    sd.collision_bcc.get(class),
+                                                    Collision::None
+                                                )
                                             })
                                             .unwrap_or(false)
                                     },

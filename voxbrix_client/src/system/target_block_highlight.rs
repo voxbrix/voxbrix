@@ -26,7 +26,10 @@ use crate::{
     window::Window,
 };
 use voxbrix_common::{
-    component::block_class::collision::CollisionBlockClassComponent,
+    component::block_class::collision::{
+        Collision,
+        CollisionBlockClassComponent,
+    },
     system::position::get_target_block,
     LabelMap,
 };
@@ -200,7 +203,7 @@ impl TargetBlockHightlightSystemData<'_> {
                     .get_chunk(&chunk)
                     .map(|blocks| {
                         let class = blocks.get(block);
-                        self.collision_bcc.get(class).is_some()
+                        !matches!(self.collision_bcc.get(class), Collision::None)
                     })
                     .unwrap_or(false)
             },

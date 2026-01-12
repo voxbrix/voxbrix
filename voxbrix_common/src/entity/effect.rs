@@ -1,6 +1,12 @@
 use crate::{
+    assets::{
+        EFFECT_DIR,
+        EFFECT_LIST_PATH,
+    },
     math::MinMax,
+    resource::component_map::ComponentMapEntity,
     AsFromUsize,
+    StaticEntity,
 };
 use serde::{
     Deserialize,
@@ -27,6 +33,10 @@ impl AsFromUsize for Effect {
     }
 }
 
+impl StaticEntity for Effect {
+    const LIST_PATH: &str = EFFECT_LIST_PATH;
+}
+
 /// Parameter that differentiates instances of the same Effect on an individual Actor.
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Copy, Clone, Debug)]
 pub struct EffectDiscriminant(pub u64);
@@ -43,4 +53,8 @@ impl nohash_hasher::IsEnabled for EffectDiscriminant {}
 impl MinMax for EffectDiscriminant {
     const MAX: Self = EffectDiscriminant(u64::MAX);
     const MIN: Self = EffectDiscriminant(u64::MIN);
+}
+
+impl ComponentMapEntity for Effect {
+    const COMPONENT_MAP_DIR: &str = EFFECT_DIR;
 }

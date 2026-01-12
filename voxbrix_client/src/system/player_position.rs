@@ -56,14 +56,10 @@ impl PlayerPositionSystemData<'_> {
             let Some(actor_class) = self.class_ac.get(&actor) else {
                 return;
             };
-            let radius = self
-                .block_collision_acc
-                .get(&actor_class, &actor)
-                .map(|collision| {
-                    match collision {
-                        BlockCollision::AABB { radius_blocks } => radius_blocks,
-                    }
-                });
+            let radius = match self.block_collision_acc.get(&actor_class, &actor) {
+                BlockCollision::None => None,
+                BlockCollision::AABB { radius_blocks } => Some(radius_blocks),
+            };
 
             let (new_pos, _new_vel) = position::process_actor(
                 self.process_timer.elapsed(),

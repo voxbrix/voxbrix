@@ -10,6 +10,7 @@ use std::{
         TypeId,
     },
     cell::UnsafeCell,
+    future::Future,
     marker::PhantomData,
 };
 #[cfg(feature = "derive")]
@@ -260,7 +261,22 @@ impl World {
 
         S::Data::from_resources(access_iter)
     }
+
+    /// Initialize and add as a resource type implementing [`Initialization`].
+    pub async fn initialize_add<T>(&mut self) -> Result<(), T::Error>
+    where
+        T: Initialization,
+    {
+        let value = T::initialization(self).await?;
+
+        self.add(value);
+
+        Ok(())
+    }
 }
+
+unsafe impl Send for World {}
+unsafe impl Sync for World {}
 
 pub enum Request<T> {
     Read(T),
@@ -347,6 +363,16 @@ macro_rules! impl_system {
             type Data<'a> = ($($name::Data<'a>),+);
         }
     };
+}
+
+/// Trait for initialization based on the data available
+/// in the passed [`World`].
+pub trait Initialization: Send + Sync + Sized + 'static {
+    type Error;
+
+    fn initialization(
+        world: &World,
+    ) -> impl Future<Output = Result<Self, Self::Error>> + Send + Sync;
 }
 
 impl_system!(A1, A2);

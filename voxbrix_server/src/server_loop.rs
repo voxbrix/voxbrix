@@ -1,6 +1,5 @@
 use crate::{
     assets::{
-        EFFECTS_DIR,
         SERVER_LOOP_SCRIPT_DIR,
         SERVER_LOOP_SCRIPT_LIST,
     },
@@ -20,10 +19,7 @@ use crate::{
         actor_class::{
             block_collision::BlockCollisionActorClassComponent,
             health::HealthActorClassComponent,
-            hitbox::{
-                Hitbox,
-                HitboxActorClassComponent,
-            },
+            hitbox::HitboxActorClassComponent,
             model::ModelActorClassComponent,
         },
         block::{
@@ -35,10 +31,7 @@ use crate::{
             cache::CacheChunkComponent,
             status::StatusChunkComponent,
         },
-        dimension_kind::player_chunk_view::{
-            PlayerChunkView,
-            PlayerChunkViewDimensionKindComponent,
-        },
+        dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
         effect::snapshot_handler::SnapshotHandlerEffectComponent,
         player::{
             actor::ActorPlayerComponent,
@@ -94,30 +87,7 @@ use tokio::{
     },
 };
 use voxbrix_common::{
-    assets::{
-        ACTION_LIST_PATH,
-        ACTOR_CLASS_DIR,
-        ACTOR_CLASS_LIST_PATH,
-        ACTOR_MODEL_LIST_PATH,
-        BLOCK_CLASS_DIR,
-        BLOCK_CLASS_LIST_PATH,
-        BLOCK_ENVIRONMENT_DIR,
-        BLOCK_ENVIRONMENT_LIST_PATH,
-        DIMENSION_KIND_DIR,
-        DIMENSION_KIND_LIST_PATH,
-        EFFECT_LIST_PATH,
-        UPDATE_LIST_PATH,
-    },
-    component::{
-        actor_class::{
-            block_collision::BlockCollision,
-            health::Health,
-        },
-        block_class::collision::{
-            Collision,
-            CollisionBlockClassComponent,
-        },
-    },
+    component::block_class::collision::CollisionBlockClassComponent,
     compute,
     entity::{
         action::Action,
@@ -139,11 +109,11 @@ use voxbrix_common::{
     },
     pack::Packer,
     resource::{
+        component_map::ComponentMap,
         process_timer::ProcessTimer,
         removal_queue::RemovalQueue,
     },
     script_registry::ScriptRegistryBuilder,
-    system::component_map::ComponentMap,
     ChunkData,
     LabelLibrary,
 };
@@ -186,63 +156,68 @@ impl ServerLoop {
         let mut label_library = LabelLibrary::new();
 
         label_library
-            .load::<Update>(UPDATE_LIST_PATH)
+            .load::<Update>()
             .await
             .expect("Update list loading error");
 
         label_library
-            .load::<ActorClass>(ACTOR_CLASS_LIST_PATH)
+            .load::<ActorClass>()
             .await
             .expect("ActorClass list loading error");
 
         label_library
-            .load::<BlockClass>(BLOCK_CLASS_LIST_PATH)
+            .load::<BlockClass>()
             .await
             .expect("BlockClass list loading error");
 
         label_library
-            .load::<BlockEnvironment>(BLOCK_ENVIRONMENT_LIST_PATH)
+            .load::<BlockEnvironment>()
             .await
             .expect("BlockEnvironment list loading error");
 
         label_library
-            .load::<ActorModel>(ACTOR_MODEL_LIST_PATH)
+            .load::<ActorModel>()
             .await
             .expect("ActorModel list loading error");
 
         label_library
-            .load::<Effect>(EFFECT_LIST_PATH)
+            .load::<Effect>()
             .await
             .expect("Effect list loading error");
 
         label_library
-            .load::<Action>(ACTION_LIST_PATH)
+            .load::<Action>()
             .await
             .expect("Action list loading error");
 
         label_library
-            .load::<DimensionKind>(DIMENSION_KIND_LIST_PATH)
+            .load::<DimensionKind>()
             .await
             .expect("DimensionKind list loading error");
 
-        let actor_class_component_map =
-            ComponentMap::<ActorClass>::load_data(ACTOR_CLASS_DIR, &label_library)
-                .await
-                .expect("loading actor classes");
+        world.add(label_library);
 
-        let block_class_component_map =
-            ComponentMap::<BlockClass>::load_data(BLOCK_CLASS_DIR, &label_library)
-                .await
-                .expect("loading block classes");
-
-        let _block_environment_component_map =
-            ComponentMap::<BlockEnvironment>::load_data(BLOCK_ENVIRONMENT_DIR, &label_library)
-                .await
-                .expect("loading block environment");
-
-        let effect_component_map = ComponentMap::load_data(EFFECTS_DIR, &label_library)
+        world
+            .initialize_add::<ComponentMap<ActorClass>>()
             .await
-            .expect("unable to load effect component map");
+            .expect("unable to initialize ComponentMap<ActorClass>");
+
+        world
+            .initialize_add::<ComponentMap<BlockClass>>()
+            .await
+            .expect("unable to initialize ComponentMap<BlockClass>");
+
+        world
+            .initialize_add::<ComponentMap<BlockEnvironment>>()
+            .await
+            .expect("unable to initialize ComponentMap<BlockEnvironment>");
+
+        world
+            .initialize_add::<ComponentMap<Effect>>()
+            .await
+            .expect("unable to initialize ComponentMap<Effect>");
+
+        let label_library = world.get_resource_ref::<LabelLibrary>();
 
         let class_ac = ClassActorComponent::new(label_library.get("actor_class").unwrap());
         let position_ac = PositionActorComponent::new(label_library.get("actor_position").unwrap());
@@ -251,50 +226,32 @@ impl ServerLoop {
             OrientationActorComponent::new(label_library.get("actor_orientation").unwrap());
         let player_ac = PlayerActorComponent::new();
         let chunk_activation_ac = ChunkActivationActorComponent::new();
+        let effect_ac = EffectActorComponent::new(label_library.get("actor_effect").unwrap());
 
-        let snapshot_handler_ec =
-            SnapshotHandlerEffectComponent::new(&effect_component_map, &label_library)
-                .expect("unable to load snapshot handler effect component");
+        world
+            .initialize_add::<SnapshotHandlerEffectComponent>()
+            .await
+            .expect("unable to initialize SnapshotHandlerEffectComponent");
 
-        let model_acc = ModelActorClassComponent::new(
-            &actor_class_component_map,
-            &label_library,
-            label_library.get("actor_model").unwrap(),
-            "model",
-            |desc: String| {
-                label_library
-                    .get(&desc)
-                    .ok_or_else(|| anyhow::anyhow!("model \"{}\" not found", desc))
-            },
-        )
-        .expect("unable to load ModelActorClassComponent");
+        world
+            .initialize_add::<ModelActorClassComponent>()
+            .await
+            .expect("unable to load ModelActorClassComponent");
 
-        let health_acc = HealthActorClassComponent::new(
-            &actor_class_component_map,
-            &label_library,
-            label_library.get("actor_health").unwrap(),
-            "health",
-            |desc: Health| Ok(desc),
-        )
-        .expect("unable to load HealthActorClassComponent");
+        world
+            .initialize_add::<HealthActorClassComponent>()
+            .await
+            .expect("unable to load HealthActorClassComponent");
 
-        let hitbox_acc = HitboxActorClassComponent::new(
-            &actor_class_component_map,
-            &label_library,
-            label_library.get("actor_hitbox").unwrap(),
-            "hitbox",
-            |desc: Hitbox| Ok(desc),
-        )
-        .expect("unable to load HitboxActorClassComponent");
+        world
+            .initialize_add::<HitboxActorClassComponent>()
+            .await
+            .expect("unable to load HitboxActorClassComponent");
 
-        let block_collision_acc = BlockCollisionActorClassComponent::new(
-            &actor_class_component_map,
-            &label_library,
-            label_library.get("actor_block_collision").unwrap(),
-            "block_collision",
-            |desc: BlockCollision| Ok(desc),
-        )
-        .expect("unable to load BlockCollisionActorClassComponent");
+        world
+            .initialize_add::<BlockCollisionActorClassComponent>()
+            .await
+            .expect("unable to load BlockCollisionActorClassComponent");
 
         let status_cc = StatusChunkComponent::new();
         let cache_cc = CacheChunkComponent::new();
@@ -303,26 +260,20 @@ impl ServerLoop {
         let environment_bc = EnvironmentBlockComponent::new();
         let metadata_bc = MetadataBlockComponent::new();
 
-        let collision_bcc = CollisionBlockClassComponent::new(
-            &block_class_component_map,
-            &label_library,
-            "collision",
-            |v: Collision| Ok(v),
-        )
-        .expect("unable to load CollisionBlockClassComponent");
+        world
+            .initialize_add::<CollisionBlockClassComponent>()
+            .await
+            .expect("unable to load CollisionBlockClassComponent");
 
-        let dimension_kind_component_map =
-            ComponentMap::load_data(DIMENSION_KIND_DIR, &label_library)
-                .await
-                .expect("unable to load DimensionKind component map");
+        world
+            .initialize_add::<ComponentMap<DimensionKind>>()
+            .await
+            .expect("unable to load DimensionKind component map");
 
-        let player_chunk_view_dkc = PlayerChunkViewDimensionKindComponent::new(
-            &dimension_kind_component_map,
-            &label_library,
-            "player_chunk_view",
-            |v: PlayerChunkView| Ok(v),
-        )
-        .expect("unable to load PlayerChunkViewDimensionKindComponent");
+        world
+            .initialize_add::<PlayerChunkViewDimensionKindComponent>()
+            .await
+            .expect("unable to load PlayerChunkViewDimensionKindComponent");
 
         let mut engine_config = wasmtime::Config::new();
 
@@ -338,11 +289,14 @@ impl ServerLoop {
                 .expect("failed to load scripts"),
         );
 
-        label_library.add_label_map(script_registry.script_label_map().clone());
+        world
+            .get_resource_mut::<LabelLibrary>()
+            .add_label_map(script_registry.script_label_map().clone());
 
-        let handler_action_component = HandlerActionComponent::load(&label_library)
+        world
+            .initialize_add::<HandlerActionComponent>()
             .await
-            .expect("failed to map actions to scripts");
+            .expect("unable to initialize HandlerActionComponent");
 
         let shared_event_tx_clone = shared_event_tx.clone();
 
@@ -376,32 +330,17 @@ impl ServerLoop {
         world.add(orientation_ac);
         world.add(player_ac);
         world.add(chunk_activation_ac);
-        world.add(EffectActorComponent::new(
-            label_library.get("actor_effect").unwrap(),
-        ));
+        world.add(effect_ac);
         world.add(ProjectileActorComponent::new());
 
         world.add(ProjectileActorCollisions::new());
-
-        world.add(block_collision_acc);
-        world.add(model_acc);
-        world.add(health_acc);
-        world.add(hitbox_acc);
 
         world.add(class_bc);
         world.add(environment_bc);
         world.add(metadata_bc);
 
-        world.add(collision_bcc);
-
-        world.add(player_chunk_view_dkc);
-
-        world.add(snapshot_handler_ec);
-
         world.add(status_cc);
         world.add(cache_cc);
-
-        world.add(label_library);
 
         let chunk_generation_system = world
             .get_data::<ChunkGenerationSystem>()
@@ -430,8 +369,6 @@ impl ServerLoop {
         world.add(ChunkActivationSystem::new());
 
         world.add(script_registry);
-
-        world.add(handler_action_component);
 
         world.add(storage);
 

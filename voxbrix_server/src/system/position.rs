@@ -54,14 +54,10 @@ impl PositionSystemData<'_> {
         let par_iter = self.velocity_ac.par_iter().filter_map(|(actor, velocity)| {
             let position = self.position_ac.get(&actor)?;
             let actor_class = self.class_ac.get(&actor)?;
-            let radius = self
-                .block_collision_acc
-                .get(&actor_class, &actor)
-                .map(|collision| {
-                    match collision {
-                        BlockCollision::AABB { radius_blocks } => radius_blocks,
-                    }
-                });
+            let radius = match self.block_collision_acc.get(&actor_class, &actor) {
+                BlockCollision::None => None,
+                BlockCollision::AABB { radius_blocks } => Some(radius_blocks),
+            };
 
             let mut collides_with_block = false;
 

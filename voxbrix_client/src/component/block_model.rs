@@ -1,50 +1,63 @@
 use crate::entity::block_model::BlockModel;
-use anyhow::Error;
-use serde::Deserialize;
+use anyhow::{
+    Context,
+    Error,
+};
 use voxbrix_common::{
-    system::component_map::ComponentMap,
+    resource::component_map::ComponentMap,
     AsFromUsize,
+    FromDescriptor,
     LabelLibrary,
+};
+use voxbrix_world::{
+    Initialization,
+    World,
 };
 
 pub mod builder;
 pub mod culling;
 
 pub struct BlockModelComponent<T> {
-    data: Vec<Option<T>>,
+    models: Vec<T>,
 }
 
 impl<T> BlockModelComponent<T> {
-    pub fn new<'de, 'label, D>(
-        component_map: &'de ComponentMap<BlockModel>,
-        label_library: &LabelLibrary,
-        component_name: &'label str,
-        convert: impl Fn(D) -> Result<T, Error>,
-    ) -> Result<Self, Error>
-    where
-        D: Deserialize<'de>,
-        'label: 'de,
-    {
+    pub fn get(&self, block_model: &BlockModel) -> &T {
+        &self.models[block_model.as_usize()]
+    }
+}
+
+impl<T> Initialization for BlockModelComponent<T>
+where
+    T: FromDescriptor + Default + Send + Sync + 'static,
+{
+    type Error = Error;
+
+    async fn initialization(world: &World) -> Result<Self, Self::Error> {
         let mut vec = Vec::new();
 
-        vec.resize_with(
-            label_library
-                .get_label_map_for::<BlockModel>()
-                .expect("BlockClass label map is undefined")
-                .len(),
-            || None,
-        );
+        let label_map = world
+            .get_resource_ref::<LabelLibrary>()
+            .get_label_map_for::<BlockModel>()
+            .ok_or_else(|| anyhow::anyhow!("BlockModel label map is undefined"))?
+            .clone();
+        let component_map = world.get_resource_ref::<ComponentMap<BlockModel>>();
 
-        for res in component_map.get_component::<'de, 'label, D>(component_name) {
+        vec.resize_with(label_map.len(), Default::default);
+
+        for res in component_map.get_component::<T::Descriptor>(T::COMPONENT_NAME) {
             let (e, d) = res?;
 
-            vec[e.as_usize()] = Some(convert(d)?);
+            vec[e.as_usize()] = T::from_descriptor(d, world).with_context(|| {
+                let label = label_map.get_label(&e).unwrap_or("UNKNOWN");
+                format!(
+                    "parsing {} component for entity {}",
+                    T::COMPONENT_NAME,
+                    label
+                )
+            })?;
         }
 
-        Ok(Self { data: vec })
-    }
-
-    pub fn get(&self, block_model: &BlockModel) -> Option<&T> {
-        self.data.get(block_model.as_usize())?.as_ref()
+        Ok(Self { models: vec })
     }
 }

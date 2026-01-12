@@ -33,7 +33,7 @@ impl HUDSystemData<'_> {
             if let Some(health) = self
                 .class_ac
                 .get(&self.player_actor.0)
-                .and_then(|class| self.health_acc.get(class, &self.player_actor.0))
+                .and_then(|class| self.health_acc.get(class, &self.player_actor.0).as_ref())
                 .and_then(|health| health.ratio())
             {
                 egui::Area::new("hud_resources".into())

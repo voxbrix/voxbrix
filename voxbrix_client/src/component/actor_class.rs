@@ -1,4 +1,8 @@
-use anyhow::Error;
+use crate::resource::player_actor::PlayerActor;
+use anyhow::{
+    Context,
+    Error,
+};
 use nohash_hasher::IntMap;
 use serde::Deserialize;
 use voxbrix_common::{
@@ -12,9 +16,14 @@ use voxbrix_common::{
         UpdatesUnpacked,
     },
     pack,
-    system::component_map::ComponentMap,
+    resource::component_map::ComponentMap,
     AsFromUsize,
+    FromDescriptor,
     LabelLibrary,
+};
+use voxbrix_world::{
+    Initialization,
+    World,
 };
 
 pub mod block_collision;
@@ -28,53 +37,78 @@ pub struct OverridableActorClassComponent<T> {
     update: Update,
     player_actor: Actor,
     is_client_controlled: bool,
-    classes: Vec<Option<T>>,
+    classes: Vec<T>,
     overrides: IntMap<Actor, T>,
 }
 
 impl<T> OverridableActorClassComponent<T> {
-    pub fn new<'de, 'label, D>(
-        update: Update,
-        player_actor: Actor,
-        is_client_controlled: bool,
-        component_map: &'de ComponentMap<ActorClass>,
-        label_library: &LabelLibrary,
-        component_name: &'label str,
-        convert: impl Fn(D) -> Result<T, Error>,
-    ) -> Result<Self, Error>
-    where
-        D: Deserialize<'de>,
-        'label: 'de,
-    {
+    pub fn get(&self, actor_class: &ActorClass, actor: &Actor) -> &T {
+        self.overrides
+            .get(actor)
+            .unwrap_or_else(|| &self.classes[actor_class.as_usize()])
+    }
+}
+
+pub trait OverridableFromDescriptor: FromDescriptor {
+    const UPDATE_LABEL: &str;
+    const IS_CLIENT_CONTROLLED: bool;
+}
+
+impl<T> OverridableFromDescriptor for Option<T>
+where
+    T: OverridableFromDescriptor,
+{
+    const IS_CLIENT_CONTROLLED: bool = T::IS_CLIENT_CONTROLLED;
+    const UPDATE_LABEL: &str = T::UPDATE_LABEL;
+}
+
+impl<T> Initialization for OverridableActorClassComponent<T>
+where
+    T: OverridableFromDescriptor + Default + Send + Sync + 'static,
+{
+    type Error = Error;
+
+    async fn initialization(world: &World) -> Result<Self, Self::Error> {
         let mut vec = Vec::new();
 
-        vec.resize_with(
-            label_library
-                .get_label_map_for::<ActorClass>()
-                .expect("ActorClass label map is undefined")
-                .len(),
-            || None,
-        );
+        let label_map = world
+            .get_resource_ref::<LabelLibrary>()
+            .get_label_map_for::<ActorClass>()
+            .ok_or_else(|| anyhow::anyhow!("ActorClass label map is undefined"))?
+            .clone();
+        let component_map = world.get_resource_ref::<ComponentMap<ActorClass>>();
 
-        for res in component_map.get_component::<'de, 'label, D>(component_name) {
+        let update = world
+            .get_resource_ref::<LabelLibrary>()
+            .get(T::UPDATE_LABEL)
+            .ok_or_else(|| {
+                anyhow::anyhow!("update with label \"{}\" is undefined", T::UPDATE_LABEL)
+            })?;
+
+        let player_actor = world.get_resource_ref::<PlayerActor>().0;
+
+        vec.resize_with(label_map.len(), Default::default);
+
+        for res in component_map.get_component::<T::Descriptor>(T::COMPONENT_NAME) {
             let (e, d) = res?;
 
-            vec[e.as_usize()] = Some(convert(d)?);
+            vec[e.as_usize()] = T::from_descriptor(d, world).with_context(|| {
+                let label = label_map.get_label(&e).unwrap_or("UNKNOWN");
+                format!(
+                    "parsing \"{}\" component for entity \"{}\"",
+                    T::COMPONENT_NAME,
+                    label
+                )
+            })?;
         }
 
         Ok(Self {
             update,
             player_actor,
-            is_client_controlled,
+            is_client_controlled: T::IS_CLIENT_CONTROLLED,
             classes: vec,
             overrides: IntMap::default(),
         })
-    }
-
-    pub fn get(&self, actor_class: &ActorClass, actor: &Actor) -> Option<&T> {
-        self.overrides
-            .get(actor)
-            .or_else(|| self.classes.get(actor_class.as_usize())?.as_ref())
     }
 }
 

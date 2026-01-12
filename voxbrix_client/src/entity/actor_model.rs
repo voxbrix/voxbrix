@@ -1,6 +1,11 @@
+use crate::assets::{
+    ACTOR_MODEL_ANIMATION_LIST_PATH,
+    ACTOR_MODEL_BONE_LIST_PATH,
+};
 use voxbrix_common::{
     math::MinMax,
     AsFromUsize,
+    StaticEntity,
 };
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
@@ -29,6 +34,10 @@ impl MinMax for ActorAnimation {
 
 impl nohash_hasher::IsEnabled for ActorAnimation {}
 
+impl StaticEntity for ActorAnimation {
+    const LIST_PATH: &str = ACTOR_MODEL_ANIMATION_LIST_PATH;
+}
+
 #[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
 pub struct ActorBone(pub u32);
 
@@ -49,3 +58,7 @@ impl std::hash::Hash for ActorBone {
 }
 
 impl nohash_hasher::IsEnabled for ActorBone {}
+
+impl StaticEntity for ActorBone {
+    const LIST_PATH: &str = ACTOR_MODEL_BONE_LIST_PATH;
+}

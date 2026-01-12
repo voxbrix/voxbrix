@@ -1,5 +1,4 @@
 pub const BLOCK_MODEL_LIST_PATH: &str = "assets/client/models/blocks.json";
-pub const ACTOR_MODEL_DIR: &str = "assets/client/models/actors";
 pub const BLOCK_MODEL_DIR: &str = "assets/client/models/blocks";
 
 pub const ACTOR_MODEL_ANIMATION_LIST_PATH: &str = "assets/client/models/actor_animation_list.json";

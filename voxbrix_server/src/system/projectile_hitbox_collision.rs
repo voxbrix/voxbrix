@@ -85,7 +85,13 @@ impl ProjectileHitboxCollisionSystemData<'_> {
 
                         let targ_class = self.class_ac.get(&targ_actor)?;
                         let prev_targ_pos = self.position_ac.get(&targ_actor)?;
-                        let hitbox = self.hitbox_acc.get(targ_class, &targ_actor)?;
+                        let hitbox = self.hitbox_acc.get(targ_class, &targ_actor);
+
+                        if matches!(hitbox, Hitbox::None)
+                            || matches!(projectile.hitbox, Hitbox::None)
+                        {
+                            return None;
+                        }
 
                         let next_targ_pos = self
                             .movement_change_ac
@@ -132,6 +138,8 @@ impl ProjectileHitboxCollisionSystemData<'_> {
                                 Hitbox::Sphere { radius_blocks: r1 },
                                 Hitbox::Sphere { radius_blocks: r2 },
                             ) => r1 + r2,
+                            // Covered above:
+                            (Hitbox::None, _) | (_, Hitbox::None) => unreachable!(),
                         };
 
                         // vx^2 + vy^2 + vz^2

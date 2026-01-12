@@ -13,6 +13,10 @@ use voxbrix_common::{
     LabelLibrary,
     CONFIG_EXTENSION,
 };
+use voxbrix_world::{
+    Initialization,
+    World,
+};
 
 pub mod initial;
 pub mod projectile;
@@ -20,10 +24,22 @@ pub mod projectile;
 pub struct HandlerActionComponent(Vec<HandlerSet>);
 
 impl HandlerActionComponent {
-    pub async fn load<'a>(label_library: &LabelLibrary) -> Result<Self, Error> {
+    pub fn get(&self, action: &Action) -> &HandlerSet {
+        self.0
+            .get(action.as_usize())
+            .expect("handler must be defined for all actions")
+    }
+}
+
+impl Initialization for HandlerActionComponent {
+    type Error = Error;
+
+    async fn initialization(world: &World) -> Result<Self, Self::Error> {
+        let label_library = world.get_resource_ref::<LabelLibrary>();
+
         let label_map = label_library
             .get_label_map_for::<Action>()
-            .expect("action label map is undefined");
+            .ok_or_else(|| anyhow::anyhow!("Action label map is undefined"))?;
 
         let mut vec = Vec::with_capacity(label_map.len());
 
@@ -49,11 +65,5 @@ impl HandlerActionComponent {
         }
 
         Ok(Self(vec))
-    }
-
-    pub fn get(&self, action: &Action) -> &HandlerSet {
-        self.0
-            .get(action.as_usize())
-            .expect("handler must be defined for all actions")
     }
 }

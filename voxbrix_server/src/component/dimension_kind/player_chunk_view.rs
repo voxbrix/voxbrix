@@ -1,3 +1,4 @@
+use anyhow::Error;
 use serde::Deserialize;
 use voxbrix_common::{
     component::dimension_kind::DimensionKindComponent,
@@ -6,7 +7,9 @@ use voxbrix_common::{
         ChunkRadius,
     },
     math::Vec3I32,
+    FromDescriptor,
 };
+use voxbrix_world::World;
 
 #[derive(Clone, Copy, Deserialize)]
 pub struct PlayerChunkView {
@@ -26,6 +29,16 @@ impl Default for PlayerChunkView {
             min: Vec3I32::splat(-10),
             max: Vec3I32::splat(10),
         }
+    }
+}
+
+impl FromDescriptor for PlayerChunkView {
+    type Descriptor = PlayerChunkView;
+
+    const COMPONENT_NAME: &str = "player_chunk_view";
+
+    fn from_descriptor(desc: Option<Self::Descriptor>, _world: &World) -> Result<Self, Error> {
+        desc.ok_or_else(|| Error::msg("player_chunk_view descriptor is missing"))
     }
 }
 

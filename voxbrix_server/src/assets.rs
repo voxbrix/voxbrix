@@ -4,4 +4,3 @@ pub const DIMENSION_KIND_GENERATION_MAP: &str = "assets/server/dimension_kind_ge
 pub const SERVER_LOOP_SCRIPT_LIST: &str = "assets/server/scripts/server_loop_list.json";
 pub const SERVER_LOOP_SCRIPT_DIR: &str = "assets/server/scripts/server_loop";
 pub const ACTION_HANDLER_DIR: &str = "assets/server/actions/handlers";
-pub const EFFECTS_DIR: &str = "assets/server/effects";

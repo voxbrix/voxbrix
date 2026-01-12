@@ -1,11 +1,18 @@
 use crate::{
     entity::chunk::DimensionKind,
-    system::component_map::ComponentMap,
+    resource::component_map::ComponentMap,
     AsFromUsize,
+    FromDescriptor,
     LabelLibrary,
 };
-use anyhow::Error;
-use serde::Deserialize;
+use anyhow::{
+    Context,
+    Error,
+};
+use voxbrix_world::{
+    Initialization,
+    World,
+};
 
 pub mod sky_light_config;
 
@@ -14,37 +21,42 @@ pub struct DimensionKindComponent<T> {
 }
 
 impl<T> DimensionKindComponent<T> {
-    pub fn new<'de, 'label, D>(
-        component_map: &'de ComponentMap<DimensionKind>,
-        label_library: &LabelLibrary,
-        component_name: &'label str,
-        convert: impl Fn(D) -> Result<T, Error>,
-    ) -> Result<Self, Error>
-    where
-        T: Default,
-        D: Deserialize<'de>,
-        'label: 'de,
-    {
+    pub fn get(&self, dimension_kind: &DimensionKind) -> &T {
+        &self.data[dimension_kind.as_usize()]
+    }
+}
+
+impl<T> Initialization for DimensionKindComponent<T>
+where
+    T: FromDescriptor + Default + Send + Sync + 'static,
+{
+    type Error = Error;
+
+    async fn initialization(world: &World) -> Result<Self, Self::Error> {
         let mut data = Vec::new();
 
-        data.resize_with(
-            label_library
-                .get_label_map_for::<DimensionKind>()
-                .expect("DimensionKind label map is undefined")
-                .len(),
-            || Default::default(),
-        );
+        let label_map = world
+            .get_resource_ref::<LabelLibrary>()
+            .get_label_map_for::<DimensionKind>()
+            .ok_or_else(|| anyhow::anyhow!("DimensionKind label map is undefined"))?
+            .clone();
+        let component_map = world.get_resource_ref::<ComponentMap<DimensionKind>>();
 
-        for res in component_map.get_component::<'de, 'label, D>(component_name) {
+        data.resize_with(label_map.len(), Default::default);
+
+        for res in component_map.get_component::<T::Descriptor>(T::COMPONENT_NAME) {
             let (e, d) = res?;
 
-            data[e.as_usize()] = convert(d)?;
+            data[e.as_usize()] = T::from_descriptor(d, world).with_context(|| {
+                let label = label_map.get_label(&e).unwrap_or("UNKNOWN");
+                format!(
+                    "parsing \"{}\" component for entity \"{}\"",
+                    T::COMPONENT_NAME,
+                    label
+                )
+            })?;
         }
 
         Ok(Self { data })
-    }
-
-    pub fn get(&self, dimension_kind: &DimensionKind) -> &T {
-        self.data.get(dimension_kind.as_usize()).unwrap()
     }
 }

@@ -11,7 +11,10 @@ pub mod script_registry;
 pub mod system;
 
 use ahash::AHashMap;
-use anyhow::Context;
+use anyhow::{
+    Context,
+    Error,
+};
 use arrayvec::ArrayVec;
 use component::block::{
     metadata::BlockMetadata,
@@ -37,6 +40,7 @@ use std::{
     sync::Arc,
 };
 use tokio::task;
+use voxbrix_world::World;
 
 pub const CONFIG_EXTENSION: &str = "json";
 
@@ -206,20 +210,13 @@ impl LabelLibrary {
             .insert(TypeId::of::<T>(), label_map.0);
     }
 
-    pub async fn load<T>(&mut self, path: impl AsRef<Path>) -> Result<(), anyhow::Error>
+    pub async fn load<T>(&mut self) -> Result<(), anyhow::Error>
     where
-        T: AsFromUsize + Any + Send + Sync,
+        T: StaticEntity,
     {
-        let read_path = path.as_ref().to_owned();
-
-        let list = parse_file_async::<Vec<String>>(read_path)
+        let list = parse_file_async::<Vec<String>>(T::LIST_PATH)
             .await
-            .with_context(|| {
-                format!(
-                    "unable to load list \"{:?}\"",
-                    path.as_ref().to_string_lossy()
-                )
-            })?;
+            .with_context(|| format!("unable to load list \"{}\"", T::LIST_PATH))?;
 
         let label_map = LabelMap::<T>::from_list(&list);
 
@@ -303,4 +300,29 @@ impl<T, const N: usize> ArrayExt<T, N> for [T; N] {
                 .into_inner_unchecked()
         }
     }
+}
+
+pub trait FromDescriptor: Sized {
+    type Descriptor: DeserializeOwned;
+    const COMPONENT_NAME: &str;
+
+    fn from_descriptor(desc: Option<Self::Descriptor>, world: &World) -> Result<Self, Error>;
+}
+
+impl<T> FromDescriptor for Option<T>
+where
+    T: FromDescriptor,
+{
+    type Descriptor = T::Descriptor;
+
+    const COMPONENT_NAME: &str = T::COMPONENT_NAME;
+
+    fn from_descriptor(desc: Option<Self::Descriptor>, world: &World) -> Result<Self, Error> {
+        desc.map(|desc| T::from_descriptor(Some(desc), world))
+            .transpose()
+    }
+}
+
+pub trait StaticEntity: AsFromUsize + Any + Send + Sync {
+    const LIST_PATH: &str;
 }

@@ -25,13 +25,15 @@ use voxbrix_common::{
         Vec3F32,
     },
     ArrayExt,
+    FromDescriptor,
     LabelLibrary,
 };
+use voxbrix_world::World;
 
 pub const BASE_BONE: ActorBone = ActorBone(0);
 const VERTEX_TEXTURE_POSITION_OFFSET: f32 = 0.00001;
 
-pub type BuilderActorModelComponent = ActorModelComponent<ActorModelBuilder>;
+pub type BuilderActorModelComponent = ActorModelComponent<Option<ActorModelBuilder>>;
 
 pub struct ActorModelBuilder {
     default_scale: f32,
@@ -145,6 +147,18 @@ impl ActorModelBuilder {
 
     pub fn get_bone_parameters(&self, bone: &ActorBone) -> Option<&BoneParameters> {
         self.skeleton.get(bone)
+    }
+}
+
+impl FromDescriptor for ActorModelBuilder {
+    type Descriptor = ActorModelBuilderDescriptor;
+
+    const COMPONENT_NAME: &str = "builder";
+
+    fn from_descriptor(desc: Option<Self::Descriptor>, world: &World) -> Result<Self, Error> {
+        let desc = desc.ok_or_else(|| Error::msg("builder descriptor is missing"))?;
+        let label_library = world.get_resource_ref::<LabelLibrary>();
+        desc.describe(&label_library)
     }
 }
 

@@ -1,49 +1,60 @@
 use crate::{
     entity::block_environment::BlockEnvironment,
-    system::component_map::ComponentMap,
+    resource::component_map::ComponentMap,
     AsFromUsize,
+    FromDescriptor,
     LabelLibrary,
 };
-use anyhow::Error;
-use serde::Deserialize;
+use anyhow::{
+    Context,
+    Error,
+};
+use voxbrix_world::{
+    Initialization,
+    World,
+};
 
 pub struct BlockEnvironmentComponent<T> {
-    environments: Vec<Option<T>>,
+    environments: Vec<T>,
 }
 
 impl<T> BlockEnvironmentComponent<T> {
-    pub fn new<'de, 'label, D>(
-        component_map: &'de ComponentMap<BlockEnvironment>,
-        label_library: &LabelLibrary,
-        component_name: &'label str,
-        convert: impl Fn(D) -> Result<T, Error>,
-    ) -> Result<Self, Error>
-    where
-        D: Deserialize<'de>,
-        'label: 'de,
-    {
-        let mut vec = Vec::new();
+    pub fn get(&self, block_environment: &BlockEnvironment) -> &T {
+        &self.environments[block_environment.as_usize()]
+    }
+}
 
-        vec.resize_with(
-            label_library
-                .get_label_map_for::<BlockEnvironment>()
-                .expect("BlockEnvironment label map is undefined")
-                .len(),
-            || None,
-        );
+impl<T> Initialization for BlockEnvironmentComponent<T>
+where
+    T: FromDescriptor + Default + Send + Sync + 'static,
+{
+    type Error = Error;
 
-        for res in component_map.get_component::<'de, 'label, D>(component_name) {
+    async fn initialization(world: &World) -> Result<Self, Self::Error> {
+        let mut environments = Vec::new();
+
+        let label_map = world
+            .get_resource_ref::<LabelLibrary>()
+            .get_label_map_for::<BlockEnvironment>()
+            .ok_or_else(|| anyhow::anyhow!("BlockEnvironment label map is undefined"))?
+            .clone();
+        let component_map = world.get_resource_ref::<ComponentMap<BlockEnvironment>>();
+
+        environments.resize_with(label_map.len(), Default::default);
+
+        for res in component_map.get_component::<T::Descriptor>(T::COMPONENT_NAME) {
             let (e, d) = res?;
 
-            vec[e.as_usize()] = Some(convert(d)?);
+            environments[e.as_usize()] = T::from_descriptor(d, world).with_context(|| {
+                let label = label_map.get_label(&e).unwrap_or("UNKNOWN");
+                format!(
+                    "parsing \"{}\" component for entity \"{}\"",
+                    T::COMPONENT_NAME,
+                    label
+                )
+            })?;
         }
 
-        Ok(Self { environments: vec })
-    }
-
-    pub fn get(&self, block_environment: &BlockEnvironment) -> Option<&T> {
-        self.environments
-            .get(block_environment.as_usize())?
-            .as_ref()
+        Ok(Self { environments })
     }
 }

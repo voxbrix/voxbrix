@@ -1,11 +1,4 @@
 use crate::{
-    assets::{
-        ACTOR_MODEL_ANIMATION_LIST_PATH,
-        ACTOR_MODEL_BONE_LIST_PATH,
-        ACTOR_MODEL_DIR,
-        BLOCK_MODEL_DIR,
-        BLOCK_MODEL_LIST_PATH,
-    },
     component::{
         actor::{
             animation_state::AnimationStateActorComponent,
@@ -22,10 +15,7 @@ use crate::{
             health::HealthActorClassComponent,
             model::ModelActorClassComponent,
         },
-        actor_model::builder::{
-            ActorModelBuilderDescriptor,
-            BuilderActorModelComponent,
-        },
+        actor_model::builder::BuilderActorModelComponent,
         block::{
             class::ClassBlockComponent,
             environment::EnvironmentBlockComponent,
@@ -34,14 +24,8 @@ use crate::{
         block_class::model::ModelBlockClassComponent,
         block_environment::model::ModelBlockEnvironmentComponent,
         block_model::{
-            builder::{
-                BlockModelBuilderDescriptor,
-                BuilderBlockModelComponent,
-            },
-            culling::{
-                Culling,
-                CullingBlockModelComponent,
-            },
+            builder::BuilderBlockModelComponent,
+            culling::CullingBlockModelComponent,
         },
         chunk::{
             render_data::{
@@ -128,18 +112,6 @@ use tokio::{
     },
 };
 use voxbrix_common::{
-    assets::{
-        ACTOR_CLASS_DIR,
-        ACTOR_CLASS_LIST_PATH,
-        ACTOR_MODEL_LIST_PATH,
-        BLOCK_CLASS_DIR,
-        BLOCK_CLASS_LIST_PATH,
-        BLOCK_ENVIRONMENT_DIR,
-        BLOCK_ENVIRONMENT_LIST_PATH,
-        DIMENSION_KIND_DIR,
-        DIMENSION_KIND_LIST_PATH,
-        UPDATE_LIST_PATH,
-    },
     async_ext::{
         self,
         StreamExt as _,
@@ -150,26 +122,13 @@ use voxbrix_common::{
             position::Position,
             velocity::Velocity,
         },
-        actor_class::{
-            block_collision::BlockCollision,
-            health::Health,
-        },
         block::sky_light::SkyLightBlockComponent,
         block_class::{
-            collision::{
-                Collision,
-                CollisionBlockClassComponent,
-            },
-            opacity::{
-                Opacity,
-                OpacityBlockClassComponent,
-            },
+            collision::CollisionBlockClassComponent,
+            opacity::OpacityBlockClassComponent,
         },
         chunk::status::StatusChunkComponent,
-        dimension_kind::sky_light_config::{
-            SkyLightConfig,
-            SkyLightConfigDimensionKindComponent,
-        },
+        dimension_kind::sky_light_config::SkyLightConfigDimensionKindComponent,
     },
     compute,
     entity::{
@@ -198,10 +157,10 @@ use voxbrix_common::{
     },
     pack::Packer,
     resource::{
+        component_map::ComponentMap,
         process_timer::ProcessTimer,
         removal_queue::RemovalQueue,
     },
-    system::component_map::ComponentMap,
     LabelLibrary,
 };
 use voxbrix_protocol::client::{
@@ -261,49 +220,56 @@ impl GameScene {
         let mut label_library = LabelLibrary::new();
 
         label_library
-            .load::<ActorClass>(ACTOR_CLASS_LIST_PATH)
+            .load::<ActorClass>()
             .await
             .context("ActorClass list loading error")?;
 
         label_library
-            .load::<ActorModel>(ACTOR_MODEL_LIST_PATH)
+            .load::<ActorModel>()
             .await
             .context("ActorModel list loading error")?;
 
         label_library
-            .load::<ActorBone>(ACTOR_MODEL_BONE_LIST_PATH)
+            .load::<ActorBone>()
             .await
             .context("ActorBone list loading error")?;
 
         label_library
-            .load::<ActorAnimation>(ACTOR_MODEL_ANIMATION_LIST_PATH)
+            .load::<ActorAnimation>()
             .await
             .context("ActorAnimation list loading error")?;
 
         label_library
-            .load::<BlockClass>(BLOCK_CLASS_LIST_PATH)
+            .load::<BlockClass>()
             .await
             .context("BlockClass list loading error")?;
 
         label_library
-            .load::<BlockEnvironment>(BLOCK_ENVIRONMENT_LIST_PATH)
+            .load::<BlockEnvironment>()
             .await
             .context("BlockEnvironment list loading error")?;
 
         label_library
-            .load::<BlockModel>(BLOCK_MODEL_LIST_PATH)
+            .load::<BlockModel>()
             .await
             .context("BlockModel list loading error")?;
 
         label_library
-            .load::<Update>(UPDATE_LIST_PATH)
+            .load::<Update>()
             .await
             .context("Update list loading error")?;
 
         label_library
-            .load::<DimensionKind>(DIMENSION_KIND_LIST_PATH)
+            .load::<DimensionKind>()
             .await
             .context("DimensionKind list loading error")?;
+
+        let mut world = World::new();
+
+        world.add(label_library);
+
+        world.add(PlayerActor(player_actor));
+        world.add(PlayerChunkViewRadius(player_chunk_view_radius));
 
         let (_reliable_tx, reliable_rx) = flume::unbounded::<Vec<u8>>();
         let (unreliable_tx, unreliable_rx) = flume::unbounded::<Vec<u8>>();
@@ -404,40 +370,28 @@ impl GameScene {
             })
         };
 
-        let actor_class_component_map =
-            ComponentMap::<ActorClass>::load_data(ACTOR_CLASS_DIR, &label_library).await?;
+        world.initialize_add::<ComponentMap<ActorClass>>().await?;
 
-        let actor_model_component_map =
-            ComponentMap::<ActorModel>::load_data(ACTOR_MODEL_DIR, &label_library).await?;
+        world.initialize_add::<ComponentMap<ActorModel>>().await?;
 
-        let block_class_component_map =
-            ComponentMap::<BlockClass>::load_data(BLOCK_CLASS_DIR, &label_library).await?;
+        world.initialize_add::<ComponentMap<BlockClass>>().await?;
 
-        let block_environment_component_map =
-            ComponentMap::<BlockEnvironment>::load_data(BLOCK_ENVIRONMENT_DIR, &label_library)
-                .await?;
+        world
+            .initialize_add::<ComponentMap<BlockEnvironment>>()
+            .await?;
 
-        let block_model_component_map =
-            ComponentMap::<BlockModel>::load_data(BLOCK_MODEL_DIR, &label_library).await?;
+        world.initialize_add::<ComponentMap<BlockModel>>().await?;
 
         let texture_loading_system =
             TextureLoadingSystem::load_data(window.device(), window.queue()).await?;
 
-        label_library.add_label_map(texture_loading_system.label_map());
+        world
+            .get_resource_mut::<LabelLibrary>()
+            .add_label_map(texture_loading_system.label_map());
 
-        let builder_bmc = BuilderBlockModelComponent::new(
-            &block_model_component_map,
-            &label_library,
-            "builder",
-            |desc: BlockModelBuilderDescriptor| desc.describe(&label_library),
-        )?;
+        world.initialize_add::<BuilderBlockModelComponent>().await?;
 
-        let culling_bmc = CullingBlockModelComponent::new(
-            &block_model_component_map,
-            &label_library,
-            "culling",
-            |value: Culling| Ok(value),
-        )?;
+        world.initialize_add::<CullingBlockModelComponent>().await?;
 
         let status_cc = StatusChunkComponent::new();
 
@@ -446,50 +400,22 @@ impl GameScene {
         let metadata_bc = MetadataBlockComponent::new();
         let sky_light_bc = SkyLightBlockComponent::new();
 
-        let model_bcc = ModelBlockClassComponent::new(
-            &block_class_component_map,
-            &label_library,
-            "model",
-            |model_label: String| {
-                label_library.get(&model_label).ok_or_else(|| {
-                    anyhow::Error::msg(format!(
-                        "block model with label \"{}\" is undefined",
-                        model_label
-                    ))
-                })
-            },
-        )?;
+        world.initialize_add::<ModelBlockClassComponent>().await?;
 
-        let model_bec = ModelBlockEnvironmentComponent::new(
-            &block_environment_component_map,
-            &label_library,
-            "model",
-            |model_label: String| {
-                label_library.get(&model_label).ok_or_else(|| {
-                    anyhow::Error::msg(format!(
-                        "block model with label \"{}\" is undefined",
-                        model_label
-                    ))
-                })
-            },
-        )?;
+        world
+            .initialize_add::<ModelBlockEnvironmentComponent>()
+            .await?;
 
-        let collision_bcc = CollisionBlockClassComponent::new(
-            &block_class_component_map,
-            &label_library,
-            "collision",
-            |desc: Collision| Ok(desc),
-        )?;
+        world
+            .initialize_add::<CollisionBlockClassComponent>()
+            .await?;
 
-        let opacity_bcc = OpacityBlockClassComponent::new(
-            &block_class_component_map,
-            &label_library,
-            "opacity",
-            |desc: Opacity| Ok(desc),
-        )?;
+        world.initialize_add::<OpacityBlockClassComponent>().await?;
 
         let player_input = PlayerInput::new(10.0, 0.4);
         let sky_light_system = SkyLightSystem::new();
+
+        let label_library = world.get_resource_ref::<LabelLibrary>();
 
         let class_ac = ClassActorComponent::new(
             label_library.get("actor_class").unwrap(),
@@ -515,46 +441,15 @@ impl GameScene {
         let target_position_ac =
             TargetPositionActorComponent::new(label_library.get("actor_position").unwrap());
 
-        let model_acc = ModelActorClassComponent::new(
-            label_library.get("actor_model").unwrap(),
-            player_actor,
-            false,
-            &actor_class_component_map,
-            &label_library,
-            "model",
-            |model_label: String| {
-                label_library.get(&model_label).ok_or_else(|| {
-                    anyhow::Error::msg(format!("actor model \"{}\" is undefined", model_label))
-                })
-            },
-        )?;
+        world.initialize_add::<ModelActorClassComponent>().await?;
 
-        let health_acc = HealthActorClassComponent::new(
-            label_library.get("actor_health").unwrap(),
-            player_actor,
-            false,
-            &actor_class_component_map,
-            &label_library,
-            "health",
-            |desc: Health| Ok(desc),
-        )?;
+        world.initialize_add::<HealthActorClassComponent>().await?;
 
-        let block_collision_acc = BlockCollisionActorClassComponent::new(
-            label_library.get("actor_block_collision").unwrap(),
-            player_actor,
-            false,
-            &actor_class_component_map,
-            &label_library,
-            "block_collision",
-            |desc: BlockCollision| Ok(desc),
-        )?;
+        world
+            .initialize_add::<BlockCollisionActorClassComponent>()
+            .await?;
 
-        let builder_amc = BuilderActorModelComponent::new(
-            &actor_model_component_map,
-            &label_library,
-            "builder",
-            |desc: ActorModelBuilderDescriptor| desc.describe(&label_library),
-        )?;
+        world.initialize_add::<BuilderActorModelComponent>().await?;
 
         position_ac.insert(
             player_actor,
@@ -583,15 +478,12 @@ impl GameScene {
             snapshot,
         );
 
-        let dimension_kind_component_map =
-            ComponentMap::load_data(DIMENSION_KIND_DIR, &label_library).await?;
-
-        let sky_light_config_dkc = SkyLightConfigDimensionKindComponent::new(
-            &dimension_kind_component_map,
-            &label_library,
-            "sky_light",
-            |v: Option<SkyLightConfig>| Ok(v),
-        )?;
+        world
+            .initialize_add::<ComponentMap<DimensionKind>>()
+            .await?;
+        world
+            .initialize_add::<SkyLightConfigDimensionKindComponent>()
+            .await?;
 
         window.cursor_visible = false;
 
@@ -658,11 +550,7 @@ impl GameScene {
         let frame_source = window.get_frame_source();
         let input_source = window.get_input_source();
 
-        let mut world = World::new();
-
         world.add(packer);
-
-        world.add(label_library);
 
         world.add(class_ac);
         world.add(effect_ac);
@@ -673,32 +561,15 @@ impl GameScene {
         world.add(target_position_ac);
         world.add(target_orientation_ac);
 
-        world.add(builder_amc);
-
-        world.add(block_collision_acc);
-        world.add(model_acc);
-        world.add(health_acc);
-
         world.add(class_bc);
         world.add(environment_bc);
         world.add(metadata_bc);
         world.add(sky_light_bc);
 
-        world.add(collision_bcc);
-        world.add(model_bcc);
-        world.add(opacity_bcc);
-
-        world.add(model_bec);
-
         world.add(status_cc);
         world.add(BlkRenderDataChunkComponent::new());
         world.add(EnvRenderDataChunkComponent::new());
         world.add(SkyLightDataChunkComponent::new());
-
-        world.add(builder_bmc);
-        world.add(culling_bmc);
-
-        world.add(sky_light_config_dkc);
 
         world.add(player_input);
         world.add(sky_light_system);
@@ -708,9 +579,6 @@ impl GameScene {
         world.add(block_render_system);
         world.add(block_environment_render_system);
         world.add(target_block_highlight_system);
-
-        world.add(PlayerActor(player_actor));
-        world.add(PlayerChunkViewRadius(player_chunk_view_radius));
 
         world.add(snapshot);
         world.add(ConfirmedSnapshots {

@@ -5,9 +5,13 @@ use voxbrix_common::{
         effect::Effect,
         script::Script,
     },
-    system::component_map::ComponentMap,
+    resource::component_map::ComponentMap,
     AsFromUsize,
     LabelLibrary,
+};
+use voxbrix_world::{
+    Initialization,
+    World,
 };
 
 const COMPONENT_NAME: &str = "snapshot_handler";
@@ -15,16 +19,24 @@ const COMPONENT_NAME: &str = "snapshot_handler";
 pub struct SnapshotHandlerEffectComponent(Vec<HandlerSet>);
 
 impl SnapshotHandlerEffectComponent {
-    pub fn new(
-        component_map: &ComponentMap<Effect>,
-        label_library: &LabelLibrary,
-    ) -> Result<Self, Error> {
+    pub fn get(&self, effect: &Effect) -> &HandlerSet {
+        self.0.get(effect.as_usize()).unwrap()
+    }
+}
+
+impl Initialization for SnapshotHandlerEffectComponent {
+    type Error = Error;
+
+    async fn initialization(world: &World) -> Result<Self, Self::Error> {
         let mut vec = Vec::new();
+
+        let label_library = world.get_resource_ref::<LabelLibrary>();
+        let component_map = world.get_resource_ref::<ComponentMap<Effect>>();
 
         vec.resize_with(
             label_library
                 .get_label_map_for::<Effect>()
-                .expect("Effect label map is undefined")
+                .ok_or_else(|| anyhow::anyhow!("Effect label map is undefined"))?
                 .len(),
             HandlerSet::noop,
         );
@@ -32,14 +44,12 @@ impl SnapshotHandlerEffectComponent {
         for res in component_map.get_component::<HandlerSetDescriptor>(COMPONENT_NAME) {
             let (e, d) = res?;
 
-            vec[e.as_usize()] = d.describe(label_library)?;
+            if let Some(d) = d {
+                vec[e.as_usize()] = d.describe(&label_library)?;
+            }
         }
 
         Ok(Self(vec))
-    }
-
-    pub fn get(&self, effect: &Effect) -> &HandlerSet {
-        self.0.get(effect.as_usize()).unwrap()
     }
 }
 

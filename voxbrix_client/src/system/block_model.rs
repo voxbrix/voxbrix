@@ -55,12 +55,13 @@ fn neighbors_to_cull_flags(
                 let class = this_chunk.get(*n);
                 let culling = model_bcc
                     .get(class)
-                    .and_then(|model| culling_bmc.get(model));
+                    .as_ref()
+                    .map(|model| culling_bmc.get(model));
                 match culling {
                     Some(Culling::Full) => {
                         cull_flags.remove(side);
                     },
-                    None => {},
+                    Some(Culling::None) | None => {},
                 }
             },
             Neighbor::OtherChunk(n) => {
@@ -68,12 +69,13 @@ fn neighbors_to_cull_flags(
                     let class = chunk.get(*n);
                     let culling = model_bcc
                         .get(class)
-                        .and_then(|model| culling_bmc.get(model));
+                        .as_ref()
+                        .map(|model| culling_bmc.get(model));
                     match culling {
                         Some(Culling::Full) => {
                             cull_flags.remove(side);
                         },
-                        None => {},
+                        Some(Culling::None) | None => {},
                     }
                 } else {
                     cull_flags.remove(side);
@@ -123,8 +125,10 @@ fn build_chunk_buffer_shard<'a>(
         .flat_map_iter(move |(block, block_class)| {
             model_bcc
                 .get(block_class)
-                .and_then(|m| builder_bmc.get(m))
+                .as_ref()
+                .map(|m| builder_bmc.get(m))
                 .into_iter()
+                .flat_map(move |model_builder| model_builder.as_ref())
                 .flat_map(move |model_builder| {
                     let neighbors = block.neighbors();
 

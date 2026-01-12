@@ -1,10 +1,7 @@
 use crate::component::actor::ActorComponentPackable;
 use anyhow::Error;
 use nohash_hasher::IntSet;
-use serde::{
-    Deserialize,
-    Serialize,
-};
+use serde::Serialize;
 use voxbrix_common::{
     entity::{
         actor::Actor,
@@ -13,9 +10,14 @@ use voxbrix_common::{
         update::Update,
     },
     messages::UpdatesPacker,
-    system::component_map::ComponentMap,
+    resource::component_map::ComponentMap,
     AsFromUsize,
+    FromDescriptor,
     LabelLibrary,
+};
+use voxbrix_world::{
+    Initialization,
+    World,
 };
 
 pub mod block_collision;
@@ -29,57 +31,15 @@ pub struct PackableOverridableActorClassComponent<T>
 where
     T: 'static,
 {
-    classes: Vec<Option<T>>,
+    classes: Vec<T>,
     overrides: ActorComponentPackable<T>,
 }
 
-impl<T> PackableOverridableActorClassComponent<T>
-where
-    T: 'static + Serialize + PartialEq,
-{
-    pub fn new<'de, 'label, D>(
-        component_map: &'de ComponentMap<ActorClass>,
-        label_library: &LabelLibrary,
-        update: Update,
-        component_name: &'label str,
-        convert: impl Fn(D) -> Result<T, Error>,
-    ) -> Result<Self, Error>
-    where
-        D: Deserialize<'de>,
-        'label: 'de,
-    {
-        let mut vec = Vec::new();
-
-        vec.resize_with(
-            label_library
-                .get_label_map_for::<ActorClass>()
-                .expect("ActorClass label map is undefined")
-                .len(),
-            || None,
-        );
-
-        for res in component_map.get_component::<'de, 'label, D>(component_name) {
-            let (e, d) = res?;
-
-            vec[e.as_usize()] = Some(convert(d)?);
-        }
-
-        Ok(Self {
-            classes: vec,
-            overrides: ActorComponentPackable::new(update),
-        })
-    }
-}
-
 impl<T> PackableOverridableActorClassComponent<T> {
-    #[allow(dead_code)]
-    pub fn get(&self, class: &ActorClass, actor: &Actor) -> Option<&T> {
-        self.overrides.get(actor).or_else(|| {
-            self.classes
-                .get(class.as_usize())
-                .map(|o| o.as_ref())
-                .flatten()
-        })
+    pub fn get(&self, class: &ActorClass, actor: &Actor) -> &T {
+        self.overrides
+            .get(actor)
+            .unwrap_or_else(|| &self.classes[class.as_usize()])
     }
 }
 
@@ -96,15 +56,11 @@ where
         snapshot: ServerSnapshot,
     ) {
         let override_value = self.overrides.get(actor);
-        let class_value = self.classes.get(class.as_usize()).and_then(|o| o.as_ref());
+        let class_value = &self.classes[class.as_usize()];
 
-        if override_value
-            .or(class_value)
-            .is_some_and(|prev| prev != &value)
-            || override_value.is_none() && class_value.is_none()
-        {
+        if override_value != Some(&value) && class_value != &value {
             self.overrides.insert(*actor, value, snapshot);
-        } else if class_value.is_some_and(|prev| prev == &value) {
+        } else if override_value.is_some() && class_value == &value {
             self.overrides.remove(actor, snapshot);
         }
     }
@@ -142,4 +98,51 @@ where
             actors_partial_update,
         )
     }
+}
+
+impl<T> Initialization for PackableOverridableActorClassComponent<T>
+where
+    T: FromDescriptor + WithUpdate + Default + Serialize + PartialEq + Send + Sync + 'static,
+{
+    type Error = Error;
+
+    async fn initialization(world: &World) -> Result<Self, Self::Error> {
+        let mut vec = Vec::new();
+
+        let label_map = world
+            .get_resource_ref::<LabelLibrary>()
+            .get_label_map_for::<ActorClass>()
+            .ok_or_else(|| anyhow::anyhow!("ActorClass label map is undefined"))?
+            .clone();
+        let component_map = world.get_resource_ref::<ComponentMap<ActorClass>>();
+
+        vec.resize_with(label_map.len(), Default::default);
+
+        for res in component_map.get_component::<T::Descriptor>(T::COMPONENT_NAME) {
+            let (e, d) = res?;
+
+            vec[e.as_usize()] = T::from_descriptor(d, world)?;
+        }
+
+        let update = world
+            .get_resource_ref::<LabelLibrary>()
+            .get::<Update>(T::UPDATE)
+            .ok_or_else(|| anyhow::anyhow!("update with label \"{}\" is undefined", T::UPDATE))?;
+
+        Ok(Self {
+            classes: vec,
+            overrides: ActorComponentPackable::new(update),
+        })
+    }
+}
+
+pub trait WithUpdate {
+    const UPDATE: &str;
+}
+
+impl<T> WithUpdate for Option<T>
+where
+    T: WithUpdate,
+{
+    const UPDATE: &str = T::UPDATE;
 }

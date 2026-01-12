@@ -157,8 +157,8 @@ impl<'a> SkyLightSystemData<'a> {
                     let class = classes.get(block);
 
                     let light = match self.opacity_bcc.get(class) {
-                        Some(Opacity::Full) => SkyLight::MIN,
-                        None => {
+                        Opacity::Full => SkyLight::MIN,
+                        Opacity::None => {
                             let mut light = SkyLight::MIN;
 
                             for (side, neighbor) in block.neighbors().into_iter().enumerate() {

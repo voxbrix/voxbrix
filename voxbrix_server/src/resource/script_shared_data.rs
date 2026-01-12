@@ -18,7 +18,10 @@ use std::mem;
 use voxbrix_common::{
     component::{
         actor::position::Position,
-        block_class::collision::CollisionBlockClassComponent,
+        block_class::collision::{
+            Collision,
+            CollisionBlockClassComponent,
+        },
     },
     entity::{
         actor::Actor,
@@ -132,7 +135,7 @@ pub fn setup_script_registry(
                     .get_chunk(&chunk)
                     .map(|blocks| {
                         let class = blocks.get(block);
-                        sd.collision_bcc.get(class).is_some()
+                        !matches!(sd.collision_bcc.get(class), Collision::None)
                     })
                     .unwrap_or(false)
             },

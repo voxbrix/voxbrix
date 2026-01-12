@@ -19,6 +19,7 @@ nohash-hasher = { workspace = true }
 ahash = { workspace = true }
 wasmtime = { workspace = true }
 anyhow = { workspace = true }
+voxbrix_world = { path = "../voxbrix_world" }
 server_loop_api = { path = "../scripts/server/server_loop_api", default-features = false, features = ["host"], optional = true }
 glam = { version = "0.30", features = ["serde"] }
 futures-core = { version = "0.3", default-features = false }

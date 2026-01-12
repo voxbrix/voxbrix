@@ -1,11 +1,16 @@
-use crate::component::dimension_kind::DimensionKindComponent;
+use crate::{
+    component::dimension_kind::DimensionKindComponent,
+    FromDescriptor,
+};
+use anyhow::Error;
 use serde::{
     de::{
         Deserializer,
-        Error,
+        Error as _,
     },
     Deserialize,
 };
+use voxbrix_world::World;
 
 #[derive(PartialEq, Debug)]
 pub struct SkyLightConfig {
@@ -31,6 +36,16 @@ impl<'de> Deserialize<'de> for SkyLightConfig {
         }
 
         Ok(Self { side: inner.side })
+    }
+}
+
+impl FromDescriptor for SkyLightConfig {
+    type Descriptor = SkyLightConfig;
+
+    const COMPONENT_NAME: &str = "sky_light";
+
+    fn from_descriptor(desc: Option<Self::Descriptor>, _world: &World) -> Result<Self, Error> {
+        desc.ok_or_else(|| Error::msg("sky_light descriptor is missing"))
     }
 }
 

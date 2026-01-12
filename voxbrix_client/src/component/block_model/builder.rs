@@ -10,10 +10,12 @@ use voxbrix_common::{
     component::block::sky_light::SkyLight,
     entity::block::Block,
     ArrayExt,
+    FromDescriptor,
     LabelLibrary,
 };
+use voxbrix_world::World;
 
-pub type BuilderBlockModelComponent = BlockModelComponent<BlockModelBuilder>;
+pub type BuilderBlockModelComponent = BlockModelComponent<Option<BlockModelBuilder>>;
 const VERTEX_TEXTURE_POSITION_OFFSET: f32 = 0.00001;
 
 #[derive(Deserialize, Debug, Clone, Copy)]
@@ -157,6 +159,18 @@ struct QuadBuilder {
 
 pub struct BlockModelBuilder {
     quads: Vec<QuadBuilder>,
+}
+
+impl FromDescriptor for BlockModelBuilder {
+    type Descriptor = BlockModelBuilderDescriptor;
+
+    const COMPONENT_NAME: &str = "builder";
+
+    fn from_descriptor(desc: Option<Self::Descriptor>, world: &World) -> Result<Self, Error> {
+        let desc = desc.ok_or_else(|| Error::msg("builder descriptor is missing"))?;
+        let label_library = world.get_resource_ref::<LabelLibrary>();
+        desc.describe(&label_library)
+    }
 }
 
 impl BlockModelBuilder {

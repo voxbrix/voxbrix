@@ -1,4 +1,8 @@
-use crate::AsFromUsize;
+use crate::{
+    assets::UPDATE_LIST_PATH,
+    AsFromUsize,
+    StaticEntity,
+};
 use serde::{
     Deserialize,
     Serialize,
@@ -26,4 +30,8 @@ impl AsFromUsize for Update {
     fn from_usize(i: usize) -> Self {
         Self(i.try_into().unwrap())
     }
+}
+
+impl StaticEntity for Update {
+    const LIST_PATH: &str = UPDATE_LIST_PATH;
 }

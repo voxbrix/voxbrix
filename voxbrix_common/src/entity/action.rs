@@ -1,4 +1,8 @@
-use crate::AsFromUsize;
+use crate::{
+    assets::ACTION_LIST_PATH,
+    AsFromUsize,
+    StaticEntity,
+};
 use serde::{
     Deserialize,
     Serialize,
@@ -18,4 +22,8 @@ impl AsFromUsize for Action {
     fn from_usize(i: usize) -> Self {
         Self(i.try_into().unwrap())
     }
+}
+
+impl StaticEntity for Action {
+    const LIST_PATH: &str = ACTION_LIST_PATH;
 }

@@ -200,7 +200,7 @@ impl ActorRenderSystemData<'_> {
             .filter(|(actor, _)| *actor != self.player_actor.0)
             .filter_map(|(actor, position)| {
                 let class = self.class_ac.get(&actor)?;
-                let model = self.model_acc.get(class, &actor)?;
+                let model = self.model_acc.get(class, &actor).as_ref()?;
                 Some((actor, position, model))
             })
         {

@@ -134,7 +134,7 @@ impl ProjectileActorHandlingSystemData<'_> {
                             };
 
                             let Some(mut targ_health) =
-                                self.health_acc.get(targ_class, targ_actor).cloned()
+                                self.health_acc.get(targ_class, targ_actor).clone()
                             else {
                                 continue;
                             };
@@ -144,7 +144,7 @@ impl ProjectileActorHandlingSystemData<'_> {
                             self.health_acc.insert(
                                 targ_class,
                                 targ_actor,
-                                targ_health,
+                                Some(targ_health),
                                 *self.snapshot,
                             );
                         },
