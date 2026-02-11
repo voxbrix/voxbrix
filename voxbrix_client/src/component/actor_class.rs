@@ -1,11 +1,9 @@
 use crate::resource::player_actor::PlayerActor;
-use anyhow::{
-    Context,
-    Error,
-};
+use anyhow::Error;
 use nohash_hasher::IntMap;
 use serde::Deserialize;
 use voxbrix_common::{
+    component::StaticEntityComponent,
     entity::{
         actor::Actor,
         actor_class::ActorClass,
@@ -16,8 +14,6 @@ use voxbrix_common::{
         UpdatesUnpacked,
     },
     pack,
-    resource::component_map::ComponentMap,
-    AsFromUsize,
     FromDescriptor,
     LabelLibrary,
 };
@@ -37,7 +33,7 @@ pub struct OverridableActorClassComponent<T> {
     update: Update,
     player_actor: Actor,
     is_client_controlled: bool,
-    classes: Vec<T>,
+    classes: StaticEntityComponent<ActorClass, T>,
     overrides: IntMap<Actor, T>,
 }
 
@@ -45,7 +41,7 @@ impl<T> OverridableActorClassComponent<T> {
     pub fn get(&self, actor_class: &ActorClass, actor: &Actor) -> &T {
         self.overrides
             .get(actor)
-            .unwrap_or_else(|| &self.classes[actor_class.as_usize()])
+            .unwrap_or_else(|| self.classes.get(actor_class))
     }
 }
 
@@ -69,14 +65,7 @@ where
     type Error = Error;
 
     async fn initialization(world: &World) -> Result<Self, Self::Error> {
-        let mut vec = Vec::new();
-
-        let label_map = world
-            .get_resource_ref::<LabelLibrary>()
-            .get_label_map_for::<ActorClass>()
-            .ok_or_else(|| anyhow::anyhow!("ActorClass label map is undefined"))?
-            .clone();
-        let component_map = world.get_resource_ref::<ComponentMap<ActorClass>>();
+        let classes = StaticEntityComponent::initialization(world).await?;
 
         let update = world
             .get_resource_ref::<LabelLibrary>()
@@ -87,26 +76,11 @@ where
 
         let player_actor = world.get_resource_ref::<PlayerActor>().0;
 
-        vec.resize_with(label_map.len(), Default::default);
-
-        for res in component_map.get_component::<T::Descriptor>(T::COMPONENT_NAME) {
-            let (e, d) = res?;
-
-            vec[e.as_usize()] = T::from_descriptor(d, world).with_context(|| {
-                let label = label_map.get_label(&e).unwrap_or("UNKNOWN");
-                format!(
-                    "parsing \"{}\" component for entity \"{}\"",
-                    T::COMPONENT_NAME,
-                    label
-                )
-            })?;
-        }
-
         Ok(Self {
             update,
             player_actor,
             is_client_controlled: T::IS_CLIENT_CONTROLLED,
-            classes: vec,
+            classes,
             overrides: IntMap::default(),
         })
     }

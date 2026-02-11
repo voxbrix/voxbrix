@@ -3,6 +3,7 @@ use anyhow::Error;
 use nohash_hasher::IntSet;
 use serde::Serialize;
 use voxbrix_common::{
+    component::StaticEntityComponent,
     entity::{
         actor::Actor,
         actor_class::ActorClass,
@@ -10,8 +11,6 @@ use voxbrix_common::{
         update::Update,
     },
     messages::UpdatesPacker,
-    resource::component_map::ComponentMap,
-    AsFromUsize,
     FromDescriptor,
     LabelLibrary,
 };
@@ -31,7 +30,7 @@ pub struct PackableOverridableActorClassComponent<T>
 where
     T: 'static,
 {
-    classes: Vec<T>,
+    classes: StaticEntityComponent<ActorClass, T>,
     overrides: ActorComponentPackable<T>,
 }
 
@@ -39,7 +38,7 @@ impl<T> PackableOverridableActorClassComponent<T> {
     pub fn get(&self, class: &ActorClass, actor: &Actor) -> &T {
         self.overrides
             .get(actor)
-            .unwrap_or_else(|| &self.classes[class.as_usize()])
+            .unwrap_or_else(|| self.classes.get(class))
     }
 }
 
@@ -56,7 +55,7 @@ where
         snapshot: ServerSnapshot,
     ) {
         let override_value = self.overrides.get(actor);
-        let class_value = &self.classes[class.as_usize()];
+        let class_value = self.classes.get(class);
 
         if override_value != Some(&value) && class_value != &value {
             self.overrides.insert(*actor, value, snapshot);
@@ -107,22 +106,7 @@ where
     type Error = Error;
 
     async fn initialization(world: &World) -> Result<Self, Self::Error> {
-        let mut vec = Vec::new();
-
-        let label_map = world
-            .get_resource_ref::<LabelLibrary>()
-            .get_label_map_for::<ActorClass>()
-            .ok_or_else(|| anyhow::anyhow!("ActorClass label map is undefined"))?
-            .clone();
-        let component_map = world.get_resource_ref::<ComponentMap<ActorClass>>();
-
-        vec.resize_with(label_map.len(), Default::default);
-
-        for res in component_map.get_component::<T::Descriptor>(T::COMPONENT_NAME) {
-            let (e, d) = res?;
-
-            vec[e.as_usize()] = T::from_descriptor(d, world)?;
-        }
+        let classes = StaticEntityComponent::initialization(world).await?;
 
         let update = world
             .get_resource_ref::<LabelLibrary>()
@@ -130,7 +114,7 @@ where
             .ok_or_else(|| anyhow::anyhow!("update with label \"{}\" is undefined", T::UPDATE))?;
 
         Ok(Self {
-            classes: vec,
+            classes,
             overrides: ActorComponentPackable::new(update),
         })
     }
