@@ -8,6 +8,7 @@ use std::{
     any::{
         Any,
         TypeId,
+        type_name,
     },
     cell::UnsafeCell,
     future::Future,
@@ -52,7 +53,7 @@ impl World {
         let type_id = TypeId::of::<T>();
 
         if self.type_map.insert(type_id, idx).is_some() {
-            panic!("resource of type \"{:?}\" is already defined", type_id);
+            panic!("resource of type \"{}\" is already defined", type_name::<T>());
         }
 
         self.storage.push(UnsafeCell::new(Some(Box::new(resource))));
@@ -119,13 +120,13 @@ impl World {
         let type_id = TypeId::of::<T>();
 
         let idx = self.type_map.get(&type_id).copied().unwrap_or_else(|| {
-            panic!("resource \"{:?}\" is undefined", type_id);
+            panic!("resource \"{}\" is undefined", type_name::<T>());
         });
 
         let ptr = self.storage.get(idx).unwrap().get();
 
         let bx = unsafe { &*ptr }.as_ref().unwrap_or_else(|| {
-            panic!("resource of type \"{:?}\" is taken", type_id);
+            panic!("resource of type \"{}\" is taken", type_name::<T>());
         });
 
         bx.downcast_ref::<T>().unwrap()
@@ -139,7 +140,7 @@ impl World {
         let type_id = TypeId::of::<T>();
 
         let idx = self.type_map.get(&type_id).copied().unwrap_or_else(|| {
-            panic!("resource of type \"{:?}\" is undefined", type_id);
+            panic!("resource of type \"{}\" is undefined", type_name::<T>());
         });
 
         self.storage
@@ -148,7 +149,7 @@ impl World {
             .get_mut()
             .as_mut()
             .unwrap_or_else(|| {
-                panic!("resource of type \"{:?}\" is taken", type_id);
+                panic!("resource of type \"{}\" is taken", type_name::<T>());
             })
             .downcast_mut::<T>()
             .unwrap()
@@ -163,7 +164,7 @@ impl World {
         let type_id = TypeId::of::<T>();
 
         let idx = self.type_map.get(&type_id).copied().unwrap_or_else(|| {
-            panic!("resource of type \"{:?}\" is undefined", type_id);
+            panic!("resource of type \"{}\" is undefined", type_name::<T>());
         });
 
         self.storage
@@ -172,7 +173,7 @@ impl World {
             .get_mut()
             .take()
             .unwrap_or_else(|| {
-                panic!("resource of type \"{:?}\" is taken", type_id);
+                panic!("resource of type \"{}\" is taken", type_name::<T>());
             })
             .downcast::<T>()
             .unwrap()
@@ -187,7 +188,7 @@ impl World {
         let type_id = TypeId::of::<T>();
 
         let idx = self.type_map.get(&type_id).copied().unwrap_or_else(|| {
-            panic!("resource of type \"{:?}\" is undefined", type_id);
+            panic!("resource of type \"{}\" is undefined", type_name::<T>());
         });
 
         *self.storage.get_mut(idx).unwrap().get_mut() = Some(resource);

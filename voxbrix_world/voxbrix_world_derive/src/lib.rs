@@ -34,13 +34,13 @@ pub fn derive(input: TokenStream) -> TokenStream {
                     if reference.mutability.is_some() {
                         field_list.push(quote! {{
                             let req = ::voxbrix_world::Request::Write(::core::any::TypeId::of::<#ref_type>());
-                            let name = ::core::stringify!(#ref_type);
+                            let name = ::core::any::type_name::<#ref_type>();
                             (req, name)
                         },});
                     } else {
                         field_list.push(quote! {{
                             let req = ::voxbrix_world::Request::Read(::core::any::TypeId::of::<#ref_type>());
-                            let name = ::core::stringify!(#ref_type);
+                            let name = ::core::any::type_name::<#ref_type>();
                             (req, name)
                         },});
                     }
