@@ -1,3 +1,4 @@
+use anyhow::Error;
 use nohash_hasher::{
     IntMap,
     IntSet,
@@ -23,6 +24,11 @@ use voxbrix_common::{
         UpdatesUnpacked,
     },
     pack,
+    LabelLibrary,
+};
+use voxbrix_world::{
+    Initialization,
+    World,
 };
 
 pub mod chunk_activation;
@@ -116,16 +122,6 @@ impl<T> ActorComponentPackable<T>
 where
     T: 'static + Serialize + PartialEq,
 {
-    pub fn new(update: Update) -> Self {
-        Self {
-            update,
-            last_packed_snapshot: ServerSnapshot(0),
-            changes: IntMap::default(),
-            packer: Some(ComponentPacker::new()),
-            storage: IntMap::default(),
-        }
-    }
-
     pub fn pack_full(
         &mut self,
         updates_packer: &mut UpdatesPacker,
@@ -268,12 +264,6 @@ pub struct ActorComponent<T> {
 }
 
 impl<T> ActorComponent<T> {
-    pub fn new() -> Self {
-        Self {
-            storage: IntMap::default(),
-        }
-    }
-
     pub fn insert(&mut self, actor: Actor, new: T) -> Option<T> {
         self.storage.insert(actor, new)
     }
@@ -303,5 +293,51 @@ where
 
     pub fn par_iter(&self) -> impl ParallelIterator<Item = (&Actor, &T)> {
         self.storage.par_iter()
+    }
+}
+
+pub trait WithUpdate {
+    const UPDATE: &str;
+}
+
+impl<T> WithUpdate for Option<T>
+where
+    T: WithUpdate,
+{
+    const UPDATE: &str = T::UPDATE;
+}
+
+impl<T> Initialization for ActorComponentPackable<T>
+where
+    T: WithUpdate + Serialize + PartialEq + Send + Sync + 'static,
+{
+    type Error = Error;
+
+    async fn initialization(world: &World) -> Result<Self, Self::Error> {
+        let update = world
+            .get_resource_ref::<LabelLibrary>()
+            .get::<Update>(T::UPDATE)
+            .ok_or_else(|| anyhow::anyhow!("update with label \"{}\" is undefined", T::UPDATE))?;
+
+        Ok(Self {
+            update,
+            last_packed_snapshot: ServerSnapshot(0),
+            changes: IntMap::default(),
+            packer: Some(ComponentPacker::new()),
+            storage: IntMap::default(),
+        })
+    }
+}
+
+impl<T> Initialization for ActorComponent<T>
+where
+    T: Send + Sync + 'static,
+{
+    type Error = Error;
+
+    async fn initialization(_world: &World) -> Result<Self, Self::Error> {
+        Ok(Self {
+            storage: IntMap::default(),
+        })
     }
 }

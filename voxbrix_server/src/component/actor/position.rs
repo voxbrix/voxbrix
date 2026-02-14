@@ -1,3 +1,4 @@
+use anyhow::Error;
 use nohash_hasher::{
     IntMap,
     IntSet,
@@ -25,6 +26,11 @@ use voxbrix_common::{
         UpdatesUnpacked,
     },
     pack,
+    LabelLibrary,
+};
+use voxbrix_world::{
+    Initialization,
+    World,
 };
 
 // pub struct Writable<'a, T> {
@@ -134,20 +140,6 @@ impl PositionActorComponent {
 }
 
 impl PositionActorComponent {
-    pub fn new(update: Update) -> Self {
-        Self {
-            update,
-            last_packed_snapshot: ServerSnapshot(0),
-            changes: IntMap::default(),
-            chunk_changes: VecDeque::new(),
-            packer: Some(ComponentPacker::new()),
-            storage: IntMap::default(),
-            chunk_actor_component: BTreeSet::new(),
-            actors_full_update: IntSet::default(),
-            actors_partial_update: IntSet::default(),
-        }
-    }
-
     /// Packs all the data for the actors in the chunks.
     /// Saves the list of actors, so other components could do the same.
     pub fn pack_full(
@@ -409,5 +401,30 @@ impl PositionActorComponent {
         self.chunk_actor_component
             .range((chunk, Actor::MIN) ..= (chunk, Actor::MAX))
             .map(|(_, actor)| (*actor))
+    }
+}
+
+const UPDATE: &str = "actor_position";
+
+impl Initialization for PositionActorComponent {
+    type Error = Error;
+
+    async fn initialization(world: &World) -> Result<Self, Self::Error> {
+        let update = world
+            .get_resource_ref::<LabelLibrary>()
+            .get::<Update>(UPDATE)
+            .ok_or_else(|| anyhow::anyhow!("update with label \"{}\" is undefined", UPDATE))?;
+
+        Ok(Self {
+            update,
+            last_packed_snapshot: ServerSnapshot(0),
+            changes: IntMap::default(),
+            chunk_changes: VecDeque::new(),
+            packer: Some(ComponentPacker::new()),
+            storage: IntMap::default(),
+            chunk_actor_component: BTreeSet::new(),
+            actors_full_update: IntSet::default(),
+            actors_partial_update: IntSet::default(),
+        })
     }
 }

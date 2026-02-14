@@ -1,5 +1,10 @@
 use crate::entity::chunk::Chunk;
 use ahash::AHashMap;
+use anyhow::Error;
+use voxbrix_world::{
+    Initialization,
+    World,
+};
 
 pub mod status;
 
@@ -8,12 +13,6 @@ pub struct ChunkComponent<T> {
 }
 
 impl<T> ChunkComponent<T> {
-    pub fn new() -> Self {
-        Self {
-            chunks: AHashMap::new(),
-        }
-    }
-
     pub fn len(&self) -> usize {
         self.chunks.len()
     }
@@ -43,5 +42,18 @@ impl<T> ChunkComponent<T> {
 
     pub fn iter(&self) -> impl Iterator<Item = (&Chunk, &T)> {
         self.chunks.iter()
+    }
+}
+
+impl<T> Initialization for ChunkComponent<T>
+where
+    T: Send + Sync + 'static,
+{
+    type Error = Error;
+
+    async fn initialization(_world: &World) -> Result<Self, Self::Error> {
+        Ok(Self {
+            chunks: AHashMap::new(),
+        })
     }
 }

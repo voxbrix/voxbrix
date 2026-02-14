@@ -1,6 +1,6 @@
-use crate::component::actor_class::{
-    PackableOverridableActorClassComponent,
-    WithUpdate,
+use crate::component::{
+    actor::WithUpdate,
+    actor_class::PackableOverridableActorClassComponent,
 };
 use voxbrix_common::entity::actor_model::ActorModel;
 

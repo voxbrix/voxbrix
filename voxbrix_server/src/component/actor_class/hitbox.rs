@@ -1,6 +1,6 @@
-use crate::component::actor_class::{
-    PackableOverridableActorClassComponent,
-    WithUpdate,
+use crate::component::{
+    actor::WithUpdate,
+    actor_class::PackableOverridableActorClassComponent,
 };
 use anyhow::Error;
 use serde::{

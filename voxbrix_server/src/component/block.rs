@@ -6,6 +6,7 @@ use ahash::{
     AHashMap,
     AHashSet,
 };
+use anyhow::Error;
 use nohash_hasher::IntSet;
 use voxbrix_common::{
     component::block::{
@@ -16,6 +17,10 @@ use voxbrix_common::{
         block::Block,
         chunk::Chunk,
     },
+};
+use voxbrix_world::{
+    Initialization,
+    World,
 };
 
 pub struct BlocksVecTracking<'a, T> {
@@ -64,13 +69,6 @@ impl<'a, T> ChangedVecChunk<'a, T> {
 }
 
 impl<T> TrackingBlockComponent<T> {
-    pub fn new() -> Self {
-        Self {
-            changed_chunks: AHashSet::new(),
-            data: AHashMap::new(),
-        }
-    }
-
     /// Inserting the whole chunk is not tracked
     pub fn insert_chunk(&mut self, chunk: Chunk, data: T) {
         self.data.insert(
@@ -123,5 +121,19 @@ impl<T> TrackingBlockComponent<BlocksVec<T>> {
         for chunk in self.changed_chunks.drain() {
             self.data.get_mut(&chunk).unwrap().changes.clear();
         }
+    }
+}
+
+impl<T> Initialization for TrackingBlockComponent<T>
+where
+    T: Send + Sync + 'static,
+{
+    type Error = Error;
+
+    async fn initialization(_world: &World) -> Result<Self, Self::Error> {
+        Ok(Self {
+            changed_chunks: AHashSet::new(),
+            data: AHashMap::new(),
+        })
     }
 }

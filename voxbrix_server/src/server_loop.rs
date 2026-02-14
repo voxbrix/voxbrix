@@ -220,16 +220,40 @@ impl ServerLoop {
             .await
             .expect("unable to initialize ComponentMap<Effect>");
 
-        let label_library = world.get_resource_ref::<LabelLibrary>();
+        world
+            .initialize_add::<ClassActorComponent>()
+            .await
+            .expect("unable to initialize ClassActorComponent");
 
-        let class_ac = ClassActorComponent::new(label_library.get("actor_class").unwrap());
-        let position_ac = PositionActorComponent::new(label_library.get("actor_position").unwrap());
-        let velocity_ac = VelocityActorComponent::new(label_library.get("actor_velocity").unwrap());
-        let orientation_ac =
-            OrientationActorComponent::new(label_library.get("actor_orientation").unwrap());
-        let player_ac = PlayerActorComponent::new();
-        let chunk_activation_ac = ChunkActivationActorComponent::new();
-        let effect_ac = EffectActorComponent::new(label_library.get("actor_effect").unwrap());
+        world
+            .initialize_add::<PositionActorComponent>()
+            .await
+            .expect("unable to initialize PositionActorComponent");
+
+        world
+            .initialize_add::<VelocityActorComponent>()
+            .await
+            .expect("unable to initialize VelocityActorComponent");
+
+        world
+            .initialize_add::<OrientationActorComponent>()
+            .await
+            .expect("unable to initialize OrientationActorComponent");
+
+        world
+            .initialize_add::<PlayerActorComponent>()
+            .await
+            .expect("unable to initialize PlayerActorComponent");
+
+        world
+            .initialize_add::<ChunkActivationActorComponent>()
+            .await
+            .expect("unable to initialize ChunkActivationActorComponent");
+
+        world
+            .initialize_add::<EffectActorComponent>()
+            .await
+            .expect("unable to initialize EffectActorComponent");
 
         world
             .initialize_add::<SnapshotHandlerEffectComponent>()
@@ -256,12 +280,30 @@ impl ServerLoop {
             .await
             .expect("unable to load BlockCollisionActorClassComponent");
 
-        let status_cc = StatusChunkComponent::new();
-        let cache_cc = CacheChunkComponent::new();
+        world
+            .initialize_add::<StatusChunkComponent>()
+            .await
+            .expect("unable to initialize StatusChunkComponent");
 
-        let class_bc = ClassBlockComponent::new();
-        let environment_bc = EnvironmentBlockComponent::new();
-        let metadata_bc = MetadataBlockComponent::new();
+        world
+            .initialize_add::<CacheChunkComponent>()
+            .await
+            .expect("unable to initialize CacheChunkComponent");
+
+        world
+            .initialize_add::<ClassBlockComponent>()
+            .await
+            .expect("unable to initialize ClassBlockComponent");
+
+        world
+            .initialize_add::<EnvironmentBlockComponent>()
+            .await
+            .expect("unable to initialize EnvironmentBlockComponent");
+
+        world
+            .initialize_add::<MetadataBlockComponent>()
+            .await
+            .expect("unable to initialize MetadataBlockComponent");
 
         world
             .initialize_add::<CollisionBlockClassComponent>()
@@ -331,24 +373,17 @@ impl ServerLoop {
         world.add(ActorPlayerComponent::new());
         world.add(ChunkUpdatePlayerComponent::new());
 
-        world.add(class_ac);
-        world.add(position_ac);
-        world.add(MovementChangeActorComponent::new());
-        world.add(velocity_ac);
-        world.add(orientation_ac);
-        world.add(player_ac);
-        world.add(chunk_activation_ac);
-        world.add(effect_ac);
-        world.add(ProjectileActorComponent::new());
+        world
+            .initialize_add::<MovementChangeActorComponent>()
+            .await
+            .expect("unable to initialize MovementChangeActorComponent");
+
+        world
+            .initialize_add::<ProjectileActorComponent>()
+            .await
+            .expect("unable to initialize ProjectileActorComponent");
 
         world.add(ProjectileActorCollisions::new());
-
-        world.add(class_bc);
-        world.add(environment_bc);
-        world.add(metadata_bc);
-
-        world.add(status_cc);
-        world.add(cache_cc);
 
         let chunk_generation_system = world
             .get_data::<ChunkGenerationSystem>()

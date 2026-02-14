@@ -1,4 +1,7 @@
-use crate::component::actor::ActorComponentPackable;
+use crate::component::actor::{
+    ActorComponentPackable,
+    WithUpdate,
+};
 use anyhow::Error;
 use nohash_hasher::IntSet;
 use serde::Serialize;
@@ -8,11 +11,9 @@ use voxbrix_common::{
         actor::Actor,
         actor_class::ActorClass,
         snapshot::ServerSnapshot,
-        update::Update,
     },
     messages::UpdatesPacker,
     FromDescriptor,
-    LabelLibrary,
 };
 use voxbrix_world::{
     Initialization,
@@ -107,26 +108,8 @@ where
 
     async fn initialization(world: &World) -> Result<Self, Self::Error> {
         let classes = StaticEntityComponent::initialization(world).await?;
+        let overrides = ActorComponentPackable::initialization(world).await?;
 
-        let update = world
-            .get_resource_ref::<LabelLibrary>()
-            .get::<Update>(T::UPDATE)
-            .ok_or_else(|| anyhow::anyhow!("update with label \"{}\" is undefined", T::UPDATE))?;
-
-        Ok(Self {
-            classes,
-            overrides: ActorComponentPackable::new(update),
-        })
+        Ok(Self { classes, overrides })
     }
-}
-
-pub trait WithUpdate {
-    const UPDATE: &str;
-}
-
-impl<T> WithUpdate for Option<T>
-where
-    T: WithUpdate,
-{
-    const UPDATE: &str = T::UPDATE;
 }

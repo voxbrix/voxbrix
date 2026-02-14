@@ -393,7 +393,7 @@ impl GameScene {
 
         world.initialize_add::<CullingBlockModelComponent>().await?;
 
-        let status_cc = StatusChunkComponent::new();
+        world.initialize_add::<StatusChunkComponent>().await?;
 
         let class_bc = ClassBlockComponent::new();
         let environment_bc = EnvironmentBlockComponent::new();
@@ -566,7 +566,6 @@ impl GameScene {
         world.add(metadata_bc);
         world.add(sky_light_bc);
 
-        world.add(status_cc);
         world.add(BlkRenderDataChunkComponent::new());
         world.add(EnvRenderDataChunkComponent::new());
         world.add(SkyLightDataChunkComponent::new());

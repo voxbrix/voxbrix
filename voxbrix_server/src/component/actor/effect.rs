@@ -1,4 +1,5 @@
 use crate::component::actor::MAX_SNAPSHOT_DIFF;
+use anyhow::Error;
 use nohash_hasher::IntSet;
 use std::collections::{
     btree_map::Entry,
@@ -21,6 +22,11 @@ use voxbrix_common::{
         ComponentPacker,
         UpdatesPacker,
     },
+    LabelLibrary,
+};
+use voxbrix_world::{
+    Initialization,
+    World,
 };
 
 pub struct EffectActorComponent {
@@ -32,15 +38,6 @@ pub struct EffectActorComponent {
 }
 
 impl EffectActorComponent {
-    pub fn new(update: Update) -> Self {
-        Self {
-            storage: BTreeMap::new(),
-            changes: VecDeque::new(),
-            packer: Some(ComponentPacker::new()),
-            update,
-        }
-    }
-
     pub fn has_effect(
         &self,
         actor: Actor,
@@ -207,5 +204,25 @@ impl EffectActorComponent {
             .pack(buffer);
 
         self.packer = Some(packer);
+    }
+}
+
+const UPDATE: &str = "actor_effect";
+
+impl Initialization for EffectActorComponent {
+    type Error = Error;
+
+    async fn initialization(world: &World) -> Result<Self, Self::Error> {
+        let update = world
+            .get_resource_ref::<LabelLibrary>()
+            .get::<Update>(UPDATE)
+            .ok_or_else(|| anyhow::anyhow!("update with label \"{}\" is undefined", UPDATE))?;
+
+        Ok(Self {
+            storage: BTreeMap::new(),
+            changes: VecDeque::new(),
+            packer: Some(ComponentPacker::new()),
+            update,
+        })
     }
 }
