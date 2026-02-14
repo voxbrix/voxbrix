@@ -20,6 +20,7 @@ use crate::{
                 StatusChunkComponent,
             },
         },
+        dimension_kind::boundary::BoundaryDimensionKindComponent,
     },
     resource::{
         chunk_generation_request::ChunkGenerationRequest,
@@ -60,6 +61,7 @@ pub struct ChunkActivationSystemData<'a> {
     position_ac: &'a PositionActorComponent,
     database: &'a Arc<Database>,
     status_cc: &'a mut StatusChunkComponent,
+    boundary_dkc: &'a BoundaryDimensionKindComponent,
     rt_handle: &'a Handle,
     shared_event_tx: &'a Sender<SharedEvent>,
     chunk_generation_tx: &'a Sender<ChunkGenerationRequest>,
@@ -118,6 +120,11 @@ impl ChunkActivationSystemData<'_> {
 
                     (chunk, priority)
                 })
+            })
+            .filter(|(chunk, _)| {
+                self.boundary_dkc
+                    .get(&chunk.dimension.kind)
+                    .is_chunk_within(chunk)
             });
 
         for (chunk, priority) in iter {

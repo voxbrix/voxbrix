@@ -31,7 +31,10 @@ use crate::{
             cache::CacheChunkComponent,
             status::StatusChunkComponent,
         },
-        dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
+        dimension_kind::{
+            boundary::BoundaryDimensionKindComponent,
+            player_chunk_view::PlayerChunkViewDimensionKindComponent,
+        },
         effect::snapshot_handler::SnapshotHandlerEffectComponent,
         player::{
             actor::ActorPlayerComponent,
@@ -269,6 +272,11 @@ impl ServerLoop {
             .initialize_add::<ComponentMap<DimensionKind>>()
             .await
             .expect("unable to load DimensionKind component map");
+
+        world
+            .initialize_add::<BoundaryDimensionKindComponent>()
+            .await
+            .expect("unable to load BoundaryDimensionKindComponent");
 
         world
             .initialize_add::<PlayerChunkViewDimensionKindComponent>()

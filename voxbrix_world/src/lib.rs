@@ -53,7 +53,10 @@ impl World {
         let type_id = TypeId::of::<T>();
 
         if self.type_map.insert(type_id, idx).is_some() {
-            panic!("resource of type \"{}\" is already defined", type_name::<T>());
+            panic!(
+                "resource of type \"{}\" is already defined",
+                type_name::<T>()
+            );
         }
 
         self.storage.push(UnsafeCell::new(Some(Box::new(resource))));

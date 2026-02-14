@@ -38,7 +38,7 @@ impl FromDescriptor for PlayerChunkView {
     const COMPONENT_NAME: &str = "player_chunk_view";
 
     fn from_descriptor(desc: Option<Self::Descriptor>, _world: &World) -> Result<Self, Error> {
-        desc.ok_or_else(|| Error::msg("player_chunk_view descriptor is missing"))
+        Ok(desc.unwrap_or_default())
     }
 }
 
