@@ -100,6 +100,7 @@ use local_input::LocalInput;
 use network_input::NetworkInput;
 use process::Process;
 use std::{
+    any,
     io::ErrorKind as StdIoErrorKind,
     task::Poll,
     time::Duration,
@@ -162,6 +163,7 @@ use voxbrix_common::{
         removal_queue::RemovalQueue,
     },
     LabelLibrary,
+    StaticEntity,
 };
 use voxbrix_protocol::client::{
     Error as ClientError,
@@ -169,6 +171,7 @@ use voxbrix_protocol::client::{
     Sender,
 };
 use voxbrix_world::{
+    Initialization,
     System,
     SystemData,
     World,
@@ -192,6 +195,26 @@ enum Transition {
     None,
     Exit,
     Menu,
+}
+
+async fn label_load<T>(label_library: &mut LabelLibrary) -> Result<()>
+where
+    T: StaticEntity,
+{
+    label_library
+        .load::<T>()
+        .await
+        .with_context(|| format!("\"{}\" list loading error", any::type_name::<T>()))
+}
+
+async fn init_add<T>(world: &mut World) -> Result<()>
+where
+    T: Initialization<Error = anyhow::Error>,
+{
+    world
+        .initialize_add::<T>()
+        .await
+        .with_context(|| format!("\"{}\" initialization error", any::type_name::<T>()))
 }
 
 pub struct GameSceneParameters {
@@ -219,50 +242,15 @@ impl GameScene {
 
         let mut label_library = LabelLibrary::new();
 
-        label_library
-            .load::<ActorClass>()
-            .await
-            .context("ActorClass list loading error")?;
-
-        label_library
-            .load::<ActorModel>()
-            .await
-            .context("ActorModel list loading error")?;
-
-        label_library
-            .load::<ActorBone>()
-            .await
-            .context("ActorBone list loading error")?;
-
-        label_library
-            .load::<ActorAnimation>()
-            .await
-            .context("ActorAnimation list loading error")?;
-
-        label_library
-            .load::<BlockClass>()
-            .await
-            .context("BlockClass list loading error")?;
-
-        label_library
-            .load::<BlockEnvironment>()
-            .await
-            .context("BlockEnvironment list loading error")?;
-
-        label_library
-            .load::<BlockModel>()
-            .await
-            .context("BlockModel list loading error")?;
-
-        label_library
-            .load::<Update>()
-            .await
-            .context("Update list loading error")?;
-
-        label_library
-            .load::<DimensionKind>()
-            .await
-            .context("DimensionKind list loading error")?;
+        label_load::<ActorClass>(&mut label_library).await?;
+        label_load::<ActorModel>(&mut label_library).await?;
+        label_load::<ActorBone>(&mut label_library).await?;
+        label_load::<ActorAnimation>(&mut label_library).await?;
+        label_load::<BlockClass>(&mut label_library).await?;
+        label_load::<BlockEnvironment>(&mut label_library).await?;
+        label_load::<BlockModel>(&mut label_library).await?;
+        label_load::<Update>(&mut label_library).await?;
+        label_load::<DimensionKind>(&mut label_library).await?;
 
         let mut world = World::new();
 
@@ -370,17 +358,12 @@ impl GameScene {
             })
         };
 
-        world.initialize_add::<ComponentMap<ActorClass>>().await?;
-
-        world.initialize_add::<ComponentMap<ActorModel>>().await?;
-
-        world.initialize_add::<ComponentMap<BlockClass>>().await?;
-
-        world
-            .initialize_add::<ComponentMap<BlockEnvironment>>()
-            .await?;
-
-        world.initialize_add::<ComponentMap<BlockModel>>().await?;
+        init_add::<ComponentMap<ActorClass>>(&mut world).await?;
+        init_add::<ComponentMap<ActorModel>>(&mut world).await?;
+        init_add::<ComponentMap<BlockClass>>(&mut world).await?;
+        init_add::<ComponentMap<BlockEnvironment>>(&mut world).await?;
+        init_add::<ComponentMap<BlockModel>>(&mut world).await?;
+        init_add::<ComponentMap<DimensionKind>>(&mut world).await?;
 
         let texture_loading_system =
             TextureLoadingSystem::load_data(window.device(), window.queue()).await?;
@@ -389,28 +372,19 @@ impl GameScene {
             .get_resource_mut::<LabelLibrary>()
             .add_label_map(texture_loading_system.label_map());
 
-        world.initialize_add::<BuilderBlockModelComponent>().await?;
-
-        world.initialize_add::<CullingBlockModelComponent>().await?;
-
-        world.initialize_add::<StatusChunkComponent>().await?;
+        init_add::<BuilderBlockModelComponent>(&mut world).await?;
+        init_add::<CullingBlockModelComponent>(&mut world).await?;
+        init_add::<StatusChunkComponent>(&mut world).await?;
 
         let class_bc = ClassBlockComponent::new();
         let environment_bc = EnvironmentBlockComponent::new();
         let metadata_bc = MetadataBlockComponent::new();
         let sky_light_bc = SkyLightBlockComponent::new();
 
-        world.initialize_add::<ModelBlockClassComponent>().await?;
-
-        world
-            .initialize_add::<ModelBlockEnvironmentComponent>()
-            .await?;
-
-        world
-            .initialize_add::<CollisionBlockClassComponent>()
-            .await?;
-
-        world.initialize_add::<OpacityBlockClassComponent>().await?;
+        init_add::<ModelBlockClassComponent>(&mut world).await?;
+        init_add::<ModelBlockEnvironmentComponent>(&mut world).await?;
+        init_add::<CollisionBlockClassComponent>(&mut world).await?;
+        init_add::<OpacityBlockClassComponent>(&mut world).await?;
 
         let player_input = PlayerInput::new(10.0, 0.4);
         let sky_light_system = SkyLightSystem::new();
@@ -441,15 +415,10 @@ impl GameScene {
         let target_position_ac =
             TargetPositionActorComponent::new(label_library.get("actor_position").unwrap());
 
-        world.initialize_add::<ModelActorClassComponent>().await?;
-
-        world.initialize_add::<HealthActorClassComponent>().await?;
-
-        world
-            .initialize_add::<BlockCollisionActorClassComponent>()
-            .await?;
-
-        world.initialize_add::<BuilderActorModelComponent>().await?;
+        init_add::<ModelActorClassComponent>(&mut world).await?;
+        init_add::<HealthActorClassComponent>(&mut world).await?;
+        init_add::<BlockCollisionActorClassComponent>(&mut world).await?;
+        init_add::<BuilderActorModelComponent>(&mut world).await?;
 
         position_ac.insert(
             player_actor,
@@ -478,12 +447,7 @@ impl GameScene {
             snapshot,
         );
 
-        world
-            .initialize_add::<ComponentMap<DimensionKind>>()
-            .await?;
-        world
-            .initialize_add::<SkyLightConfigDimensionKindComponent>()
-            .await?;
+        init_add::<SkyLightConfigDimensionKindComponent>(&mut world).await?;
 
         window.cursor_visible = false;
 
