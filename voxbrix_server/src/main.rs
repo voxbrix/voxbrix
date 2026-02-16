@@ -152,7 +152,9 @@ fn main() -> Result<()> {
             });
         }
 
-        ServerLoop { database, event_rx }.run().await;
+        if let Err(err) = (ServerLoop { database, event_rx }).run().await {
+            error!("server loop ended with error: {}", err);
+        }
 
         Ok(())
     }))

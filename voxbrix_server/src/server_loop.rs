@@ -72,6 +72,7 @@ use crate::{
     },
     PROCESS_INTERVAL,
 };
+use anyhow::Context as _;
 use flume::Sender as SharedSender;
 use futures_lite::stream::{
     self,
@@ -81,7 +82,10 @@ use local_channel::mpsc::Receiver;
 use player_event::PlayerEvent;
 use process::Process;
 use redb::Database;
-use std::sync::Arc;
+use std::{
+    any,
+    sync::Arc,
+};
 use tokio::{
     runtime::Handle,
     time::{
@@ -119,12 +123,36 @@ use voxbrix_common::{
     script_registry::ScriptRegistryBuilder,
     ChunkData,
     LabelLibrary,
+    StaticEntity,
 };
 use voxbrix_protocol::server::ReceivedData;
-use voxbrix_world::World;
+use voxbrix_world::{
+    Initialization,
+    World,
+};
 
 mod player_event;
 mod process;
+
+async fn label_load<T>(label_library: &mut LabelLibrary) -> Result<(), anyhow::Error>
+where
+    T: StaticEntity,
+{
+    label_library
+        .load::<T>()
+        .await
+        .with_context(|| format!("\"{}\" list loading error", any::type_name::<T>()))
+}
+
+async fn init_add<T>(world: &mut World) -> Result<(), anyhow::Error>
+where
+    T: Initialization<Error = anyhow::Error>,
+{
+    world
+        .initialize_add::<T>()
+        .await
+        .with_context(|| format!("\"{}\" initialization error", any::type_name::<T>()))
+}
 
 // Server loop input
 pub enum ServerEvent {
@@ -149,7 +177,7 @@ pub struct ServerLoop {
 }
 
 impl ServerLoop {
-    pub async fn run(self) {
+    pub async fn run(self) -> Result<(), anyhow::Error> {
         let Self { database, event_rx } = self;
 
         let mut world = World::new();
@@ -158,172 +186,49 @@ impl ServerLoop {
 
         let mut label_library = LabelLibrary::new();
 
-        label_library
-            .load::<Update>()
-            .await
-            .expect("Update list loading error");
-
-        label_library
-            .load::<ActorClass>()
-            .await
-            .expect("ActorClass list loading error");
-
-        label_library
-            .load::<BlockClass>()
-            .await
-            .expect("BlockClass list loading error");
-
-        label_library
-            .load::<BlockEnvironment>()
-            .await
-            .expect("BlockEnvironment list loading error");
-
-        label_library
-            .load::<ActorModel>()
-            .await
-            .expect("ActorModel list loading error");
-
-        label_library
-            .load::<Effect>()
-            .await
-            .expect("Effect list loading error");
-
-        label_library
-            .load::<Action>()
-            .await
-            .expect("Action list loading error");
-
-        label_library
-            .load::<DimensionKind>()
-            .await
-            .expect("DimensionKind list loading error");
+        label_load::<Update>(&mut label_library).await?;
+        label_load::<ActorClass>(&mut label_library).await?;
+        label_load::<BlockClass>(&mut label_library).await?;
+        label_load::<BlockEnvironment>(&mut label_library).await?;
+        label_load::<ActorModel>(&mut label_library).await?;
+        label_load::<Effect>(&mut label_library).await?;
+        label_load::<Action>(&mut label_library).await?;
+        label_load::<DimensionKind>(&mut label_library).await?;
 
         world.add(label_library);
 
-        world
-            .initialize_add::<ComponentMap<ActorClass>>()
-            .await
-            .expect("unable to initialize ComponentMap<ActorClass>");
+        init_add::<ComponentMap<ActorClass>>(&mut world).await?;
+        init_add::<ComponentMap<BlockClass>>(&mut world).await?;
+        init_add::<ComponentMap<BlockEnvironment>>(&mut world).await?;
+        init_add::<ComponentMap<Effect>>(&mut world).await?;
 
-        world
-            .initialize_add::<ComponentMap<BlockClass>>()
-            .await
-            .expect("unable to initialize ComponentMap<BlockClass>");
+        init_add::<ClassActorComponent>(&mut world).await?;
+        init_add::<PositionActorComponent>(&mut world).await?;
+        init_add::<VelocityActorComponent>(&mut world).await?;
+        init_add::<OrientationActorComponent>(&mut world).await?;
+        init_add::<PlayerActorComponent>(&mut world).await?;
+        init_add::<ChunkActivationActorComponent>(&mut world).await?;
+        init_add::<EffectActorComponent>(&mut world).await?;
 
-        world
-            .initialize_add::<ComponentMap<BlockEnvironment>>()
-            .await
-            .expect("unable to initialize ComponentMap<BlockEnvironment>");
+        init_add::<SnapshotHandlerEffectComponent>(&mut world).await?;
 
-        world
-            .initialize_add::<ComponentMap<Effect>>()
-            .await
-            .expect("unable to initialize ComponentMap<Effect>");
+        init_add::<ModelActorClassComponent>(&mut world).await?;
+        init_add::<HealthActorClassComponent>(&mut world).await?;
+        init_add::<HitboxActorClassComponent>(&mut world).await?;
+        init_add::<BlockCollisionActorClassComponent>(&mut world).await?;
 
-        world
-            .initialize_add::<ClassActorComponent>()
-            .await
-            .expect("unable to initialize ClassActorComponent");
+        init_add::<StatusChunkComponent>(&mut world).await?;
+        init_add::<CacheChunkComponent>(&mut world).await?;
 
-        world
-            .initialize_add::<PositionActorComponent>()
-            .await
-            .expect("unable to initialize PositionActorComponent");
+        init_add::<ClassBlockComponent>(&mut world).await?;
+        init_add::<EnvironmentBlockComponent>(&mut world).await?;
+        init_add::<MetadataBlockComponent>(&mut world).await?;
 
-        world
-            .initialize_add::<VelocityActorComponent>()
-            .await
-            .expect("unable to initialize VelocityActorComponent");
+        init_add::<CollisionBlockClassComponent>(&mut world).await?;
 
-        world
-            .initialize_add::<OrientationActorComponent>()
-            .await
-            .expect("unable to initialize OrientationActorComponent");
-
-        world
-            .initialize_add::<PlayerActorComponent>()
-            .await
-            .expect("unable to initialize PlayerActorComponent");
-
-        world
-            .initialize_add::<ChunkActivationActorComponent>()
-            .await
-            .expect("unable to initialize ChunkActivationActorComponent");
-
-        world
-            .initialize_add::<EffectActorComponent>()
-            .await
-            .expect("unable to initialize EffectActorComponent");
-
-        world
-            .initialize_add::<SnapshotHandlerEffectComponent>()
-            .await
-            .expect("unable to initialize SnapshotHandlerEffectComponent");
-
-        world
-            .initialize_add::<ModelActorClassComponent>()
-            .await
-            .expect("unable to load ModelActorClassComponent");
-
-        world
-            .initialize_add::<HealthActorClassComponent>()
-            .await
-            .expect("unable to load HealthActorClassComponent");
-
-        world
-            .initialize_add::<HitboxActorClassComponent>()
-            .await
-            .expect("unable to load HitboxActorClassComponent");
-
-        world
-            .initialize_add::<BlockCollisionActorClassComponent>()
-            .await
-            .expect("unable to load BlockCollisionActorClassComponent");
-
-        world
-            .initialize_add::<StatusChunkComponent>()
-            .await
-            .expect("unable to initialize StatusChunkComponent");
-
-        world
-            .initialize_add::<CacheChunkComponent>()
-            .await
-            .expect("unable to initialize CacheChunkComponent");
-
-        world
-            .initialize_add::<ClassBlockComponent>()
-            .await
-            .expect("unable to initialize ClassBlockComponent");
-
-        world
-            .initialize_add::<EnvironmentBlockComponent>()
-            .await
-            .expect("unable to initialize EnvironmentBlockComponent");
-
-        world
-            .initialize_add::<MetadataBlockComponent>()
-            .await
-            .expect("unable to initialize MetadataBlockComponent");
-
-        world
-            .initialize_add::<CollisionBlockClassComponent>()
-            .await
-            .expect("unable to load CollisionBlockClassComponent");
-
-        world
-            .initialize_add::<ComponentMap<DimensionKind>>()
-            .await
-            .expect("unable to load DimensionKind component map");
-
-        world
-            .initialize_add::<BoundaryDimensionKindComponent>()
-            .await
-            .expect("unable to load BoundaryDimensionKindComponent");
-
-        world
-            .initialize_add::<PlayerChunkViewDimensionKindComponent>()
-            .await
-            .expect("unable to load PlayerChunkViewDimensionKindComponent");
+        init_add::<ComponentMap<DimensionKind>>(&mut world).await?;
+        init_add::<BoundaryDimensionKindComponent>(&mut world).await?;
+        init_add::<PlayerChunkViewDimensionKindComponent>(&mut world).await?;
 
         let mut engine_config = wasmtime::Config::new();
 
@@ -331,22 +236,20 @@ impl ServerLoop {
             .wasm_multi_value(false)
             .wasm_multi_memory(false);
 
-        let engine = wasmtime::Engine::new(&engine_config).expect("wasm engine failed to start");
+        let engine =
+            wasmtime::Engine::new(&engine_config).context("wasm engine failed to start")?;
 
         let script_registry = script_shared_data::setup_script_registry(
             ScriptRegistryBuilder::load(engine, SERVER_LOOP_SCRIPT_LIST, SERVER_LOOP_SCRIPT_DIR)
                 .await
-                .expect("failed to load scripts"),
+                .context("failed to load scripts")?,
         );
 
         world
             .get_resource_mut::<LabelLibrary>()
             .add_label_map(script_registry.script_label_map().clone());
 
-        world
-            .initialize_add::<HandlerActionComponent>()
-            .await
-            .expect("unable to initialize HandlerActionComponent");
+        init_add::<HandlerActionComponent>(&mut world).await?;
 
         let shared_event_tx_clone = shared_event_tx.clone();
 
@@ -373,15 +276,8 @@ impl ServerLoop {
         world.add(ActorPlayerComponent::new());
         world.add(ChunkUpdatePlayerComponent::new());
 
-        world
-            .initialize_add::<MovementChangeActorComponent>()
-            .await
-            .expect("unable to initialize MovementChangeActorComponent");
-
-        world
-            .initialize_add::<ProjectileActorComponent>()
-            .await
-            .expect("unable to initialize ProjectileActorComponent");
+        init_add::<MovementChangeActorComponent>(&mut world).await?;
+        init_add::<ProjectileActorComponent>(&mut world).await?;
 
         world.add(ProjectileActorCollisions::new());
 
@@ -486,8 +382,10 @@ impl ServerLoop {
                         },
                     }
                 },
-                ServerEvent::ServerConnectionClosed => return,
+                ServerEvent::ServerConnectionClosed => return Ok(()),
             }
         }
+
+        Ok(())
     }
 }
