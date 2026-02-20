@@ -75,11 +75,20 @@ impl World {
                 let req = match req {
                     Request::Read(type_id) => {
                         if self.borrowed_mut.contains(&type_id) {
-                            panic!("resource \"{}\" already mutably borrowed", name);
+                            panic!(
+                                "error in data for system \"{}\": resource \"{}\" is already \
+                                 mutably borrowed",
+                                type_name::<S>(),
+                                name
+                            );
                         }
 
                         let idx = self.type_map.get(&type_id).unwrap_or_else(|| {
-                            panic!("resource \"{}\" is undefined", name);
+                            panic!(
+                                "error in data for system \"{}\": resource \"{}\" is undefined",
+                                type_name::<S>(),
+                                name
+                            );
                         });
 
                         self.borrowed.push(type_id);
@@ -88,15 +97,29 @@ impl World {
                     },
                     Request::Write(type_id) => {
                         if self.borrowed.contains(&type_id) {
-                            panic!("resource \"{}\" already borrowed", name);
+                            panic!(
+                                "error in data for system \"{}\": resource \"{}\" is already \
+                                 borrowed",
+                                type_name::<S>(),
+                                name
+                            );
                         }
 
                         if self.borrowed_mut.contains(&type_id) {
-                            panic!("resource \"{}\" already mutably borrowed", name);
+                            panic!(
+                                "error in data for system \"{}\": resource \"{}\" is already \
+                                 mutably borrowed",
+                                type_name::<S>(),
+                                name
+                            );
                         }
 
                         let idx = self.type_map.get(&type_id).unwrap_or_else(|| {
-                            panic!("resource \"{}\" is undefined", name);
+                            panic!(
+                                "error in data for system \"{}\": resource \"{}\" is undefined",
+                                type_name::<S>(),
+                                name
+                            );
                         });
 
                         self.borrowed_mut.push(type_id);
@@ -241,7 +264,11 @@ impl World {
                     let bx = unsafe { &*ptr }
                         .as_ref()
                         .unwrap_or_else(|| {
-                            panic!("resource \"{}\" is taken", name);
+                            panic!(
+                                "unable to get data for system \"{}\": resource \"{}\" is taken",
+                                type_name::<S>(),
+                                name
+                            );
                         })
                         .as_ref();
 
@@ -254,7 +281,11 @@ impl World {
                     let bx = unsafe { &mut *ptr }
                         .as_mut()
                         .unwrap_or_else(|| {
-                            panic!("resource \"{}\" is taken", name);
+                            panic!(
+                                "unable to get data for system \"{}\": resource \"{}\" is taken",
+                                type_name::<S>(),
+                                name
+                            );
                         })
                         .as_mut();
 
