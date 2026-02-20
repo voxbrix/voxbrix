@@ -1,10 +1,7 @@
 #[cfg(feature = "script")]
 use crate::blocks_in_chunk;
 use serde::{
-    de::{
-        Deserializer,
-        Error as _,
-    },
+    de::Deserializer,
     ser::Serializer,
     Deserialize,
     Serialize,
@@ -72,9 +69,7 @@ impl<'de> Deserialize<'de> for Block {
     where
         D: Deserializer<'de>,
     {
-        let block: usize = u16::deserialize(deserializer)?
-            .try_into()
-            .map_err(|_| D::Error::custom("Block value out of bounds"))?;
+        let block: usize = u16::deserialize(deserializer)?.into();
 
         Ok(Block(block))
     }

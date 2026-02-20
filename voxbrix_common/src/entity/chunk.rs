@@ -22,7 +22,7 @@ pub struct DimensionKind(pub u8);
 
 impl AsFromUsize for DimensionKind {
     fn as_usize(&self) -> usize {
-        self.0.try_into().unwrap()
+        self.0.into()
     }
 
     fn from_usize(i: usize) -> Self {

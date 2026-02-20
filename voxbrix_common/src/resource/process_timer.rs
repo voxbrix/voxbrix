@@ -9,7 +9,7 @@ pub struct ProcessTimer {
 }
 
 impl ProcessTimer {
-    pub fn new() -> Self {
+    pub fn start() -> Self {
         Self {
             last: Instant::now(),
             elapsed: Duration::ZERO,

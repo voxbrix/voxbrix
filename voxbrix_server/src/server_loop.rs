@@ -184,7 +184,7 @@ impl ServerLoop {
 
         let (shared_event_tx, shared_event_rx) = flume::unbounded();
 
-        let mut label_library = LabelLibrary::new();
+        let mut label_library = LabelLibrary::empty();
 
         label_load::<Update>(&mut label_library).await?;
         label_load::<ActorClass>(&mut label_library).await?;
@@ -317,7 +317,7 @@ impl ServerLoop {
         world.add(UpdatesUnpacker::new());
         world.add(ClientActionsUnpacker::new());
 
-        world.add(ProcessTimer::new());
+        world.add(ProcessTimer::start());
 
         world.add(RemovalQueue::<Actor>::new());
         world.add(RemovalQueue::<Player>::new());

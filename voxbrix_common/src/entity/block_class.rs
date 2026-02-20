@@ -17,7 +17,7 @@ pub struct BlockClass(pub u16);
 
 impl AsFromUsize for BlockClass {
     fn as_usize(&self) -> usize {
-        self.0.try_into().unwrap()
+        self.0.into()
     }
 
     fn from_usize(i: usize) -> Self {

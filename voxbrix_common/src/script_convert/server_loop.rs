@@ -13,7 +13,7 @@ use crate::entity::{
 
 impl From<server_loop_api::Block> for Block {
     fn from(value: server_loop_api::Block) -> Self {
-        Self::from_usize(value.as_usize().into()).expect("incorrect block passed from script")
+        Self::from_usize(value.as_usize()).expect("incorrect block passed from script")
     }
 }
 

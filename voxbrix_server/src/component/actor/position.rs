@@ -163,7 +163,7 @@ impl PositionActorComponent {
                 // introduce subtle but serious bugs if we exclude those Actors.
                 self.chunk_actor_component
                     .range((chunk, Actor::MIN) ..= (chunk, Actor::MAX))
-                    .map(|(_, actor)| (*actor))
+                    .map(|(_, actor)| *actor)
             }));
 
         let change_iter = self
@@ -227,7 +227,7 @@ impl PositionActorComponent {
                     // introduce subtle but serious bugs if we exclude those Actors.
                     self.chunk_actor_component
                         .range((chunk, Actor::MIN) ..= (chunk, Actor::MAX))
-                        .map(|(_, actor)| (*actor))
+                        .map(|(_, actor)| *actor)
                 })
                 .chain(
                     self.chunk_changes
@@ -291,7 +291,7 @@ impl PositionActorComponent {
                 .flat_map(|chunk| {
                     self.chunk_actor_component
                         .range((chunk, Actor::MIN) ..= (chunk, Actor::MAX))
-                        .map(|(_, actor)| (*actor))
+                        .map(|(_, actor)| *actor)
                 })
                 .chain(actors_moved_away)
                 .filter(|actor| !self.actors_full_update.contains(actor)),
@@ -400,7 +400,7 @@ impl PositionActorComponent {
     pub fn get_actors_in_chunk<'a>(&'a self, chunk: Chunk) -> impl Iterator<Item = Actor> + 'a {
         self.chunk_actor_component
             .range((chunk, Actor::MIN) ..= (chunk, Actor::MAX))
-            .map(|(_, actor)| (*actor))
+            .map(|(_, actor)| *actor)
     }
 }
 

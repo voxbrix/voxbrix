@@ -65,6 +65,12 @@ impl<T> BlocksVecBuilder<T> {
     }
 }
 
+impl<T> Default for BlocksVecBuilder<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'de, T> Visitor<'de> for BlocksVecBuilder<T>
 where
     T: Deserialize<'de>,
@@ -130,7 +136,7 @@ impl<T> Blocks<T> for BlocksVec<T> {
 }
 
 impl<T> BlocksVec<T> {
-    pub fn new() -> BlocksVecBuilder<T> {
+    pub fn build() -> BlocksVecBuilder<T> {
         BlocksVecBuilder::new()
     }
 
@@ -165,13 +171,13 @@ where
 
 impl<T> BlocksVec<T>
 where
-    T: Clone,
+    T: Copy,
 {
-    pub fn new_cloned(value: T) -> Self {
-        let mut blocks = Self::new();
+    pub fn splat(value: T) -> Self {
+        let mut blocks = Self::build();
 
         for _ in 0 .. BLOCKS_IN_CHUNK {
-            blocks.push(value.clone());
+            blocks.push(value);
         }
 
         blocks.build()
@@ -205,6 +211,10 @@ impl<T> BlockComponentSimple<T> {
         self.chunks.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.chunks.is_empty()
+    }
+
     pub fn get_chunk(&self, chunk: &Chunk) -> Option<&T> {
         self.chunks.get(chunk)
     }
@@ -230,5 +240,11 @@ impl<T> BlockComponentSimple<T> {
 
     pub fn iter(&self) -> impl Iterator<Item = (&Chunk, &T)> {
         self.chunks.iter()
+    }
+}
+
+impl<T> Default for BlockComponentSimple<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }

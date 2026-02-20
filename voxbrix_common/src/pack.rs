@@ -119,16 +119,14 @@ impl Packer {
             output.reserve(compressed_max_size);
 
             unsafe {
-                output.set_len(compressed_start + compressed_max_size);
+                let compressed_size = lz4::compress_into(
+                    self.buffer.as_ref(),
+                    output.spare_capacity_mut()[.. compressed_max_size].assume_init_mut(),
+                )
+                .unwrap();
+
+                output.set_len(compressed_start + compressed_size);
             }
-
-            let compressed_size = lz4::compress_into(
-                self.buffer.as_ref(),
-                &mut output.as_mut_slice()[compressed_start ..],
-            )
-            .unwrap();
-
-            output.truncate(compressed_start + compressed_size);
         } else {
             encode_write(&0u8, output);
             output.extend_from_slice(self.buffer.as_slice());
@@ -180,16 +178,15 @@ impl Packer {
                 }
 
                 self.buffer.clear();
-                self.buffer.reserve(size as usize);
+                self.buffer.reserve(size);
                 unsafe {
-                    self.buffer.set_len(size);
-                }
-
-                let actual_size = lz4::decompress_into(&input[start ..], self.buffer.as_mut())
+                    let actual_size = lz4::decompress_into(
+                        &input[start ..],
+                        self.buffer.spare_capacity_mut()[.. size].assume_init_mut(),
+                    )
                     .map_err(|_| UnpackError)?;
 
-                if actual_size != size {
-                    return Err(UnpackError);
+                    self.buffer.set_len(actual_size);
                 }
 
                 let (output, _) = decode_from_slice(self.buffer.as_mut()).ok_or(UnpackError)?;

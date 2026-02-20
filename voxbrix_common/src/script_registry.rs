@@ -80,7 +80,6 @@ impl<T> ScriptData<T> {
             .as_ref()
             .expect("script data is not initialized")
             .memory
-            .clone()
     }
 
     /// Common function that allows to allocate a buffer of the given length in
@@ -130,7 +129,7 @@ pub fn write_script_buffer<T: 'static>(
     let start = ptr as usize;
     let end = start + input_len as usize;
 
-    (&mut memory.data_mut(&mut store)[start .. end]).copy_from_slice(buffer.as_slice());
+    memory.data_mut(&mut store)[start .. end].copy_from_slice(buffer.as_slice());
 
     *store.as_context_mut().data_mut().buffer() = buffer;
 }
@@ -171,11 +170,9 @@ impl<T> ScriptRegistryBuilder<T> {
                 .map(|file_name| {
                     let file_path = dir_path.as_ref().join(file_name).with_extension("wasm");
 
-                    Module::from_file(&engine_clone, &file_path)
-                        .map_err(|err| Error::from(err))
-                        .with_context(|| {
-                            format!("unable to load script module from \"{:?}\"", file_path)
-                        })
+                    Module::from_file(&engine_clone, &file_path).with_context(|| {
+                        format!("unable to load script module from \"{:?}\"", file_path)
+                    })
                 })
                 .collect::<Result<Vec<_>, _>>()
         })
@@ -281,7 +278,7 @@ impl<T: 'static> ScriptRegistry<T> {
         self.store.data_mut().set_dynamic(
             shared,
             &mut self.buffer,
-            cache.memory.clone(),
+            cache.memory,
             cache.get_buffer_func.clone(),
         );
 

@@ -63,7 +63,7 @@ impl World {
     }
 
     // Access to the resources is checked and then compiled for reuse.
-    fn compile<'a, S>(&mut self) -> Compiled<S>
+    fn compile<S>(&mut self) -> Compiled<S>
     where
         S: System + Send + Sync,
     {
@@ -139,6 +139,7 @@ impl World {
     }
 
     #[must_use]
+    #[allow(clippy::needless_lifetimes)]
     pub fn get_resource_ref<'a, T>(&'a self) -> &'a T
     where
         T: 'static,
@@ -159,7 +160,7 @@ impl World {
     }
 
     #[must_use]
-    pub fn get_resource_mut<'a, T>(&'a mut self) -> &'a mut T
+    pub fn get_resource_mut<T>(&mut self) -> &mut T
     where
         T: 'static,
     {
@@ -307,6 +308,12 @@ impl World {
         self.add(value);
 
         Ok(())
+    }
+}
+
+impl Default for World {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

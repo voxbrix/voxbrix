@@ -240,7 +240,7 @@ impl GameScene {
                 },
         } = self;
 
-        let mut label_library = LabelLibrary::new();
+        let mut label_library = LabelLibrary::empty();
 
         label_load::<ActorClass>(&mut label_library).await?;
         label_load::<ActorModel>(&mut label_library).await?;
@@ -558,7 +558,7 @@ impl GameScene {
         world.add(ClientActionsPacker::new());
         world.add(DispatchesUnpacker::new());
 
-        world.add(ProcessTimer::new());
+        world.add(ProcessTimer::start());
 
         world.add(ChunkCalculationData { turn: 0 });
 

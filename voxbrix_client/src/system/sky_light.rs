@@ -102,7 +102,7 @@ impl<'a> SkyLightSystemData<'a> {
                 let ground_side = sky_side.map(|s| opposite_side(s));
 
                 if sky_light.is_none() {
-                    *sky_light = Some(BlocksVec::new_cloned(SkyLight::MIN));
+                    *sky_light = Some(BlocksVec::splat(SkyLight::MIN));
                 }
 
                 if block_queue.is_none() {

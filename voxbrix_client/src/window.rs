@@ -101,12 +101,9 @@ impl ApplicationHandler<Frame> for App {
             let (input_tx, input_rx) = flume::bounded(32);
 
             let adapter = instance
-                .enumerate_adapters(wgpu::Backends::VULKAN)
+                .enumerate_adapters(wgpu::Backends::VULKAN | wgpu::Backends::METAL)
                 .into_iter()
-                .find(|adapter| {
-                    adapter.is_surface_supported(&surface)
-                        && adapter.get_info().device_type != wgpu::DeviceType::DiscreteGpu
-                })
+                .find(|adapter| adapter.is_surface_supported(&surface))
                 .expect("no supported GPU adapters present");
 
             let required_features = wgpu::Features::TEXTURE_BINDING_ARRAY

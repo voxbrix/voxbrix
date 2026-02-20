@@ -17,3 +17,9 @@ impl<T> RemovalQueue<T> {
         self.0.is_empty()
     }
 }
+
+impl<T> Default for RemovalQueue<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}

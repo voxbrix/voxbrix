@@ -29,9 +29,7 @@ impl<'de> Deserialize<'de> for Block {
     where
         D: Deserializer<'de>,
     {
-        let block: usize = u16::deserialize(deserializer)?
-            .try_into()
-            .map_err(|_| D::Error::custom("Block value out of bounds"))?;
+        let block: usize = u16::deserialize(deserializer)?.into();
 
         if block > BLOCKS_IN_CHUNK {
             return Err(D::Error::custom("Block value out of bounds of chunk"));

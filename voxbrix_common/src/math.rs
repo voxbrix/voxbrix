@@ -5,7 +5,7 @@ pub type Vec3I32 = glam::IVec3;
 pub type QuatF32 = glam::Quat;
 pub type Mat4F32 = glam::Mat4;
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
+#[rustfmt::skip]
 pub trait Directions {
     const FORWARD: Self;
     const BACK: Self;
@@ -15,7 +15,7 @@ pub trait Directions {
     const DOWN: Self;
 }
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
+#[rustfmt::skip]
 impl Directions for Vec3F32 {
     const FORWARD: Self = Vec3F32::new(1.0, 0.0, 0.0);
     const BACK: Self = Vec3F32::new(-1.0, 0.0, 0.0);

@@ -17,7 +17,7 @@ pub struct BlockEnvironment(pub u8);
 
 impl AsFromUsize for BlockEnvironment {
     fn as_usize(&self) -> usize {
-        self.0.try_into().unwrap()
+        self.0.into()
     }
 
     fn from_usize(i: usize) -> Self {

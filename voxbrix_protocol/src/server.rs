@@ -1076,7 +1076,7 @@ impl Clients {
         }
 
         let idx = id - Self::ID_OFFSET;
-        let res = mem::replace(self.clients.get_mut(idx.to_usize())?, None);
+        let res = self.clients.get_mut(idx.to_usize())?.take();
 
         if res.is_some() {
             self.free_indices.push(idx);
@@ -1187,13 +1187,13 @@ impl Server {
                     if self.send_first {
                         self.send_first = false;
                         match send_future.as_mut().poll(ctx) {
-                            o @ Poll::Ready(_) => return o,
+                            o @ Poll::Ready(_) => o,
                             Poll::Pending => recv_future.as_mut().poll(ctx),
                         }
                     } else {
                         self.send_first = true;
                         match recv_future.as_mut().poll(ctx) {
-                            o @ Poll::Ready(_) => return o,
+                            o @ Poll::Ready(_) => o,
                             Poll::Pending => send_future.as_mut().poll(ctx),
                         }
                     }

@@ -71,6 +71,7 @@ where
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn process_actor<C>(
     dt: Duration,
     class_bc: &C,
@@ -218,7 +219,7 @@ where
         None
     };
 
-    let mut finish_position = start_position + (velocity.clone() * dt).vector;
+    let mut finish_position = start_position + (*velocity * dt).vector;
 
     let axis_sets = [[0, 1, 2], [1, 0, 2], [2, 0, 1]];
 
@@ -231,7 +232,7 @@ where
         }
     }
 
-    let mut velocity = velocity.clone();
+    let mut velocity = *velocity;
 
     // Re-calculation in case some colliding blocks are actually unreachable
     // behind other colliding blocks on different axis, priority is defined
@@ -283,7 +284,7 @@ where
 
         center_chunk.position = final_chunk;
 
-        finish_position = finish_position - actor_diff_vec;
+        finish_position -= actor_diff_vec;
     }
 
     let new_pos = Position {

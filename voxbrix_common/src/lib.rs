@@ -115,11 +115,11 @@ pub trait AsFromUsize {
 
 impl AsFromUsize for usize {
     fn as_usize(&self) -> usize {
-        (*self).try_into().unwrap()
+        *self
     }
 
     fn from_usize(i: usize) -> Self {
-        i.try_into().unwrap()
+        i
     }
 }
 
@@ -152,6 +152,10 @@ where
 
     pub fn len(&self) -> usize {
         self.0.labels.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.labels.is_empty()
     }
 }
 
@@ -196,7 +200,7 @@ struct LabelLibraryInner(AHashMap<TypeId, Arc<dyn Any + Send + Sync>>);
 pub struct LabelLibrary(Arc<LabelLibraryInner>);
 
 impl LabelLibrary {
-    pub fn new() -> Self {
+    pub fn empty() -> Self {
         Self(Arc::new(LabelLibraryInner(AHashMap::new())))
     }
 

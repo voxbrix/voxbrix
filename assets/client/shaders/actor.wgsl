@@ -32,7 +32,9 @@ fn vs_main(
 ) -> VertexOutput {
     var out: VertexOutput;
 
-    let position = vec3<f32>(in.chunk - camera.chunk)
+    let in_chunk: vec3<i32> = in.chunk;
+
+    let position = vec3<f32>(in_chunk - camera.chunk)
         * BLOCKS_IN_CHUNK_EDGE_F32
         + in.offset;
 

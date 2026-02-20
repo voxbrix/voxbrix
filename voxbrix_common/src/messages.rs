@@ -147,11 +147,7 @@ impl UpdatesPacker {
             }
         }
 
-        if self.updates.get(&update).is_none() {
-            self.updates.insert(update, Vec::new());
-        }
-
-        let buffer = self.updates.get_mut(&update).unwrap();
+        let buffer = self.updates.entry(update).or_default();
 
         self.packed_updates.insert(update);
 
@@ -177,6 +173,12 @@ impl UpdatesPacker {
         self.to_be_cleared = true;
 
         UpdatesPacked(self.buffer.as_slice())
+    }
+}
+
+impl Default for UpdatesPacker {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -340,6 +342,16 @@ where
     }
 }
 
+impl<E, S> Default for EventsPacker<E, S>
+where
+    E: Serialize + Copy + Ord,
+    S: Serialize + Copy + Ord,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub enum LoadedData {
     Changes,
     Full,
@@ -383,6 +395,16 @@ where
         new.data_full.extend(iter);
         new.loaded_data = LoadedData::Full;
         new
+    }
+}
+
+impl<E, T> Default for ComponentPacker<'static, E, T>
+where
+    E: Serialize,
+    T: Serialize,
+{
+    fn default() -> Self {
+        Self::new()
     }
 }
 

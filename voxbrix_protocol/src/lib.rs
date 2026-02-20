@@ -36,10 +36,10 @@ use std::{
     time::Duration,
 };
 
-#[cfg(any(feature = "client"))]
+#[cfg(feature = "client")]
 pub mod client;
 
-#[cfg(any(feature = "server"))]
+#[cfg(feature = "server")]
 pub mod server;
 
 pub const MAX_PACKET_SIZE: usize = 508;
@@ -354,7 +354,7 @@ trait ToU128 {
 
 impl ToU128 for u32 {
     fn to_u128(self) -> u128 {
-        self.try_into().unwrap()
+        self.into()
     }
 }
 
@@ -370,7 +370,7 @@ trait ToUsize {
 
 impl ToUsize for u8 {
     fn to_usize(self) -> usize {
-        self.try_into().unwrap()
+        self.into()
     }
 }
 

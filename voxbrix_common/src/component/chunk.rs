@@ -17,6 +17,10 @@ impl<T> ChunkComponent<T> {
         self.chunks.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.chunks.is_empty()
+    }
+
     pub fn get(&self, chunk: &Chunk) -> Option<&T> {
         self.chunks.get(chunk)
     }
