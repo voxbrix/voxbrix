@@ -59,14 +59,11 @@ impl SendChangesSystemData<'_> {
             .position_ac
             .iter()
             .filter(|(_, position)| {
-                self.position_ac
-                    .player_chunks()
-                    .find(|player_chunk| {
-                        player_chunk
-                            .radius(self.player_chunk_view_radius.0)
-                            .is_within(&position.chunk)
-                    })
-                    .is_none()
+                !self.position_ac.player_chunks().any(|player_chunk| {
+                    player_chunk
+                        .radius(self.player_chunk_view_radius.0)
+                        .is_within(&position.chunk)
+                })
             })
             .map(|(actor, _)| actor);
 

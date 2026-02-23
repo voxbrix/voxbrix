@@ -28,7 +28,7 @@ impl SkyLightDataChunkComponent {
     }
 
     pub fn block_change(&mut self, chunk: &Chunk, block: Block) {
-        if let Some(queue) = self.block_queues.get_mut(&chunk) {
+        if let Some(queue) = self.block_queues.get_mut(chunk) {
             queue.push_this_chunk(block);
             self.enqueue_chunk(*chunk);
         }
@@ -113,7 +113,7 @@ mod queues {
 
         pub fn pop(&mut self) -> Option<Block> {
             let mut counter = 0;
-            while self.this_chunk[self.current_position] == false && counter < BLOCKS_IN_CHUNK {
+            while !self.this_chunk[self.current_position] && counter < BLOCKS_IN_CHUNK {
                 // For faster calculation of new chunks, calculation must be started
                 // with blocks in queue ordered in sky -> ground direction
                 self.current_position = self
@@ -170,7 +170,7 @@ mod queues {
         }
 
         pub fn is_empty(&self) -> bool {
-            self.this_chunk.iter().find(|b| **b).is_none()
+            !self.this_chunk.iter().any(|b| *b)
         }
     }
 

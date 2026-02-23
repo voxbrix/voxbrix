@@ -12,6 +12,7 @@ use menu::{
 pub mod game;
 pub mod menu;
 
+#[allow(clippy::large_enum_variant)]
 pub enum SceneSwitch {
     Menu { parameters: MenuSceneParameters },
     Game { parameters: GameSceneParameters },

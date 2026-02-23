@@ -47,18 +47,17 @@ impl ChunkPresenceSystemData<'_> {
         let should_exist = |chunk: &Chunk| {
             self.position_ac
                 .player_chunks()
-                .find(|ctl_chunk| ctl_chunk.radius(self.radius.0).is_within(chunk))
-                .is_some()
+                .any(|ctl_chunk| ctl_chunk.radius(self.radius.0).is_within(chunk))
         };
 
         self.status_cc.retain(|chunk, _| {
             let retain = should_exist(chunk);
             if !retain {
-                self.class_bc.remove_chunk(&chunk);
-                self.sky_light_bc.remove_chunk(&chunk);
-                self.blk_render_data_cc.remove_chunk(&chunk);
-                self.env_render_data_cc.remove_chunk(&chunk);
-                self.sky_light_data_cc.remove_chunk(&chunk);
+                self.class_bc.remove_chunk(chunk);
+                self.sky_light_bc.remove_chunk(chunk);
+                self.blk_render_data_cc.remove_chunk(chunk);
+                self.env_render_data_cc.remove_chunk(chunk);
+                self.sky_light_data_cc.remove_chunk(chunk);
             }
             retain
         });

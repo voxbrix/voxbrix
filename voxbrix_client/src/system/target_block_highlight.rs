@@ -77,7 +77,7 @@ impl<'a> TargetBlockHightlightSystemDescriptor<'a> {
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("Render Pipeline Layout"),
                     bind_group_layouts: &[
-                        &camera_bind_group_layout,
+                        camera_bind_group_layout,
                         &block_texture_bind_group_layout,
                     ],
                     push_constant_ranges: &[wgpu::PushConstantRange {
@@ -273,7 +273,7 @@ impl TargetBlockHightlightSystemData<'_> {
 
         let queue = renderer.queue;
 
-        let mut render_pass = renderer.with_pipeline(&mut self.system.render_pipeline);
+        let mut render_pass = renderer.with_pipeline(&self.system.render_pipeline);
 
         render_pass.set_bind_group(1, &self.system.block_texture_bind_group, &[]);
 

@@ -102,7 +102,7 @@ fn main() {
                     // This is required, for example, to send DISCONNECT even on panic.
                     // TODO the same for signals
                     task::spawn_local(async move {
-                        if let Ok(_) = panic_rx.recv_async().await {
+                        if panic_rx.recv_async().await.is_ok() {
                             panic::resume_unwind(Box::new(()));
                         }
                     });
@@ -112,7 +112,7 @@ fn main() {
                         let this_thread = thread::current();
 
                         let log_entry = PanicLogEntry {
-                            panic_info: &panic_info,
+                            panic_info,
                             thread: &this_thread,
                             backtrace: Backtrace::new(),
                         };

@@ -92,7 +92,7 @@ impl RenderPoolDescriptor {
             window,
         } = self;
 
-        let camera = Camera::new(&window.device(), camera_parameters);
+        let camera = Camera::new(window.device(), camera_parameters);
 
         let depth_texture_size = wgpu::Extent3d {
             width: 1,
@@ -100,7 +100,7 @@ impl RenderPoolDescriptor {
             depth_or_array_layers: 1,
         };
 
-        let depth_texture_view = build_depth_texture_view(&window.device(), depth_texture_size);
+        let depth_texture_view = build_depth_texture_view(window.device(), depth_texture_size);
 
         RenderPool {
             camera,

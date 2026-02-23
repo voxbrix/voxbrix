@@ -169,7 +169,7 @@ impl FromDescriptor for BlockModelBuilder {
     fn from_descriptor(desc: Option<Self::Descriptor>, world: &World) -> Result<Self, Error> {
         let desc = desc.ok_or_else(|| Error::msg("builder descriptor is missing"))?;
         let label_library = world.get_resource_ref::<LabelLibrary>();
-        desc.describe(&label_library)
+        desc.describe(label_library)
     }
 }
 

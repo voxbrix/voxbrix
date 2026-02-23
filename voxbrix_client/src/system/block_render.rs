@@ -57,7 +57,7 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("block_render_pipeline_layout"),
                     bind_group_layouts: &[
-                        &camera_bind_group_layout,
+                        camera_bind_group_layout,
                         &block_texture_bind_group_layout,
                     ],
                     push_constant_ranges: &[wgpu::PushConstantRange {
@@ -158,7 +158,7 @@ impl BlockRenderSystemData<'_> {
             .render_data_cc
             .get_visible_buffers(|cp, co, r| renderer.camera.is_object_visible(cp, co, r));
 
-        let mut render_pass = renderer.with_pipeline(&mut self.system.render_pipeline);
+        let mut render_pass = renderer.with_pipeline(&self.system.render_pipeline);
 
         render_pass.set_bind_group(1, &self.system.block_texture_bind_group, &[]);
 

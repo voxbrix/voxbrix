@@ -56,7 +56,7 @@ impl PlayerPositionSystemData<'_> {
             let Some(actor_class) = self.class_ac.get(&actor) else {
                 return;
             };
-            let radius = match self.block_collision_acc.get(&actor_class, &actor) {
+            let radius = match self.block_collision_acc.get(actor_class, &actor) {
                 BlockCollision::None => None,
                 BlockCollision::AABB { radius_blocks } => Some(radius_blocks),
             };
@@ -65,7 +65,7 @@ impl PlayerPositionSystemData<'_> {
                 self.process_timer.elapsed(),
                 self.class_bc,
                 self.collision_bcc,
-                &*writable_position,
+                &writable_position,
                 velocity,
                 radius,
                 |_, _| {},

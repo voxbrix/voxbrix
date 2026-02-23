@@ -464,9 +464,9 @@ impl GameScene {
         let render_pool = RenderPoolDescriptor {
             // TODO hide?
             camera_parameters: CameraParameters {
-                chunk: player_position.chunk.position.into(),
-                offset: player_position.offset.into(),
-                view_direction: player_orientation.forward().into(),
+                chunk: player_position.chunk.position,
+                offset: player_position.offset,
+                view_direction: player_orientation.forward(),
                 aspect: 1.0,
                 fovy: 70f32.to_radians(),
             },
@@ -582,7 +582,7 @@ impl GameScene {
         .or_ff(
             frame_source
                 .stream()
-                .map(|frame| Event::Process(frame))
+                .map(Event::Process)
                 .rr_ff(event_low_prio_rx.stream()),
         );
 

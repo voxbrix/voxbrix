@@ -56,7 +56,7 @@ impl ActorModelBuilder {
         camera_orientation: &Orientation,
         vertices: &mut Vec<Vertex>,
     ) {
-        if self.skeleton.get(bone).is_none() {
+        if !self.skeleton.contains_key(bone) {
             return;
         };
 
@@ -114,8 +114,7 @@ impl ActorModelBuilder {
         let prev_frame = animation_builder
             .transformations
             .range((bone, Time::MIN) ..= (bone, time_key))
-            .rev()
-            .next();
+            .next_back();
 
         let next_frame = animation_builder
             .transformations
@@ -142,7 +141,7 @@ impl ActorModelBuilder {
     }
 
     pub fn has_animation(&self, animation: &ActorAnimation) -> bool {
-        self.animations.get(&animation).is_some()
+        self.animations.contains_key(animation)
     }
 
     pub fn get_bone_parameters(&self, bone: &ActorBone) -> Option<&BoneParameters> {
@@ -158,7 +157,7 @@ impl FromDescriptor for ActorModelBuilder {
     fn from_descriptor(desc: Option<Self::Descriptor>, world: &World) -> Result<Self, Error> {
         let desc = desc.ok_or_else(|| Error::msg("builder descriptor is missing"))?;
         let label_library = world.get_resource_ref::<LabelLibrary>();
-        desc.describe(&label_library)
+        desc.describe(label_library)
     }
 }
 
@@ -185,7 +184,7 @@ impl ActorModelBuilderDescriptor {
             .iter()
             .map(|(label, desc)| {
                 let bone: ActorBone = label_library
-                    .get(&label)
+                    .get(label)
                     .ok_or_else(|| Error::msg(format!("bone \"{}\" is undefined", label)))?;
 
                 let parent: ActorBone = label_library.get(&desc.parent).ok_or_else(|| {
@@ -195,7 +194,7 @@ impl ActorModelBuilderDescriptor {
                     ))
                 })?;
 
-                if parent != BASE_BONE && self.skeleton.get(&desc.parent).is_none() {
+                if parent != BASE_BONE && !self.skeleton.contains_key(&desc.parent) {
                     return Err(Error::msg(format!(
                         "parent \"{}\" of bone \"{}\" is not part of the model",
                         desc.parent, label,
@@ -221,11 +220,11 @@ impl ActorModelBuilderDescriptor {
             .model_parts
             .iter()
             .map(|(label, desc)| {
-                let bone: ActorBone = label_library.get(&label).ok_or_else(|| {
+                let bone: ActorBone = label_library.get(label).ok_or_else(|| {
                     Error::msg(format!("bone \"{}\" for model part is undefined", label))
                 })?;
 
-                if bone != BASE_BONE && self.skeleton.get(label.as_str()).is_none() {
+                if bone != BASE_BONE && !self.skeleton.contains_key(label.as_str()) {
                     return Err(Error::msg(format!(
                         "bone \"{}\" is not part of the model, cannot attach model part to it",
                         label,
@@ -303,7 +302,7 @@ impl ActorModelBuilderDescriptor {
             .iter()
             .map(|(label, desc)| {
                 let animation: ActorAnimation = label_library
-                    .get(&label)
+                    .get(label)
                     .ok_or_else(|| Error::msg(format!("animation \"{}\" is undefined", label)))?;
 
                 let mut transformations = BTreeMap::new();
@@ -315,7 +314,7 @@ impl ActorModelBuilderDescriptor {
                         operations,
                     } = transform_desc;
 
-                    let bone: ActorBone = label_library.get(&bone).ok_or_else(|| {
+                    let bone: ActorBone = label_library.get(bone).ok_or_else(|| {
                         Error::msg(format!(
                             "bone \"{}\" in animation \"{}\" is undefined",
                             bone, label
@@ -340,7 +339,7 @@ impl ActorModelBuilderDescriptor {
                     transformations: transformations
                         .iter()
                         .map(|((model, anim), transform)| {
-                            ((*model, **anim), Transformation::from_matrix(&transform))
+                            ((*model, **anim), Transformation::from_matrix(transform))
                         })
                         .collect(),
                 };
@@ -415,7 +414,7 @@ impl Transformation {
         }
     }
 
-    pub fn to_matrix(&self) -> Mat4F32 {
+    pub fn to_matrix(self) -> Mat4F32 {
         Mat4F32::from_scale_rotation_translation(self.scale, self.rotate, self.translate)
     }
 }

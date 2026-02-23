@@ -214,7 +214,7 @@ impl PositionActorComponent {
                     let player_value = self.storage.remove(&self.player_actor);
 
                     self.storage.clear();
-                    self.storage.extend(full.into_iter());
+                    self.storage.extend(full);
 
                     if let Some(player_value) = player_value {
                         self.storage.insert(self.player_actor, player_value);

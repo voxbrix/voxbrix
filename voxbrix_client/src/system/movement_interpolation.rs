@@ -68,7 +68,7 @@ impl MovementInterpolationSystemData<'_> {
                 let starting = target_queue.starting;
 
                 if target_position.chunk.dimension != starting.chunk.dimension {
-                    position.update(target_position.clone());
+                    position.update(target_position);
                     continue;
                 }
 

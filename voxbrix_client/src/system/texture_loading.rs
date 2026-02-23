@@ -230,7 +230,7 @@ fn load_texture(
 
     let layer_height = image.height() / layers;
     anyhow::ensure!(
-        image.height() % layers == 0,
+        image.height().is_multiple_of(layers),
         "texture layer alignment failed, height: {}, layers: {}",
         image.height(),
         layers,
@@ -271,7 +271,7 @@ fn load_texture(
                 origin: wgpu::Origin3d { x: 0, y: 0, z },
                 aspect: wgpu::TextureAspect::All,
             },
-            &image.as_raw(),
+            image.as_raw(),
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(TEXTURE_BYTES_PER_PIXEL * image.width()),

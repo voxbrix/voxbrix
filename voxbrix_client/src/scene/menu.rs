@@ -124,7 +124,7 @@ impl MenuScene {
                     let input = frame.take_ui_input();
 
                     let full_output = window.ui_context().run(input, |ctx| {
-                        CentralPanel::default().show(&ctx, |ui| {
+                        CentralPanel::default().show(ctx, |ui| {
                             ui.label("Voxbrix");
                             ui.label(&error_message);
                             ui.label("Server socket address:");
@@ -217,13 +217,8 @@ impl MenuScene {
                     }
                 },
                 Event::Input(event) => {
-                    if let InputEvent::WindowEvent(event) = event {
-                        match event {
-                            WindowEvent::CloseRequested => {
-                                return Ok(SceneSwitch::Exit);
-                            },
-                            _ => {},
-                        }
+                    if let InputEvent::WindowEvent(WindowEvent::CloseRequested) = event {
+                        return Ok(SceneSwitch::Exit);
                     }
                 },
             }
@@ -245,7 +240,7 @@ where
     let (send_res, recv_res) = time::timeout(CONNECTION_TIMEOUT, async {
         future::zip(
             async {
-                tx.send_reliable(&buf)
+                tx.send_reliable(buf)
                     .await
                     .map_err(|_| "Unable to send initialization request")?;
 

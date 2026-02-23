@@ -41,6 +41,7 @@ const SURFACE_TEXTURE_FORMATS: &[wgpu::TextureFormat] = &[
 ];
 const SURFACE_TEXTURE_VIEW_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
 
+#[allow(clippy::large_enum_variant)]
 enum App {
     Initialized(Initialized),
     Uninitialized(Option<Args>),
@@ -50,6 +51,9 @@ struct Shared {
     device: wgpu::Device,
     queue: wgpu::Queue,
 }
+
+// FrameData takes too much space in enums.
+pub type Frame = Box<FrameData>;
 
 struct Initialized {
     shared: Arc<Shared>,
@@ -110,9 +114,11 @@ impl ApplicationHandler<Frame> for App {
                 | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING
                 | wgpu::Features::PUSH_CONSTANTS;
 
-            let mut required_limits = wgpu::Limits::default();
-            required_limits.max_binding_array_elements_per_shader_stage = 500000;
-            required_limits.max_push_constant_size = 12;
+            let required_limits = wgpu::Limits {
+                max_binding_array_elements_per_shader_stage: 500000,
+                max_push_constant_size: 12,
+                ..Default::default()
+            };
 
             let (device, queue) =
                 pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
@@ -184,7 +190,7 @@ impl ApplicationHandler<Frame> for App {
                 Default::default(),
             );
 
-            let _ = request_tx.try_send(Frame {
+            let _ = request_tx.try_send(Box::new(FrameData {
                 encoders: Vec::new(),
                 view: surface_texture
                     .texture
@@ -200,7 +206,7 @@ impl ApplicationHandler<Frame> for App {
                     io: UiRendererIo::Input(ui_state.take_egui_input(&window)),
                 },
                 cursor_visible,
-            });
+            }));
 
             window_tx
                 .send(Window {
@@ -258,7 +264,6 @@ impl ApplicationHandler<Frame> for App {
             match app.input_tx.try_send(InputEvent::WindowEvent(event)) {
                 Err(TrySendError::Disconnected(_)) => {
                     info!("event channel closed, exiting window loop");
-                    return;
                 },
                 Err(TrySendError::Full(_)) | Ok(_) => {},
             }
@@ -278,23 +283,22 @@ impl ApplicationHandler<Frame> for App {
         match app.input_tx.try_send(InputEvent::DeviceEvent(event)) {
             Err(TrySendError::Disconnected(_)) => {
                 info!("event channel closed, exiting window loop");
-                return;
             },
             Err(TrySendError::Full(_)) | Ok(_) => {},
         }
     }
 
-    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: Frame) {
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, mut event: Frame) {
         let Self::Initialized(app) = self else {
             return;
         };
 
-        let Frame {
-            mut encoders,
-            view: _,
-            mut ui_renderer,
+        let FrameData {
+            encoders,
+            view,
+            ui_renderer,
             cursor_visible,
-        } = event;
+        } = event.as_mut();
 
         app.shared
             .queue
@@ -313,10 +317,10 @@ impl ApplicationHandler<Frame> for App {
             app.surface_reconfigure = false;
         }
 
-        if app.cursor_visible != cursor_visible {
-            app.cursor_visible = cursor_visible;
+        if app.cursor_visible != *cursor_visible {
+            app.cursor_visible = *cursor_visible;
 
-            if cursor_visible {
+            if app.cursor_visible {
                 let _ = app.window.set_cursor_grab(CursorGrabMode::None);
             } else {
                 let _ = app
@@ -324,7 +328,7 @@ impl ApplicationHandler<Frame> for App {
                     .set_cursor_grab(CursorGrabMode::Confined)
                     .or_else(|_| app.window.set_cursor_grab(CursorGrabMode::Locked));
             }
-            app.window.set_cursor_visible(cursor_visible);
+            app.window.set_cursor_visible(app.cursor_visible);
         }
 
         if let Some(frame_time) = app.frame_time {
@@ -332,7 +336,7 @@ impl ApplicationHandler<Frame> for App {
             let elapsed = now.saturating_duration_since(app.last_render);
 
             if let Some(to_wait) = frame_time.checked_sub(elapsed) {
-                app.last_render = app.last_render + frame_time;
+                app.last_render += frame_time;
                 thread::sleep(to_wait);
             } else {
                 app.last_render = now;
@@ -348,17 +352,16 @@ impl ApplicationHandler<Frame> for App {
 
         ui_renderer.size = surface_texture.texture.size();
 
-        let send_result = app.request_tx.try_send(Frame {
-            encoders,
-            view: surface_texture
-                .texture
-                .create_view(&wgpu::TextureViewDescriptor {
-                    format: Some(SURFACE_TEXTURE_VIEW_FORMAT),
-                    ..Default::default()
-                }),
-            ui_renderer,
-            cursor_visible: app.cursor_visible,
-        });
+        *view = surface_texture
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor {
+                format: Some(SURFACE_TEXTURE_VIEW_FORMAT),
+                ..Default::default()
+            });
+
+        *cursor_visible = app.cursor_visible;
+
+        let send_result = app.request_tx.try_send(event);
 
         app.surface_texture = Some(surface_texture);
 
@@ -368,16 +371,12 @@ impl ApplicationHandler<Frame> for App {
     }
 }
 
+#[derive(Default)]
 enum UiRendererIo {
     Input(egui::RawInput),
+    #[default]
     Pending,
     Output(egui::PlatformOutput),
-}
-
-impl Default for UiRendererIo {
-    fn default() -> Self {
-        Self::Pending
-    }
 }
 
 // Trying to reuse the same context with a different renderer
@@ -498,14 +497,14 @@ pub enum InputEvent {
     WindowEvent(WindowEvent),
 }
 
-pub struct Frame {
+pub struct FrameData {
     pub encoders: Vec<wgpu::CommandEncoder>,
     pub view: wgpu::TextureView,
     pub ui_renderer: UiRenderer,
     cursor_visible: bool,
 }
 
-impl Frame {
+impl FrameData {
     pub fn size(&self) -> wgpu::Extent3d {
         self.ui_renderer.size
     }

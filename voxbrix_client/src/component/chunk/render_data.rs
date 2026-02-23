@@ -32,7 +32,7 @@ use voxbrix_common::{
     },
 };
 
-const CHUNK_VISIBILITY_RADIUS: f32 = 1.73205077648162841796875f32 * BLOCKS_IN_CHUNK_EDGE_F32;
+const CHUNK_VISIBILITY_RADIUS: f32 = 1.732_050_8_f32 * BLOCKS_IN_CHUNK_EDGE_F32;
 const CHUNK_CENTER_OFFSET: Vec3F32 = Vec3F32::splat(BLOCKS_IN_CHUNK_EDGE_F32 / 2.0);
 
 pub struct BlkRenderDataChunkComponent(RenderData);
@@ -214,15 +214,17 @@ impl RenderData {
                     [0, 0, 1],
                 ];
 
-                let neighbor_iter = neighbors.into_iter().zip(offsets.into_iter()).filter_map(
-                    |(needs_render, offset)| {
-                        if !needs_render {
-                            return None;
-                        }
+                let neighbor_iter =
+                    neighbors
+                        .iter()
+                        .zip(offsets)
+                        .filter_map(|(needs_render, offset)| {
+                            if !needs_render {
+                                return None;
+                            }
 
-                        chunk.checked_add(Vec3I32::from_array(offset))
-                    },
-                );
+                            chunk.checked_add(Vec3I32::from_array(offset))
+                        });
 
                 iter::once(*chunk).chain(neighbor_iter)
             })

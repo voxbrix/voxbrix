@@ -185,7 +185,7 @@ where
     pub fn unpack(&mut self, updates: &UpdatesUnpacked<'a>) {
         if let Some((changes, _)) = updates
             .get(&self.update)
-            .and_then(|buffer| pack::decode_from_slice::<ComponentUpdateUnpack<Actor, T>>(buffer))
+            .and_then(pack::decode_from_slice::<ComponentUpdateUnpack<Actor, T>>)
         {
             match changes {
                 ComponentUpdateUnpack::Change(changes) => {
@@ -201,7 +201,7 @@ where
                     let player_value = self.storage.remove(&self.player_actor);
 
                     self.storage.clear();
-                    self.storage.extend(full.into_iter());
+                    self.storage.extend(full);
 
                     if let Some(player_value) = player_value {
                         if self.is_client_controlled {
@@ -222,7 +222,7 @@ where
     pub fn unpack_target(&mut self, updates: &UpdatesUnpacked<'a>) {
         if let Some((changes, _)) = updates
             .get(&self.update)
-            .and_then(|buffer| pack::decode_from_slice::<ComponentUpdateUnpack<Actor, T>>(buffer))
+            .and_then(pack::decode_from_slice::<ComponentUpdateUnpack<Actor, T>>)
         {
             match changes {
                 ComponentUpdateUnpack::Change(changes) => {
@@ -236,7 +236,7 @@ where
                     let player_value = self.storage.remove(&self.player_actor);
 
                     self.storage.clear();
-                    self.storage.extend(full.into_iter());
+                    self.storage.extend(full);
 
                     if let Some(player_value) = player_value {
                         if self.is_client_controlled {
@@ -282,7 +282,7 @@ impl<T> ActorComponentUnpackable<T> {
     {
         if let Some((changes, _)) = updates
             .get(&self.update)
-            .and_then(|buffer| pack::decode_from_slice::<ComponentUpdateUnpack<Actor, U>>(buffer))
+            .and_then(pack::decode_from_slice::<ComponentUpdateUnpack<Actor, U>>)
         {
             match changes {
                 ComponentUpdateUnpack::Change(changes) => {

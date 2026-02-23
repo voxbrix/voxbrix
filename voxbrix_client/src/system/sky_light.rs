@@ -40,13 +40,11 @@ use voxbrix_world::{
 };
 
 fn opposite_side(side: usize) -> usize {
-    let axis = side / 2;
-    let direction = side % 2;
-
-    axis * 2 + direction ^ 1
+    side ^ 1
 }
 
 pub struct SkyLightSystem {
+    #[allow(clippy::type_complexity)]
     buffer: Vec<(
         Chunk,
         Option<BlocksVec<SkyLight>>,
@@ -99,7 +97,7 @@ impl<'a> SkyLightSystemData<'a> {
                     .get(&chunk.dimension.kind)
                     .as_ref()
                     .map(|c| c.side);
-                let ground_side = sky_side.map(|s| opposite_side(s));
+                let ground_side = sky_side.map(opposite_side);
 
                 if sky_light.is_none() {
                     *sky_light = Some(BlocksVec::splat(SkyLight::MIN));
@@ -136,7 +134,7 @@ impl<'a> SkyLightSystemData<'a> {
 
                 let classes = self
                     .class_bc
-                    .get_chunk(&chunk)
+                    .get_chunk(chunk)
                     .expect("undefined block classes for chunk");
 
                 let mut block_counter = 0;

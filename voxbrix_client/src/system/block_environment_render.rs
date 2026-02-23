@@ -61,7 +61,7 @@ impl<'a> BlockEnvironmentRenderSystemDescriptor<'a> {
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("environment_render_pipeline_layout"),
                     bind_group_layouts: &[
-                        &camera_bind_group_layout,
+                        camera_bind_group_layout,
                         &block_texture_bind_group_layout,
                     ],
                     push_constant_ranges: &[wgpu::PushConstantRange {
@@ -324,7 +324,7 @@ impl BlockEnvironmentRenderSystemData<'_> {
                     depth_slice: None,
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &renderer.depth_texture_view,
+                    view: renderer.depth_texture_view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
@@ -367,7 +367,7 @@ impl BlockEnvironmentRenderSystemData<'_> {
             .begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("environment_render_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &renderer.view,
+                    view: renderer.view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,

@@ -57,8 +57,8 @@ impl UpdateRenderPoolSystemData<'_> {
 
         self.render_pool.update_camera(CameraUpdate {
             chunk: player_position.chunk.position,
-            offset: player_position.offset.into(),
-            view_direction: player_orientation.forward().into(),
+            offset: player_position.offset,
+            view_direction: player_orientation.forward(),
             dt: self.process_timer.elapsed(),
         });
 

@@ -57,15 +57,13 @@ impl LocalInput<'_> {
 
         match event {
             InputEvent::DeviceEvent(event) => {
-                match event {
-                    DeviceEvent::MouseMotion {
-                        delta: (horizontal, vertical),
-                    } => {
-                        world
-                            .get_resource_mut::<PlayerInput>()
-                            .process_mouse(horizontal as f32, vertical as f32);
-                    },
-                    _ => {},
+                if let DeviceEvent::MouseMotion {
+                    delta: (horizontal, vertical),
+                } = event
+                {
+                    world
+                        .get_resource_mut::<PlayerInput>()
+                        .process_mouse(horizontal as f32, vertical as f32);
                 }
             },
             InputEvent::WindowEvent(event) => {
@@ -138,7 +136,7 @@ impl LocalInput<'_> {
                                 let orientation = sd.orientation_ac.get(&actor)?;
 
                                 let target = get_target_block(
-                                    &position,
+                                    position,
                                     orientation.forward(),
                                     |chunk, block| {
                                         sd.class_bc

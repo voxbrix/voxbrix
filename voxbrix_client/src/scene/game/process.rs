@@ -89,7 +89,7 @@ impl Process<'_> {
         render_pool
             .get_renderers::<RENDER_LENGTH>()
             .into_iter()
-            .zip(render_systems.into_iter())
+            .zip(render_systems)
             .par_bridge()
             .for_each(|(renderer, system)| system(renderer));
 

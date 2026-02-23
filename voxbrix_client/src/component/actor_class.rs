@@ -93,7 +93,7 @@ where
     pub fn unpack(&mut self, updates: &UpdatesUnpacked<'a>) {
         if let Some((changes, _)) = updates
             .get(&self.update)
-            .and_then(|buffer| pack::decode_from_slice::<ComponentUpdateUnpack<Actor, T>>(buffer))
+            .and_then(pack::decode_from_slice::<ComponentUpdateUnpack<Actor, T>>)
         {
             match changes {
                 ComponentUpdateUnpack::Change(changes) => {
@@ -109,7 +109,7 @@ where
                     let player_value = self.overrides.remove(&self.player_actor);
 
                     self.overrides.clear();
-                    self.overrides.extend(full.into_iter());
+                    self.overrides.extend(full);
 
                     if let Some(player_value) = player_value {
                         if self.is_client_controlled {

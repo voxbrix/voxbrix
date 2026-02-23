@@ -89,7 +89,7 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("actor_render_pipeline_layout"),
                     bind_group_layouts: &[
-                        &camera_bind_group_layout,
+                        camera_bind_group_layout,
                         &actor_texture_bind_group_layout,
                     ],
                     push_constant_ranges: &[],
@@ -267,7 +267,7 @@ impl ActorRenderSystemData<'_> {
 
                         Some((bp, transform))
                     }) {
-                        if let Some(prev_state) = self.system.bone_transformations.get_mut(&bone) {
+                        if let Some(prev_state) = self.system.bone_transformations.get_mut(bone) {
                             *prev_state = new_transform.to_matrix() * *prev_state;
                         } else {
                             self.system
@@ -310,9 +310,9 @@ impl ActorRenderSystemData<'_> {
 
                 model_builder.build_bone(
                     bone,
-                    &position,
+                    position,
                     &transform,
-                    &camera_orientation,
+                    camera_orientation,
                     &mut self.system.vertices,
                 );
             }

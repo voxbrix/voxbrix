@@ -103,24 +103,24 @@ impl ChunkChangesAcceptSystemData<'_> {
     ) -> Result<(), Error> {
         run_inner(
             block_class,
-            &mut self.class_bc,
-            &mut self.sky_light_data_cc,
-            &mut self.blk_render_data_cc,
-            &mut self.env_render_data_cc,
+            self.class_bc,
+            self.sky_light_data_cc,
+            self.blk_render_data_cc,
+            self.env_render_data_cc,
         )?;
         run_inner(
             block_environment,
-            &mut self.environment_bc,
-            &mut self.sky_light_data_cc,
-            &mut self.blk_render_data_cc,
-            &mut self.env_render_data_cc,
+            self.environment_bc,
+            self.sky_light_data_cc,
+            self.blk_render_data_cc,
+            self.env_render_data_cc,
         )?;
         run_inner(
             block_metadata,
-            &mut self.metadata_bc,
-            &mut self.sky_light_data_cc,
-            &mut self.blk_render_data_cc,
-            &mut self.env_render_data_cc,
+            self.metadata_bc,
+            self.sky_light_data_cc,
+            self.blk_render_data_cc,
+            self.env_render_data_cc,
         )?;
 
         Ok(())
