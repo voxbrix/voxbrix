@@ -45,7 +45,7 @@ impl Initialization for SnapshotHandlerEffectComponent {
             let (e, d) = res?;
 
             if let Some(d) = d {
-                vec[e.as_usize()] = d.describe(&label_library)?;
+                vec[e.as_usize()] = d.describe(label_library)?;
             }
         }
 
@@ -98,20 +98,21 @@ enum ConditionDescriptor {
 }
 
 impl ConditionDescriptor {
+    #[allow(clippy::only_used_in_recursion)]
     fn describe(&self, label_lib: &LabelLibrary) -> Result<Condition, Error> {
         Ok(match self {
             Self::Always => Condition::Always,
             Self::EveryNSnapshot => Condition::EveryNSnapshot,
             Self::And { set } => {
                 Condition::And(
-                    set.into_iter()
+                    set.iter()
                         .map(|c| c.describe(label_lib))
                         .collect::<Result<_, _>>()?,
                 )
             },
             Self::Or { set } => {
                 Condition::Or(
-                    set.into_iter()
+                    set.iter()
                         .map(|c| c.describe(label_lib))
                         .collect::<Result<_, _>>()?,
                 )
@@ -168,7 +169,7 @@ impl AlterationDescriptor {
             Self::Scripted { script } => {
                 Alteration::Scripted {
                     script: label_lib
-                        .get(&script)
+                        .get(script)
                         .ok_or_else(|| anyhow::anyhow!("script \"{}\" is undefined", script))?,
                 }
             },

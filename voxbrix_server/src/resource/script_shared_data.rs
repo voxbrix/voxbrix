@@ -230,14 +230,14 @@ pub fn setup_script_registry(
             let chunk_view = sd.player_chunk_view_dkc.get(&position.chunk.dimension.kind);
 
             chunk_view
-                .into_chunk_radius(&position.chunk)
+                .to_chunk_radius(&position.chunk)
                 .is_within(&acting_position.chunk)
                 .then_some(())?;
 
             Some(player)
         }) {
             sd.dispatches_packer_pc
-                .get_mut(&player)
+                .get_mut(player)
                 .expect("no action packer found for a player")
                 .add(
                     input.dispatch.into(),

@@ -68,7 +68,7 @@ impl ProjectileActorHandlingSystemData<'_> {
                 target: targ_actor,
             } = collision;
 
-            let Some(proj_ac) = self.projectile_ac.get(&proj_actor) else {
+            let Some(proj_ac) = self.projectile_ac.get(proj_actor) else {
                 continue;
             };
 

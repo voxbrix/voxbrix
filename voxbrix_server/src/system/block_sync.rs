@@ -22,9 +22,9 @@ use crate::{
     },
     entity::player::Player,
     storage::{
-        IntoData,
         IntoDataSized,
         StorageThread,
+        ToData,
     },
     Database,
     BLOCK_CLASS_TABLE,
@@ -116,7 +116,7 @@ impl BlockSyncSystemData<'_> {
                     let mut table = db_write.open_table(BLOCK_CLASS_TABLE).unwrap();
 
                     table
-                        .insert(chunk_db, blocks_cache.into_data(&mut packer))
+                        .insert(chunk_db, blocks_cache.to_data(&mut packer))
                         .expect("server_loop: database write");
                 }
                 db_write.commit().unwrap();
@@ -129,12 +129,12 @@ impl BlockSyncSystemData<'_> {
 
         // Sending block class changes to players
         for (player, client, curr_radius) in self.actor_pc.iter().filter_map(|(player, actor)| {
-            let client = self.client_pc.get(&player)?;
-            let position = self.position_ac.get(&actor)?;
+            let client = self.client_pc.get(player)?;
+            let position = self.position_ac.get(actor)?;
             let curr_view = self
                 .player_chunk_view_dkc
                 .get(&position.chunk.dimension.kind);
-            let curr_radius = curr_view.into_chunk_radius(&position.chunk);
+            let curr_radius = curr_view.to_chunk_radius(&position.chunk);
 
             Some((player, client, curr_radius))
         }) {

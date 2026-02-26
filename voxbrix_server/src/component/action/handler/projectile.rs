@@ -35,6 +35,7 @@ pub enum Alteration {
     RemoveSelf,
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Copy, Deserialize)]
 pub enum Trigger {
     AnyCollision,
@@ -66,19 +67,20 @@ enum ConditionDescriptor {
 }
 
 impl ConditionDescriptor {
+    #[allow(clippy::only_used_in_recursion)]
     fn describe(&self, label_lib: &LabelLibrary) -> Result<Condition, Error> {
         Ok(match self {
             Self::Always => Condition::Always,
             Self::And { set } => {
                 Condition::And(
-                    set.into_iter()
+                    set.iter()
                         .map(|c| c.describe(label_lib))
                         .collect::<Result<_, _>>()?,
                 )
             },
             Self::Or { set } => {
                 Condition::Or(
-                    set.into_iter()
+                    set.iter()
                         .map(|c| c.describe(label_lib))
                         .collect::<Result<_, _>>()?,
                 )
@@ -170,7 +172,7 @@ impl AlterationDescriptor {
                 Alteration::ApplyEffect {
                     target: *target,
                     effect: label_lib
-                        .get(&effect)
+                        .get(effect)
                         .ok_or_else(|| anyhow::anyhow!("effect \"{}\" is undefined", effect))?,
                     discriminant: *discriminant,
                     state: *state,
@@ -180,7 +182,7 @@ impl AlterationDescriptor {
             Self::RemoveSourceActorEffect { effect } => {
                 Alteration::RemoveSourceActorEffect {
                     effect: label_lib
-                        .get(&effect)
+                        .get(effect)
                         .ok_or_else(|| anyhow::anyhow!("effect \"{}\" is undefined", effect))?,
                 }
             },

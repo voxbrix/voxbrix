@@ -143,7 +143,7 @@ pub struct PlayerActionsSystemData<'a> {
 }
 
 impl PlayerActionsSystemData<'_> {
-    pub fn run(mut self, player: Player, state: &ClientState) -> Result<(), Error> {
+    pub fn run(self, player: Player, state: &ClientState) -> Result<(), Error> {
         let actions = self.actions_unpacker.unpack(&state.actions).map_err(|_| {
             debug!("unable to unpack actions");
 
@@ -174,7 +174,7 @@ impl PlayerActionsSystemData<'_> {
                 if !(ConditionCheck {
                     source: &actor,
                     action,
-                    effect_ac: &self.effect_ac,
+                    effect_ac: self.effect_ac,
                 }
                 .is_valid(&handler.condition))
                 {
@@ -268,18 +268,18 @@ impl PlayerActionsSystemData<'_> {
                         Alteration::Scripted { script } => {
                             let script_data = ScriptSharedDataRef {
                                 snapshot: *self.snapshot,
-                                actor_pc: &self.actor_pc,
-                                dispatches_packer_pc: &mut self.dispatches_packer_pc,
-                                player_chunk_view_dkc: &self.player_chunk_view_dkc,
-                                position_ac: &self.position_ac,
-                                label_library: &self.label_library,
-                                class_bc: &mut self.class_bc,
-                                collision_bcc: &self.collision_bcc,
+                                actor_pc: self.actor_pc,
+                                dispatches_packer_pc: self.dispatches_packer_pc,
+                                player_chunk_view_dkc: self.player_chunk_view_dkc,
+                                position_ac: self.position_ac,
+                                label_library: self.label_library,
+                                class_bc: self.class_bc,
+                                collision_bcc: self.collision_bcc,
                             }
                             .into_static();
 
                             self.script_registry.run_script(
-                                &script,
+                                script,
                                 script_data,
                                 ActionInput {
                                     action: (*action).into(),

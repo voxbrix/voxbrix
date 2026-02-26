@@ -107,7 +107,7 @@ impl<T> TrackingBlockComponent<BlocksVec<T>> {
         &'a self,
     ) -> impl ExactSizeIterator<Item = ChangedVecChunk<'a, T>> + Clone + 'a {
         self.changed_chunks.iter().map(|chunk| {
-            let container = self.data.get(&chunk).unwrap();
+            let container = self.data.get(chunk).unwrap();
 
             ChangedVecChunk {
                 chunk,

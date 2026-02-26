@@ -18,7 +18,7 @@ pub struct PlayerChunkView {
 }
 
 impl PlayerChunkView {
-    pub fn into_chunk_radius(&self, chunk: &Chunk) -> ChunkRadius {
+    pub fn to_chunk_radius(self, chunk: &Chunk) -> ChunkRadius {
         ChunkRadius::from_boundaries(chunk.dimension, self.min, self.max)
     }
 }

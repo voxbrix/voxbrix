@@ -136,7 +136,7 @@ where
     T: Ord + IntoDataSized + Debug,
 {
     fn compare(data1: &[u8], data2: &[u8]) -> Ordering {
-        data1.cmp(&data2)
+        data1.cmp(data2)
     }
 }
 
@@ -189,7 +189,7 @@ impl<'a, T> Data<'a, T>
 where
     T: Pack + Deserialize<'a>,
 {
-    pub fn into_inner(&'a self, packer: &'a mut Packer) -> T {
+    pub fn to_inner(&'a self, packer: &'a mut Packer) -> T {
         packer.unpack(self.data.as_ref()).unwrap()
     }
 }
@@ -203,8 +203,8 @@ where
     }
 }
 
-pub trait IntoData {
-    fn into_data(&self, packer: &mut Packer) -> Data<'static, Self>
+pub trait ToData {
+    fn to_data(&self, packer: &mut Packer) -> Data<'static, Self>
     where
         Self: Pack + Serialize + Sized,
     {
@@ -212,7 +212,7 @@ pub trait IntoData {
     }
 }
 
-impl<T> IntoData for T where T: Pack + Serialize {}
+impl<T> ToData for T where T: Pack + Serialize {}
 
 impl<T> Value for Data<'_, T>
 where

@@ -121,7 +121,7 @@ impl PositionActorComponent {
 
         if let Some(change) = updates
             .get(&self.update)
-            .and_then(|buf| pack::decode_from_slice::<Option<Position>>(buf))
+            .and_then(pack::decode_from_slice::<Option<Position>>)
             .map(|tup| tup.0)
         {
             let result = func(prev_value, change.as_ref());
@@ -181,6 +181,7 @@ impl PositionActorComponent {
         self.packer = Some(packer);
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn pack_changes(
         &mut self,
         updates: &mut UpdatesPacker,
@@ -252,7 +253,7 @@ impl PositionActorComponent {
 
                                 // Current Actor's chunk:
                                 is_within_intersection(
-                                    self.storage.get(&actor).map(|pos| pos.chunk).as_ref(),
+                                    self.storage.get(actor).map(|pos| pos.chunk).as_ref(),
                                 )
                             },
                         )
@@ -281,7 +282,7 @@ impl PositionActorComponent {
                     }
 
                     // Current Actor's chunk:
-                    !is_within_intersection(self.storage.get(&actor).map(|pos| pos.chunk).as_ref())
+                    !is_within_intersection(self.storage.get(actor).map(|pos| pos.chunk).as_ref())
                 },
             )
             .map(|c| c.actor);
@@ -300,7 +301,7 @@ impl PositionActorComponent {
         let change_iter = self
             .actors_partial_update
             .iter()
-            .filter_map(|actor| self.changes.get_key_value(&actor))
+            .filter_map(|actor| self.changes.get_key_value(actor))
             .filter(move |(_, change_snapshot)| change_snapshot.0 > last_server_snapshot.0)
             .map(|(actor, _)| actor)
             .chain(self.actors_full_update.iter())

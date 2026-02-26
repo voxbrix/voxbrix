@@ -6,8 +6,8 @@ use crate::{
     },
     resource::chunk_generation_request::ChunkGenerationRequest,
     storage::{
-        IntoData,
         IntoDataSized,
+        ToData,
     },
     system::map_loading::Map,
     BLOCK_CLASS_TABLE,
@@ -296,7 +296,7 @@ impl ChunkGenerationSystemData<'_> {
                     })
                     .unwrap();
 
-                let instance = linker.instantiate(&mut store, &module).unwrap();
+                let instance = linker.instantiate(&mut store, module).unwrap();
 
                 let generate_fn = instance
                     .get_typed_func::<(u64, u64, i32, i32, i32), ()>(&mut store, "generate_chunk")
@@ -329,26 +329,20 @@ impl ChunkGenerationSystemData<'_> {
                 {
                     let mut table = db_write.open_table(BLOCK_CLASS_TABLE).unwrap();
                     table
-                        .insert(
-                            chunk.into_data_sized(),
-                            block_classes.into_data(&mut packer),
-                        )
+                        .insert(chunk.into_data_sized(), block_classes.to_data(&mut packer))
                         .expect("server_loop: database write");
 
                     let mut table = db_write.open_table(BLOCK_ENVIRONMENT_TABLE).unwrap();
                     table
                         .insert(
                             chunk.into_data_sized(),
-                            block_environment.into_data(&mut packer),
+                            block_environment.to_data(&mut packer),
                         )
                         .expect("server_loop: database write");
 
                     let mut table = db_write.open_table(BLOCK_METADATA_TABLE).unwrap();
                     table
-                        .insert(
-                            chunk.into_data_sized(),
-                            block_metadata.into_data(&mut packer),
-                        )
+                        .insert(chunk.into_data_sized(), block_metadata.to_data(&mut packer))
                         .expect("server_loop: database write");
                 }
                 db_write.commit().unwrap();

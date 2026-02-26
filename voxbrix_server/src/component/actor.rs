@@ -100,7 +100,7 @@ where
     ) {
         if let Some((change, _)) = updates
             .get(&self.update)
-            .and_then(|buf| pack::decode_from_slice::<Option<T>>(buf))
+            .and_then(pack::decode_from_slice::<Option<T>>)
         {
             let updated = if let Some(new_value) = change {
                 let old_value = self.storage.get(player_actor);
@@ -286,7 +286,7 @@ where
     T: Send + Sync,
 {
     /// Clears the component and refills it from the parallel iterator.
-    pub fn from_par_iter(&mut self, iter: impl ParallelIterator<Item = (Actor, T)>) {
+    pub fn replace_from_par_iter(&mut self, iter: impl ParallelIterator<Item = (Actor, T)>) {
         self.storage.clear();
         self.storage.par_extend(iter);
     }

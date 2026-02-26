@@ -110,11 +110,10 @@ impl PlayerUpdatesSystemData<'_> {
                     let previous_view = old_value.map(|old_pos| {
                         self.player_chunk_view_dkc
                             .get(&old_pos.chunk.dimension.kind)
-                            .into_chunk_radius(&old_pos.chunk)
+                            .to_chunk_radius(&old_pos.chunk)
                     });
 
                     if self.chunk_update_pc.get(&player).is_some() {
-                        return;
                     } else {
                         self.chunk_update_pc
                             .insert(player, ChunkUpdate { previous_view });

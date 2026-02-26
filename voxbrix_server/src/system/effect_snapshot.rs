@@ -53,7 +53,7 @@ impl ConditionCheck<'_> {
             Condition::Always => true,
             Condition::EveryNSnapshot => {
                 let (snapshot, bytes_used) =
-                    pack::decode_from_slice::<ServerSnapshot>(&self.effect_state)
+                    pack::decode_from_slice::<ServerSnapshot>(self.effect_state)
                         .expect("unable to decode snapshot from effect state");
 
                 let (duration, _) =
@@ -100,7 +100,7 @@ impl EffectSnapshotSystemData<'_> {
             for handler in handler_set.iter() {
                 if !(ConditionCheck {
                     snapshot: self.snapshot,
-                    effect_state: &effect_state,
+                    effect_state,
                 }
                 .is_valid(&handler.condition))
                 {
@@ -115,18 +115,18 @@ impl EffectSnapshotSystemData<'_> {
                         Alteration::Scripted { script } => {
                             let script_data = ScriptSharedDataRef {
                                 snapshot: *self.snapshot,
-                                actor_pc: &self.actor_pc,
-                                dispatches_packer_pc: &mut self.dispatches_packer_pc,
+                                actor_pc: self.actor_pc,
+                                dispatches_packer_pc: self.dispatches_packer_pc,
                                 player_chunk_view_dkc: self.player_chunk_view_dkc,
-                                position_ac: &self.position_ac,
-                                label_library: &self.label_library,
-                                class_bc: &mut self.class_bc,
-                                collision_bcc: &self.collision_bcc,
+                                position_ac: self.position_ac,
+                                label_library: self.label_library,
+                                class_bc: self.class_bc,
+                                collision_bcc: self.collision_bcc,
                             }
                             .into_static();
 
                             self.script_registry.run_script(
-                                &script,
+                                script,
                                 script_data,
                                 // FIXME special input for effect scripts.
                                 (),

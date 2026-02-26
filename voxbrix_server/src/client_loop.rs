@@ -7,8 +7,8 @@ use crate::{
     server_loop::ServerEvent,
     storage::{
         player::PlayerProfile,
-        IntoData,
         IntoDataSized,
+        ToData,
     },
     CLIENT_CONNECTION_TIMEOUT,
     PLAYER_CHUNK_VIEW_RADIUS,
@@ -82,8 +82,8 @@ pub enum Error {
     InitializationTimeout,
     FailedRegistration,
     FailedLogin,
-    SendError,
-    ReceiveError,
+    Send,
+    Receive,
 }
 
 pub struct ClientLoop {
@@ -119,7 +119,7 @@ impl ClientLoop {
         // if there's none - register,
         // if the password is not correct - send error
         let request = time::timeout(CLIENT_CONNECTION_TIMEOUT, async {
-            rx.recv().await.map_err(|_| Error::ReceiveError)
+            rx.recv().await.map_err(|_| Error::Receive)
         })
         .await
         .map_err(|_| Error::InitializationTimeout)?
@@ -152,7 +152,7 @@ impl ClientLoop {
             reliable_tx
                 .send_reliable(&buffer)
                 .await
-                .map_err(|_| Error::SendError)
+                .map_err(|_| Error::Send)
         })
         .await
         .map_err(|_| Error::InitializationTimeout)??;
@@ -163,7 +163,7 @@ impl ClientLoop {
                     username,
                     key_signature,
                 } = time::timeout(CLIENT_CONNECTION_TIMEOUT, async {
-                    rx.recv().await.map_err(|_| Error::ReceiveError)
+                    rx.recv().await.map_err(|_| Error::Receive)
                 })
                 .await
                 .map_err(|_| Error::InitializationTimeout)?
@@ -195,7 +195,7 @@ impl ClientLoop {
                     let player = player_table
                         .get(player_id.into_data_sized())
                         .expect("database read")
-                        .map(|bytes| bytes.value().into_inner(&mut packer))
+                        .map(|bytes| bytes.value().to_inner(&mut packer))
                         .ok_or(LoginFailure::IncorrectCredentials)?;
 
                     let public_key =
@@ -227,7 +227,7 @@ impl ClientLoop {
                             reliable_tx
                                 .send_reliable(&buffer)
                                 .await
-                                .map_err(|_| Error::SendError)
+                                .map_err(|_| Error::Send)
                         })
                         .await;
 
@@ -240,7 +240,7 @@ impl ClientLoop {
                     username,
                     public_key,
                 } = time::timeout(CLIENT_CONNECTION_TIMEOUT, async {
-                    rx.recv().await.map_err(|_| Error::ReceiveError)
+                    rx.recv().await.map_err(|_| Error::Receive)
                 })
                 .await
                 .map_err(|_| Error::InitializationTimeout)?
@@ -295,7 +295,7 @@ impl ClientLoop {
                                     username,
                                     public_key,
                                 }
-                                .into_data(&mut packer),
+                                .to_data(&mut packer),
                             )
                             .expect("database write");
 
@@ -316,7 +316,7 @@ impl ClientLoop {
                             reliable_tx
                                 .send_reliable(&buffer)
                                 .await
-                                .map_err(|_| Error::SendError)
+                                .map_err(|_| Error::Send)
                         })
                         .await
                         .map_err(|_| Error::InitializationTimeout)?;
@@ -350,7 +350,7 @@ impl ClientLoop {
                     .await
                     .map_err(|err| {
                         warn!("client_loop: send_unreliable error {:?}", err);
-                        Error::SendError
+                        Error::Send
                     })?;
 
                 task::yield_now().await;
@@ -366,7 +366,7 @@ impl ClientLoop {
                     .or(async {
                         reliable_tx.wait_complete().await.map_err(|err| {
                             warn!("client_loop: wait_complete error {:?}", err);
-                            Error::SendError
+                            Error::Send
                         })?;
                         future::pending::<()>().await;
                         unreachable!();
@@ -383,7 +383,7 @@ impl ClientLoop {
                     .await
                     .map_err(|err| {
                         warn!("client_loop: send_reliable error {:?}", err);
-                        Error::SendError
+                        Error::Send
                     })?;
 
                 task::yield_now().await;
@@ -394,7 +394,7 @@ impl ClientLoop {
             async move {
                 let value = rx.recv().await.map(LoopEvent::PeerMessage).map_err(|err| {
                     warn!("client_loop: connection interrupted: {:?}", err);
-                    Error::ReceiveError
+                    Error::Receive
                 });
 
                 Some((value, rx))

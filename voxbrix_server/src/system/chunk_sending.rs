@@ -46,11 +46,11 @@ impl ChunkSendingSystemData<'_> {
                 .filter_map(|(player, chunk_update)| {
                     let actor = self.actor_pc.get(&player)?;
                     let client = self.client_pc.get(&player)?;
-                    let position = self.position_ac.get(&actor)?;
+                    let position = self.position_ac.get(actor)?;
                     let curr_view = self
                         .player_chunk_view_dkc
                         .get(&position.chunk.dimension.kind);
-                    let curr_radius = curr_view.into_chunk_radius(&position.chunk);
+                    let curr_radius = curr_view.to_chunk_radius(&position.chunk);
 
                     Some((player, client, chunk_update.previous_view, curr_radius))
                 })

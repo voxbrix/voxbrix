@@ -144,7 +144,7 @@ impl ChunkPruningSystemData<'_> {
                 let block_classes = table
                     .get(chunk.into_data_sized())
                     .unwrap()
-                    .map(|bytes| bytes.value().into_inner(&mut packer));
+                    .map(|bytes| bytes.value().to_inner(&mut packer));
 
                 if let Some(block_classes) = block_classes {
                     let data = ChunkData {

@@ -182,19 +182,19 @@ impl ChunkActivationSystemData<'_> {
                 let block_classes = class_table
                     .get(chunk.into_data_sized())
                     .unwrap()
-                    .map(|bytes| bytes.value().into_inner(&mut packer));
+                    .map(|bytes| bytes.value().to_inner(&mut packer));
 
                 if let Some(block_classes) = block_classes {
                     let block_environment = environment_table
                         .get(chunk.into_data_sized())
                         .unwrap()
-                        .map(|bytes| bytes.value().into_inner(&mut packer))
+                        .map(|bytes| bytes.value().to_inner(&mut packer))
                         .expect("environment not found for existing chunk");
 
                     let block_metadata = metadata_table
                         .get(chunk.into_data_sized())
                         .unwrap()
-                        .map(|bytes| bytes.value().into_inner(&mut packer))
+                        .map(|bytes| bytes.value().to_inner(&mut packer))
                         .expect("metadata not found for existing chunk");
 
                     let data = ChunkData {

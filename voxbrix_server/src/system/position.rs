@@ -54,7 +54,7 @@ impl PositionSystemData<'_> {
         let par_iter = self.velocity_ac.par_iter().filter_map(|(actor, velocity)| {
             let position = self.position_ac.get(&actor)?;
             let actor_class = self.class_ac.get(&actor)?;
-            let radius = match self.block_collision_acc.get(&actor_class, &actor) {
+            let radius = match self.block_collision_acc.get(actor_class, &actor) {
                 BlockCollision::None => None,
                 BlockCollision::AABB { radius_blocks } => Some(radius_blocks),
             };
@@ -65,7 +65,7 @@ impl PositionSystemData<'_> {
                 dt,
                 self.class_bc,
                 self.collision_bcc,
-                &position,
+                position,
                 velocity,
                 radius,
                 |_, _| {},
@@ -89,7 +89,7 @@ impl PositionSystemData<'_> {
             ))
         });
 
-        self.movement_change_ac.from_par_iter(par_iter);
+        self.movement_change_ac.replace_from_par_iter(par_iter);
 
         for (actor, change) in self
             .movement_change_ac

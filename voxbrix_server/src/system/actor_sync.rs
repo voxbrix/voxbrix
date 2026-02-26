@@ -78,7 +78,7 @@ pub struct ActorSyncSystemData<'a> {
 }
 
 impl ActorSyncSystemData<'_> {
-    pub fn run(mut self) {
+    pub fn run(self) {
         for (player, player_actor, client) in self
             .actor_pc
             .iter()
@@ -95,7 +95,7 @@ impl ActorSyncSystemData<'_> {
                 continue;
             }
 
-            let position_chunk = match self.position_ac.get(&player_actor) {
+            let position_chunk = match self.position_ac.get(player_actor) {
                 Some(v) => v.chunk,
                 None => continue,
             };
@@ -104,7 +104,7 @@ impl ActorSyncSystemData<'_> {
                 .player_chunk_view_dkc
                 .get(&position_chunk.dimension.kind);
 
-            let chunk_radius = chunk_view_radius.into_chunk_radius(&position_chunk);
+            let chunk_radius = chunk_view_radius.to_chunk_radius(&position_chunk);
 
             let client_is_outdated = client.last_server_snapshot == ServerSnapshot(0)
                 || self.snapshot.0 - client.last_server_snapshot.0 > MAX_SNAPSHOT_DIFF;
@@ -114,7 +114,7 @@ impl ActorSyncSystemData<'_> {
                 // Enforces full update for the outdated clients
                 .filter(|_| !client_is_outdated)
                 // TODO Should be `previous_view` if the view is runtime-variable.
-                .map(|c| chunk_view_radius.into_chunk_radius(&c))
+                .map(|c| chunk_view_radius.to_chunk_radius(&c))
             {
                 let chunk_within_intersection = |chunk: Option<&Chunk>| -> bool {
                     let chunk = match chunk {
@@ -136,7 +136,7 @@ impl ActorSyncSystemData<'_> {
                     .filter(|c| previous_chunk_radius.is_within(c));
 
                 self.position_ac.pack_changes(
-                    &mut self.updates_packer,
+                    self.updates_packer,
                     *self.snapshot,
                     client.last_server_snapshot,
                     player_actor,
@@ -148,7 +148,7 @@ impl ActorSyncSystemData<'_> {
                 // Server-controlled components, we pass `None` instead of `player_actor`.
                 // These components will not filter out player's own components.
                 self.class_ac.pack_changes(
-                    &mut self.updates_packer,
+                    self.updates_packer,
                     *self.snapshot,
                     client.last_server_snapshot,
                     None,
@@ -157,7 +157,7 @@ impl ActorSyncSystemData<'_> {
                 );
 
                 self.model_acc.pack_changes(
-                    &mut self.updates_packer,
+                    self.updates_packer,
                     *self.snapshot,
                     client.last_server_snapshot,
                     None,
@@ -166,7 +166,7 @@ impl ActorSyncSystemData<'_> {
                 );
 
                 self.health_acc.pack_changes(
-                    &mut self.updates_packer,
+                    self.updates_packer,
                     *self.snapshot,
                     client.last_server_snapshot,
                     None,
@@ -175,7 +175,7 @@ impl ActorSyncSystemData<'_> {
                 );
 
                 self.effect_ac.pack_changes(
-                    &mut self.updates_packer,
+                    self.updates_packer,
                     *self.snapshot,
                     client.last_server_snapshot,
                     self.position_ac.actors_full_update(),
@@ -185,7 +185,7 @@ impl ActorSyncSystemData<'_> {
                 // Client-conrolled components, we pass `Some(player_actor)`.
                 // These components will filter out player's own components.
                 self.velocity_ac.pack_changes(
-                    &mut self.updates_packer,
+                    self.updates_packer,
                     *self.snapshot,
                     client.last_server_snapshot,
                     Some(player_actor),
@@ -194,7 +194,7 @@ impl ActorSyncSystemData<'_> {
                 );
 
                 self.orientation_ac.pack_changes(
-                    &mut self.updates_packer,
+                    self.updates_packer,
                     *self.snapshot,
                     client.last_server_snapshot,
                     Some(player_actor),
@@ -206,43 +206,41 @@ impl ActorSyncSystemData<'_> {
                 let new_chunks = chunk_radius.into_iter_simple();
 
                 self.position_ac
-                    .pack_full(&mut self.updates_packer, player_actor, new_chunks);
+                    .pack_full(self.updates_packer, player_actor, new_chunks);
 
                 // Server-controlled components, we pass `None` instead of `player_actor`.
                 // These components will not filter out player's own components.
                 self.class_ac.pack_full(
-                    &mut self.updates_packer,
+                    self.updates_packer,
                     None,
                     self.position_ac.actors_full_update(),
                 );
 
                 self.model_acc.pack_full(
-                    &mut self.updates_packer,
+                    self.updates_packer,
                     None,
                     self.position_ac.actors_full_update(),
                 );
 
                 self.health_acc.pack_full(
-                    &mut self.updates_packer,
+                    self.updates_packer,
                     None,
                     self.position_ac.actors_full_update(),
                 );
 
-                self.effect_ac.pack_full(
-                    &mut self.updates_packer,
-                    self.position_ac.actors_full_update(),
-                );
+                self.effect_ac
+                    .pack_full(self.updates_packer, self.position_ac.actors_full_update());
 
                 // Client-conrolled components, we pass `Some(player_actor)`.
                 // These components will filter out player's own components.
                 self.velocity_ac.pack_full(
-                    &mut self.updates_packer,
+                    self.updates_packer,
                     Some(player_actor),
                     self.position_ac.actors_full_update(),
                 );
 
                 self.orientation_ac.pack_full(
-                    &mut self.updates_packer,
+                    self.updates_packer,
                     Some(player_actor),
                     self.position_ac.actors_full_update(),
                 );

@@ -67,7 +67,7 @@ impl PlayerEvent<'_> {
 
                 let client = world
                     .get_resource_mut::<ClientPlayerComponent>()
-                    .get_mut(&player);
+                    .get_mut(player);
 
                 if let Some(client) = client {
                     client.last_server_snapshot = state.last_server_snapshot;
@@ -76,7 +76,7 @@ impl PlayerEvent<'_> {
 
                 let dispatches_packer = world
                     .get_resource_mut::<DispatchesPackerPlayerComponent>()
-                    .get_mut(&player);
+                    .get_mut(player);
 
                 if let Some(dispatches_packer) = dispatches_packer {
                     // Pruning confirmed Server -> Client actions.

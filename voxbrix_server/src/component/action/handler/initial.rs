@@ -86,21 +86,21 @@ impl ConditionDescriptor {
             } => {
                 Condition::SourceActorHasNoEffect {
                     effect: label_lib
-                        .get(&effect)
+                        .get(effect)
                         .ok_or_else(|| anyhow::anyhow!("effect \"{}\" is undefined", effect))?,
                     discriminant: *discriminant,
                 }
             },
             Self::And { set } => {
                 Condition::And(
-                    set.into_iter()
+                    set.iter()
                         .map(|c| c.describe(label_lib))
                         .collect::<Result<_, _>>()?,
                 )
             },
             Self::Or { set } => {
                 Condition::Or(
-                    set.into_iter()
+                    set.iter()
                         .map(|c| c.describe(label_lib))
                         .collect::<Result<_, _>>()?,
                 )
@@ -196,7 +196,7 @@ impl AlterationDescriptor {
                 Alteration::ApplyEffect {
                     target: *target,
                     effect: label_lib
-                        .get(&effect)
+                        .get(effect)
                         .ok_or_else(|| anyhow::anyhow!("effect \"{}\" is undefined", effect))?,
                     discriminant: *discriminant,
                     state: *state,
@@ -205,7 +205,7 @@ impl AlterationDescriptor {
             Self::RemoveSourceActorEffect { effect } => {
                 Alteration::RemoveSourceActorEffect {
                     effect: label_lib
-                        .get(&effect)
+                        .get(effect)
                         .ok_or_else(|| anyhow::anyhow!("effect \"{}\" is undefined", effect))?,
                 }
             },
@@ -216,7 +216,7 @@ impl AlterationDescriptor {
                 radius_blocks,
             } => {
                 Alteration::CreateProjectile {
-                    actor_class: label_lib.get(&actor_class).ok_or_else(|| {
+                    actor_class: label_lib.get(actor_class).ok_or_else(|| {
                         anyhow::anyhow!("actor class \"{}\" is undefined", actor_class)
                     })?,
                     handler_set: handler_set.describe(label_lib)?,
@@ -227,7 +227,7 @@ impl AlterationDescriptor {
             Self::Scripted { script } => {
                 Alteration::Scripted {
                     script: label_lib
-                        .get(&script)
+                        .get(script)
                         .ok_or_else(|| anyhow::anyhow!("script \"{}\" is undefined", script))?,
                 }
             },
