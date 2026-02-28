@@ -1,9 +1,14 @@
 [
   "base",
   "head",
-  "torso",
-  "left_hand",
-  "right_hand",
-  "left_leg",
-  "right_leg"
+  "chest",
+  "abdomen",
+  "left_shoulder",
+  "left_forearm",
+  "right_shoulder",
+  "right_forearm",
+  "left_thigh",
+  "left_shank",
+  "right_thigh",
+  "right_shank"
 ]

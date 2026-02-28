@@ -8,7 +8,7 @@
     ],
     "skeleton": {
       "head": {
-        "parent": "torso",
+        "parent": "chest",
         "transformations": [
           {
             "kind": "Translate",
@@ -20,7 +20,7 @@
           }
         ]
       },
-      "torso": {
+      "chest": {
         "parent": "base",
         "transformations": [
           {
@@ -33,54 +33,119 @@
           }
         ]
       },
-      "right_hand": {
-        "parent": "torso",
+      "abdomen": {
+        "parent": "chest",
         "transformations": [
           {
             "kind": "Translate",
             "value": [
               0,
-              12,
-              6
+              0,
+              -2
             ]
           }
         ]
       },
-      "left_hand": {
-        "parent": "torso",
+      "right_shoulder": {
+        "parent": "chest",
         "transformations": [
           {
             "kind": "Translate",
             "value": [
               0,
-              -12,
-              6
+              11,
+              5
             ]
           }
         ]
       },
-      "right_leg": {
-        "parent": "torso",
+      "right_forearm": {
+        "parent": "right_shoulder",
+        "transformations": [
+          {
+            "kind": "Translate",
+            "value": [
+              0,
+              0,
+              -8
+            ]
+          }
+        ]
+      },
+      "left_shoulder": {
+        "parent": "chest",
+        "transformations": [
+          {
+            "kind": "Translate",
+            "value": [
+              0,
+              -11,
+              5
+            ]
+          }
+        ]
+      },
+      "left_forearm": {
+        "parent": "left_shoulder",
+        "transformations": [
+          {
+            "kind": "Translate",
+            "value": [
+              0,
+              0,
+              -8
+            ]
+          }
+        ]
+      },
+      "right_thigh": {
+        "parent": "abdomen",
         "transformations": [
           {
             "kind": "Translate",
             "value": [
               0,
               4,
-              -14
+              -12
             ]
           }
         ]
       },
-      "left_leg": {
-        "parent": "torso",
+      "right_shank": {
+        "parent": "right_thigh",
+        "transformations": [
+          {
+            "kind": "Translate",
+            "value": [
+              0,
+              0,
+              -8
+            ]
+          }
+        ]
+      },
+      "left_thigh": {
+        "parent": "abdomen",
         "transformations": [
           {
             "kind": "Translate",
             "value": [
               0,
               -4,
-              -14
+              -12
+            ]
+          }
+        ]
+      },
+      "left_shank": {
+        "parent": "left_thigh",
+        "transformations": [
+          {
+            "kind": "Translate",
+            "value": [
+              0,
+              0,
+              -8
             ]
           }
         ]
@@ -368,7 +433,7 @@
           ]
         ]
       },
-      "torso": {
+      "chest": {
         "transformations": [],
         "quads": [
           [
@@ -422,44 +487,44 @@
               "position": [
                 4,
                 8,
-                -10
+                -2
               ],
               "texture_position": [
-                16,
-                52
+                48,
+                20
               ]
             },
             {
               "position": [
                 4,
                 -8,
-                -10
+                -2
               ],
               "texture_position": [
-                32,
-                52
+                64,
+                20
               ]
             },
             {
               "position": [
                 -4,
                 -8,
-                -10
+                -2
               ],
               "texture_position": [
-                32,
-                60
+                64,
+                28
               ]
             },
             {
               "position": [
                 -4,
                 8,
-                -10
+                -2
               ],
               "texture_position": [
-                16,
-                60
+                48,
+                28
               ]
             }
           ],
@@ -490,302 +555,1988 @@
               "position": [
                 4,
                 -8,
-                -10
+                -2
               ],
               "texture_position": [
                 46,
-                20
+                12
               ]
             },
             {
               "position": [
                 4,
                 8,
-                -10
+                -2
+              ],
+              "texture_position": [
+                30,
+                12
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                -4,
+                -8,
+                10
+              ],
+              "texture_position": [
+                46,
+                0
+              ]
+            },
+            {
+              "position": [
+                -4,
+                8,
+                10
+              ],
+              "texture_position": [
+                62,
+                0
+              ]
+            },
+            {
+              "position": [
+                -4,
+                8,
+                -2
+              ],
+              "texture_position": [
+                62,
+                12
+              ]
+            },
+            {
+              "position": [
+                -4,
+                -8,
+                -2
+              ],
+              "texture_position": [
+                46,
+                12
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                -4,
+                8,
+                10
+              ],
+              "texture_position": [
+                0,
+                44
+              ]
+            },
+            {
+              "position": [
+                4,
+                8,
+                10
+              ],
+              "texture_position": [
+                8,
+                44
+              ]
+            },
+            {
+              "position": [
+                4,
+                8,
+                -2
+              ],
+              "texture_position": [
+                8,
+                56
+              ]
+            },
+            {
+              "position": [
+                -4,
+                8,
+                -2
+              ],
+              "texture_position": [
+                0,
+                56
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                4,
+                -8,
+                10
+              ],
+              "texture_position": [
+                8,
+                44
+              ]
+            },
+            {
+              "position": [
+                -4,
+                -8,
+                10
+              ],
+              "texture_position": [
+                16,
+                44
+              ]
+            },
+            {
+              "position": [
+                -4,
+                -8,
+                -2
+              ],
+              "texture_position": [
+                16,
+                56
+              ]
+            },
+            {
+              "position": [
+                4,
+                -8,
+                -2
+              ],
+              "texture_position": [
+                8,
+                56
+              ]
+            }
+          ]
+        ]
+      },
+      "abdomen": {
+        "transformations": [],
+        "quads": [
+          [
+            {
+              "position": [
+                -4,
+                6,
+                0
+              ],
+              "texture_position": [
+                50,
+                28
+              ]
+            },
+            {
+              "position": [
+                -4,
+                -6,
+                0
+              ],
+              "texture_position": [
+                62,
+                28
+              ]
+            },
+            {
+              "position": [
+                4,
+                -6,
+                0
+              ],
+              "texture_position": [
+                62,
+                36
+              ]
+            },
+            {
+              "position": [
+                4,
+                6,
+                0
+              ],
+              "texture_position": [
+                50,
+                36
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                4,
+                6,
+                -8
+              ],
+              "texture_position": [
+                18,
+                52
+              ]
+            },
+            {
+              "position": [
+                4,
+                -6,
+                -8
+              ],
+              "texture_position": [
+                30,
+                52
+              ]
+            },
+            {
+              "position": [
+                -4,
+                -6,
+                -8
+              ],
+              "texture_position": [
+                30,
+                60
+              ]
+            },
+            {
+              "position": [
+                -4,
+                6,
+                -8
+              ],
+              "texture_position": [
+                18,
+                60
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                4,
+                6,
+                0
+              ],
+              "texture_position": [
+                32,
+                12
+              ]
+            },
+            {
+              "position": [
+                4,
+                -6,
+                0
+              ],
+              "texture_position": [
+                44,
+                12
+              ]
+            },
+            {
+              "position": [
+                4,
+                -6,
+                -8
+              ],
+              "texture_position": [
+                44,
+                20
+              ]
+            },
+            {
+              "position": [
+                4,
+                6,
+                -8
+              ],
+              "texture_position": [
+                32,
+                20
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                -4,
+                -6,
+                0
+              ],
+              "texture_position": [
+                48,
+                12
+              ]
+            },
+            {
+              "position": [
+                -4,
+                6,
+                0
+              ],
+              "texture_position": [
+                60,
+                12
+              ]
+            },
+            {
+              "position": [
+                -4,
+                6,
+                -8
+              ],
+              "texture_position": [
+                60,
+                20
+              ]
+            },
+            {
+              "position": [
+                -4,
+                -6,
+                -8
+              ],
+              "texture_position": [
+                48,
+                20
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                -4,
+                6,
+                0
+              ],
+              "texture_position": [
+                2,
+                56
+              ]
+            },
+            {
+              "position": [
+                4,
+                6,
+                0
+              ],
+              "texture_position": [
+                10,
+                56
+              ]
+            },
+            {
+              "position": [
+                4,
+                6,
+                -8
+              ],
+              "texture_position": [
+                10,
+                64
+              ]
+            },
+            {
+              "position": [
+                -4,
+                6,
+                -8
+              ],
+              "texture_position": [
+                2,
+                64
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                4,
+                -6,
+                0
+              ],
+              "texture_position": [
+                8,
+                56
+              ]
+            },
+            {
+              "position": [
+                -4,
+                -6,
+                0
+              ],
+              "texture_position": [
+                16,
+                56
+              ]
+            },
+            {
+              "position": [
+                -4,
+                -6,
+                -8
+              ],
+              "texture_position": [
+                16,
+                64
+              ]
+            },
+            {
+              "position": [
+                4,
+                -6,
+                -8
+              ],
+              "texture_position": [
+                8,
+                64
+              ]
+            }
+          ]
+        ]
+      },
+      "right_shoulder": {
+        "transformations": [],
+        "quads": [
+          [
+            {
+              "position": [
+                -3,
+                3,
+                4
+              ],
+              "texture_position": [
+                32,
+                44
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                4
+              ],
+              "texture_position": [
+                38,
+                44
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                4
+              ],
+              "texture_position": [
+                38,
+                50
+              ]
+            },
+            {
+              "position": [
+                3,
+                3,
+                4
+              ],
+              "texture_position": [
+                32,
+                50
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                3,
+                3,
+                -8
+              ],
+              "texture_position": [
+                44,
+                44
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                -8
+              ],
+              "texture_position": [
+                50,
+                44
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                -8
+              ],
+              "texture_position": [
+                50,
+                50
+              ]
+            },
+            {
+              "position": [
+                -3,
+                3,
+                -8
+              ],
+              "texture_position": [
+                44,
+                50
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                3,
+                3,
+                4
+              ],
+              "texture_position": [
+                6,
+                20
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                4
+              ],
+              "texture_position": [
+                12,
+                20
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                -8
+              ],
+              "texture_position": [
+                12,
+                32
+              ]
+            },
+            {
+              "position": [
+                3,
+                3,
+                -8
+              ],
+              "texture_position": [
+                6,
+                32
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                -3,
+                -3,
+                4
+              ],
+              "texture_position": [
+                0,
+                20
+              ]
+            },
+            {
+              "position": [
+                -3,
+                3,
+                4
+              ],
+              "texture_position": [
+                6,
+                20
+              ]
+            },
+            {
+              "position": [
+                -3,
+                3,
+                -8
+              ],
+              "texture_position": [
+                6,
+                32
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                -8
+              ],
+              "texture_position": [
+                0,
+                32
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                -3,
+                3,
+                4
+              ],
+              "texture_position": [
+                12,
+                20
+              ]
+            },
+            {
+              "position": [
+                3,
+                3,
+                4
+              ],
+              "texture_position": [
+                18,
+                20
+              ]
+            },
+            {
+              "position": [
+                3,
+                3,
+                -8
+              ],
+              "texture_position": [
+                18,
+                32
+              ]
+            },
+            {
+              "position": [
+                -3,
+                3,
+                -8
+              ],
+              "texture_position": [
+                12,
+                32
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                3,
+                -3,
+                4
+              ],
+              "texture_position": [
+                18,
+                20
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                4
+              ],
+              "texture_position": [
+                24,
+                20
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                -8
+              ],
+              "texture_position": [
+                24,
+                32
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                -8
+              ],
+              "texture_position": [
+                18,
+                32
+              ]
+            }
+          ]
+        ]
+      },
+      "right_forearm": {
+        "transformations": [],
+        "quads": [
+          [
+            {
+              "position": [
+                -3,
+                3,
+                0
+              ],
+              "texture_position": [
+                44,
+                50
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                0
+              ],
+              "texture_position": [
+                50,
+                50
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                0
+              ],
+              "texture_position": [
+                50,
+                56
+              ]
+            },
+            {
+              "position": [
+                3,
+                3,
+                0
+              ],
+              "texture_position": [
+                44,
+                56
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                3,
+                3,
+                -12
+              ],
+              "texture_position": [
+                32,
+                50
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                -12
+              ],
+              "texture_position": [
+                38,
+                50
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                -12
+              ],
+              "texture_position": [
+                38,
+                56
+              ]
+            },
+            {
+              "position": [
+                -3,
+                3,
+                -12
+              ],
+              "texture_position": [
+                32,
+                56
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                3,
+                3,
+                0
+              ],
+              "texture_position": [
+                6,
+                32
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                0
+              ],
+              "texture_position": [
+                12,
+                32
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                -12
+              ],
+              "texture_position": [
+                12,
+                44
+              ]
+            },
+            {
+              "position": [
+                3,
+                3,
+                -12
+              ],
+              "texture_position": [
+                6,
+                44
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                -3,
+                -3,
+                0
+              ],
+              "texture_position": [
+                0,
+                32
+              ]
+            },
+            {
+              "position": [
+                -3,
+                3,
+                0
+              ],
+              "texture_position": [
+                6,
+                32
+              ]
+            },
+            {
+              "position": [
+                -3,
+                3,
+                -12
+              ],
+              "texture_position": [
+                6,
+                44
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                -12
+              ],
+              "texture_position": [
+                0,
+                44
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                -3,
+                3,
+                0
+              ],
+              "texture_position": [
+                12,
+                32
+              ]
+            },
+            {
+              "position": [
+                3,
+                3,
+                0
+              ],
+              "texture_position": [
+                18,
+                32
+              ]
+            },
+            {
+              "position": [
+                3,
+                3,
+                -12
+              ],
+              "texture_position": [
+                18,
+                44
+              ]
+            },
+            {
+              "position": [
+                -3,
+                3,
+                -12
+              ],
+              "texture_position": [
+                12,
+                44
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                3,
+                -3,
+                0
+              ],
+              "texture_position": [
+                18,
+                32
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                0
+              ],
+              "texture_position": [
+                24,
+                32
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                -12
+              ],
+              "texture_position": [
+                24,
+                44
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                -12
+              ],
+              "texture_position": [
+                18,
+                44
+              ]
+            }
+          ]
+        ]
+      },
+      "left_shoulder": {
+        "transformations": [],
+        "quads": [
+          [
+            {
+              "position": [
+                -3,
+                3,
+                4
+              ],
+              "texture_position": [
+                38,
+                44
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                4
+              ],
+              "texture_position": [
+                32,
+                44
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                4
+              ],
+              "texture_position": [
+                32,
+                50
+              ]
+            },
+            {
+              "position": [
+                3,
+                3,
+                4
+              ],
+              "texture_position": [
+                38,
+                50
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                3,
+                3,
+                -8
+              ],
+              "texture_position": [
+                50,
+                44
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                -8
+              ],
+              "texture_position": [
+                44,
+                44
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                -8
+              ],
+              "texture_position": [
+                44,
+                50
+              ]
+            },
+            {
+              "position": [
+                -3,
+                3,
+                -8
+              ],
+              "texture_position": [
+                50,
+                50
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                3,
+                3,
+                4
+              ],
+              "texture_position": [
+                12,
+                20
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                4
+              ],
+              "texture_position": [
+                6,
+                20
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                -8
+              ],
+              "texture_position": [
+                6,
+                32
+              ]
+            },
+            {
+              "position": [
+                3,
+                3,
+                -8
+              ],
+              "texture_position": [
+                12,
+                32
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                -3,
+                -3,
+                4
+              ],
+              "texture_position": [
+                6,
+                20
+              ]
+            },
+            {
+              "position": [
+                -3,
+                3,
+                4
+              ],
+              "texture_position": [
+                0,
+                20
+              ]
+            },
+            {
+              "position": [
+                -3,
+                3,
+                -8
+              ],
+              "texture_position": [
+                0,
+                32
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                -8
+              ],
+              "texture_position": [
+                6,
+                32
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                -3,
+                3,
+                4
+              ],
+              "texture_position": [
+                24,
+                20
+              ]
+            },
+            {
+              "position": [
+                3,
+                3,
+                4
+              ],
+              "texture_position": [
+                18,
+                20
+              ]
+            },
+            {
+              "position": [
+                3,
+                3,
+                -8
+              ],
+              "texture_position": [
+                18,
+                32
+              ]
+            },
+            {
+              "position": [
+                -3,
+                3,
+                -8
+              ],
+              "texture_position": [
+                24,
+                32
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                3,
+                -3,
+                4
+              ],
+              "texture_position": [
+                18,
+                20
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                4
+              ],
+              "texture_position": [
+                12,
+                20
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                -8
+              ],
+              "texture_position": [
+                12,
+                32
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                -8
+              ],
+              "texture_position": [
+                18,
+                32
+              ]
+            }
+          ]
+        ]
+      },
+      "left_forearm": {
+        "transformations": [],
+        "quads": [
+          [
+            {
+              "position": [
+                -3,
+                3,
+                0
+              ],
+              "texture_position": [
+                50,
+                50
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                0
+              ],
+              "texture_position": [
+                44,
+                50
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                0
+              ],
+              "texture_position": [
+                44,
+                56
+              ]
+            },
+            {
+              "position": [
+                3,
+                3,
+                0
+              ],
+              "texture_position": [
+                50,
+                56
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                3,
+                3,
+                -12
+              ],
+              "texture_position": [
+                38,
+                50
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                -12
+              ],
+              "texture_position": [
+                32,
+                50
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                -12
+              ],
+              "texture_position": [
+                32,
+                56
+              ]
+            },
+            {
+              "position": [
+                -3,
+                3,
+                -12
+              ],
+              "texture_position": [
+                38,
+                56
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                3,
+                3,
+                0
+              ],
+              "texture_position": [
+                12,
+                32
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                0
+              ],
+              "texture_position": [
+                6,
+                32
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                -12
+              ],
+              "texture_position": [
+                6,
+                44
+              ]
+            },
+            {
+              "position": [
+                3,
+                3,
+                -12
+              ],
+              "texture_position": [
+                12,
+                44
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                -3,
+                -3,
+                0
+              ],
+              "texture_position": [
+                6,
+                32
+              ]
+            },
+            {
+              "position": [
+                -3,
+                3,
+                0
+              ],
+              "texture_position": [
+                0,
+                32
+              ]
+            },
+            {
+              "position": [
+                -3,
+                3,
+                -12
+              ],
+              "texture_position": [
+                0,
+                44
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                -12
+              ],
+              "texture_position": [
+                6,
+                44
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                -3,
+                3,
+                0
+              ],
+              "texture_position": [
+                24,
+                32
+              ]
+            },
+            {
+              "position": [
+                3,
+                3,
+                0
+              ],
+              "texture_position": [
+                18,
+                32
+              ]
+            },
+            {
+              "position": [
+                3,
+                3,
+                -12
+              ],
+              "texture_position": [
+                18,
+                44
+              ]
+            },
+            {
+              "position": [
+                -3,
+                3,
+                -12
+              ],
+              "texture_position": [
+                24,
+                44
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                3,
+                -3,
+                0
+              ],
+              "texture_position": [
+                18,
+                32
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                0
+              ],
+              "texture_position": [
+                12,
+                32
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                -12
+              ],
+              "texture_position": [
+                12,
+                44
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                -12
+              ],
+              "texture_position": [
+                18,
+                44
+              ]
+            }
+          ]
+        ]
+      },
+      "right_thigh": {
+        "transformations": [],
+        "quads": [
+          [
+            {
+              "position": [
+                -3,
+                3,
+                4
+              ],
+              "texture_position": [
+                38,
+                44
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                4
+              ],
+              "texture_position": [
+                44,
+                44
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                4
+              ],
+              "texture_position": [
+                44,
+                50
+              ]
+            },
+            {
+              "position": [
+                3,
+                3,
+                4
+              ],
+              "texture_position": [
+                38,
+                50
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                3,
+                3,
+                -8
+              ],
+              "texture_position": [
+                50,
+                44
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                -8
+              ],
+              "texture_position": [
+                56,
+                44
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                -8
+              ],
+              "texture_position": [
+                56,
+                50
+              ]
+            },
+            {
+              "position": [
+                -3,
+                3,
+                -8
+              ],
+              "texture_position": [
+                50,
+                50
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                3,
+                3,
+                4
               ],
               "texture_position": [
                 30,
                 20
               ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                4
+              ],
+              "texture_position": [
+                36,
+                20
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                -8
+              ],
+              "texture_position": [
+                36,
+                32
+              ]
+            },
+            {
+              "position": [
+                3,
+                3,
+                -8
+              ],
+              "texture_position": [
+                30,
+                32
+              ]
             }
           ],
           [
             {
               "position": [
-                -4,
-                -8,
-                10
+                -3,
+                -3,
+                4
               ],
               "texture_position": [
-                46,
+                24,
+                20
+              ]
+            },
+            {
+              "position": [
+                -3,
+                3,
+                4
+              ],
+              "texture_position": [
+                30,
+                20
+              ]
+            },
+            {
+              "position": [
+                -3,
+                3,
+                -8
+              ],
+              "texture_position": [
+                30,
+                32
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                -8
+              ],
+              "texture_position": [
+                24,
+                32
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                -3,
+                3,
+                4
+              ],
+              "texture_position": [
+                36,
+                20
+              ]
+            },
+            {
+              "position": [
+                3,
+                3,
+                4
+              ],
+              "texture_position": [
+                42,
+                20
+              ]
+            },
+            {
+              "position": [
+                3,
+                3,
+                -8
+              ],
+              "texture_position": [
+                42,
+                32
+              ]
+            },
+            {
+              "position": [
+                -3,
+                3,
+                -8
+              ],
+              "texture_position": [
+                36,
+                32
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                3,
+                -3,
+                4
+              ],
+              "texture_position": [
+                42,
+                20
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                4
+              ],
+              "texture_position": [
+                48,
+                20
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                -8
+              ],
+              "texture_position": [
+                48,
+                32
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                -8
+              ],
+              "texture_position": [
+                42,
+                32
+              ]
+            }
+          ]
+        ]
+      },
+      "right_shank": {
+        "transformations": [],
+        "quads": [
+          [
+            {
+              "position": [
+                -3,
+                3,
                 0
+              ],
+              "texture_position": [
+                50,
+                50
               ]
             },
             {
               "position": [
-                -4,
-                8,
-                10
-              ],
-              "texture_position": [
-                62,
+                -3,
+                -3,
                 0
+              ],
+              "texture_position": [
+                56,
+                50
               ]
             },
             {
               "position": [
-                -4,
-                8,
-                -10
+                3,
+                -3,
+                0
               ],
               "texture_position": [
-                62,
-                20
+                56,
+                56
               ]
             },
             {
               "position": [
-                -4,
-                -8,
-                -10
+                3,
+                3,
+                0
               ],
               "texture_position": [
-                46,
-                20
+                50,
+                56
               ]
             }
           ],
           [
             {
               "position": [
-                -4,
-                8,
-                10
+                3,
+                3,
+                -12
               ],
               "texture_position": [
-                0,
-                44
+                38,
+                50
               ]
             },
             {
               "position": [
-                4,
-                8,
-                10
+                3,
+                -3,
+                -12
               ],
               "texture_position": [
-                8,
-                44
+                44,
+                50
               ]
             },
             {
               "position": [
-                4,
-                8,
-                -10
+                -3,
+                -3,
+                -12
               ],
               "texture_position": [
-                8,
-                64
+                44,
+                56
               ]
             },
             {
               "position": [
-                -4,
-                8,
-                -10
+                -3,
+                3,
+                -12
               ],
               "texture_position": [
-                0,
-                64
+                38,
+                56
               ]
             }
           ],
           [
             {
               "position": [
-                4,
-                -8,
-                10
+                3,
+                3,
+                0
               ],
               "texture_position": [
-                8,
+                30,
+                32
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                0
+              ],
+              "texture_position": [
+                36,
+                32
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                -12
+              ],
+              "texture_position": [
+                36,
                 44
               ]
             },
             {
               "position": [
-                -4,
-                -8,
-                10
+                3,
+                3,
+                -12
               ],
               "texture_position": [
-                16,
-                44
-              ]
-            },
-            {
-              "position": [
-                -4,
-                -8,
-                -10
-              ],
-              "texture_position": [
-                16,
-                64
-              ]
-            },
-            {
-              "position": [
-                4,
-                -8,
-                -10
-              ],
-              "texture_position": [
-                8,
-                64
-              ]
-            }
-          ]
-        ]
-      },
-      "right_hand": {
-        "transformations": [],
-        "quads": [
-          [
-            {
-              "position": [
-                -4,
-                4,
-                4
-              ],
-              "texture_position": [
-                32,
-                44
-              ]
-            },
-            {
-              "position": [
-                -4,
-                -4,
-                4
-              ],
-              "texture_position": [
-                40,
-                44
-              ]
-            },
-            {
-              "position": [
-                4,
-                -4,
-                4
-              ],
-              "texture_position": [
-                40,
-                52
-              ]
-            },
-            {
-              "position": [
-                4,
-                4,
-                4
-              ],
-              "texture_position": [
-                32,
-                52
-              ]
-            }
-          ],
-          [
-            {
-              "position": [
-                4,
-                4,
-                -20
-              ],
-              "texture_position": [
-                32,
-                52
-              ]
-            },
-            {
-              "position": [
-                4,
-                -4,
-                -20
-              ],
-              "texture_position": [
-                40,
-                52
-              ]
-            },
-            {
-              "position": [
-                -4,
-                -4,
-                -20
-              ],
-              "texture_position": [
-                40,
-                60
-              ]
-            },
-            {
-              "position": [
-                -4,
-                4,
-                -20
-              ],
-              "texture_position": [
-                32,
-                60
-              ]
-            }
-          ],
-          [
-            {
-              "position": [
-                4,
-                4,
-                4
-              ],
-              "texture_position": [
-                8,
-                20
-              ]
-            },
-            {
-              "position": [
-                4,
-                -4,
-                4
-              ],
-              "texture_position": [
-                16,
-                20
-              ]
-            },
-            {
-              "position": [
-                4,
-                -4,
-                -20
-              ],
-              "texture_position": [
-                16,
-                44
-              ]
-            },
-            {
-              "position": [
-                4,
-                4,
-                -20
-              ],
-              "texture_position": [
-                8,
+                30,
                 44
               ]
             }
@@ -793,91 +2544,91 @@
           [
             {
               "position": [
-                -4,
-                -4,
-                4
-              ],
-              "texture_position": [
-                0,
-                20
-              ]
-            },
-            {
-              "position": [
-                -4,
-                4,
-                4
-              ],
-              "texture_position": [
-                8,
-                20
-              ]
-            },
-            {
-              "position": [
-                -4,
-                4,
-                -20
-              ],
-              "texture_position": [
-                8,
-                44
-              ]
-            },
-            {
-              "position": [
-                -4,
-                -4,
-                -20
-              ],
-              "texture_position": [
-                0,
-                44
-              ]
-            }
-          ],
-          [
-            {
-              "position": [
-                -4,
-                4,
-                4
-              ],
-              "texture_position": [
-                16,
-                20
-              ]
-            },
-            {
-              "position": [
-                4,
-                4,
-                4
+                -3,
+                -3,
+                0
               ],
               "texture_position": [
                 24,
-                20
+                32
               ]
             },
             {
               "position": [
-                4,
-                4,
-                -20
+                -3,
+                3,
+                0
+              ],
+              "texture_position": [
+                30,
+                32
+              ]
+            },
+            {
+              "position": [
+                -3,
+                3,
+                -12
+              ],
+              "texture_position": [
+                30,
+                44
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                -12
               ],
               "texture_position": [
                 24,
                 44
               ]
+            }
+          ],
+          [
+            {
+              "position": [
+                -3,
+                3,
+                0
+              ],
+              "texture_position": [
+                36,
+                32
+              ]
             },
             {
               "position": [
-                -4,
-                4,
-                -20
+                3,
+                3,
+                0
               ],
               "texture_position": [
-                16,
+                42,
+                32
+              ]
+            },
+            {
+              "position": [
+                3,
+                3,
+                -12
+              ],
+              "texture_position": [
+                42,
+                44
+              ]
+            },
+            {
+              "position": [
+                -3,
+                3,
+                -12
+              ],
+              "texture_position": [
+                36,
                 44
               ]
             }
@@ -885,254 +2636,208 @@
           [
             {
               "position": [
-                4,
-                -4,
-                4
+                3,
+                -3,
+                0
               ],
               "texture_position": [
-                24,
-                20
+                42,
+                32
               ]
             },
             {
               "position": [
-                -4,
-                -4,
-                4
+                -3,
+                -3,
+                0
               ],
               "texture_position": [
-                32,
-                20
+                48,
+                32
               ]
             },
             {
               "position": [
-                -4,
-                -4,
-                -20
+                -3,
+                -3,
+                -12
               ],
               "texture_position": [
-                32,
+                48,
                 44
               ]
             },
             {
               "position": [
-                4,
-                -4,
-                -20
+                3,
+                -3,
+                -12
               ],
               "texture_position": [
-                24,
+                42,
                 44
               ]
             }
           ]
         ]
       },
-      "left_hand": {
+      "left_thigh": {
         "transformations": [],
         "quads": [
           [
             {
               "position": [
-                -4,
-                4,
+                -3,
+                3,
                 4
               ],
               "texture_position": [
-                40,
+                44,
                 44
               ]
             },
             {
               "position": [
-                -4,
-                -4,
+                -3,
+                -3,
                 4
               ],
               "texture_position": [
-                32,
+                38,
                 44
               ]
             },
             {
               "position": [
-                4,
-                -4,
+                3,
+                -3,
                 4
               ],
               "texture_position": [
-                32,
-                52
+                38,
+                50
               ]
             },
             {
               "position": [
-                4,
-                4,
+                3,
+                3,
                 4
               ],
               "texture_position": [
-                40,
-                52
+                44,
+                50
               ]
             }
           ],
           [
             {
               "position": [
-                4,
-                4,
-                -20
+                3,
+                3,
+                -8
               ],
               "texture_position": [
-                40,
-                52
+                56,
+                44
               ]
             },
             {
               "position": [
-                4,
-                -4,
-                -20
+                3,
+                -3,
+                -8
               ],
               "texture_position": [
-                32,
-                52
+                50,
+                44
               ]
             },
             {
               "position": [
-                -4,
-                -4,
-                -20
+                -3,
+                -3,
+                -8
               ],
               "texture_position": [
-                32,
-                60
+                50,
+                50
               ]
             },
             {
               "position": [
-                -4,
-                4,
-                -20
+                -3,
+                3,
+                -8
               ],
               "texture_position": [
-                40,
-                60
+                56,
+                50
               ]
             }
           ],
           [
             {
               "position": [
-                4,
-                4,
+                3,
+                3,
                 4
               ],
               "texture_position": [
-                16,
+                36,
                 20
               ]
             },
             {
               "position": [
-                4,
-                -4,
+                3,
+                -3,
                 4
               ],
               "texture_position": [
-                8,
+                30,
                 20
               ]
             },
             {
               "position": [
-                4,
-                -4,
-                -20
+                3,
+                -3,
+                -8
               ],
               "texture_position": [
-                8,
-                44
+                30,
+                32
               ]
             },
             {
               "position": [
-                4,
-                4,
-                -20
+                3,
+                3,
+                -8
               ],
               "texture_position": [
-                16,
-                44
+                36,
+                32
               ]
             }
           ],
           [
             {
               "position": [
-                -4,
-                -4,
+                -3,
+                -3,
                 4
               ],
               "texture_position": [
-                8,
+                30,
                 20
               ]
             },
             {
               "position": [
-                -4,
-                4,
-                4
-              ],
-              "texture_position": [
-                0,
-                20
-              ]
-            },
-            {
-              "position": [
-                -4,
-                4,
-                -20
-              ],
-              "texture_position": [
-                0,
-                44
-              ]
-            },
-            {
-              "position": [
-                -4,
-                -4,
-                -20
-              ],
-              "texture_position": [
-                8,
-                44
-              ]
-            }
-          ],
-          [
-            {
-              "position": [
-                -4,
-                4,
-                4
-              ],
-              "texture_position": [
-                32,
-                20
-              ]
-            },
-            {
-              "position": [
-                4,
-                4,
+                -3,
+                3,
                 4
               ],
               "texture_position": [
@@ -1142,301 +2847,347 @@
             },
             {
               "position": [
-                4,
-                4,
-                -20
+                -3,
+                3,
+                -8
               ],
               "texture_position": [
                 24,
-                44
+                32
               ]
             },
             {
               "position": [
-                -4,
-                4,
-                -20
+                -3,
+                -3,
+                -8
               ],
               "texture_position": [
-                32,
-                44
+                30,
+                32
               ]
             }
           ],
           [
             {
               "position": [
-                4,
-                -4,
+                -3,
+                3,
                 4
               ],
               "texture_position": [
-                24,
+                48,
                 20
               ]
             },
             {
               "position": [
-                -4,
-                -4,
+                3,
+                3,
                 4
               ],
               "texture_position": [
-                16,
+                42,
                 20
               ]
             },
             {
               "position": [
-                -4,
-                -4,
-                -20
+                3,
+                3,
+                -8
               ],
               "texture_position": [
-                16,
-                44
+                42,
+                32
               ]
             },
             {
               "position": [
-                4,
-                -4,
-                -20
+                -3,
+                3,
+                -8
               ],
               "texture_position": [
-                24,
-                44
+                48,
+                32
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                3,
+                -3,
+                4
+              ],
+              "texture_position": [
+                42,
+                20
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                4
+              ],
+              "texture_position": [
+                36,
+                20
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                -8
+              ],
+              "texture_position": [
+                36,
+                32
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                -8
+              ],
+              "texture_position": [
+                42,
+                32
               ]
             }
           ]
         ]
       },
-      "right_leg": {
+      "left_shank": {
         "transformations": [],
         "quads": [
           [
             {
               "position": [
-                -4,
-                4,
-                4
-              ],
-              "texture_position": [
-                40,
-                44
-              ]
-            },
-            {
-              "position": [
-                -4,
-                -4,
-                4
-              ],
-              "texture_position": [
-                48,
-                44
-              ]
-            },
-            {
-              "position": [
-                4,
-                -4,
-                4
-              ],
-              "texture_position": [
-                48,
-                52
-              ]
-            },
-            {
-              "position": [
-                4,
-                4,
-                4
-              ],
-              "texture_position": [
-                40,
-                52
-              ]
-            }
-          ],
-          [
-            {
-              "position": [
-                4,
-                4,
-                -20
-              ],
-              "texture_position": [
-                40,
-                52
-              ]
-            },
-            {
-              "position": [
-                4,
-                -4,
-                -20
-              ],
-              "texture_position": [
-                48,
-                52
-              ]
-            },
-            {
-              "position": [
-                -4,
-                -4,
-                -20
-              ],
-              "texture_position": [
-                48,
-                60
-              ]
-            },
-            {
-              "position": [
-                -4,
-                4,
-                -20
-              ],
-              "texture_position": [
-                40,
-                60
-              ]
-            }
-          ],
-          [
-            {
-              "position": [
-                4,
-                4,
-                4
-              ],
-              "texture_position": [
-                40,
-                20
-              ]
-            },
-            {
-              "position": [
-                4,
-                -4,
-                4
-              ],
-              "texture_position": [
-                48,
-                20
-              ]
-            },
-            {
-              "position": [
-                4,
-                -4,
-                -20
-              ],
-              "texture_position": [
-                48,
-                44
-              ]
-            },
-            {
-              "position": [
-                4,
-                4,
-                -20
-              ],
-              "texture_position": [
-                40,
-                44
-              ]
-            }
-          ],
-          [
-            {
-              "position": [
-                -4,
-                -4,
-                4
-              ],
-              "texture_position": [
-                32,
-                20
-              ]
-            },
-            {
-              "position": [
-                -4,
-                4,
-                4
-              ],
-              "texture_position": [
-                40,
-                20
-              ]
-            },
-            {
-              "position": [
-                -4,
-                4,
-                -20
-              ],
-              "texture_position": [
-                40,
-                44
-              ]
-            },
-            {
-              "position": [
-                -4,
-                -4,
-                -20
-              ],
-              "texture_position": [
-                32,
-                44
-              ]
-            }
-          ],
-          [
-            {
-              "position": [
-                -4,
-                4,
-                4
-              ],
-              "texture_position": [
-                48,
-                20
-              ]
-            },
-            {
-              "position": [
-                4,
-                4,
-                4
+                -3,
+                3,
+                0
               ],
               "texture_position": [
                 56,
-                20
+                50
               ]
             },
             {
               "position": [
-                4,
-                4,
-                -20
+                -3,
+                -3,
+                0
+              ],
+              "texture_position": [
+                50,
+                50
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                0
+              ],
+              "texture_position": [
+                50,
+                56
+              ]
+            },
+            {
+              "position": [
+                3,
+                3,
+                0
               ],
               "texture_position": [
                 56,
+                56
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                3,
+                3,
+                -12
+              ],
+              "texture_position": [
+                44,
+                50
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                -12
+              ],
+              "texture_position": [
+                38,
+                50
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                -12
+              ],
+              "texture_position": [
+                38,
+                56
+              ]
+            },
+            {
+              "position": [
+                -3,
+                3,
+                -12
+              ],
+              "texture_position": [
+                44,
+                56
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                3,
+                3,
+                0
+              ],
+              "texture_position": [
+                36,
+                32
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                0
+              ],
+              "texture_position": [
+                30,
+                32
+              ]
+            },
+            {
+              "position": [
+                3,
+                -3,
+                -12
+              ],
+              "texture_position": [
+                30,
                 44
               ]
             },
             {
               "position": [
-                -4,
-                4,
-                -20
+                3,
+                3,
+                -12
+              ],
+              "texture_position": [
+                36,
+                44
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                -3,
+                -3,
+                0
+              ],
+              "texture_position": [
+                30,
+                32
+              ]
+            },
+            {
+              "position": [
+                -3,
+                3,
+                0
+              ],
+              "texture_position": [
+                24,
+                32
+              ]
+            },
+            {
+              "position": [
+                -3,
+                3,
+                -12
+              ],
+              "texture_position": [
+                24,
+                44
+              ]
+            },
+            {
+              "position": [
+                -3,
+                -3,
+                -12
+              ],
+              "texture_position": [
+                30,
+                44
+              ]
+            }
+          ],
+          [
+            {
+              "position": [
+                -3,
+                3,
+                0
+              ],
+              "texture_position": [
+                48,
+                32
+              ]
+            },
+            {
+              "position": [
+                3,
+                3,
+                0
+              ],
+              "texture_position": [
+                42,
+                32
+              ]
+            },
+            {
+              "position": [
+                3,
+                3,
+                -12
+              ],
+              "texture_position": [
+                42,
+                44
+              ]
+            },
+            {
+              "position": [
+                -3,
+                3,
+                -12
               ],
               "texture_position": [
                 48,
@@ -1447,326 +3198,45 @@
           [
             {
               "position": [
-                4,
-                -4,
-                4
+                3,
+                -3,
+                0
               ],
               "texture_position": [
-                56,
-                20
+                42,
+                32
               ]
             },
             {
               "position": [
-                -4,
-                -4,
-                4
+                -3,
+                -3,
+                0
               ],
               "texture_position": [
-                64,
-                20
+                36,
+                32
               ]
             },
             {
               "position": [
-                -4,
-                -4,
-                -20
+                -3,
+                -3,
+                -12
               ],
               "texture_position": [
-                64,
+                36,
                 44
               ]
             },
             {
               "position": [
-                4,
-                -4,
-                -20
+                3,
+                -3,
+                -12
               ],
               "texture_position": [
-                56,
-                44
-              ]
-            }
-          ]
-        ]
-      },
-      "left_leg": {
-        "transformations": [],
-        "quads": [
-          [
-            {
-              "position": [
-                -4,
-                4,
-                4
-              ],
-              "texture_position": [
-                48,
-                44
-              ]
-            },
-            {
-              "position": [
-                -4,
-                -4,
-                4
-              ],
-              "texture_position": [
-                40,
-                44
-              ]
-            },
-            {
-              "position": [
-                4,
-                -4,
-                4
-              ],
-              "texture_position": [
-                40,
-                52
-              ]
-            },
-            {
-              "position": [
-                4,
-                4,
-                4
-              ],
-              "texture_position": [
-                48,
-                52
-              ]
-            }
-          ],
-          [
-            {
-              "position": [
-                4,
-                4,
-                -20
-              ],
-              "texture_position": [
-                48,
-                52
-              ]
-            },
-            {
-              "position": [
-                4,
-                -4,
-                -20
-              ],
-              "texture_position": [
-                40,
-                52
-              ]
-            },
-            {
-              "position": [
-                -4,
-                -4,
-                -20
-              ],
-              "texture_position": [
-                40,
-                60
-              ]
-            },
-            {
-              "position": [
-                -4,
-                4,
-                -20
-              ],
-              "texture_position": [
-                48,
-                60
-              ]
-            }
-          ],
-          [
-            {
-              "position": [
-                4,
-                4,
-                4
-              ],
-              "texture_position": [
-                48,
-                20
-              ]
-            },
-            {
-              "position": [
-                4,
-                -4,
-                4
-              ],
-              "texture_position": [
-                40,
-                20
-              ]
-            },
-            {
-              "position": [
-                4,
-                -4,
-                -20
-              ],
-              "texture_position": [
-                40,
-                44
-              ]
-            },
-            {
-              "position": [
-                4,
-                4,
-                -20
-              ],
-              "texture_position": [
-                48,
-                44
-              ]
-            }
-          ],
-          [
-            {
-              "position": [
-                -4,
-                -4,
-                4
-              ],
-              "texture_position": [
-                40,
-                20
-              ]
-            },
-            {
-              "position": [
-                -4,
-                4,
-                4
-              ],
-              "texture_position": [
-                32,
-                20
-              ]
-            },
-            {
-              "position": [
-                -4,
-                4,
-                -20
-              ],
-              "texture_position": [
-                32,
-                44
-              ]
-            },
-            {
-              "position": [
-                -4,
-                -4,
-                -20
-              ],
-              "texture_position": [
-                40,
-                44
-              ]
-            }
-          ],
-          [
-            {
-              "position": [
-                -4,
-                4,
-                4
-              ],
-              "texture_position": [
-                64,
-                20
-              ]
-            },
-            {
-              "position": [
-                4,
-                4,
-                4
-              ],
-              "texture_position": [
-                56,
-                20
-              ]
-            },
-            {
-              "position": [
-                4,
-                4,
-                -20
-              ],
-              "texture_position": [
-                56,
-                44
-              ]
-            },
-            {
-              "position": [
-                -4,
-                4,
-                -20
-              ],
-              "texture_position": [
-                64,
-                44
-              ]
-            }
-          ],
-          [
-            {
-              "position": [
-                4,
-                -4,
-                4
-              ],
-              "texture_position": [
-                56,
-                20
-              ]
-            },
-            {
-              "position": [
-                -4,
-                -4,
-                4
-              ],
-              "texture_position": [
-                48,
-                20
-              ]
-            },
-            {
-              "position": [
-                -4,
-                -4,
-                -20
-              ],
-              "texture_position": [
-                48,
-                44
-              ]
-            },
-            {
-              "position": [
-                4,
-                -4,
-                -20
-              ],
-              "texture_position": [
-                56,
+                42,
                 44
               ]
             }
@@ -1781,26 +3251,207 @@
         "transformations": [
           {
             "time": 0,
-            "bone": "right_leg",
+            "bone": "right_thigh",
             "operations": []
           },
           {
             "time": 0,
-            "bone": "left_leg",
+            "bone": "right_shank",
             "operations": [
               {
-                "kind": "Scale",
-                "value": [
+                "kind": "Rotate",
+                "axis": [
+                  0.0,
                   1.0,
+                  0.0
+                ],
+                "angle_degrees": 60.0
+              }
+            ]
+          },
+          {
+            "time": 0,
+            "bone": "left_thigh",
+            "operations": []
+          },
+          {
+            "time": 0,
+            "bone": "left_shank",
+            "operations": []
+          },
+          {
+            "time": 1,
+            "bone": "right_thigh",
+            "operations": [
+              {
+                "kind": "Rotate",
+                "axis": [
+                  0.0,
                   1.0,
-                  0.8
-                ]
+                  0.0
+                ],
+                "angle_degrees": -60.0
               }
             ]
           },
           {
             "time": 1,
-            "bone": "right_leg",
+            "bone": "right_shank",
+            "operations": []
+          },
+          {
+            "time": 1,
+            "bone": "left_thigh",
+            "operations": [
+              {
+                "kind": "Rotate",
+                "axis": [
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                "angle_degrees": 15.0
+              }
+            ]
+          },
+          {
+            "time": 1,
+            "bone": "left_shank",
+            "operations": [
+              {
+                "kind": "Rotate",
+                "axis": [
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                "angle_degrees": 60.0
+              }
+            ]
+          },
+          {
+            "time": 2,
+            "bone": "right_thigh",
+            "operations": []
+          },
+          {
+            "time": 2,
+            "bone": "right_shank",
+            "operations": []
+          },
+          {
+            "time": 2,
+            "bone": "left_thigh",
+            "operations": []
+          },
+          {
+            "time": 2,
+            "bone": "left_shank",
+            "operations": [
+              {
+                "kind": "Rotate",
+                "axis": [
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                "angle_degrees": 60.0
+              }
+            ]
+          },
+          {
+            "time": 3,
+            "bone": "right_thigh",
+            "operations": [
+              {
+                "kind": "Rotate",
+                "axis": [
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                "angle_degrees": 15.0
+              }
+            ]
+          },
+          {
+            "time": 3,
+            "bone": "right_shank",
+            "operations": [
+              {
+                "kind": "Rotate",
+                "axis": [
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                "angle_degrees": 60.0
+              }
+            ]
+          },
+          {
+            "time": 3,
+            "bone": "left_thigh",
+            "operations": [
+              {
+                "kind": "Rotate",
+                "axis": [
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                "angle_degrees": -60.0
+              }
+            ]
+          },
+          {
+            "time": 3,
+            "bone": "left_shank",
+            "operations": []
+          },
+          {
+            "time": 4,
+            "bone": "right_thigh",
+            "operations": []
+          },
+          {
+            "time": 4,
+            "bone": "right_shank",
+            "operations": [
+              {
+                "kind": "Rotate",
+                "axis": [
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                "angle_degrees": 60.0
+              }
+            ]
+          },
+          {
+            "time": 4,
+            "bone": "left_thigh",
+            "operations": []
+          },
+          {
+            "time": 4,
+            "bone": "left_shank",
+            "operations": []
+          },
+          {
+            "time": 0,
+            "bone": "right_shoulder",
+            "operations": []
+          },
+          {
+            "time": 0,
+            "bone": "left_shoulder",
+            "operations": []
+          },
+          {
+            "time": 1,
+            "bone": "right_shoulder",
             "operations": [
               {
                 "kind": "Rotate",
@@ -1815,7 +3466,7 @@
           },
           {
             "time": 1,
-            "bone": "left_leg",
+            "bone": "left_shoulder",
             "operations": [
               {
                 "kind": "Rotate",
@@ -1830,26 +3481,17 @@
           },
           {
             "time": 2,
-            "bone": "right_leg",
-            "operations": [
-              {
-                "kind": "Scale",
-                "value": [
-                  1.0,
-                  1.0,
-                  0.8
-                ]
-              }
-            ]
+            "bone": "right_shoulder",
+            "operations": []
           },
           {
             "time": 2,
-            "bone": "left_leg",
+            "bone": "left_shoulder",
             "operations": []
           },
           {
             "time": 3,
-            "bone": "right_leg",
+            "bone": "right_shoulder",
             "operations": [
               {
                 "kind": "Rotate",
@@ -1864,7 +3506,7 @@
           },
           {
             "time": 3,
-            "bone": "left_leg",
+            "bone": "left_shoulder",
             "operations": [
               {
                 "kind": "Rotate",
@@ -1879,22 +3521,13 @@
           },
           {
             "time": 4,
-            "bone": "right_leg",
+            "bone": "right_shoulder",
             "operations": []
           },
           {
             "time": 4,
-            "bone": "left_leg",
-            "operations": [
-              {
-                "kind": "Scale",
-                "value": [
-                  1.0,
-                  1.0,
-                  0.8
-                ]
-              }
-            ]
+            "bone": "left_shoulder",
+            "operations": []
           }
         ]
       }
