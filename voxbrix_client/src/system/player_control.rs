@@ -43,9 +43,10 @@ impl PlayerControlSystemData<'_> {
         let mut actor_orientation = self.orientation_ac.get_writable(&actor, snapshot).unwrap();
         let mut actor_velocity = self.velocity_ac.get_writable(&actor, snapshot).unwrap();
 
-        let orientation = self
-            .player_movement
-            .take_orientation(self.process_timer.elapsed());
+        let mut orientation = *actor_orientation;
+
+        self.player_movement
+            .modify_orientation(self.process_timer.elapsed(), &mut orientation);
 
         actor_orientation.update(orientation);
 

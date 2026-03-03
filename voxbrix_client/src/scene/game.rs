@@ -443,7 +443,9 @@ impl GameScene {
         );
         orientation_ac.insert(
             player_actor,
-            Orientation::from_yaw_pitch(0.0, 0.0),
+            Orientation {
+                rotation: Default::default(),
+            },
             snapshot,
         );
 

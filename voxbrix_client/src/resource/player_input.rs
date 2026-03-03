@@ -1,14 +1,12 @@
 use std::{
-    f32::consts::{
-        FRAC_PI_2,
-        PI,
-    },
+    f32::consts::PI,
     time::Duration,
 };
 use voxbrix_common::{
     component::actor::orientation::Orientation,
     math::{
         Directions,
+        QuatF32,
         Vec3F32,
     },
 };
@@ -23,18 +21,10 @@ use winit::{
     },
 };
 
-const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
-const PI_2: f32 = PI * 2.0;
+const PITCH_CLAMP_ANGLE: f32 = 0.001;
 
 pub struct PlayerInput {
-    move_left: f32,
-    move_right: f32,
-    move_forward: f32,
-    move_backward: f32,
-    move_up: f32,
-    move_down: f32,
-    yaw: f32,
-    pitch: f32,
+    own_move: [bool; 6],
     rotate_horizontal: f32,
     rotate_vertical: f32,
     speed: f32,
@@ -44,14 +34,7 @@ pub struct PlayerInput {
 impl PlayerInput {
     pub fn new(speed: f32, sensitivity: f32) -> Self {
         Self {
-            move_left: 0.0,
-            move_right: 0.0,
-            move_forward: 0.0,
-            move_backward: 0.0,
-            move_up: 0.0,
-            move_down: 0.0,
-            yaw: 0.0,
-            pitch: 0.0,
+            own_move: [false; 6],
             rotate_horizontal: 0.0,
             rotate_vertical: 0.0,
             speed,
@@ -71,35 +54,31 @@ impl PlayerInput {
             PhysicalKey::Unidentified(_) => return false,
         };
 
-        let amount = if *state == ElementState::Pressed {
-            1.0
-        } else {
-            0.0
-        };
+        let pressed = *state == ElementState::Pressed;
 
         match key {
-            KeyCode::KeyW | KeyCode::ArrowUp => {
-                self.move_forward = amount;
+            KeyCode::KeyS | KeyCode::ArrowDown => {
+                self.own_move[0] = pressed;
                 true
             },
-            KeyCode::KeyS | KeyCode::ArrowDown => {
-                self.move_backward = amount;
+            KeyCode::KeyW | KeyCode::ArrowUp => {
+                self.own_move[1] = pressed;
                 true
             },
             KeyCode::KeyA | KeyCode::ArrowLeft => {
-                self.move_left = amount;
+                self.own_move[2] = pressed;
                 true
             },
             KeyCode::KeyD | KeyCode::ArrowRight => {
-                self.move_right = amount;
-                true
-            },
-            KeyCode::Space => {
-                self.move_up = amount;
+                self.own_move[3] = pressed;
                 true
             },
             KeyCode::ShiftLeft => {
-                self.move_down = amount;
+                self.own_move[4] = pressed;
+                true
+            },
+            KeyCode::Space => {
+                self.own_move[5] = pressed;
                 true
             },
             _ => false,
@@ -111,28 +90,23 @@ impl PlayerInput {
         self.rotate_vertical = vertical;
     }
 
-    /// Take accumulated rotation as Orientation.
-    pub fn take_orientation(&mut self, dt: Duration) -> Orientation {
+    /// Take accumulated rotation as Orientation change.
+    pub fn modify_orientation(&mut self, dt: Duration, orientation: &mut Orientation) {
         let dt = dt.as_secs_f32();
-        self.yaw += self.rotate_horizontal * self.sensitivity * dt;
-        self.pitch += -self.rotate_vertical * self.sensitivity * dt;
+        let d_yaw = self.rotate_horizontal * self.sensitivity * dt;
+        let d_pitch = self.rotate_vertical * self.sensitivity * dt;
 
         self.rotate_horizontal = 0.0;
         self.rotate_vertical = 0.0;
 
-        self.pitch = self.pitch.clamp(-SAFE_FRAC_PI_2, SAFE_FRAC_PI_2);
+        orientation.rotation = QuatF32::from_axis_angle(Vec3F32::UP, d_yaw) * orientation.rotation;
+        let pitch = orientation.forward().angle_between(Vec3F32::UP);
+        let d_pitch =
+            (d_pitch + pitch).clamp(PITCH_CLAMP_ANGLE, const { PI - PITCH_CLAMP_ANGLE }) - pitch;
+        orientation.rotation =
+            QuatF32::from_axis_angle(orientation.right(), d_pitch) * orientation.rotation;
 
-        if self.yaw.abs() > PI_2 {
-            self.yaw = self.yaw - (self.yaw / PI_2).trunc() * PI_2;
-        }
-
-        if self.yaw > PI {
-            self.yaw -= PI_2;
-        } else if self.yaw < -PI {
-            self.yaw += PI_2;
-        }
-
-        Orientation::from_yaw_pitch(self.yaw, self.pitch)
+        orientation.rotation = orientation.rotation.normalize();
     }
 
     pub fn velocity(&self, actor_orientation: Orientation) -> Vec3F32 {
@@ -141,14 +115,24 @@ impl PlayerInput {
 
         let forward = forward.normalize();
 
+        let mut movement = [0.0; 3];
+
+        for (i, is_moving) in self.own_move.into_iter().enumerate() {
+            let axis = i / 2;
+            let sign = (i % 2 * 2) as f32 - 1.0;
+            if is_moving {
+                movement[axis] += sign;
+            }
+        }
+
+        let movement = Vec3F32::from_array(movement);
+
         let direction = if forward.is_nan() {
-            Vec3F32::UP * (self.move_up - self.move_down)
+            Vec3F32::new(0.0, 0.0, movement[2])
         } else {
             let right = Vec3F32::UP.cross(forward);
 
-            forward * (self.move_forward - self.move_backward)
-                + right * (self.move_right - self.move_left)
-                + Vec3F32::UP * (self.move_up - self.move_down)
+            forward * movement[0] + right * movement[1] + Vec3F32::UP * movement[2]
         };
 
         Some(direction.normalize())

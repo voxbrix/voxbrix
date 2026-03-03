@@ -214,15 +214,12 @@ impl ActorRenderSystemData<'_> {
             // Orientation
             // TODO swimming / wallclimbing / etc.
             let base_transform = if let Some(body_orient) =
-                self.orientation_ac.get(&actor).and_then(|ori| {
-                    let mut direction = ori.forward();
-                    direction.z = 0.0;
-                    let direction = direction.normalize();
-                    if direction.is_nan() {
-                        return None;
-                    }
+                self.orientation_ac.get(&actor).map(|ori| {
+                    // Swing-twist decomposition.
+                    // Project quaternion vector part onto axis:
+                    let xyz = Vec3F32::UP * ori.rotation.xyz().dot(Vec3F32::UP);
 
-                    Some(QuatF32::from_rotation_arc(Vec3F32::FORWARD, direction))
+                    QuatF32::from_xyzw(xyz.x, xyz.y, xyz.z, ori.rotation.w).normalize()
                 }) {
                 Mat4F32::from_quat(body_orient)
             } else {
