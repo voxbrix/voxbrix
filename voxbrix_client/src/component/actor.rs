@@ -396,10 +396,11 @@ impl<T> TargetQueue<T> {
             };
 
             if target_queue.target_queue.is_full() {
-                *target_queue.target_queue.last_mut().unwrap() = new;
-            } else {
-                target_queue.target_queue.push(new);
+                target_queue.starting = target_queue.target_queue[0].value;
+                target_queue.target_queue.pop_at(0);
             }
+
+            target_queue.target_queue.push(new);
         }
 
         target_queue
