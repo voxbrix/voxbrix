@@ -3,7 +3,6 @@ pub mod confirmed_snapshots;
 pub mod interface;
 pub mod interface_state;
 pub mod player_actor;
-pub mod player_chunk_view_radius;
 pub mod player_input;
 pub mod render_pool;
 pub mod server_sender;

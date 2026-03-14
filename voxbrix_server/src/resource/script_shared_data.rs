@@ -1,7 +1,6 @@
 use crate::component::{
     actor::position::PositionActorComponent,
     block::class::ClassBlockComponent,
-    dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
     player::{
         actor::ActorPlayerComponent,
         dispatches_packer::DispatchesPackerPlayerComponent,
@@ -22,6 +21,7 @@ use voxbrix_common::{
             Collision,
             CollisionBlockClassComponent,
         },
+        dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
     },
     entity::{
         actor::Actor,

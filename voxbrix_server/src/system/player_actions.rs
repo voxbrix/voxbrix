@@ -17,7 +17,6 @@ use crate::{
         },
         actor_class::hitbox::Hitbox,
         block::class::ClassBlockComponent,
-        dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
         player::{
             actor::ActorPlayerComponent,
             client::ClientPlayerComponent,
@@ -52,6 +51,7 @@ use voxbrix_common::{
             velocity::Velocity,
         },
         block_class::collision::CollisionBlockClassComponent,
+        dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
     },
     entity::{
         action::Action,

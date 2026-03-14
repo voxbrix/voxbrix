@@ -48,7 +48,6 @@ use crate::{
         interface::Interface,
         interface_state::InterfaceState,
         player_actor::PlayerActor,
-        player_chunk_view_radius::PlayerChunkViewRadius,
         player_input::PlayerInput,
         render_pool::{
             CameraParameters,
@@ -129,7 +128,10 @@ use voxbrix_common::{
             opacity::OpacityBlockClassComponent,
         },
         chunk::status::StatusChunkComponent,
-        dimension_kind::sky_light_config::SkyLightConfigDimensionKindComponent,
+        dimension_kind::{
+            player_chunk_view::PlayerChunkViewDimensionKindComponent,
+            sky_light_config::SkyLightConfigDimensionKindComponent,
+        },
     },
     compute,
     entity::{
@@ -221,7 +223,6 @@ pub struct GameSceneParameters {
     pub window: Window,
     pub connection: (Sender, Receiver),
     pub player_actor: Actor,
-    pub player_chunk_view_radius: i32,
 }
 
 pub struct GameScene {
@@ -236,7 +237,6 @@ impl GameScene {
                     mut window,
                     connection,
                     player_actor,
-                    player_chunk_view_radius,
                 },
         } = self;
 
@@ -257,7 +257,6 @@ impl GameScene {
         world.add(label_library);
 
         world.add(PlayerActor(player_actor));
-        world.add(PlayerChunkViewRadius(player_chunk_view_radius));
 
         let (_reliable_tx, reliable_rx) = flume::unbounded::<Vec<u8>>();
         let (unreliable_tx, unreliable_rx) = flume::unbounded::<Vec<u8>>();
@@ -450,6 +449,7 @@ impl GameScene {
         );
 
         init_add::<SkyLightConfigDimensionKindComponent>(&mut world).await?;
+        init_add::<PlayerChunkViewDimensionKindComponent>(&mut world).await?;
 
         window.cursor_visible = false;
 

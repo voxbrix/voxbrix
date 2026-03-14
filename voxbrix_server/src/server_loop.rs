@@ -6,7 +6,6 @@ use crate::{
     component::{
         action::handler::HandlerActionComponent,
         actor::{
-            chunk_activation::ChunkActivationActorComponent,
             class::ClassActorComponent,
             effect::EffectActorComponent,
             movement_change::MovementChangeActorComponent,
@@ -31,10 +30,7 @@ use crate::{
             cache::CacheChunkComponent,
             status::StatusChunkComponent,
         },
-        dimension_kind::{
-            boundary::BoundaryDimensionKindComponent,
-            player_chunk_view::PlayerChunkViewDimensionKindComponent,
-        },
+        dimension_kind::boundary::BoundaryDimensionKindComponent,
         effect::snapshot_handler::SnapshotHandlerEffectComponent,
         player::{
             actor::ActorPlayerComponent,
@@ -94,7 +90,10 @@ use tokio::{
     },
 };
 use voxbrix_common::{
-    component::block_class::collision::CollisionBlockClassComponent,
+    component::{
+        block_class::collision::CollisionBlockClassComponent,
+        dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
+    },
     compute,
     entity::{
         action::Action,
@@ -207,7 +206,6 @@ impl ServerLoop {
         init_add::<VelocityActorComponent>(&mut world).await?;
         init_add::<OrientationActorComponent>(&mut world).await?;
         init_add::<PlayerActorComponent>(&mut world).await?;
-        init_add::<ChunkActivationActorComponent>(&mut world).await?;
         init_add::<EffectActorComponent>(&mut world).await?;
 
         init_add::<SnapshotHandlerEffectComponent>(&mut world).await?;

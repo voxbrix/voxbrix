@@ -195,17 +195,13 @@ impl MenuScene {
                         if ct.is_finished() {
                             match connect_task.take().unwrap().await.unwrap() {
                                 Ok((tx, rx, init_data)) => {
-                                    let InitData {
-                                        actor,
-                                        player_chunk_view_radius,
-                                    } = init_data;
+                                    let InitData { actor } = init_data;
 
                                     return Ok(SceneSwitch::Game {
                                         parameters: GameSceneParameters {
                                             window,
                                             connection: (tx, rx),
                                             player_actor: actor,
-                                            player_chunk_view_radius,
                                         },
                                     });
                                 },

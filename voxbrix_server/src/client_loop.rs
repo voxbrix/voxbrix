@@ -11,7 +11,6 @@ use crate::{
         ToData,
     },
     CLIENT_CONNECTION_TIMEOUT,
-    PLAYER_CHUNK_VIEW_RADIUS,
     PLAYER_TABLE,
     USERNAME_TABLE,
 };
@@ -410,17 +409,9 @@ impl ClientLoop {
         );
 
         let init_data_response = match request {
-            InitRequest::Login => {
-                packer.pack_to_vec(&LoginResult::Success(InitData {
-                    actor,
-                    player_chunk_view_radius: PLAYER_CHUNK_VIEW_RADIUS,
-                }))
-            },
+            InitRequest::Login => packer.pack_to_vec(&LoginResult::Success(InitData { actor })),
             InitRequest::Register => {
-                packer.pack_to_vec(&RegisterResult::Success(InitData {
-                    actor,
-                    player_chunk_view_radius: PLAYER_CHUNK_VIEW_RADIUS,
-                }))
+                packer.pack_to_vec(&RegisterResult::Success(InitData { actor }))
             },
         };
 

@@ -31,7 +31,6 @@ use voxbrix_world::{
     World,
 };
 
-pub mod chunk_activation;
 pub mod class;
 pub mod effect;
 pub mod movement_change;

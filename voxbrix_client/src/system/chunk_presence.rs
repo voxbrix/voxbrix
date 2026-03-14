@@ -1,21 +1,19 @@
-use crate::{
-    component::{
-        actor::position::PositionActorComponent,
-        block::class::ClassBlockComponent,
-        chunk::{
-            render_data::{
-                BlkRenderDataChunkComponent,
-                EnvRenderDataChunkComponent,
-            },
-            sky_light_data::SkyLightDataChunkComponent,
+use crate::component::{
+    actor::position::PositionActorComponent,
+    block::class::ClassBlockComponent,
+    chunk::{
+        render_data::{
+            BlkRenderDataChunkComponent,
+            EnvRenderDataChunkComponent,
         },
+        sky_light_data::SkyLightDataChunkComponent,
     },
-    resource::player_chunk_view_radius::PlayerChunkViewRadius,
 };
 use voxbrix_common::{
     component::{
         block::sky_light::SkyLightBlockComponent,
         chunk::status::StatusChunkComponent,
+        dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
     },
     entity::chunk::Chunk,
 };
@@ -32,8 +30,8 @@ impl System for ChunkPresenceSystem {
 
 #[derive(SystemData)]
 pub struct ChunkPresenceSystemData<'a> {
-    radius: &'a PlayerChunkViewRadius,
     position_ac: &'a PositionActorComponent,
+    player_chunk_view_dkc: &'a PlayerChunkViewDimensionKindComponent,
     status_cc: &'a mut StatusChunkComponent,
     class_bc: &'a mut ClassBlockComponent,
     sky_light_bc: &'a mut SkyLightBlockComponent,
@@ -45,9 +43,12 @@ pub struct ChunkPresenceSystemData<'a> {
 impl ChunkPresenceSystemData<'_> {
     pub fn run(self) {
         let should_exist = |chunk: &Chunk| {
-            self.position_ac
-                .player_chunks()
-                .any(|ctl_chunk| ctl_chunk.radius(self.radius.0).is_within(chunk))
+            self.position_ac.player_chunks().any(|ctl_chunk| {
+                self.player_chunk_view_dkc
+                    .get(&ctl_chunk.dimension.kind)
+                    .to_chunk_radius(ctl_chunk)
+                    .is_within(chunk)
+            })
         };
 
         self.status_cc.retain(|chunk, _| {

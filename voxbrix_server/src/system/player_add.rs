@@ -1,10 +1,6 @@
 use crate::{
     component::{
         actor::{
-            chunk_activation::{
-                ActorChunkActivation,
-                ChunkActivationActorComponent,
-            },
             class::ClassActorComponent,
             player::PlayerActorComponent,
         },
@@ -22,7 +18,6 @@ use crate::{
         actor::ActorRegistry,
         player::Player,
     },
-    PLAYER_CHUNK_VIEW_RADIUS,
 };
 use flume::Sender;
 use voxbrix_common::{
@@ -67,7 +62,6 @@ pub struct PlayerAddSystemData<'a> {
     actor_registry: &'a mut ActorRegistry,
     class_ac: &'a mut ClassActorComponent,
     player_ac: &'a mut PlayerActorComponent,
-    chunk_activation_ac: &'a mut ChunkActivationActorComponent,
 
     player_rq: &'a mut RemovalQueue<Player>,
 }
@@ -90,13 +84,6 @@ impl PlayerAddSystemData<'_> {
         );
 
         self.player_ac.insert(actor, player);
-
-        self.chunk_activation_ac.insert(
-            actor,
-            ActorChunkActivation {
-                radius: PLAYER_CHUNK_VIEW_RADIUS,
-            },
-        );
 
         self.client_pc.insert(
             player,

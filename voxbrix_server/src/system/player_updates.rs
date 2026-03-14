@@ -5,7 +5,6 @@ use crate::{
             position::PositionActorComponent,
             velocity::VelocityActorComponent,
         },
-        dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
         player::{
             actor::ActorPlayerComponent,
             chunk_update::{
@@ -22,6 +21,7 @@ use log::{
     error,
 };
 use voxbrix_common::{
+    component::dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
     entity::snapshot::ServerSnapshot,
     messages::{
         server::ClientState,

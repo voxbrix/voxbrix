@@ -2,7 +2,6 @@ use crate::{
     component::{
         actor::position::PositionActorComponent,
         chunk::cache::CacheChunkComponent,
-        dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
         player::{
             actor::ActorPlayerComponent,
             chunk_update::ChunkUpdatePlayerComponent,
@@ -15,7 +14,10 @@ use crate::{
     },
     entity::player::Player,
 };
-use voxbrix_common::resource::removal_queue::RemovalQueue;
+use voxbrix_common::{
+    component::dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
+    resource::removal_queue::RemovalQueue,
+};
 use voxbrix_world::{
     System,
     SystemData,

@@ -11,7 +11,6 @@ use crate::{
             health::HealthActorClassComponent,
             model::ModelActorClassComponent,
         },
-        dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
         player::{
             actor::ActorPlayerComponent,
             client::{
@@ -25,6 +24,7 @@ use crate::{
     entity::player::Player,
 };
 use voxbrix_common::{
+    component::dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
     entity::{
         chunk::Chunk,
         snapshot::{

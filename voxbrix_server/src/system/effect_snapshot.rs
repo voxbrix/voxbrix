@@ -5,7 +5,6 @@ use crate::{
             position::PositionActorComponent,
         },
         block::class::ClassBlockComponent,
-        dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
         effect::snapshot_handler::{
             Alteration,
             Condition,
@@ -25,6 +24,7 @@ use voxbrix_common::{
     component::{
         actor::effect::EffectState,
         block_class::collision::CollisionBlockClassComponent,
+        dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
     },
     entity::snapshot::ServerSnapshot,
     pack,

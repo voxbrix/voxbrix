@@ -1,10 +1,6 @@
 use crate::{
     component::{
         actor::{
-            chunk_activation::{
-                ActorChunkActivation,
-                ChunkActivationActorComponent,
-            },
             player::PlayerActorComponent,
             position::PositionActorComponent,
         },
@@ -40,6 +36,7 @@ use redb::{
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use voxbrix_common::{
+    component::dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
     entity::{
         actor::Actor,
         chunk::Chunk,
@@ -57,7 +54,6 @@ use voxbrix_world::{
 #[derive(SystemData)]
 pub struct ChunkActivationSystemData<'a> {
     system: &'a mut ChunkActivationSystem,
-    chunk_activation_ac: &'a ChunkActivationActorComponent,
     position_ac: &'a PositionActorComponent,
     database: &'a Arc<Database>,
     status_cc: &'a mut StatusChunkComponent,
@@ -65,6 +61,7 @@ pub struct ChunkActivationSystemData<'a> {
     rt_handle: &'a Handle,
     shared_event_tx: &'a Sender<SharedEvent>,
     chunk_generation_tx: &'a Sender<ChunkGenerationRequest>,
+    player_chunk_view_dkc: &'a PlayerChunkViewDimensionKindComponent,
 
     class_bc: &'a mut ClassBlockComponent,
     environment_bc: &'a mut EnvironmentBlockComponent,
@@ -97,14 +94,15 @@ impl ChunkActivationSystemData<'_> {
         // Calculating target:
         self.system.target.clear();
         let iter = self
-            .chunk_activation_ac
+            .player_ac
             .iter()
-            .filter_map(|(actor, chunk_activation)| {
-                Some((self.position_ac.get(&actor)?.chunk, chunk_activation))
-            })
-            .flat_map(|(actor_chunk, chunk_activation)| {
-                let ActorChunkActivation { radius } = chunk_activation;
-                let chunk_radius = actor_chunk.radius(*radius);
+            .filter_map(|(actor, _)| Some(self.position_ac.get(&actor)?.chunk))
+            .flat_map(|actor_chunk| {
+                let chunk_radius = self
+                    .player_chunk_view_dkc
+                    .get(&actor_chunk.dimension.kind)
+                    .to_chunk_radius(&actor_chunk);
+
                 chunk_radius.into_iter_simple().map(move |chunk| {
                     let reverse_priority: f64 = actor_chunk
                         .position

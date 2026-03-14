@@ -1,6 +1,4 @@
-use anyhow::Error;
-use serde::Deserialize;
-use voxbrix_common::{
+use crate::{
     component::dimension_kind::DimensionKindComponent,
     entity::chunk::{
         Chunk,
@@ -9,6 +7,8 @@ use voxbrix_common::{
     math::Vec3I32,
     FromDescriptor,
 };
+use anyhow::Error;
+use serde::Deserialize;
 use voxbrix_world::World;
 
 #[derive(Clone, Copy, Deserialize)]

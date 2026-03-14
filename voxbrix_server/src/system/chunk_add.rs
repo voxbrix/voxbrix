@@ -1,9 +1,6 @@
 use crate::{
     component::{
-        actor::{
-            chunk_activation::ChunkActivationActorComponent,
-            position::PositionActorComponent,
-        },
+        actor::position::PositionActorComponent,
         block::{
             class::ClassBlockComponent,
             environment::EnvironmentBlockComponent,
@@ -29,6 +26,7 @@ use crate::{
 };
 use std::sync::Arc;
 use voxbrix_common::{
+    component::dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
     resource::removal_queue::RemovalQueue,
     ChunkData,
 };
@@ -39,9 +37,9 @@ use voxbrix_world::{
 
 #[derive(SystemData)]
 pub struct ChunkAddSystemData<'a> {
-    chunk_activation_ac: &'a ChunkActivationActorComponent,
     position_ac: &'a PositionActorComponent,
     status_cc: &'a mut StatusChunkComponent,
+    player_chunk_view_dkc: &'a PlayerChunkViewDimensionKindComponent,
 
     actor_pc: &'a ActorPlayerComponent,
     client_pc: &'a ClientPlayerComponent,
@@ -83,9 +81,12 @@ impl ChunkAddSystemData<'_> {
 
         for (player, client) in self.actor_pc.iter().filter_map(|(player, actor)| {
             let position = self.position_ac.get(actor)?;
-            let chunk_ticket = self.chunk_activation_ac.get(actor)?;
+            let radius = self
+                .player_chunk_view_dkc
+                .get(&position.chunk.dimension.kind)
+                .to_chunk_radius(&position.chunk);
 
-            if position.chunk.radius(chunk_ticket.radius).is_within(&chunk) {
+            if radius.is_within(&chunk) {
                 Some((player, self.client_pc.get(player)?))
             } else {
                 None

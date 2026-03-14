@@ -10,7 +10,6 @@ use crate::{
             CacheChunkComponent,
             ChunkCache,
         },
-        dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
         player::{
             actor::ActorPlayerComponent,
             client::{
@@ -31,6 +30,7 @@ use crate::{
 };
 use std::sync::Arc;
 use voxbrix_common::{
+    component::dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
     messages::client::{
         ChunkChanges,
         ClientAccept,

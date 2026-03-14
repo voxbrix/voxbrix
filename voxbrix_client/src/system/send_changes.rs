@@ -6,11 +6,11 @@ use crate::{
     },
     resource::{
         confirmed_snapshots::ConfirmedSnapshots,
-        player_chunk_view_radius::PlayerChunkViewRadius,
         server_sender::ServerSender,
     },
 };
 use voxbrix_common::{
+    component::dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
     entity::{
         actor::Actor,
         snapshot::ClientSnapshot,
@@ -43,10 +43,10 @@ pub struct SendChangesSystemData<'a> {
     position_ac: &'a mut PositionActorComponent,
     orientation_ac: &'a mut OrientationActorComponent,
     velocity_ac: &'a mut VelocityActorComponent,
+    player_chunk_view_dkc: &'a PlayerChunkViewDimensionKindComponent,
     packer: &'a mut Packer,
     updates_packer: &'a mut UpdatesPacker,
     actions_packer: &'a mut ClientActionsPacker,
-    player_chunk_view_radius: &'a PlayerChunkViewRadius,
     confirmed_snapshots: &'a ConfirmedSnapshots,
     server_sender: &'a ServerSender,
     actor_rq: &'a mut RemovalQueue<Actor>,
@@ -60,8 +60,9 @@ impl SendChangesSystemData<'_> {
             .iter()
             .filter(|(_, position)| {
                 !self.position_ac.player_chunks().any(|player_chunk| {
-                    player_chunk
-                        .radius(self.player_chunk_view_radius.0)
+                    self.player_chunk_view_dkc
+                        .get(&player_chunk.dimension.kind)
+                        .to_chunk_radius(player_chunk)
                         .is_within(&position.chunk)
                 })
             })

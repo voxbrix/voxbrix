@@ -1,7 +1,6 @@
 use crate::{
     component::{
         actor::{
-            chunk_activation::ChunkActivationActorComponent,
             class::ClassActorComponent,
             effect::EffectActorComponent,
             orientation::OrientationActorComponent,
@@ -67,7 +66,6 @@ pub struct EntityRemovalSystemData<'a> {
     velocity_ac: &'a mut VelocityActorComponent,
     orientation_ac: &'a mut OrientationActorComponent,
     player_ac: &'a mut PlayerActorComponent,
-    chunk_activation_ac: &'a mut ChunkActivationActorComponent,
     effect_ac: &'a mut EffectActorComponent,
     projectile_ac: &'a mut ProjectileActorComponent,
     actor_registry: &'a mut ActorRegistry,
@@ -98,7 +96,6 @@ impl EntityRemovalSystemData<'_> {
             self.orientation_ac.remove(&actor, *self.snapshot);
             self.effect_ac.remove_actor(&actor, *self.snapshot);
             self.player_ac.remove(&actor);
-            self.chunk_activation_ac.remove(&actor);
             self.projectile_ac.remove(&actor);
             self.actor_registry.remove(&actor, *self.snapshot);
         }
