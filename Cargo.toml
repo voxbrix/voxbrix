@@ -25,7 +25,7 @@ rayon = "1.10"
 futures-lite = { version = "2", default-features = false }
 flume = { version = "0.11", default-features = false, features = ["async"] }
 postcard = { version = "1.1", default-features = false }
-serde = { version = ">=1.0.184", default-features = false, features = ["std", "derive"] } 
+serde = { version = ">=1.0.184", default-features = false, features = ["std", "derive", "rc"] } 
 serde-big-array = "0.5.1"
 k256 = { version = "0.13.4", features = ["ecdsa"] }
 lz4_flex = "0.11"

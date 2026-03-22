@@ -1,33 +1,25 @@
-use crate::{
-    component::{
-        actor::position::PositionActorComponent,
-        block::{
-            class::ClassBlockComponent,
-            environment::EnvironmentBlockComponent,
-            metadata::MetadataBlockComponent,
-        },
-        chunk::{
-            cache::CacheChunkComponent,
-            status::{
-                ChunkStatus,
-                StatusChunkComponent,
-            },
-        },
-        player::{
-            actor::ActorPlayerComponent,
-            client::{
-                ClientEvent,
-                ClientPlayerComponent,
-                SendData,
-            },
+use crate::component::{
+    actor::position::PositionActorComponent,
+    block::{
+        class::ClassBlockComponent,
+        environment::EnvironmentBlockComponent,
+        metadata::MetadataBlockComponent,
+    },
+    chunk::{
+        cache::CacheChunkComponent,
+        status::{
+            ChunkStatus,
+            StatusChunkComponent,
         },
     },
-    entity::player::Player,
+    player::{
+        actor::ActorPlayerComponent,
+        chunk_send_queue::ChunkSendQueuePlayerComponent,
+    },
 };
 use std::sync::Arc;
 use voxbrix_common::{
     component::dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
-    resource::removal_queue::RemovalQueue,
     ChunkData,
 };
 use voxbrix_world::{
@@ -42,14 +34,12 @@ pub struct ChunkAddSystemData<'a> {
     player_chunk_view_dkc: &'a PlayerChunkViewDimensionKindComponent,
 
     actor_pc: &'a ActorPlayerComponent,
-    client_pc: &'a ClientPlayerComponent,
+    chunk_send_queue_pc: &'a mut ChunkSendQueuePlayerComponent,
 
     class_bc: &'a mut ClassBlockComponent,
     environment_bc: &'a mut EnvironmentBlockComponent,
     metadata_bc: &'a mut MetadataBlockComponent,
     cache_cc: &'a mut CacheChunkComponent,
-
-    player_rq: &'a mut RemovalQueue<Player>,
 }
 
 pub struct ChunkAddSystem;
@@ -74,32 +64,21 @@ impl ChunkAddSystemData<'_> {
         self.metadata_bc
             .insert_chunk(chunk_data.chunk, chunk_data.block_metadata);
 
-        self.cache_cc
-            .insert(chunk_data.chunk, data_encoded.clone().into());
+        self.cache_cc.insert(chunk_data.chunk, data_encoded.into());
 
         let chunk = chunk_data.chunk;
 
-        for (player, client) in self.actor_pc.iter().filter_map(|(player, actor)| {
+        for player in self.actor_pc.iter().filter_map(|(player, actor)| {
             let position = self.position_ac.get(actor)?;
             let radius = self
                 .player_chunk_view_dkc
                 .get(&position.chunk.dimension.kind)
                 .to_chunk_radius(&position.chunk);
 
-            if radius.is_within(&chunk) {
-                Some((player, self.client_pc.get(player)?))
-            } else {
-                None
-            }
+            radius.is_within(&chunk).then_some(player)
         }) {
-            if client
-                .tx
-                .send(ClientEvent::SendDataReliable {
-                    data: SendData::Arc(data_encoded.clone()),
-                })
-                .is_err()
-            {
-                self.player_rq.enqueue(*player);
+            if let Some(send_queue) = self.chunk_send_queue_pc.get_mut(player) {
+                send_queue.add(chunk);
             }
         }
     }

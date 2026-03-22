@@ -11,6 +11,7 @@ use crate::{
         },
         player::{
             actor::ActorPlayerComponent,
+            chunk_send_queue::ChunkSendQueuePlayerComponent,
             chunk_update::ChunkUpdatePlayerComponent,
             client::ClientPlayerComponent,
             dispatches_packer::DispatchesPackerPlayerComponent,
@@ -73,6 +74,7 @@ pub struct EntityRemovalSystemData<'a> {
     player_rq: &'a mut RemovalQueue<Player>,
 
     client_pc: &'a mut ClientPlayerComponent,
+    chunk_send_queue_pc: &'a mut ChunkSendQueuePlayerComponent,
     chunk_update_pc: &'a mut ChunkUpdatePlayerComponent,
     dispatches_packer_pc: &'a mut DispatchesPackerPlayerComponent,
     actor_pc: &'a mut ActorPlayerComponent,
@@ -82,6 +84,7 @@ impl EntityRemovalSystemData<'_> {
     pub fn run(self) {
         for player in self.player_rq.drain() {
             self.client_pc.remove(&player);
+            self.chunk_send_queue_pc.remove(&player);
             self.chunk_update_pc.remove(&player);
             self.dispatches_packer_pc.remove(&player);
             if let Some(actor) = self.actor_pc.remove(&player) {

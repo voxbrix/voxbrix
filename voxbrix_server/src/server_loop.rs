@@ -34,6 +34,7 @@ use crate::{
         effect::snapshot_handler::SnapshotHandlerEffectComponent,
         player::{
             actor::ActorPlayerComponent,
+            chunk_send_queue::ChunkSendQueuePlayerComponent,
             chunk_update::ChunkUpdatePlayerComponent,
             client::{
                 ClientEvent,
@@ -108,7 +109,6 @@ use voxbrix_common::{
         update::Update,
     },
     messages::{
-        client::ClientAccept,
         ClientActionsUnpacker,
         UpdatesPacker,
         UpdatesUnpacker,
@@ -273,6 +273,7 @@ impl ServerLoop {
         world.add(DispatchesPackerPlayerComponent::new());
         world.add(ActorPlayerComponent::new());
         world.add(ChunkUpdatePlayerComponent::new());
+        world.add(ChunkSendQueuePlayerComponent::new());
 
         init_add::<MovementChangeActorComponent>(&mut world).await?;
         init_add::<ProjectileActorComponent>(&mut world).await?;
@@ -290,9 +291,7 @@ impl ServerLoop {
                         block_metadata,
                     };
 
-                    let data_encoded = packer
-                        .pack_to_vec(&ClientAccept::ChunkData(data.clone()))
-                        .into();
+                    let data_encoded = packer.pack_compressed_to_vec(&data).into();
 
                     let _ =
                         shared_event_tx_clone.send(SharedEvent::ChunkLoaded { data, data_encoded });

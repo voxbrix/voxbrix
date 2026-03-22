@@ -27,12 +27,15 @@ use crate::{
     },
     Database,
     BLOCK_CLASS_TABLE,
+    BLOCK_ENVIRONMENT_TABLE,
+    BLOCK_METADATA_TABLE,
 };
 use std::sync::Arc;
 use voxbrix_common::{
     component::dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
     messages::client::{
         ChunkChanges,
+        ChunkDataDelta,
         ClientAccept,
     },
     pack::Packer,
@@ -87,22 +90,17 @@ impl BlockSyncSystemData<'_> {
                 .unwrap()
                 .clone();
 
-            let cache_data = ClientAccept::ChunkData(ChunkData {
+            let cache_data = ChunkData {
                 chunk: *chunk_changes.chunk,
                 block_classes,
                 block_environment,
                 block_metadata,
-            });
+            };
 
             self.cache_cc.insert(
                 *chunk_changes.chunk,
-                ChunkCache::new(self.packer.pack_to_vec(&cache_data)),
+                ChunkCache::new(self.packer.pack_compressed_to_vec(&cache_data)),
             );
-
-            let blocks_cache = match cache_data {
-                ClientAccept::ChunkData(b) => b.block_classes,
-                _ => panic!(),
-            };
 
             let database = self.database.clone();
 
@@ -113,10 +111,20 @@ impl BlockSyncSystemData<'_> {
                 let mut packer = Packer::new();
                 let db_write = database.begin_write().unwrap();
                 {
-                    let mut table = db_write.open_table(BLOCK_CLASS_TABLE).unwrap();
+                    let mut bc_table = db_write.open_table(BLOCK_CLASS_TABLE).unwrap();
+                    let mut be_table = db_write.open_table(BLOCK_ENVIRONMENT_TABLE).unwrap();
+                    let mut bm_table = db_write.open_table(BLOCK_METADATA_TABLE).unwrap();
 
-                    table
-                        .insert(chunk_db, blocks_cache.to_data(&mut packer))
+                    bc_table
+                        .insert(chunk_db, cache_data.block_classes.to_data(&mut packer))
+                        .expect("server_loop: database write");
+
+                    be_table
+                        .insert(chunk_db, cache_data.block_environment.to_data(&mut packer))
+                        .expect("server_loop: database write");
+
+                    bm_table
+                        .insert(chunk_db, cache_data.block_metadata.to_data(&mut packer))
                         .expect("server_loop: database write");
                 }
                 db_write.commit().unwrap();
@@ -209,11 +217,11 @@ impl BlockSyncSystemData<'_> {
 
             let block_metadata = change_encoder.finish();
 
-            let data = ClientAccept::ChunkChanges {
+            let data = ClientAccept::ChunkDataDelta(ChunkDataDelta {
                 block_class,
                 block_environment,
                 block_metadata,
-            };
+            });
 
             if client
                 .tx

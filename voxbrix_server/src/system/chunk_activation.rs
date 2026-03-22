@@ -41,7 +41,6 @@ use voxbrix_common::{
         actor::Actor,
         chunk::Chunk,
     },
-    messages::client::ClientAccept,
     pack::Packer,
     resource::removal_queue::RemovalQueue,
     ChunkData,
@@ -202,9 +201,7 @@ impl ChunkActivationSystemData<'_> {
                         block_metadata,
                     };
 
-                    let data_encoded = packer
-                        .pack_to_vec(&ClientAccept::ChunkData(data.clone()))
-                        .into();
+                    let data_encoded = packer.pack_compressed_to_vec(&data).into();
 
                     let _ = shared_event_tx.send(SharedEvent::ChunkLoaded { data, data_encoded });
                 } else {

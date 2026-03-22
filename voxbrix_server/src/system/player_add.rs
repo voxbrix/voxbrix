@@ -6,6 +6,10 @@ use crate::{
         },
         player::{
             actor::ActorPlayerComponent,
+            chunk_send_queue::{
+                ChunkSendQueue,
+                ChunkSendQueuePlayerComponent,
+            },
             client::{
                 Client,
                 ClientEvent,
@@ -56,6 +60,7 @@ pub struct PlayerAddSystemData<'a> {
     label_library: &'a LabelLibrary,
 
     actor_pc: &'a mut ActorPlayerComponent,
+    chunk_send_queue_pc: &'a mut ChunkSendQueuePlayerComponent,
     client_pc: &'a mut ClientPlayerComponent,
     dispatches_packer_pc: &'a mut DispatchesPackerPlayerComponent,
 
@@ -97,6 +102,9 @@ impl PlayerAddSystemData<'_> {
         );
 
         self.actor_pc.insert(player, actor);
+
+        self.chunk_send_queue_pc
+            .insert(player, ChunkSendQueue::new());
 
         self.dispatches_packer_pc
             .insert(player, DispatchesPacker::new());

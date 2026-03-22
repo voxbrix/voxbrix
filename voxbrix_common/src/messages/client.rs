@@ -20,7 +20,6 @@ use crate::{
         Pack,
         UnpackError,
     },
-    ChunkData,
 };
 use serde::{
     de::DeserializeOwned,
@@ -258,17 +257,21 @@ pub struct ServerState<'a> {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct ChunkDataDelta<'a> {
+    #[serde(borrow)]
+    pub block_class: ChunkChanges<'a, BlockClass>,
+    #[serde(borrow)]
+    pub block_environment: ChunkChanges<'a, BlockEnvironment>,
+    #[serde(borrow)]
+    pub block_metadata: ChunkChanges<'a, BlockMetadata>,
+}
+
+#[derive(Serialize, Deserialize)]
 pub enum ClientAccept<'a> {
     State(ServerState<'a>),
-    ChunkData(ChunkData),
-    ChunkChanges {
-        #[serde(borrow)]
-        block_class: ChunkChanges<'a, BlockClass>,
-        #[serde(borrow)]
-        block_environment: ChunkChanges<'a, BlockEnvironment>,
-        #[serde(borrow)]
-        block_metadata: ChunkChanges<'a, BlockMetadata>,
-    },
+    // &[&[u8]], where inner &[u8] is individual encoded and compressed ChunkData.
+    ChunkData(&'a [u8]),
+    ChunkDataDelta(ChunkDataDelta<'a>),
 }
 
 impl Pack for ClientAccept<'_> {

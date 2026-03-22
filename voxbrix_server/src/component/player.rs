@@ -1,7 +1,9 @@
 use crate::entity::player::Player;
 use nohash_hasher::IntMap;
+use rayon::prelude::*;
 
 pub mod actor;
+pub mod chunk_send_queue;
 pub mod chunk_update;
 pub mod client;
 pub mod dispatches_packer;
@@ -36,8 +38,13 @@ impl<T> PlayerComponent<T> {
     pub fn iter(&self) -> impl Iterator<Item = (&Player, &T)> {
         self.data.iter()
     }
+}
 
-    pub fn drain(&mut self) -> impl Iterator<Item = (Player, T)> + '_ {
-        self.data.drain()
+impl<T> PlayerComponent<T>
+where
+    T: Sync,
+{
+    pub fn par_iter(&self) -> impl ParallelIterator<Item = (&Player, &T)> + '_ {
+        self.data.par_iter()
     }
 }

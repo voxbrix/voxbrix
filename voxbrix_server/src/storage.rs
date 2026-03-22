@@ -42,7 +42,7 @@ impl StorageThread {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct DataSized<T>(T);
 
 impl<T> DataSized<T>

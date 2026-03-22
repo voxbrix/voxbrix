@@ -21,7 +21,10 @@ use voxbrix_common::{
         ChunkStatus,
         StatusChunkComponent,
     },
-    messages::client::ClientAccept,
+    messages::client::{
+        ChunkDataDelta,
+        ClientAccept,
+    },
     pack::Packer,
     ChunkData,
 };
@@ -71,34 +74,54 @@ impl NetworkInput<'_> {
                         confirmed_snapshots.last_client_snapshot = state.last_client_snapshot;
                         confirmed_snapshots.last_server_snapshot = state.snapshot;
                     },
-                    ClientAccept::ChunkData(ChunkData {
-                        chunk,
-                        block_classes,
-                        block_environment,
-                        block_metadata,
-                    }) => {
-                        world
-                            .get_resource_mut::<ClassBlockComponent>()
-                            .insert_chunk(chunk, block_classes);
-                        world
-                            .get_resource_mut::<EnvironmentBlockComponent>()
-                            .insert_chunk(chunk, block_environment);
-                        world
-                            .get_resource_mut::<MetadataBlockComponent>()
-                            .insert_chunk(chunk, block_metadata);
-                        world
-                            .get_resource_mut::<StatusChunkComponent>()
-                            .insert(chunk, ChunkStatus::Active);
+                    ClientAccept::ChunkData(chunk_data_set) => {
+                        let Ok(chunk_data_set) =
+                            Packer::new().unpack_uncompressed::<Vec<&[u8]>>(chunk_data_set)
+                        else {
+                            error!("unable to decode chunk data set");
+                            return Transition::Menu;
+                        };
 
-                        world
-                            .get_resource_mut::<SkyLightDataChunkComponent>()
-                            .enqueue_chunk(chunk);
+                        let mut packer = Packer::new();
+
+                        for chunk_data_encoded in chunk_data_set {
+                            let Ok(chunk_data) =
+                                packer.unpack_compressed::<ChunkData>(chunk_data_encoded)
+                            else {
+                                error!("unable to decode chunk data set");
+                                return Transition::Menu;
+                            };
+
+                            let ChunkData {
+                                chunk,
+                                block_classes,
+                                block_environment,
+                                block_metadata,
+                            } = chunk_data;
+
+                            world
+                                .get_resource_mut::<ClassBlockComponent>()
+                                .insert_chunk(chunk, block_classes);
+                            world
+                                .get_resource_mut::<EnvironmentBlockComponent>()
+                                .insert_chunk(chunk, block_environment);
+                            world
+                                .get_resource_mut::<MetadataBlockComponent>()
+                                .insert_chunk(chunk, block_metadata);
+                            world
+                                .get_resource_mut::<StatusChunkComponent>()
+                                .insert(chunk, ChunkStatus::Active);
+
+                            world
+                                .get_resource_mut::<SkyLightDataChunkComponent>()
+                                .enqueue_chunk(chunk);
+                        }
                     },
-                    ClientAccept::ChunkChanges {
+                    ClientAccept::ChunkDataDelta(ChunkDataDelta {
                         block_class,
                         block_environment,
                         block_metadata,
-                    } => {
+                    }) => {
                         if world
                             .get_data::<ChunkChangesAcceptSystem>()
                             .run(block_class, block_environment, block_metadata)

@@ -158,11 +158,11 @@ pub struct ChunkRadius {
 }
 
 impl ChunkRadius {
-    pub fn from_boundaries(dimension: Dimension, min: Vec3I32, max: Vec3I32) -> Self {
+    pub fn from_min_max(dimension: Dimension, min: Vec3I32, max: Vec3I32) -> Self {
         Self {
             dimension,
             min_position: min,
-            max_position: max - 1,
+            max_position: max,
         }
     }
 }
