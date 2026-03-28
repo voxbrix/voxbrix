@@ -98,11 +98,11 @@ impl Packer {
         encode_into(data, output)
     }
 
-    pub fn pack_compressed<T>(&mut self, data: &T, output: &mut Vec<u8>)
+    /// Appends compressed `data` to `output` without clearing it first.
+    pub fn pack_compressed_append<T>(&mut self, data: &T, output: &mut Vec<u8>)
     where
         T: Serialize,
     {
-        output.clear();
         self.buffer.clear();
 
         encode_write(data, &mut self.buffer);
@@ -147,7 +147,7 @@ impl Packer {
         T: Serialize,
     {
         let mut output = Vec::new();
-        self.pack_compressed(data, &mut output);
+        self.pack_compressed_append(data, &mut output);
         output
     }
 
@@ -204,7 +204,7 @@ impl Packer {
         output.clear();
 
         if T::DEFAULT_COMPRESSED {
-            self.pack_compressed(data, output)
+            self.pack_compressed_append(data, output)
         } else {
             self.pack_uncompressed(data, output)
         }

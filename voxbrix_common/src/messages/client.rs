@@ -18,6 +18,7 @@ use crate::{
     pack::{
         self,
         Pack,
+        Packer,
         UnpackError,
     },
 };
@@ -26,7 +27,10 @@ use serde::{
     Deserialize,
     Serialize,
 };
-use std::marker::PhantomData;
+use std::{
+    marker::PhantomData,
+    sync::Arc,
+};
 
 #[derive(Serialize, Deserialize)]
 pub struct InitResponse {
@@ -266,14 +270,141 @@ pub struct ChunkDataDelta<'a> {
     pub block_metadata: ChunkChanges<'a, BlockMetadata>,
 }
 
-#[derive(Serialize, Deserialize)]
-pub enum ClientAccept<'a> {
-    State(ServerState<'a>),
-    // &[&[u8]], where inner &[u8] is individual encoded and compressed ChunkData.
-    ChunkData(&'a [u8]),
-    ChunkDataDelta(ChunkDataDelta<'a>),
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ClientAcceptKind {
+    State = 0,
+    ChunkData = 1,
+    ChunkDataDelta = 2,
 }
 
-impl Pack for ClientAccept<'_> {
-    const DEFAULT_COMPRESSED: bool = true;
+impl ClientAcceptKind {
+    fn from_byte(byte: u8) -> Option<Self> {
+        match byte {
+            0 => Some(Self::State),
+            1 => Some(Self::ChunkData),
+            2 => Some(Self::ChunkDataDelta),
+            _ => None,
+        }
+    }
+}
+
+/// Wire layout: [tag: u8 = ClientAcceptKind] [payload: pack_compressed_append].
+pub struct ClientAcceptMessage {
+    bytes: Vec<u8>,
+}
+
+impl ClientAcceptMessage {
+    fn pack_with<T: Serialize>(packer: &mut Packer, kind: ClientAcceptKind, value: &T) -> Self {
+        let mut bytes = Vec::new();
+        bytes.push(kind as u8);
+        packer.pack_compressed_append(value, &mut bytes);
+        Self { bytes }
+    }
+
+    pub fn pack_state(packer: &mut Packer, value: &ServerState<'_>) -> Self {
+        Self::pack_with(packer, ClientAcceptKind::State, value)
+    }
+
+    pub fn pack_chunk_data(packer: &mut Packer, value: &[Arc<[u8]>]) -> Self {
+        Self::pack_with(packer, ClientAcceptKind::ChunkData, &value)
+    }
+
+    pub fn pack_chunk_data_delta(packer: &mut Packer, value: &ChunkDataDelta<'_>) -> Self {
+        Self::pack_with(packer, ClientAcceptKind::ChunkDataDelta, value)
+    }
+
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, UnpackError> {
+        let tag = *bytes.first().ok_or(UnpackError)?;
+        ClientAcceptKind::from_byte(tag).ok_or(UnpackError)?;
+        Ok(Self { bytes })
+    }
+
+    pub fn from_slice(bytes: &[u8]) -> Result<ClientAcceptMessageRef<'_>, UnpackError> {
+        let tag = *bytes.first().ok_or(UnpackError)?;
+        ClientAcceptKind::from_byte(tag).ok_or(UnpackError)?;
+        Ok(ClientAcceptMessageRef { bytes })
+    }
+
+    pub fn kind(&self) -> ClientAcceptKind {
+        ClientAcceptKind::from_byte(self.bytes[0]).expect("tag byte validated on construction")
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.bytes
+    }
+
+    pub fn unpack_state<'a>(
+        &'a self,
+        packer: &'a mut Packer,
+    ) -> Result<ServerState<'a>, UnpackError> {
+        if self.kind() != ClientAcceptKind::State {
+            return Err(UnpackError);
+        }
+        packer.unpack_compressed::<ServerState<'a>>(&self.bytes[1 ..])
+    }
+
+    pub fn unpack_chunk_data<'a>(
+        &'a self,
+        packer: &'a mut Packer,
+    ) -> Result<Vec<&'a [u8]>, UnpackError> {
+        if self.kind() != ClientAcceptKind::ChunkData {
+            return Err(UnpackError);
+        }
+        packer.unpack_compressed::<Vec<&'a [u8]>>(&self.bytes[1 ..])
+    }
+
+    pub fn unpack_chunk_data_delta<'a>(
+        &'a self,
+        packer: &'a mut Packer,
+    ) -> Result<ChunkDataDelta<'a>, UnpackError> {
+        if self.kind() != ClientAcceptKind::ChunkDataDelta {
+            return Err(UnpackError);
+        }
+        packer.unpack_compressed::<ChunkDataDelta<'a>>(&self.bytes[1 ..])
+    }
+}
+
+pub struct ClientAcceptMessageRef<'a> {
+    bytes: &'a [u8],
+}
+
+impl<'a> ClientAcceptMessageRef<'a> {
+    pub fn kind(&self) -> ClientAcceptKind {
+        ClientAcceptKind::from_byte(self.bytes[0]).expect("tag byte validated on construction")
+    }
+
+    pub fn unpack_state<'b>(
+        &'b self,
+        packer: &'b mut Packer,
+    ) -> Result<ServerState<'b>, UnpackError> {
+        if self.kind() != ClientAcceptKind::State {
+            return Err(UnpackError);
+        }
+        packer.unpack_compressed::<ServerState<'b>>(&self.bytes[1 ..])
+    }
+
+    pub fn unpack_chunk_data<'b>(
+        &'b self,
+        packer: &'b mut Packer,
+    ) -> Result<Vec<&'b [u8]>, UnpackError> {
+        if self.kind() != ClientAcceptKind::ChunkData {
+            return Err(UnpackError);
+        }
+        packer.unpack_compressed::<Vec<&'b [u8]>>(&self.bytes[1 ..])
+    }
+
+    pub fn unpack_chunk_data_delta<'b>(
+        &'b self,
+        packer: &'b mut Packer,
+    ) -> Result<ChunkDataDelta<'b>, UnpackError> {
+        if self.kind() != ClientAcceptKind::ChunkDataDelta {
+            return Err(UnpackError);
+        }
+        packer.unpack_compressed::<ChunkDataDelta<'b>>(&self.bytes[1 ..])
+    }
 }

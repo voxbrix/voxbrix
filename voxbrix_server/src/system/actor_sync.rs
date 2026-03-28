@@ -34,7 +34,7 @@ use voxbrix_common::{
     },
     messages::{
         client::{
-            ClientAccept,
+            ClientAcceptMessage,
             ServerState,
         },
         UpdatesPacker,
@@ -253,12 +253,16 @@ impl ActorSyncSystemData<'_> {
                 .expect("no dispatches packer found for a player")
                 .pack();
 
-            let data = self.packer.pack_to_vec(&ClientAccept::State(ServerState {
-                snapshot: *self.snapshot,
-                last_client_snapshot: client.last_client_snapshot,
-                updates,
-                dispatches,
-            }));
+            let data = ClientAcceptMessage::pack_state(
+                self.packer,
+                &ServerState {
+                    snapshot: *self.snapshot,
+                    last_client_snapshot: client.last_client_snapshot,
+                    updates,
+                    dispatches,
+                },
+            )
+            .into_bytes();
 
             if client
                 .tx

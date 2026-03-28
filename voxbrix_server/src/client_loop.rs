@@ -49,6 +49,7 @@ use voxbrix_common::{
     async_ext::StreamExt as _,
     messages::{
         client::{
+            ClientAcceptMessage,
             InitData,
             InitResponse,
             LoginFailure,
@@ -358,8 +359,16 @@ impl ClientLoop {
             Ok(LoopEvent::Exit)
         });
 
-        let (reliable_loop_tx, mut reliable_loop_rx) = local_channel::mpsc::channel::<SendData>();
+        enum ReliableSend {
+            Data(SendData),
+            ChunkData(Vec<Arc<[u8]>>),
+        }
+
+        let (reliable_loop_tx, mut reliable_loop_rx) =
+            local_channel::mpsc::channel::<ReliableSend>();
         let rel_send_task = stream::once_future(async move {
+            let mut packer = Packer::new();
+            let (chunk_tx, chunk_rx) = flume::bounded(1);
             loop {
                 let msg = (async { Ok(reliable_loop_rx.recv().await) })
                     .or(async {
@@ -377,13 +386,30 @@ impl ClientLoop {
                     return Ok(LoopEvent::Exit);
                 };
 
-                reliable_tx
-                    .send_reliable(data.as_slice())
-                    .await
-                    .map_err(|err| {
-                        warn!("client_loop: send_reliable error {:?}", err);
-                        Error::Send
-                    })?;
+                let packed_chunk_data;
+
+                let data = match data {
+                    ReliableSend::Data(ref data) => data.as_slice(),
+                    ReliableSend::ChunkData(data) => {
+                        let chunk_tx = chunk_tx.clone();
+                        rayon::spawn(move || {
+                            let data = ClientAcceptMessage::pack_chunk_data(&mut packer, &data)
+                                .into_bytes();
+
+                            let _ = chunk_tx.send((packer, data));
+                        });
+
+                        (packer, packed_chunk_data) =
+                            chunk_rx.recv_async().await.map_err(|_| Error::Send)?;
+
+                        packed_chunk_data.as_slice()
+                    },
+                };
+
+                reliable_tx.send_reliable(data).await.map_err(|err| {
+                    warn!("client_loop: send_reliable error {:?}", err);
+                    Error::Send
+                })?;
 
                 task::yield_now().await;
             }
@@ -417,7 +443,7 @@ impl ClientLoop {
 
         // Finalize successful connection
         if reliable_loop_tx
-            .send(SendData::Owned(init_data_response))
+            .send(ReliableSend::Data(SendData::Owned(init_data_response)))
             .is_err()
         {
             return Ok(());
@@ -431,9 +457,12 @@ impl ClientLoop {
                             let _ = unreliable_loop_tx.send(data);
                         },
                         ClientEvent::SendDataReliable { data } => {
-                            let _ = reliable_loop_tx.send(data);
+                            let _ = reliable_loop_tx.send(ReliableSend::Data(data));
                         },
-                        _ => {},
+                        ClientEvent::ChunkData { data } => {
+                            let _ = reliable_loop_tx.send(ReliableSend::ChunkData(data));
+                        },
+                        ClientEvent::AssignActor { .. } => {},
                     }
                 },
                 LoopEvent::PeerMessage(message) => {

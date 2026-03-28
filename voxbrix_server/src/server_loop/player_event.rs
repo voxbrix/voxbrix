@@ -12,7 +12,10 @@ use crate::{
 use log::debug;
 use std::mem;
 use voxbrix_common::{
-    messages::server::ServerAccept,
+    messages::server::{
+        ServerAcceptKind,
+        ServerAcceptMessage,
+    },
     pack::Packer,
     resource::removal_queue::RemovalQueue,
 };
@@ -34,17 +37,24 @@ impl PlayerEvent<'_> {
             message,
         } = self;
 
-        let event = packer
-            .unpack::<ServerAccept>(message.data().as_ref())
-            .map_err(|_| {
-                debug!(
-                    "server_loop: unable to parse data from player {:?} on base channel",
-                    player
-                );
-            })?;
+        let bytes = message.data().as_ref();
 
-        match event {
-            ServerAccept::State(state) => {
+        let event = ServerAcceptMessage::from_slice(bytes).map_err(|_| {
+            debug!(
+                "server_loop: unable to parse data from player {:?} on base channel",
+                player
+            );
+        })?;
+
+        match event.kind() {
+            ServerAcceptKind::State => {
+                let state = event.unpack_state(packer).map_err(|_| {
+                    debug!(
+                        "server_loop: unable to parse data from player {:?} on base channel",
+                        player
+                    );
+                })?;
+
                 world
                     .get_data::<PlayerUpdatesSystem>()
                     .run(*player, &state)

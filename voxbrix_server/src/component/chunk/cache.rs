@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use voxbrix_common::component::chunk::ChunkComponent;
 
-/// Compressed, ready-to-be-send ClientAccept with ChunkData.
+/// Compressed, ready-to-be-sent ClientAcceptMessage with ChunkData payload.
 #[derive(Clone)]
 pub struct ChunkCache(Arc<[u8]>);
 

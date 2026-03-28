@@ -18,7 +18,7 @@ use voxbrix_common::{
     messages::{
         server::{
             ClientState,
-            ServerAccept,
+            ServerAcceptMessage,
         },
         ClientActionsPacker,
         UpdatesPacker,
@@ -79,12 +79,16 @@ impl SendChangesSystemData<'_> {
         self.velocity_ac.pack_player(self.updates_packer, lcs);
         self.orientation_ac.pack_player(self.updates_packer, lcs);
 
-        let packed = self.packer.pack_to_vec(&ServerAccept::State(ClientState {
-            snapshot: *self.snapshot,
-            last_server_snapshot: self.confirmed_snapshots.last_server_snapshot,
-            updates: self.updates_packer.pack(),
-            actions: self.actions_packer.pack(),
-        }));
+        let packed = ServerAcceptMessage::pack_state(
+            self.packer,
+            &ClientState {
+                snapshot: *self.snapshot,
+                last_server_snapshot: self.confirmed_snapshots.last_server_snapshot,
+                updates: self.updates_packer.pack(),
+                actions: self.actions_packer.pack(),
+            },
+        )
+        .into_bytes();
 
         let _ = self.server_sender.unreliable.send(packed);
 

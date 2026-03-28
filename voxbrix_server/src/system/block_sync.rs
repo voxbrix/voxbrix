@@ -36,7 +36,7 @@ use voxbrix_common::{
     messages::client::{
         ChunkChanges,
         ChunkDataDelta,
-        ClientAccept,
+        ClientAcceptMessage,
     },
     pack::Packer,
     resource::removal_queue::RemovalQueue,
@@ -217,16 +217,20 @@ impl BlockSyncSystemData<'_> {
 
             let block_metadata = change_encoder.finish();
 
-            let data = ClientAccept::ChunkDataDelta(ChunkDataDelta {
-                block_class,
-                block_environment,
-                block_metadata,
-            });
+            let data = ClientAcceptMessage::pack_chunk_data_delta(
+                self.packer,
+                &ChunkDataDelta {
+                    block_class,
+                    block_environment,
+                    block_metadata,
+                },
+            )
+            .into_bytes();
 
             if client
                 .tx
                 .send(ClientEvent::SendDataReliable {
-                    data: SendData::Owned(self.packer.pack_to_vec(&data)),
+                    data: SendData::Owned(data),
                 })
                 .is_err()
             {

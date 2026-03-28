@@ -9,7 +9,6 @@ use crate::{
             client::{
                 ClientEvent,
                 ClientPlayerComponent,
-                SendData,
             },
         },
     },
@@ -20,8 +19,6 @@ use std::sync::Arc;
 use voxbrix_common::{
     component::dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
     entity::chunk::Chunk,
-    messages::client::ClientAccept,
-    pack::Packer,
     resource::removal_queue::RemovalQueue,
 };
 use voxbrix_world::{
@@ -59,26 +56,16 @@ impl ChunkSendingSystemData<'_> {
             return;
         };
 
-        let complete_chunk_data = chunk_iter
+        let data = chunk_iter
             .flat_map(|chunk| self.cache_cc.get(&chunk))
             .map(|c| c.clone().into_inner())
             .collect::<Vec<Arc<[u8]>>>();
 
-        if complete_chunk_data.is_empty() {
+        if data.is_empty() {
             return;
         }
 
-        let mut packer = Packer::new();
-        let chunk_data_bytes = packer.pack_uncompressed_to_vec(&complete_chunk_data);
-        let data = packer.pack_to_vec(&ClientAccept::ChunkData(&chunk_data_bytes));
-
-        if client
-            .tx
-            .send(ClientEvent::SendDataReliable {
-                data: SendData::Owned(data),
-            })
-            .is_err()
-        {
+        if client.tx.send(ClientEvent::ChunkData { data }).is_err() {
             self.player_rq.enqueue(player);
         }
     }
@@ -92,7 +79,7 @@ impl ChunkSendingSystemData<'_> {
                 self.chunk_update_pc
                     .iter()
                     .map(|(player, _)| *player)
-                    .filter(|player| self.chunk_send_queue_pc.get(&player).is_none()),
+                    .filter(|player| self.chunk_send_queue_pc.get(player).is_none()),
             )
             .collect::<Vec<_>>();
 

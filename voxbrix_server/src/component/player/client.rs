@@ -32,6 +32,7 @@ pub enum ClientEvent {
     AssignActor { actor: Actor },
     SendDataUnreliable { data: SendData },
     SendDataReliable { data: SendData },
+    ChunkData { data: Vec<Arc<[u8]>> },
 }
 
 pub struct Client {
