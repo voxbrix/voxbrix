@@ -35,3 +35,26 @@ export SDKROOT=/path/to/macos_sdk
 export CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=rust-lld
 cargo build --release --target aarch64-apple-darwin -p voxbrix_client
 ```
+
+## Windows x86_64 LLVM MinGW (from Linux x86_64 glibc)
+
+**Required tools:** `gcc`, https://github.com/mstorsjo/llvm-mingw.
+
+### Setup
+
+1. Add `bin` of the installed `llvm-mingw` to `$PATH`:
+
+   ```sh
+   export PATH="$PATH:PATH_TO_LLVM_MINGW/bin"
+   ```
+
+2. Add the cross compilation target:
+
+   ```sh
+   rustup target add x86_64-pc-windows-gnullvm
+   ```
+### Build
+
+```sh
+cargo build --release --target x86_64-pc-windows-gnullvm -p voxbrix_client
+```
