@@ -153,17 +153,25 @@ use voxbrix_common::{
     },
     math::Vec3F32,
     messages::{
+        client::{
+            ClientAcceptKind,
+            ClientAcceptMessage,
+        },
         ClientActionsPacker,
         DispatchesUnpacker,
         UpdatesPacker,
         UpdatesUnpacker,
     },
-    pack::Packer,
+    pack::{
+        Packer,
+        UnpackError,
+    },
     resource::{
         component_map::ComponentMap,
         process_timer::ProcessTimer,
         removal_queue::RemovalQueue,
     },
+    ChunkData,
     LabelLibrary,
     StaticEntity,
 };
@@ -188,8 +196,47 @@ enum Event {
     Process(Frame),
     SendState,
     LocalInput(InputEvent),
-    NetworkInput(Result<Vec<u8>, ClientError>),
+    NetworkInput(Result<NetworkMessage, NetworkError>),
     ChunkCalculation,
+}
+
+pub enum NetworkMessage {
+    State(ClientAcceptMessage),
+    ChunkDataDelta(ClientAcceptMessage),
+    ChunkData(Vec<ChunkData>),
+}
+
+#[derive(Debug)]
+#[allow(dead_code, reason = "fields are read via Debug in error logging")]
+pub enum NetworkError {
+    Transport(ClientError),
+    Decode(UnpackError),
+}
+
+fn unpack_chunk_data(
+    outer_packer: &mut Packer,
+    inner_packer: &mut Packer,
+    message: ClientAcceptMessage,
+) -> Result<Vec<ChunkData>, UnpackError> {
+    // Two packers because the outer one is borrowed by `encoded` while the inner
+    // is decompressing each blob; both are compressed and benefit from buffer reuse.
+    let encoded = message.unpack_chunk_data(outer_packer)?;
+    encoded
+        .into_iter()
+        .map(|b| inner_packer.unpack_compressed::<ChunkData>(b))
+        .collect()
+}
+
+/// Parses a message from the unreliable transport. Only `State` is expected
+/// here; other tags are treated as a decode error.
+fn parse_unreliable(bytes: Vec<u8>) -> Result<NetworkMessage, NetworkError> {
+    let message = ClientAcceptMessage::from_bytes(bytes).map_err(NetworkError::Decode)?;
+    match message.kind() {
+        ClientAcceptKind::State => Ok(NetworkMessage::State(message)),
+        ClientAcceptKind::ChunkData | ClientAcceptKind::ChunkDataDelta => {
+            Err(NetworkError::Decode(UnpackError))
+        },
+    }
 }
 
 #[must_use = "must be handled"]
@@ -262,6 +309,7 @@ impl GameScene {
         let (unreliable_tx, unreliable_rx) = flume::unbounded::<Vec<u8>>();
         let (event_high_prio_tx, event_high_prio_rx) = flume::unbounded::<Event>();
         let (event_low_prio_tx, event_low_prio_rx) = flume::unbounded::<Event>();
+        let (recv_rel_tx, recv_rel_rx) = flume::unbounded::<Vec<u8>>();
 
         let updates_packer = UpdatesPacker::new();
 
@@ -284,7 +332,8 @@ impl GameScene {
                     let result = unreliable.send_unreliable(&msg).await;
 
                     if let Err(err) = result {
-                        let _ = event_high_prio_tx.send(Event::NetworkInput(Err(err)));
+                        let _ = event_high_prio_tx
+                            .send(Event::NetworkInput(Err(NetworkError::Transport(err))));
                         break;
                     }
 
@@ -318,7 +367,8 @@ impl GameScene {
                         };
 
                     if let Err(err) = result {
-                        let _ = event_high_prio_tx.send(Event::NetworkInput(Err(err)));
+                        let _ = event_high_prio_tx
+                            .send(Event::NetworkInput(Err(NetworkError::Transport(err))));
                         break;
                     }
 
@@ -327,30 +377,95 @@ impl GameScene {
             })
         };
 
-        // Must be dropped when the loop ends
+        // Must be dropped when the loop ends.
         let _recv_task = {
             let event_high_prio_tx = event_high_prio_tx.clone();
-            let event_low_prio_tx = event_low_prio_tx.clone();
 
             async_ext::spawn_scoped(async move {
                 loop {
                     let msg = match rx.recv().await {
                         Ok(m) => m,
                         Err(err) => {
-                            let _ = event_high_prio_tx.send(Event::NetworkInput(Err(err)));
+                            let _ = event_high_prio_tx
+                                .send(Event::NetworkInput(Err(NetworkError::Transport(err))));
                             break;
                         },
                     };
 
-                    let result = if msg.is_reliable() {
-                        event_low_prio_tx.send(Event::NetworkInput(Ok(msg.data().to_vec())))
+                    let send_failed = if msg.is_reliable() {
+                        recv_rel_tx.send(msg.data().to_vec()).is_err()
                     } else {
-                        event_high_prio_tx.send(Event::NetworkInput(Ok(msg.data().to_vec())))
+                        event_high_prio_tx
+                            .send(Event::NetworkInput(parse_unreliable(msg.data().to_vec())))
+                            .is_err()
                     };
 
-                    if result.is_err() {
+                    if send_failed {
                         break;
                     };
+
+                    task::yield_now().await;
+                }
+            })
+        };
+
+        // Reliable messages are processed sequentially; ChunkData unpacking is
+        // offloaded to rayon and awaited via a bounded(1) feedback channel
+        // before pulling the next message. Mirrors `voxbrix_server::client_loop`.
+        let _recv_rel_task = {
+            let event_low_prio_tx = event_low_prio_tx.clone();
+
+            async_ext::spawn_scoped(async move {
+                let mut outer_packer = Packer::new();
+                let mut inner_packer = Packer::new();
+                let (done_tx, done_rx) =
+                    flume::bounded::<(Packer, Packer, Result<Vec<ChunkData>, UnpackError>)>(1);
+
+                while let Ok(bytes) = recv_rel_rx.recv_async().await {
+                    let message = match ClientAcceptMessage::from_bytes(bytes) {
+                        Ok(m) => m,
+                        Err(err) => {
+                            let _ = event_low_prio_tx
+                                .send(Event::NetworkInput(Err(NetworkError::Decode(err))));
+                            break;
+                        },
+                    };
+
+                    let event = match message.kind() {
+                        ClientAcceptKind::State => {
+                            Event::NetworkInput(Ok(NetworkMessage::State(message)))
+                        },
+                        ClientAcceptKind::ChunkDataDelta => {
+                            Event::NetworkInput(Ok(NetworkMessage::ChunkDataDelta(message)))
+                        },
+                        ClientAcceptKind::ChunkData => {
+                            let done_tx = done_tx.clone();
+                            rayon::spawn(move || {
+                                let result = unpack_chunk_data(
+                                    &mut outer_packer,
+                                    &mut inner_packer,
+                                    message,
+                                );
+                                let _ = done_tx.send((outer_packer, inner_packer, result));
+                            });
+
+                            let Ok((o, i, result)) = done_rx.recv_async().await else {
+                                break;
+                            };
+                            outer_packer = o;
+                            inner_packer = i;
+
+                            Event::NetworkInput(
+                                result
+                                    .map(NetworkMessage::ChunkData)
+                                    .map_err(NetworkError::Decode),
+                            )
+                        },
+                    };
+
+                    if event_low_prio_tx.send(event).is_err() {
+                        break;
+                    }
 
                     task::yield_now().await;
                 }

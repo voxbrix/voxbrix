@@ -8,7 +8,11 @@ use crate::{
         chunk::sky_light_data::SkyLightDataChunkComponent,
     },
     resource::confirmed_snapshots::ConfirmedSnapshots,
-    scene::game::Transition,
+    scene::game::{
+        NetworkError,
+        NetworkMessage,
+        Transition,
+    },
     system::{
         chunk_changes_accept::ChunkChangesAcceptSystem,
         server_dispatches::ServerDispatchesSystem,
@@ -21,20 +25,15 @@ use voxbrix_common::{
         ChunkStatus,
         StatusChunkComponent,
     },
-    messages::client::{
-        ChunkDataDelta,
-        ClientAcceptKind,
-        ClientAcceptMessage,
-    },
+    messages::client::ChunkDataDelta,
     pack::Packer,
     ChunkData,
 };
-use voxbrix_protocol::client::Error as ClientError;
 use voxbrix_world::World;
 
 pub struct NetworkInput<'a> {
     pub world: &'a mut World,
-    pub event: Result<Vec<u8>, ClientError>,
+    pub event: Result<NetworkMessage, NetworkError>,
 }
 
 impl NetworkInput<'_> {
@@ -44,24 +43,15 @@ impl NetworkInput<'_> {
         let message = match event {
             Ok(m) => m,
             Err(err) => {
-                // TODO handle properly, pass error to menu to display there
-                error!("game::run: connection error: {:?}", err);
+                error!("game::run: network error: {:?}", err);
                 return Transition::Menu;
             },
         };
 
         let mut packer = world.take_resource::<Packer>();
 
-        let message = match ClientAcceptMessage::from_bytes(message) {
-            Ok(m) => m,
-            Err(_) => {
-                world.return_resource(packer);
-                return Transition::None;
-            },
-        };
-
-        let transition = match message.kind() {
-            ClientAcceptKind::State => {
+        let transition = match message {
+            NetworkMessage::State(message) => {
                 let state = match message.unpack_state(&mut packer) {
                     Ok(s) => s,
                     Err(_) => {
@@ -91,25 +81,32 @@ impl NetworkInput<'_> {
 
                 Transition::None
             },
-            ClientAcceptKind::ChunkData => {
-                let chunk_data_set = match message.unpack_chunk_data(&mut packer) {
+            NetworkMessage::ChunkDataDelta(message) => {
+                let ChunkDataDelta {
+                    block_class,
+                    block_environment,
+                    block_metadata,
+                } = match message.unpack_chunk_data_delta(&mut packer) {
                     Ok(d) => d,
                     Err(_) => {
-                        error!("unable to decode chunk data set");
-                        return Transition::Menu;
+                        world.return_resource(packer);
+                        return Transition::None;
                     },
                 };
 
-                let mut inner_packer = Packer::new();
+                if world
+                    .get_data::<ChunkChangesAcceptSystem>()
+                    .run(block_class, block_environment, block_metadata)
+                    .is_err()
+                {
+                    error!("unable to decode chunk changes");
+                    return Transition::Menu;
+                }
 
-                for chunk_data_encoded in chunk_data_set {
-                    let Ok(chunk_data) =
-                        inner_packer.unpack_compressed::<ChunkData>(chunk_data_encoded)
-                    else {
-                        error!("unable to decode chunk data set");
-                        return Transition::Menu;
-                    };
-
+                Transition::None
+            },
+            NetworkMessage::ChunkData(chunk_data_set) => {
+                for chunk_data in chunk_data_set {
                     let ChunkData {
                         chunk,
                         block_classes,
@@ -133,30 +130,6 @@ impl NetworkInput<'_> {
                     world
                         .get_resource_mut::<SkyLightDataChunkComponent>()
                         .enqueue_chunk(chunk);
-                }
-
-                Transition::None
-            },
-            ClientAcceptKind::ChunkDataDelta => {
-                let ChunkDataDelta {
-                    block_class,
-                    block_environment,
-                    block_metadata,
-                } = match message.unpack_chunk_data_delta(&mut packer) {
-                    Ok(d) => d,
-                    Err(_) => {
-                        world.return_resource(packer);
-                        return Transition::None;
-                    },
-                };
-
-                if world
-                    .get_data::<ChunkChangesAcceptSystem>()
-                    .run(block_class, block_environment, block_metadata)
-                    .is_err()
-                {
-                    error!("unable to decode chunk changes");
-                    return Transition::Menu;
                 }
 
                 Transition::None
