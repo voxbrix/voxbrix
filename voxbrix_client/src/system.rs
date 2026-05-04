@@ -4,6 +4,7 @@ pub mod block_environment_render;
 pub mod block_model;
 pub mod block_render;
 pub mod chunk_changes_accept;
+pub mod chunk_data_accept;
 pub mod chunk_presence;
 pub mod entity_removal;
 pub mod hud;

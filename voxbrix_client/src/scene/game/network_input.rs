@@ -1,12 +1,4 @@
 use crate::{
-    component::{
-        block::{
-            class::ClassBlockComponent,
-            environment::EnvironmentBlockComponent,
-            metadata::MetadataBlockComponent,
-        },
-        chunk::sky_light_data::SkyLightDataChunkComponent,
-    },
     resource::confirmed_snapshots::ConfirmedSnapshots,
     scene::game::{
         NetworkError,
@@ -15,19 +7,15 @@ use crate::{
     },
     system::{
         chunk_changes_accept::ChunkChangesAcceptSystem,
+        chunk_data_accept::ChunkDataAcceptSystem,
         server_dispatches::ServerDispatchesSystem,
         server_updates::ServerUpdatesSystem,
     },
 };
 use log::error;
 use voxbrix_common::{
-    component::chunk::status::{
-        ChunkStatus,
-        StatusChunkComponent,
-    },
     messages::client::ChunkDataDelta,
     pack::Packer,
-    ChunkData,
 };
 use voxbrix_world::World;
 
@@ -106,31 +94,9 @@ impl NetworkInput<'_> {
                 Transition::None
             },
             NetworkMessage::ChunkData(chunk_data_set) => {
-                for chunk_data in chunk_data_set {
-                    let ChunkData {
-                        chunk,
-                        block_classes,
-                        block_environment,
-                        block_metadata,
-                    } = chunk_data;
-
-                    world
-                        .get_resource_mut::<ClassBlockComponent>()
-                        .insert_chunk(chunk, block_classes);
-                    world
-                        .get_resource_mut::<EnvironmentBlockComponent>()
-                        .insert_chunk(chunk, block_environment);
-                    world
-                        .get_resource_mut::<MetadataBlockComponent>()
-                        .insert_chunk(chunk, block_metadata);
-                    world
-                        .get_resource_mut::<StatusChunkComponent>()
-                        .insert(chunk, ChunkStatus::Active);
-
-                    world
-                        .get_resource_mut::<SkyLightDataChunkComponent>()
-                        .enqueue_chunk(chunk);
-                }
+                world
+                    .get_data::<ChunkDataAcceptSystem>()
+                    .run(chunk_data_set);
 
                 Transition::None
             },
