@@ -174,6 +174,18 @@ impl UpdatesPacker {
 
         UpdatesPacked(self.buffer.as_slice())
     }
+
+    pub fn pack_from_slice<'a>(&'a mut self, entries: &[(Update, &[u8])]) -> UpdatesPacked<'a> {
+        self.buffer.clear();
+
+        pack::encode_write(&(entries.len() as u64), &mut self.buffer);
+
+        for (update, data) in entries {
+            pack::encode_write(&(*update, *data), &mut self.buffer);
+        }
+
+        UpdatesPacked(self.buffer.as_slice())
+    }
 }
 
 impl Default for UpdatesPacker {
@@ -314,7 +326,9 @@ where
         }
     }
 
-    pub fn pack<'a>(&'a mut self) -> EventsPacked<'a, E, S> {
+    /// Serializes the currently queued events into the internal buffer.
+    /// Call [`Self::packed`] afterwards to obtain a borrowed view.
+    pub fn prepare(&mut self) {
         let mut data_cursor = 0;
 
         let data_slice: &_ = self.data.make_contiguous();
@@ -334,11 +348,21 @@ where
         for element in extend_iter {
             pack::encode_write(&element, &mut self.buffer);
         }
+    }
 
+    /// Returns a borrowed view of the most recently prepared events.
+    /// Must be preceded by a call to [`Self::prepare`].
+    pub fn packed(&self) -> EventsPacked<'_, E, S> {
         EventsPacked {
             data: self.buffer.as_slice(),
             _ty: PhantomData,
         }
+    }
+
+    /// Convenience wrapper that calls [`Self::prepare`] followed by [`Self::packed`].
+    pub fn pack(&mut self) -> EventsPacked<'_, E, S> {
+        self.prepare();
+        self.packed()
     }
 }
 

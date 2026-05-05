@@ -1,5 +1,8 @@
 use crate::component::actor::{
+    ActorComponentCleanup,
+    ActorComponentPack,
     ActorComponentPackable,
+    ComponentPackerSlot,
     WithUpdate,
 };
 use anyhow::Error;
@@ -11,8 +14,8 @@ use voxbrix_common::{
         actor::Actor,
         actor_class::ActorClass,
         snapshot::ServerSnapshot,
+        update::Update,
     },
-    messages::UpdatesPacker,
     FromDescriptor,
 };
 use voxbrix_world::{
@@ -43,6 +46,15 @@ impl<T> PackableOverridableActorClassComponent<T> {
     }
 }
 
+impl<T> ActorComponentCleanup for PackableOverridableActorClassComponent<T>
+where
+    T: 'static + Send,
+{
+    fn cleanup(&mut self, snapshot: ServerSnapshot) {
+        self.overrides.cleanup(snapshot);
+    }
+}
+
 impl<T> PackableOverridableActorClassComponent<T>
 where
     T: PartialEq,
@@ -66,36 +78,28 @@ where
     }
 }
 
-impl<T> PackableOverridableActorClassComponent<T>
+impl<T> ActorComponentPack for PackableOverridableActorClassComponent<T>
 where
-    T: 'static + Serialize + PartialEq,
+    T: 'static + Serialize + PartialEq + Send + Sync,
 {
-    pub fn pack_full(
-        &mut self,
-        updates: &mut UpdatesPacker,
-        player_actor: Option<&Actor>,
-        actors_full_update: &IntSet<Actor>,
-    ) {
-        self.overrides
-            .pack_full(updates, player_actor, actors_full_update)
-    }
-
-    pub fn pack_changes(
-        &mut self,
-        updates: &mut UpdatesPacker,
-        snapshot: ServerSnapshot,
+    fn pack(
+        &self,
+        full_data: bool,
         client_last_snapshot: ServerSnapshot,
         player_actor: Option<&Actor>,
         actors_full_update: &IntSet<Actor>,
         actors_partial_update: &IntSet<Actor>,
-    ) {
-        self.overrides.pack_changes(
-            updates,
-            snapshot,
+        buffer: &mut Vec<u8>,
+        packer_slot: &mut ComponentPackerSlot,
+    ) -> Update {
+        self.overrides.pack(
+            full_data,
             client_last_snapshot,
             player_actor,
             actors_full_update,
             actors_partial_update,
+            buffer,
+            packer_slot,
         )
     }
 }

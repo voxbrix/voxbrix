@@ -1,3 +1,7 @@
+use crate::component::actor::{
+    ActorComponentCleanup,
+    ComponentPackerSlot,
+};
 use anyhow::Error;
 use nohash_hasher::{
     IntMap,
@@ -20,11 +24,7 @@ use voxbrix_common::{
         update::Update,
     },
     math::MinMax,
-    messages::{
-        ComponentPacker,
-        UpdatesPacker,
-        UpdatesUnpacked,
-    },
+    messages::UpdatesUnpacked,
     pack,
     LabelLibrary,
 };
@@ -95,17 +95,8 @@ pub struct PositionActorComponent {
     last_packed_snapshot: ServerSnapshot,
     changes: IntMap<Actor, ServerSnapshot>,
     chunk_changes: VecDeque<ActorChunkChange>,
-    packer: Option<ComponentPacker<'static, Actor, Position>>,
     storage: IntMap<Actor, Position>,
     chunk_actor_component: BTreeSet<(Chunk, Actor)>,
-    /// Actors that must have all components packed.
-    /// Filled on packing this component.
-    /// Includes the Player Actor.
-    actors_full_update: IntSet<Actor>,
-    /// Actors that can have changes in components.
-    /// Filled on packing this component.
-    /// Includes the Player Actor.
-    actors_partial_update: IntSet<Actor>,
 }
 
 impl PositionActorComponent {
@@ -137,55 +128,91 @@ impl PositionActorComponent {
             func(prev_value, None)
         }
     }
-}
 
-impl PositionActorComponent {
-    /// Packs all the data for the actors in the chunks.
-    /// Saves the list of actors, so other components could do the same.
-    pub fn pack_full(
-        &mut self,
-        updates: &mut UpdatesPacker,
+    pub fn update(&self) -> Update {
+        self.update
+    }
+
+    /// Packs full state of actors in `full_update_chunks` and, if `!full_data`,
+    /// deltas for actors in `partial_update_chunks` since `last_server_snapshot`.
+    /// `is_within_intersection` detects actors moving in/out of the persisted view.
+    /// `buffer` and the actor sets are cleared first; the sets are then filled
+    /// with actors the caller must propagate to the other components.
+    pub fn pack(
+        &self,
+        full_data: bool,
+        last_server_snapshot: ServerSnapshot,
         player_actor: &Actor,
-        // Those will have to have all components packed:
+        is_within_intersection: impl Fn(Option<&Chunk>) -> bool,
         full_update_chunks: impl Iterator<Item = Chunk>,
+        partial_update_chunks: impl Iterator<Item = Chunk>,
+        buffer: &mut Vec<u8>,
+        actors_full_update: &mut IntSet<Actor>,
+        actors_partial_update: &mut IntSet<Actor>,
+        packer_slot: &mut ComponentPackerSlot,
     ) {
-        self.actors_full_update.clear();
-        self.actors_partial_update.clear();
+        buffer.clear();
+        actors_full_update.clear();
+        actors_partial_update.clear();
 
-        self.actors_full_update
-            .extend(full_update_chunks.flat_map(|chunk| {
-                // Actors on chunks that were freshly loaded.
-                // TODO?: currently includes Actors that were already loaded in the intersection
-                // of the old chunks and new chunks (persisted chunks) and move simultaniously with
-                // the player to the new (unloaded before) chunks loaded by the player.
-                // This could lead to sending redundant data about these Actors, but this
-                // is a complex edge case that (with removing moved-away-from-view actors in client) could
-                // introduce subtle but serious bugs if we exclude those Actors.
-                self.chunk_actor_component
-                    .range((chunk, Actor::MIN) ..= (chunk, Actor::MAX))
-                    .map(|(_, actor)| *actor)
-            }));
+        if full_data {
+            self.pack_full(
+                player_actor,
+                full_update_chunks,
+                buffer,
+                actors_full_update,
+                packer_slot,
+            )
+        } else {
+            self.pack_partial(
+                last_server_snapshot,
+                player_actor,
+                is_within_intersection,
+                full_update_chunks,
+                partial_update_chunks,
+                buffer,
+                actors_full_update,
+                actors_partial_update,
+                packer_slot,
+            )
+        }
+    }
 
-        let change_iter = self
-            .actors_full_update
+    fn pack_full(
+        &self,
+        player_actor: &Actor,
+        full_update_chunks: impl Iterator<Item = Chunk>,
+        buffer: &mut Vec<u8>,
+        actors_full_update: &mut IntSet<Actor>,
+        packer_slot: &mut ComponentPackerSlot,
+    ) {
+        actors_full_update.extend(full_update_chunks.flat_map(|chunk| {
+            // Actors on chunks that were freshly loaded.
+            // TODO?: currently includes Actors that were already loaded in the intersection
+            // of the old chunks and new chunks (persisted chunks) and move simultaniously with
+            // the player to the new (unloaded before) chunks loaded by the player.
+            // This could lead to sending redundant data about these Actors, but this
+            // is a complex edge case that (with removing moved-away-from-view actors in client) could
+            // introduce subtle but serious bugs if we exclude those Actors.
+            self.chunk_actor_component
+                .range((chunk, Actor::MIN) ..= (chunk, Actor::MAX))
+                .map(|(_, actor)| *actor)
+        }));
+
+        let change_iter = actors_full_update
             .iter()
             .filter(|actor| *actor != player_actor)
             .filter_map(|actor| Some((*actor, self.storage.get(actor)?)));
 
-        let mut packer = self.packer.take().unwrap();
+        let packer = packer_slot.take::<Actor, Position>();
 
-        let buffer = updates.get_buffer(self.update);
+        let packer = packer.load_full(change_iter).pack(buffer);
 
-        packer = packer.load_full(change_iter).pack(buffer);
-
-        self.packer = Some(packer);
+        packer_slot.put(packer);
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn pack_changes(
-        &mut self,
-        updates: &mut UpdatesPacker,
-        snapshot: ServerSnapshot,
+    fn pack_partial(
+        &self,
         last_server_snapshot: ServerSnapshot,
         player_actor: &Actor,
         // Checks should include:
@@ -198,25 +225,12 @@ impl PositionActorComponent {
         full_update_chunks: impl Iterator<Item = Chunk>,
         // Those must have changes packed (new/old intersection chunks):
         partial_update_chunks: impl Iterator<Item = Chunk>,
+        buffer: &mut Vec<u8>,
+        actors_full_update: &mut IntSet<Actor>,
+        actors_partial_update: &mut IntSet<Actor>,
+        packer_slot: &mut ComponentPackerSlot,
     ) {
-        if snapshot.0 > self.last_packed_snapshot.0 {
-            self.changes.retain(move |_, change_snapshot| {
-                snapshot.0 - change_snapshot.0 <= MAX_SNAPSHOT_DIFF
-            });
-
-            while self.chunk_changes.front().is_some()
-                && snapshot.0 - self.chunk_changes.front().unwrap().snapshot.0 > MAX_SNAPSHOT_DIFF
-            {
-                self.chunk_changes.pop_front();
-            }
-
-            self.last_packed_snapshot = snapshot;
-        }
-
-        self.actors_full_update.clear();
-        self.actors_partial_update.clear();
-
-        self.actors_full_update.extend(
+        actors_full_update.extend(
             full_update_chunks
                 .flat_map(|chunk| {
                     // Actors on chunks that were freshly loaded.
@@ -287,7 +301,7 @@ impl PositionActorComponent {
             )
             .map(|c| c.actor);
 
-        self.actors_partial_update.extend(
+        actors_partial_update.extend(
             partial_update_chunks
                 .flat_map(|chunk| {
                     self.chunk_actor_component
@@ -295,38 +309,23 @@ impl PositionActorComponent {
                         .map(|(_, actor)| *actor)
                 })
                 .chain(actors_moved_away)
-                .filter(|actor| !self.actors_full_update.contains(actor)),
+                .filter(|actor| !actors_full_update.contains(actor)),
         );
 
-        let change_iter = self
-            .actors_partial_update
+        let change_iter = actors_partial_update
             .iter()
             .filter_map(|actor| self.changes.get_key_value(actor))
             .filter(move |(_, change_snapshot)| change_snapshot.0 > last_server_snapshot.0)
             .map(|(actor, _)| actor)
-            .chain(self.actors_full_update.iter())
+            .chain(actors_full_update.iter())
             .filter(|actor| *actor != player_actor)
             .map(|actor| (*actor, self.storage.get(actor)));
 
-        let mut packer = self.packer.take().unwrap();
+        let packer = packer_slot.take::<Actor, Position>();
 
-        let buffer = updates.get_buffer(self.update);
+        let packer = packer.load_changes(change_iter).pack(buffer);
 
-        packer = packer.load_changes(change_iter).pack(buffer);
-
-        self.packer = Some(packer);
-    }
-
-    /// Filled on packing this component.
-    /// Includes the Player Actor.
-    pub fn actors_partial_update(&self) -> &IntSet<Actor> {
-        &self.actors_partial_update
-    }
-
-    /// Filled on packing this component.
-    /// Includes the Player Actor.
-    pub fn actors_full_update(&self) -> &IntSet<Actor> {
-        &self.actors_full_update
+        packer_slot.put(packer);
     }
 
     /// Changed of chunks by actors, in "old snapshot to new snapshot" order.
@@ -405,6 +404,24 @@ impl PositionActorComponent {
     }
 }
 
+impl ActorComponentCleanup for PositionActorComponent {
+    fn cleanup(&mut self, snapshot: ServerSnapshot) {
+        if snapshot.0 > self.last_packed_snapshot.0 {
+            self.changes.retain(move |_, change_snapshot| {
+                snapshot.0 - change_snapshot.0 <= MAX_SNAPSHOT_DIFF
+            });
+
+            while self.chunk_changes.front().is_some()
+                && snapshot.0 - self.chunk_changes.front().unwrap().snapshot.0 > MAX_SNAPSHOT_DIFF
+            {
+                self.chunk_changes.pop_front();
+            }
+
+            self.last_packed_snapshot = snapshot;
+        }
+    }
+}
+
 const UPDATE: &str = "actor_position";
 
 impl Initialization for PositionActorComponent {
@@ -421,11 +438,8 @@ impl Initialization for PositionActorComponent {
             last_packed_snapshot: ServerSnapshot(0),
             changes: IntMap::default(),
             chunk_changes: VecDeque::new(),
-            packer: Some(ComponentPacker::new()),
             storage: IntMap::default(),
             chunk_actor_component: BTreeSet::new(),
-            actors_full_update: IntSet::default(),
-            actors_partial_update: IntSet::default(),
         })
     }
 }

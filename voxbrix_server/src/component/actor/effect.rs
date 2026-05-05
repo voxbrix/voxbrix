@@ -1,4 +1,8 @@
-use crate::component::actor::MAX_SNAPSHOT_DIFF;
+use crate::component::actor::{
+    ActorComponentCleanup,
+    ActorComponentPack,
+    ComponentPackerSlot,
+};
 use anyhow::Error;
 use nohash_hasher::IntSet;
 use std::collections::{
@@ -14,14 +18,13 @@ use voxbrix_common::{
             Effect,
             EffectDiscriminant,
         },
-        snapshot::ServerSnapshot,
+        snapshot::{
+            ServerSnapshot,
+            MAX_SNAPSHOT_DIFF,
+        },
         update::Update,
     },
     math::MinMax,
-    messages::{
-        ComponentPacker,
-        UpdatesPacker,
-    },
     LabelLibrary,
 };
 use voxbrix_world::{
@@ -33,7 +36,6 @@ pub struct EffectActorComponent {
     // First member of tuple is target of the effect, third - source of the effect
     storage: BTreeMap<(Actor, Effect, EffectDiscriminant), EffectState>,
     changes: VecDeque<(ServerSnapshot, (Actor, Effect, EffectDiscriminant))>,
-    packer: Option<ComponentPacker<'static, (Actor, Effect, EffectDiscriminant), EffectState>>,
     update: Update,
 }
 
@@ -138,34 +140,64 @@ impl EffectActorComponent {
             self.changes.push_back((snapshot, key));
         }
     }
+}
 
-    pub fn pack_full(
-        &mut self,
-        updates_packer: &mut UpdatesPacker,
-        actors_full_update: &IntSet<Actor>,
-    ) {
-        let mut packer = self.packer.take().unwrap();
-
-        let buffer = updates_packer.get_buffer(self.update);
-
-        let iter = actors_full_update
-            .iter()
-            .flat_map(|actor| self.actor_effects(actor))
-            .map(|(k, v)| (*k, v));
-
-        packer = packer.load_full(iter).pack(buffer);
-
-        self.packer = Some(packer);
-    }
-
-    pub fn pack_changes(
-        &mut self,
-        updates_packer: &mut UpdatesPacker,
-        snapshot: ServerSnapshot,
+impl ActorComponentPack for EffectActorComponent {
+    fn pack(
+        &self,
+        full_data: bool,
         last_confirmed_snapshot: ServerSnapshot,
+        _player_actor: Option<&Actor>,
         actors_full_update: &IntSet<Actor>,
         actors_partial_update: &IntSet<Actor>,
-    ) {
+        buffer: &mut Vec<u8>,
+        packer_slot: &mut ComponentPackerSlot,
+    ) -> Update {
+        buffer.clear();
+        let packer = packer_slot.take::<(Actor, Effect, EffectDiscriminant), EffectState>();
+
+        let packer = if full_data {
+            let iter = actors_full_update
+                .iter()
+                .flat_map(|actor| self.actor_effects(actor))
+                .map(|(k, v)| (*k, v));
+
+            packer.load_full(iter).pack(buffer)
+        } else {
+            let full_changes_iter = actors_full_update
+                .iter()
+                .flat_map(|actor| self.actor_effects(actor))
+                .map(|(k, v)| (k, Some(v)));
+
+            let first_actual_change = self
+                .changes
+                .iter()
+                .enumerate()
+                .rev()
+                .take_while(|(_, (snapshot, _))| snapshot > &last_confirmed_snapshot)
+                .last();
+
+            let partial_changes_iter = first_actual_change
+                .iter()
+                .flat_map(|(i, _)| self.changes.range(i ..))
+                .filter(|(_, (actor, _, _))| actors_partial_update.contains(actor))
+                .map(|(_, key)| (key, self.storage.get(key)));
+
+            let iter = full_changes_iter
+                .chain(partial_changes_iter)
+                .map(|(k, v)| (*k, v));
+
+            packer.load_changes(iter).pack(buffer)
+        };
+
+        packer_slot.put(packer);
+
+        self.update
+    }
+}
+
+impl ActorComponentCleanup for EffectActorComponent {
+    fn cleanup(&mut self, snapshot: ServerSnapshot) {
         while let Some((change_snapshot, _)) = self.changes.front() {
             if snapshot.0 - change_snapshot.0 <= MAX_SNAPSHOT_DIFF {
                 break;
@@ -173,37 +205,6 @@ impl EffectActorComponent {
 
             self.changes.pop_front();
         }
-
-        let mut packer = self.packer.take().unwrap();
-
-        let full_changes_iter = actors_full_update
-            .iter()
-            .flat_map(|actor| self.actor_effects(actor))
-            .map(|(k, v)| (k, Some(v)));
-
-        let first_actual_change = self
-            .changes
-            .iter()
-            .enumerate()
-            .rev()
-            .take_while(|(_, (snapshot, _))| snapshot > &last_confirmed_snapshot)
-            .last();
-
-        let partial_changes_iter = first_actual_change
-            .iter()
-            .flat_map(|(i, _)| self.changes.range(i ..))
-            .filter(|(_, (actor, _, _))| actors_partial_update.contains(actor))
-            .map(|(_, key)| (key, self.storage.get(key)));
-
-        let changes_iter = full_changes_iter.chain(partial_changes_iter);
-
-        let buffer = updates_packer.get_buffer(self.update);
-
-        packer = packer
-            .load_changes(changes_iter.map(|(k, v)| (*k, v)))
-            .pack(buffer);
-
-        self.packer = Some(packer);
     }
 }
 
@@ -221,7 +222,6 @@ impl Initialization for EffectActorComponent {
         Ok(Self {
             storage: BTreeMap::new(),
             changes: VecDeque::new(),
-            packer: Some(ComponentPacker::new()),
             update,
         })
     }

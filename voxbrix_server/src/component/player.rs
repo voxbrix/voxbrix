@@ -48,3 +48,12 @@ where
         self.data.par_iter()
     }
 }
+
+impl<T> PlayerComponent<T>
+where
+    T: Send,
+{
+    pub fn par_iter_mut(&mut self) -> impl ParallelIterator<Item = (&Player, &mut T)> + '_ {
+        self.data.par_iter_mut()
+    }
+}

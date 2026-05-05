@@ -8,7 +8,10 @@ use serde::{
     Deserialize,
     Serialize,
 };
-use std::collections::hash_map;
+use std::{
+    any::Any,
+    collections::hash_map,
+};
 use voxbrix_common::{
     entity::{
         actor::Actor,
@@ -20,7 +23,6 @@ use voxbrix_common::{
     },
     messages::{
         ComponentPacker,
-        UpdatesPacker,
         UpdatesUnpacked,
     },
     pack,
@@ -75,6 +77,51 @@ pub mod velocity;
 // }
 // }
 
+/// Reusable, type-erased [`ComponentPacker`] storage for a single component.
+#[derive(Default)]
+pub struct ComponentPackerSlot(Option<Box<dyn Any + Send>>);
+
+impl ComponentPackerSlot {
+    /// Take the stored packer, or a fresh one if absent / of a different type.
+    pub fn take<E, T>(&mut self) -> ComponentPacker<'static, E, T>
+    where
+        E: 'static + Send + Sync + Serialize,
+        T: 'static + Send + Sync + Serialize,
+    {
+        self.0
+            .take()
+            .and_then(|b| b.downcast::<ComponentPacker<'static, E, T>>().ok())
+            .map(|b| *b)
+            .unwrap_or_default()
+    }
+
+    pub fn put<E, T>(&mut self, packer: ComponentPacker<'static, E, T>)
+    where
+        E: 'static + Send + Sync + Serialize,
+        T: 'static + Send + Sync + Serialize,
+    {
+        self.0 = Some(Box::new(packer));
+    }
+}
+
+/// Component that can be packed into State and distributed to clients.
+pub trait ActorComponentPack: Send + Sync {
+    fn pack(
+        &self,
+        full_data: bool,
+        client_last_snapshot: ServerSnapshot,
+        player_actor: Option<&Actor>,
+        actors_full_update: &IntSet<Actor>,
+        actors_partial_update: &IntSet<Actor>,
+        buffer: &mut Vec<u8>,
+        packer_slot: &mut ComponentPackerSlot,
+    ) -> Update;
+}
+
+pub trait ActorComponentCleanup: Send {
+    fn cleanup(&mut self, snapshot: ServerSnapshot);
+}
+
 /// Component that can be packed into State and distributed to clients
 pub struct ActorComponentPackable<T>
 where
@@ -83,7 +130,6 @@ where
     update: Update,
     last_packed_snapshot: ServerSnapshot,
     changes: IntMap<Actor, ServerSnapshot>,
-    packer: Option<ComponentPacker<'static, Actor, T>>,
     storage: IntMap<Actor, T>,
 }
 
@@ -117,78 +163,46 @@ where
     }
 }
 
-impl<T> ActorComponentPackable<T>
+impl<T> ActorComponentPack for ActorComponentPackable<T>
 where
-    T: 'static + Serialize + PartialEq,
+    T: 'static + Serialize + PartialEq + Send + Sync,
 {
-    pub fn pack_full(
-        &mut self,
-        updates_packer: &mut UpdatesPacker,
-        player_actor: Option<&Actor>,
-        actors_full_update: &IntSet<Actor>,
-    ) {
-        let mut packer = self.packer.take().unwrap();
-
-        let buffer = updates_packer.get_buffer(self.update);
-
-        if let Some(player_actor) = player_actor {
-            let iter = actors_full_update
-                .iter()
-                .filter(|actor| actor != &player_actor)
-                .filter_map(|actor| Some((*actor, self.storage.get(actor)?)));
-
-            packer = packer.load_full(iter).pack(buffer);
-        } else {
-            let iter = actors_full_update
-                .iter()
-                .filter_map(|actor| Some((*actor, self.storage.get(actor)?)));
-
-            packer = packer.load_full(iter).pack(buffer);
-        }
-
-        self.packer = Some(packer);
-    }
-
-    pub fn pack_changes(
-        &mut self,
-        updates_packer: &mut UpdatesPacker,
-        snapshot: ServerSnapshot,
+    fn pack(
+        &self,
+        full_data: bool,
         client_last_snapshot: ServerSnapshot,
         player_actor: Option<&Actor>,
         actors_full_update: &IntSet<Actor>,
         actors_partial_update: &IntSet<Actor>,
-    ) {
-        if snapshot.0 > self.last_packed_snapshot.0 {
-            self.changes
-                .retain(move |_, past_snapshot| snapshot.0 - past_snapshot.0 <= MAX_SNAPSHOT_DIFF);
+        buffer: &mut Vec<u8>,
+        packer_slot: &mut ComponentPackerSlot,
+    ) -> Update {
+        buffer.clear();
+        let packer = packer_slot.take::<Actor, T>();
 
-            self.last_packed_snapshot = snapshot;
-        }
+        let packer = if full_data {
+            let iter = actors_full_update
+                .iter()
+                .filter(|actor| Some(*actor) != player_actor)
+                .filter_map(|actor| Some((*actor, self.storage.get(actor)?)));
 
-        let mut packer = self.packer.take().unwrap();
-
-        let changed_actors_iter = actors_partial_update
-            .iter()
-            .filter_map(|actor| self.changes.get_key_value(actor))
-            .filter(|(_, past_snapshot)| past_snapshot.0 > client_last_snapshot.0)
-            .map(|(actor, _)| actor)
-            .chain(actors_full_update.iter());
-
-        let buffer = updates_packer.get_buffer(self.update);
-
-        if let Some(player_actor) = player_actor {
-            let iter = changed_actors_iter
-                .filter(|actor| actor != &player_actor)
+            packer.load_full(iter).pack(buffer)
+        } else {
+            let iter = actors_partial_update
+                .iter()
+                .filter_map(|actor| self.changes.get_key_value(actor))
+                .filter(|(_, past_snapshot)| past_snapshot.0 > client_last_snapshot.0)
+                .map(|(actor, _)| actor)
+                .chain(actors_full_update.iter())
+                .filter(|actor| Some(*actor) != player_actor)
                 .map(|actor| (*actor, self.storage.get(actor)));
 
-            packer = packer.load_changes(iter).pack(buffer);
-        } else {
-            let iter = changed_actors_iter.map(|actor| (*actor, self.storage.get(actor)));
+            packer.load_changes(iter).pack(buffer)
+        };
 
-            packer = packer.load_changes(iter).pack(buffer);
-        }
+        packer_slot.put(packer);
 
-        self.packer = Some(packer);
+        self.update
     }
 }
 
@@ -257,6 +271,20 @@ impl<T> ActorComponentPackable<T> {
     }
 }
 
+impl<T> ActorComponentCleanup for ActorComponentPackable<T>
+where
+    T: 'static + Send,
+{
+    fn cleanup(&mut self, snapshot: ServerSnapshot) {
+        if snapshot.0 > self.last_packed_snapshot.0 {
+            self.changes
+                .retain(move |_, past_snapshot| snapshot.0 - past_snapshot.0 <= MAX_SNAPSHOT_DIFF);
+
+            self.last_packed_snapshot = snapshot;
+        }
+    }
+}
+
 /// Internal component that is not shared with the client
 pub struct ActorComponent<T> {
     storage: IntMap<Actor, T>,
@@ -322,7 +350,6 @@ where
             update,
             last_packed_snapshot: ServerSnapshot(0),
             changes: IntMap::default(),
-            packer: Some(ComponentPacker::new()),
             storage: IntMap::default(),
         })
     }
