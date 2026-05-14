@@ -13,7 +13,7 @@ use serde::{
 };
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Copy, Clone, Debug)]
-pub struct ActorClass(pub u64);
+pub struct ActorClass(pub u32);
 
 impl AsFromUsize for ActorClass {
     fn as_usize(&self) -> usize {

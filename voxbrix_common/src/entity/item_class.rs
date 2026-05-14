@@ -13,7 +13,7 @@ use serde::{
 };
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Copy, Clone, Debug)]
-pub struct ItemClass(pub u64);
+pub struct ItemClass(pub u32);
 
 impl AsFromUsize for ItemClass {
     fn as_usize(&self) -> usize {
