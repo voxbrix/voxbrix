@@ -8,6 +8,7 @@ pub mod block_environment;
 pub mod chunk;
 pub mod dispatch;
 pub mod effect;
+pub mod item_class;
 pub mod script;
 pub mod snapshot;
 pub mod update;

@@ -5,6 +5,7 @@
   "actor_orientation",
   "actor_model",
   "actor_effect",
+  "actor_equipment",
   "actor_block_collision",
   "actor_health",
   "actor_hitbox"

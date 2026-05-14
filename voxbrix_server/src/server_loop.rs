@@ -8,6 +8,7 @@ use crate::{
         actor::{
             class::ClassActorComponent,
             effect::EffectActorComponent,
+            equipment::EquipmentActorComponent,
             movement_change::MovementChangeActorComponent,
             orientation::OrientationActorComponent,
             player::PlayerActorComponent,
@@ -207,6 +208,7 @@ impl ServerLoop {
         init_add::<OrientationActorComponent>(&mut world).await?;
         init_add::<PlayerActorComponent>(&mut world).await?;
         init_add::<EffectActorComponent>(&mut world).await?;
+        init_add::<EquipmentActorComponent>(&mut world).await?;
 
         init_add::<SnapshotHandlerEffectComponent>(&mut world).await?;
 

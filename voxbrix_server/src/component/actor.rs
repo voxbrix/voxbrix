@@ -35,6 +35,7 @@ use voxbrix_world::{
 
 pub mod class;
 pub mod effect;
+pub mod equipment;
 pub mod movement_change;
 pub mod orientation;
 pub mod player;
@@ -106,6 +107,7 @@ impl ComponentPackerSlot {
 
 /// Component that can be packed into State and distributed to clients.
 pub trait ActorComponentPack: Send + Sync {
+    #[allow(clippy::too_many_arguments)]
     fn pack(
         &self,
         full_data: bool,

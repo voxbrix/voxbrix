@@ -3,6 +3,7 @@ use crate::{
         actor::{
             class::ClassActorComponent,
             effect::EffectActorComponent,
+            equipment::EquipmentActorComponent,
             orientation::OrientationActorComponent,
             position::PositionActorComponent,
             velocity::VelocityActorComponent,
@@ -61,7 +62,7 @@ impl System for ActorSyncSystem {
 }
 
 const POSITION_COMPONENT_COUNT: usize = 1;
-const SERVER_CONTROLLED_COMPONENT_COUNT: usize = 4;
+const SERVER_CONTROLLED_COMPONENT_COUNT: usize = 5;
 const CLIENT_CONTROLLED_COMPONENT_COUNT: usize = 2;
 const TOTAL_COMPONENT_COUNT: usize = POSITION_COMPONENT_COUNT
     + SERVER_CONTROLLED_COMPONENT_COUNT
@@ -88,6 +89,7 @@ pub struct ActorSyncSystemData<'a> {
 
     class_ac: &'a mut ClassActorComponent,
     effect_ac: &'a mut EffectActorComponent,
+    equipment_ac: &'a mut EquipmentActorComponent,
     position_ac: &'a mut PositionActorComponent,
     velocity_ac: &'a mut VelocityActorComponent,
     orientation_ac: &'a mut OrientationActorComponent,
@@ -108,6 +110,7 @@ impl ActorSyncSystemData<'_> {
             player_rq,
             class_ac,
             effect_ac,
+            equipment_ac,
             position_ac,
             velocity_ac,
             orientation_ac,
@@ -123,6 +126,7 @@ impl ActorSyncSystemData<'_> {
                 let cleanups: [&mut dyn ActorComponentCleanup; TOTAL_COMPONENT_COUNT] = [
                     position_ac,
                     effect_ac,
+                    equipment_ac,
                     class_ac,
                     velocity_ac,
                     orientation_ac,
@@ -146,7 +150,7 @@ impl ActorSyncSystemData<'_> {
         // Server-controlled components are not filtered by `player_actor`,
         // client-controlled ones are.
         let server_controlled: [&dyn ActorComponentPack; SERVER_CONTROLLED_COMPONENT_COUNT] =
-            [class_ac, model_acc, health_acc, effect_ac];
+            [class_ac, model_acc, health_acc, effect_ac, equipment_ac];
         let client_controlled: [&dyn ActorComponentPack; CLIENT_CONTROLLED_COMPONENT_COUNT] =
             [velocity_ac, orientation_ac];
 

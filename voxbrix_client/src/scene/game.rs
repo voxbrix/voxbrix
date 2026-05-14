@@ -4,6 +4,7 @@ use crate::{
             animation_state::AnimationStateActorComponent,
             class::ClassActorComponent,
             effect::EffectActorComponent,
+            equipment::EquipmentActorComponent,
             orientation::OrientationActorComponent,
             position::PositionActorComponent,
             target_orientation::TargetOrientationActorComponent,
@@ -511,6 +512,8 @@ impl GameScene {
             false,
         );
         let effect_ac = EffectActorComponent::new(label_library.get("actor_effect").unwrap());
+        let equipment_ac =
+            EquipmentActorComponent::new(label_library.get("actor_equipment").unwrap());
         let mut position_ac =
             PositionActorComponent::new(label_library.get("actor_position").unwrap(), player_actor);
         let mut velocity_ac = VelocityActorComponent::new(
@@ -635,6 +638,7 @@ impl GameScene {
 
         world.add(class_ac);
         world.add(effect_ac);
+        world.add(equipment_ac);
         world.add(position_ac);
         world.add(velocity_ac);
         world.add(orientation_ac);

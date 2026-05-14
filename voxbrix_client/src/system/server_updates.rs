@@ -2,6 +2,7 @@ use crate::component::{
     actor::{
         class::ClassActorComponent,
         effect::EffectActorComponent,
+        equipment::EquipmentActorComponent,
         orientation::OrientationActorComponent,
         position::PositionActorComponent,
         target_orientation::TargetOrientationActorComponent,
@@ -48,6 +49,7 @@ pub struct ServerUpdatesSystemData<'a> {
     snapshot: &'a ClientSnapshot,
     class_ac: &'a mut ClassActorComponent,
     effect_ac: &'a mut EffectActorComponent,
+    equipment_ac: &'a mut EquipmentActorComponent,
     model_acc: &'a mut ModelActorClassComponent,
     health_acc: &'a mut HealthActorClassComponent,
     position_ac: &'a mut PositionActorComponent,
@@ -70,6 +72,7 @@ impl ServerUpdatesSystemData<'_> {
 
         self.class_ac.unpack(&updates);
         self.effect_ac.unpack(&updates);
+        self.equipment_ac.unpack(&updates);
         self.model_acc.unpack(&updates);
         self.health_acc.unpack(&updates);
         self.velocity_ac.unpack(&updates);

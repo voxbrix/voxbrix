@@ -34,6 +34,7 @@ use voxbrix_common::{
 pub mod animation_state;
 pub mod class;
 pub mod effect;
+pub mod equipment;
 pub mod orientation;
 pub mod position;
 pub mod target_orientation;

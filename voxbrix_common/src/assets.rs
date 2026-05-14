@@ -4,6 +4,9 @@ pub const ACTOR_CLASS_LIST_PATH: &str = "assets/common/actor_classes.json";
 pub const BLOCK_CLASS_DIR: &str = "assets/common/block_classes";
 pub const BLOCK_CLASS_LIST_PATH: &str = "assets/common/block_classes.json";
 
+pub const ITEM_CLASS_DIR: &str = "assets/common/item_classes";
+pub const ITEM_CLASS_LIST_PATH: &str = "assets/common/item_classes.json";
+
 pub const BLOCK_ENVIRONMENT_DIR: &str = "assets/common/block_environments";
 pub const BLOCK_ENVIRONMENT_LIST_PATH: &str = "assets/common/block_environments.json";
 

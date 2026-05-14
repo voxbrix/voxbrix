@@ -138,6 +138,7 @@ impl PositionActorComponent {
     /// `is_within_intersection` detects actors moving in/out of the persisted view.
     /// `buffer` and the actor sets are cleared first; the sets are then filled
     /// with actors the caller must propagate to the other components.
+    #[allow(clippy::too_many_arguments)]
     pub fn pack(
         &self,
         full_data: bool,
@@ -178,6 +179,7 @@ impl PositionActorComponent {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn pack_full(
         &self,
         player_actor: &Actor,
@@ -211,6 +213,7 @@ impl PositionActorComponent {
         packer_slot.put(packer);
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn pack_partial(
         &self,
         last_server_snapshot: ServerSnapshot,
