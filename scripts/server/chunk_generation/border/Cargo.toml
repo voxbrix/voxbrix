@@ -13,4 +13,4 @@ crate-type = ["cdylib"]
 lto = true
 
 [dependencies]
-paste = "1.0"
+chunk_generation_api = { path = "../../chunk_generation_api" }
