@@ -1,7 +1,10 @@
 #[cfg(feature = "script")]
 use crate::blocks_in_chunk;
 use serde::{
-    de::Deserializer,
+    de::{
+        Deserializer,
+        Error as _,
+    },
     ser::Serializer,
     Deserialize,
     Serialize,
