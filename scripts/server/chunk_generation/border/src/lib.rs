@@ -1,8 +1,8 @@
 use hash::Hasher64;
 use paste::paste;
 
-type BlockClass = u16;
-type BlockEnvironment = u8;
+pub type BlockClass = u16;
+pub type BlockEnvironment = u8;
 
 extern "C" {
     fn get_blocks_in_chunk_edge() -> u32;
@@ -21,17 +21,16 @@ pub fn pack_block_data(
 
 macro_rules! block_class {
     ($name:ident) => {
-        unsafe {
+        {
             paste! {
                 static [<$name:upper _NAME>]: &'static str = stringify!($name);
-                static mut [<$name:upper>]: Option<BlockClass> = None;
-                if [<$name:upper>].is_none() {
-                    [<$name:upper>] = Some(get_block_class(
+                thread_local!(static [<$name:upper>]: $crate::BlockClass = const { $crate::BlockClass::MAX });
+                [<$name:upper>].with(|_| unsafe {
+                    get_block_class(
                         [<$name:upper _NAME>].as_ptr(),
                         [<$name:upper _NAME>].len() as u32,
-                    ) as BlockClass)
-                }
-                [<$name:upper>].unwrap()
+                    ) as $crate::BlockClass
+                })
             }
         }
     };
@@ -39,17 +38,16 @@ macro_rules! block_class {
 
 macro_rules! block_environment {
     ($name:ident) => {
-        unsafe {
+        {
             paste! {
                 static [<$name:upper _NAME>]: &'static str = stringify!($name);
-                static mut [<$name:upper>]: Option<BlockEnvironment> = None;
-                if [<$name:upper>].is_none() {
-                    [<$name:upper>] = Some(get_block_environment(
+                thread_local!(static [<$name:upper>]: $crate::BlockEnvironment = const { $crate::BlockEnvironment::MAX });
+                [<$name:upper>].with(|_| unsafe {
+                    get_block_environment(
                         [<$name:upper _NAME>].as_ptr(),
                         [<$name:upper _NAME>].len() as u32,
-                    ) as BlockEnvironment)
-                }
-                [<$name:upper>].unwrap()
+                    ) as $crate::BlockEnvironment
+                })
             }
         }
     };
@@ -57,12 +55,9 @@ macro_rules! block_environment {
 
 #[no_mangle]
 pub extern "C" fn generate_chunk(seed: u64, phase: u64, chunk_x: i32, chunk_y: i32, chunk_z: i32) {
-    let blocks_in_chunk_edge = unsafe {
-        static mut BICE: Option<u32> = None;
-        if BICE.is_none() {
-            BICE = Some(get_blocks_in_chunk_edge())
-        }
-        BICE.unwrap()
+    let blocks_in_chunk_edge = {
+        thread_local!(static BICE: u32 = const { 0 });
+        BICE.with(|_| unsafe { get_blocks_in_chunk_edge() })
     };
 
     let empty = block_class!(empty);
