@@ -9,7 +9,10 @@ use crate::{
         actor_class::block_collision::BlockCollisionActorClassComponent,
         block::class::ClassBlockComponent,
     },
-    resource::player_actor::PlayerActor,
+    resource::{
+        player_actor::PlayerActor,
+        player_actor_movement_metadata::PlayerActorMovementMetadata,
+    },
 };
 use voxbrix_common::{
     component::{
@@ -40,14 +43,17 @@ pub struct PlayerPositionSystemData<'a> {
     collision_bcc: &'a CollisionBlockClassComponent,
     class_ac: &'a ClassActorComponent,
     position_ac: &'a mut PositionActorComponent,
-    velocity_ac: &'a VelocityActorComponent,
+    player_actor_mm: &'a mut PlayerActorMovementMetadata,
+    velocity_ac: &'a mut VelocityActorComponent,
     block_collision_acc: &'a BlockCollisionActorClassComponent,
 }
 
 impl PlayerPositionSystemData<'_> {
     pub fn run(self) {
-        if let Some((velocity, mut writable_position)) =
-            self.velocity_ac.get(&self.player_actor.0).zip(
+        if let Some((mut velocity, mut position)) = self
+            .velocity_ac
+            .get_writable(&self.player_actor.0, *self.snapshot)
+            .zip(
                 self.position_ac
                     .get_writable(&self.player_actor.0, *self.snapshot),
             )
@@ -61,18 +67,25 @@ impl PlayerPositionSystemData<'_> {
                 BlockCollision::AABB { radius_blocks } => Some(radius_blocks),
             };
 
-            let (new_pos, _new_vel) = position::process_actor(
+            let position::ProcessActorResult {
+                position: new_pos,
+                collision_sides,
+                velocity: new_vel,
+            } = position::process_actor(
                 self.process_timer.elapsed(),
                 self.class_bc,
                 self.collision_bcc,
-                &writable_position,
-                velocity,
+                &position,
+                &velocity,
                 radius,
                 |_, _| {},
                 |_, _| {},
             );
 
-            writable_position.update(new_pos);
+            position.update(new_pos);
+            velocity.update(new_vel);
+
+            self.player_actor_mm.stands_on_surface = collision_sides[4];
         }
     }
 }

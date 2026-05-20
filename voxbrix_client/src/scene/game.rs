@@ -49,6 +49,7 @@ use crate::{
         interface::Interface,
         interface_state::InterfaceState,
         player_actor::PlayerActor,
+        player_actor_movement_metadata::PlayerActorMovementMetadata,
         player_input::PlayerInput,
         render_pool::{
             CameraParameters,
@@ -130,6 +131,7 @@ use voxbrix_common::{
         },
         chunk::status::StatusChunkComponent,
         dimension_kind::{
+            acceleration::AccelerationDimensionKindComponent,
             player_chunk_view::PlayerChunkViewDimensionKindComponent,
             sky_light_config::SkyLightConfigDimensionKindComponent,
         },
@@ -532,6 +534,8 @@ impl GameScene {
         let target_position_ac =
             TargetPositionActorComponent::new(label_library.get("actor_position").unwrap());
 
+        init_add::<PlayerActorMovementMetadata>(&mut world).await?;
+
         init_add::<ModelActorClassComponent>(&mut world).await?;
         init_add::<HealthActorClassComponent>(&mut world).await?;
         init_add::<BlockCollisionActorClassComponent>(&mut world).await?;
@@ -566,6 +570,7 @@ impl GameScene {
             snapshot,
         );
 
+        init_add::<AccelerationDimensionKindComponent>(&mut world).await?;
         init_add::<SkyLightConfigDimensionKindComponent>(&mut world).await?;
         init_add::<PlayerChunkViewDimensionKindComponent>(&mut world).await?;
 

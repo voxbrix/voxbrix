@@ -61,7 +61,11 @@ impl PositionSystemData<'_> {
 
             let mut collides_with_block = false;
 
-            let (next_pos, next_vel) = position::process_actor(
+            let position::ProcessActorResult {
+                position: next_pos,
+                velocity: next_vel,
+                collision_sides: _,
+            } = position::process_actor(
                 dt,
                 self.class_bc,
                 self.collision_bcc,

@@ -1,4 +1,5 @@
 {
+  "acceleration": [0, 0, -10],
   "sky_light": {
     "side": 5
   },

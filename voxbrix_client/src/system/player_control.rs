@@ -6,6 +6,7 @@ use crate::{
     },
     resource::{
         player_actor::PlayerActor,
+        player_actor_movement_metadata::PlayerActorMovementMetadata,
         player_input::PlayerInput,
     },
 };
@@ -31,6 +32,7 @@ pub struct PlayerControlSystemData<'a> {
     process_timer: &'a ProcessTimer,
     player_actor: &'a PlayerActor,
     player_movement: &'a mut PlayerInput,
+    player_actor_mm: &'a PlayerActorMovementMetadata,
     velocity_ac: &'a mut VelocityActorComponent,
     orientation_ac: &'a mut OrientationActorComponent,
 }
@@ -50,8 +52,10 @@ impl PlayerControlSystemData<'_> {
 
         actor_orientation.update(orientation);
 
-        let movement = self.player_movement.velocity(orientation);
+        if self.player_actor_mm.stands_on_surface {
+            let movement = self.player_movement.velocity(orientation);
 
-        actor_velocity.update(Velocity { vector: movement });
+            actor_velocity.update(Velocity { vector: movement });
+        }
     }
 }

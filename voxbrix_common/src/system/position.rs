@@ -49,6 +49,25 @@ struct MoveLimit {
     // defines priority of the move limits
     collider_distance: f32,
     max_movement: f32,
+
+    // Index of the actor's collision box side that received the collision,
+    // see ProcessActorResult::collision_sides
+    side_index: usize,
+
+    // Limit caused by an unloaded chunk: stop the actor without
+    // affecting velocity or registering a collision.
+    unloaded: bool,
+}
+
+/// Result of [`process_actor`].
+pub struct ProcessActorResult {
+    /// New actor position after movement and collision resolution.
+    pub position: Position,
+    /// New actor velocity (axis components zeroed out on collision).
+    pub velocity: Velocity,
+    /// Which sides of the *actor's* collision box collided with blocks,
+    /// indexed as `[x_negative, x_positive, y_negative, y_positive, z_negative, z_positive]`.
+    pub collision_sides: [bool; 6],
 }
 
 enum BlockAxisRange<N, P> {
@@ -81,7 +100,7 @@ pub fn process_actor<C>(
     radius: Option<&[f32; 3]>,
     mut traverse_block_callback: impl FnMut(&Chunk, Block),
     mut collide_block_callback: impl FnMut(&Chunk, Block),
-) -> (Position, Velocity)
+) -> ProcessActorResult
 where
     C: BlockComponent<BlockClass>,
 {
@@ -103,12 +122,15 @@ where
             Ordering::Equal => return None,
         };
 
-        let (actor_start, actor_finish, block_offset) = match move_dir {
+        // side_index: which side of the actor's collision box receives the collision,
+        // indexed as [x_neg, x_pos, y_neg, y_pos, z_neg, z_pos].
+        let (actor_start, actor_finish, block_offset, side_index) = match move_dir {
             MoveDirection::Negative => {
                 (
                     start_position[a0] - radius[a0],
                     finish_position[a0] - radius[a0],
                     1,
+                    a0 * 2,
                 )
             },
             MoveDirection::Positive => {
@@ -116,6 +138,7 @@ where
                     start_position[a0] + radius[a0],
                     finish_position[a0] + radius[a0],
                     0,
+                    a0 * 2 + 1,
                 )
             },
         };
@@ -149,9 +172,11 @@ where
 
             // Minimal distance for any colliding block:
             let mut min_collision_dist: Option<f32> = None;
+            // Set if any block in the layer is out of bounds or in an unloaded chunk.
+            let mut layer_unavailable = false;
 
             // Checking next layer of blocks for any colliders:
-            for block_a1 in block_a1m ..= block_a1p {
+            'layer: for block_a1 in block_a1m ..= block_a1p {
                 let actor_a2 = match velocity.vector[a2].total_cmp(&0.0) {
                     Ordering::Less => {
                         (start_position[a2] + velocity.vector[a2] * t).max(finish_position[a2])
@@ -170,39 +195,41 @@ where
                     chunk_offset[a0] = block_a0;
                     chunk_offset[a1] = block_a1;
                     chunk_offset[a2] = block_a2;
-                    if let Some((chunk, block)) =
-                        Block::from_chunk_offset(center_chunk, chunk_offset)
-                    {
-                        if let Some(block_class) = class_bc.get_chunk(&chunk).map(|b| b.get(block))
-                        {
-                            match collision_bcc.get(block_class) {
-                                Collision::None => {
-                                    traverse_block_callback(&chunk, block);
-                                },
-                                Collision::SolidCube => {
-                                    collide_block_callback(&chunk, block);
+                    // One unavailable block makes the whole layer unavailable.
+                    // Chunk out of world bounds:
+                    let Some((chunk, block)) = Block::from_chunk_offset(center_chunk, chunk_offset)
+                    else {
+                        layer_unavailable = true;
+                        break 'layer;
+                    };
+                    // Chunk not loaded:
+                    let Some(block_class) = class_bc.get_chunk(&chunk).map(|b| b.get(block)) else {
+                        layer_unavailable = true;
+                        break 'layer;
+                    };
+                    match collision_bcc.get(block_class) {
+                        Collision::None => {
+                            traverse_block_callback(&chunk, block);
+                        },
+                        Collision::SolidCube => {
+                            collide_block_callback(&chunk, block);
 
-                                    let collision_dist =
-                                        (block_a0 as f32 + 0.5 - start_position[a0]).powi(2)
-                                            + (block_a1 as f32 + 0.5 - start_position[a1]).powi(2)
-                                            + (block_a2 as f32 + 0.5 - start_position[a2]).powi(2);
+                            let collision_dist = (block_a0 as f32 + 0.5 - start_position[a0])
+                                .powi(2)
+                                + (block_a1 as f32 + 0.5 - start_position[a1]).powi(2)
+                                + (block_a2 as f32 + 0.5 - start_position[a2]).powi(2);
 
-                                    min_collision_dist = Some(
-                                        min_collision_dist
-                                            .map(|mcd| mcd.min(collision_dist))
-                                            .unwrap_or(collision_dist),
-                                    );
-                                },
-                            }
-                        } else {
-                            // TODO chunk not loaded
-                        }
-                    } else {
-                        // TODO chunk out of boundaries
+                            min_collision_dist = Some(
+                                min_collision_dist
+                                    .map(|mcd| mcd.min(collision_dist))
+                                    .unwrap_or(collision_dist),
+                            );
+                        },
                     }
                 }
             }
 
+            // Real collision in the layer.
             if let Some(collider_distance) = min_collision_dist {
                 return Some(MoveLimit {
                     axis_set,
@@ -212,6 +239,26 @@ where
                             MoveDirection::Negative => radius[a0] + COLLISION_PUSHBACK,
                             MoveDirection::Positive => -radius[a0] - COLLISION_PUSHBACK,
                         },
+                    side_index,
+                    unloaded: false,
+                });
+            }
+
+            // No collision, but layer is unavailable: stop before it without
+            // altering velocity or registering a collision.
+            if layer_unavailable {
+                return Some(MoveLimit {
+                    axis_set,
+                    // Nearest possible distance: prioritized over real collisions
+                    // on other axes that might lie beyond this unavailable layer.
+                    collider_distance: 0.0,
+                    max_movement: (block_a0 + block_offset) as f32
+                        + match move_dir {
+                            MoveDirection::Negative => radius[a0] + COLLISION_PUSHBACK,
+                            MoveDirection::Positive => -radius[a0] - COLLISION_PUSHBACK,
+                        },
+                    side_index,
+                    unloaded: true,
                 });
             }
         }
@@ -233,6 +280,7 @@ where
     }
 
     let mut velocity = *velocity;
+    let mut collision_sides = [false; 6];
 
     // Re-calculation in case some colliding blocks are actually unreachable
     // behind other colliding blocks on different axis, priority is defined
@@ -245,8 +293,12 @@ where
 
         if let Some(move_limit) = move_limits_iter.next() {
             finish_position[move_limit.axis_set[0]] = move_limit.max_movement;
-            // TODO bounce back here
-            velocity.vector[move_limit.axis_set[0]] = 0.0;
+            // Unloaded-chunk stops don't affect velocity or register collisions.
+            if !move_limit.unloaded {
+                // TODO bounce back here
+                velocity.vector[move_limit.axis_set[0]] = 0.0;
+                collision_sides[move_limit.side_index] = true;
+            }
         }
 
         let mut next_move_limits = ArrayVec::new();
@@ -262,8 +314,12 @@ where
 
     if let Some(move_limit) = move_limits.first() {
         finish_position[move_limit.axis_set[0]] = move_limit.max_movement;
-        // TODO bounce back here
-        velocity.vector[move_limit.axis_set[0]] = 0.0;
+        // Unloaded-chunk stops don't affect velocity or register collisions.
+        if !move_limit.unloaded {
+            // TODO bounce back here
+            velocity.vector[move_limit.axis_set[0]] = 0.0;
+            collision_sides[move_limit.side_index] = true;
+        }
     }
 
     // If we need to "move" actor to other chunk
@@ -292,7 +348,11 @@ where
         offset: finish_position,
     };
 
-    (new_pos, velocity)
+    ProcessActorResult {
+        position: new_pos,
+        velocity,
+        collision_sides,
+    }
 }
 
 pub fn get_target_block(

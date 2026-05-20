@@ -16,6 +16,7 @@ use crate::{
         interface_render::InterfaceRenderSystem,
         inventory_window::InventoryWindowSystem,
         movement_interpolation::MovementInterpolationSystem,
+        player_acceleration::PlayerAccelerationSystem,
         player_control::PlayerControlSystem,
         player_position::PlayerPositionSystem,
         target_block_highlight::TargetBlockHightlightSystem,
@@ -43,6 +44,8 @@ impl Process<'_> {
         world.get_data::<PlayerPositionSystem>().run();
 
         world.get_data::<PlayerControlSystem>().run();
+
+        world.get_data::<PlayerAccelerationSystem>().run();
 
         world.get_data::<MovementInterpolationSystem>().run();
 
