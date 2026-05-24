@@ -24,6 +24,8 @@ use voxbrix_world::{
 };
 
 pub mod block_collision;
+pub mod dimension_acceleration;
+pub mod drag;
 pub mod health;
 pub mod hitbox;
 pub mod model;

@@ -12,6 +12,8 @@ use crate::{
             ComponentPackerSlot,
         },
         actor_class::{
+            dimension_acceleration::DimensionAccelerationActorClassComponent,
+            drag::DragActorClassComponent,
             health::HealthActorClassComponent,
             model::ModelActorClassComponent,
         },
@@ -62,7 +64,7 @@ impl System for ActorSyncSystem {
 }
 
 const POSITION_COMPONENT_COUNT: usize = 1;
-const SERVER_CONTROLLED_COMPONENT_COUNT: usize = 5;
+const SERVER_CONTROLLED_COMPONENT_COUNT: usize = 7;
 const CLIENT_CONTROLLED_COMPONENT_COUNT: usize = 2;
 const TOTAL_COMPONENT_COUNT: usize = POSITION_COMPONENT_COUNT
     + SERVER_CONTROLLED_COMPONENT_COUNT
@@ -96,6 +98,8 @@ pub struct ActorSyncSystemData<'a> {
 
     model_acc: &'a mut ModelActorClassComponent,
     health_acc: &'a mut HealthActorClassComponent,
+    drag_acc: &'a mut DragActorClassComponent,
+    dimension_acceleration_acc: &'a mut DimensionAccelerationActorClassComponent,
 
     player_chunk_view_dkc: &'a PlayerChunkViewDimensionKindComponent,
 }
@@ -116,6 +120,8 @@ impl ActorSyncSystemData<'_> {
             orientation_ac,
             model_acc,
             health_acc,
+            drag_acc,
+            dimension_acceleration_acc,
             player_chunk_view_dkc,
         } = self;
 
@@ -132,6 +138,8 @@ impl ActorSyncSystemData<'_> {
                     orientation_ac,
                     model_acc,
                     health_acc,
+                    drag_acc,
+                    dimension_acceleration_acc,
                 ];
                 cleanups
                     .into_par_iter()
@@ -149,8 +157,15 @@ impl ActorSyncSystemData<'_> {
         // Position is packed separately, it determines the actor sets.
         // Server-controlled components are not filtered by `player_actor`,
         // client-controlled ones are.
-        let server_controlled: [&dyn ActorComponentPack; SERVER_CONTROLLED_COMPONENT_COUNT] =
-            [class_ac, model_acc, health_acc, effect_ac, equipment_ac];
+        let server_controlled: [&dyn ActorComponentPack; SERVER_CONTROLLED_COMPONENT_COUNT] = [
+            class_ac,
+            model_acc,
+            health_acc,
+            effect_ac,
+            equipment_ac,
+            drag_acc,
+            dimension_acceleration_acc,
+        ];
         let client_controlled: [&dyn ActorComponentPack; CLIENT_CONTROLLED_COMPONENT_COUNT] =
             [velocity_ac, orientation_ac];
 

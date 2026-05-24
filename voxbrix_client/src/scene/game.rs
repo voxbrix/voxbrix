@@ -13,6 +13,8 @@ use crate::{
         },
         actor_class::{
             block_collision::BlockCollisionActorClassComponent,
+            dimension_acceleration::DimensionAccelerationActorClassComponent,
+            drag::DragActorClassComponent,
             health::HealthActorClassComponent,
             model::ModelActorClassComponent,
         },
@@ -539,6 +541,8 @@ impl GameScene {
         init_add::<ModelActorClassComponent>(&mut world).await?;
         init_add::<HealthActorClassComponent>(&mut world).await?;
         init_add::<BlockCollisionActorClassComponent>(&mut world).await?;
+        init_add::<DragActorClassComponent>(&mut world).await?;
+        init_add::<DimensionAccelerationActorClassComponent>(&mut world).await?;
         init_add::<BuilderActorModelComponent>(&mut world).await?;
 
         position_ac.insert(

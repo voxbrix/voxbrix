@@ -18,6 +18,8 @@ use crate::{
         },
         actor_class::{
             block_collision::BlockCollisionActorClassComponent,
+            dimension_acceleration::DimensionAccelerationActorClassComponent,
+            drag::DragActorClassComponent,
             health::HealthActorClassComponent,
             hitbox::HitboxActorClassComponent,
             model::ModelActorClassComponent,
@@ -216,6 +218,8 @@ impl ServerLoop {
         init_add::<HealthActorClassComponent>(&mut world).await?;
         init_add::<HitboxActorClassComponent>(&mut world).await?;
         init_add::<BlockCollisionActorClassComponent>(&mut world).await?;
+        init_add::<DragActorClassComponent>(&mut world).await?;
+        init_add::<DimensionAccelerationActorClassComponent>(&mut world).await?;
 
         init_add::<StatusChunkComponent>(&mut world).await?;
         init_add::<CacheChunkComponent>(&mut world).await?;
