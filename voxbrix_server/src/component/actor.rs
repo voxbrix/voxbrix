@@ -385,3 +385,107 @@ where
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn new_component() -> ActorComponentPackable<u32> {
+        ActorComponentPackable {
+            update: Update(0),
+            last_packed_snapshot: ServerSnapshot(0),
+            changes: IntMap::default(),
+            storage: IntMap::default(),
+            pre_snapshot: IntMap::default(),
+        }
+    }
+
+    #[test]
+    fn insert_records_change() {
+        let mut c = new_component();
+        let actor = Actor(1);
+        let snapshot = ServerSnapshot(1);
+
+        c.insert(actor, 42, snapshot);
+        c.prepare_packing(snapshot);
+
+        assert_eq!(c.storage.get(&actor), Some(&42));
+        assert_eq!(c.changes.get(&actor), Some(&snapshot));
+    }
+
+    #[test]
+    fn remove_records_change() {
+        let mut c = new_component();
+        let actor = Actor(1);
+
+        c.insert(actor, 42, ServerSnapshot(1));
+        c.prepare_packing(ServerSnapshot(1));
+
+        let snapshot = ServerSnapshot(2);
+        c.remove(&actor, snapshot);
+        c.prepare_packing(snapshot);
+
+        assert_eq!(c.storage.get(&actor), None);
+        assert_eq!(c.changes.get(&actor), Some(&snapshot));
+    }
+
+    #[test]
+    fn insert_same_value_does_not_record_change() {
+        let mut c = new_component();
+        let actor = Actor(1);
+
+        c.insert(actor, 42, ServerSnapshot(1));
+        c.prepare_packing(ServerSnapshot(1));
+
+        let snapshot = ServerSnapshot(2);
+        c.insert(actor, 42, snapshot);
+        c.prepare_packing(snapshot);
+
+        assert_eq!(c.storage.get(&actor), Some(&42));
+        // The previous change snapshot is preserved; no new entry at `snapshot`.
+        assert_eq!(c.changes.get(&actor), Some(&ServerSnapshot(1)));
+    }
+
+    #[test]
+    fn round_trip_within_snapshot_is_suppressed() {
+        let mut c = new_component();
+        let actor = Actor(1);
+
+        c.insert(actor, 42, ServerSnapshot(1));
+        c.prepare_packing(ServerSnapshot(1));
+
+        let snapshot = ServerSnapshot(2);
+        c.insert(actor, 100, snapshot);
+        c.insert(actor, 42, snapshot);
+        c.prepare_packing(snapshot);
+
+        assert_eq!(c.storage.get(&actor), Some(&42));
+        assert_eq!(c.changes.get(&actor), Some(&ServerSnapshot(1)));
+    }
+
+    #[test]
+    fn insert_remove_within_snapshot_on_absent_actor_is_suppressed() {
+        let mut c = new_component();
+        let actor = Actor(1);
+        let snapshot = ServerSnapshot(1);
+
+        c.insert(actor, 42, snapshot);
+        c.remove(&actor, snapshot);
+        c.prepare_packing(snapshot);
+
+        assert_eq!(c.storage.get(&actor), None);
+        assert_eq!(c.changes.get(&actor), None);
+    }
+
+    #[test]
+    fn remove_of_absent_actor_is_noop() {
+        let mut c = new_component();
+        let actor = Actor(1);
+
+        c.remove(&actor, ServerSnapshot(1));
+        c.prepare_packing(ServerSnapshot(1));
+
+        assert_eq!(c.storage.get(&actor), None);
+        assert_eq!(c.changes.get(&actor), None);
+    }
+}
