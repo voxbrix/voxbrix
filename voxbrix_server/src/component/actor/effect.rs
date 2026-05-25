@@ -1,6 +1,6 @@
 use crate::component::actor::{
-    ActorComponentCleanup,
     ActorComponentPack,
+    ActorComponentPreparePacking,
     ComponentPackerSlot,
 };
 use anyhow::Error;
@@ -196,8 +196,8 @@ impl ActorComponentPack for EffectActorComponent {
     }
 }
 
-impl ActorComponentCleanup for EffectActorComponent {
-    fn cleanup(&mut self, snapshot: ServerSnapshot) {
+impl ActorComponentPreparePacking for EffectActorComponent {
+    fn prepare_packing(&mut self, snapshot: ServerSnapshot) {
         while let Some((change_snapshot, _)) = self.changes.front() {
             if snapshot.0 - change_snapshot.0 <= MAX_SNAPSHOT_DIFF {
                 break;

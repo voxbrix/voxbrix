@@ -1,8 +1,6 @@
 use crate::component::actor::ActorComponent;
 
-/// Per-actor movement metadata, used by movement-related systems.
-///
-/// Internal to the server — not synchronized to clients.
+/// Per-actor movement metadata. Server-internal, not synchronized to clients.
 #[derive(Default)]
 pub struct MovementMetadata {
     #[allow(dead_code)]

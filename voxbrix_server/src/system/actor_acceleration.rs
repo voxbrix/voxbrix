@@ -7,12 +7,16 @@ use crate::component::{
     },
     actor_class::dimension_acceleration::DimensionAccelerationActorClassComponent,
 };
+use rayon::prelude::*;
 use voxbrix_common::{
     component::{
         actor::velocity::Velocity,
         dimension_kind::acceleration::AccelerationDimensionKindComponent,
     },
-    entity::snapshot::ServerSnapshot,
+    entity::{
+        actor::Actor,
+        snapshot::ServerSnapshot,
+    },
     resource::process_timer::ProcessTimer,
 };
 use voxbrix_world::{
@@ -20,13 +24,6 @@ use voxbrix_world::{
     SystemData,
 };
 
-/// Server-side mirror of the client's `PlayerAccelerationSystem`,
-/// applied to all non-player actors.
-///
-/// For each non-player actor it adds, to the actor's velocity,
-/// the dimension-kind acceleration of the actor's current dimension,
-/// scaled by the actor's per-class `DimensionAcceleration` scalar
-/// and the elapsed frame time.
 pub struct ActorAccelerationSystem;
 
 impl System for ActorAccelerationSystem {
@@ -48,34 +45,36 @@ pub struct ActorAccelerationSystemData<'a> {
 impl ActorAccelerationSystemData<'_> {
     pub fn run(self) {
         let dt = self.process_timer.elapsed();
+        let snapshot = *self.snapshot;
 
-        self.velocity_ac
-            .par_for_each_mut(*self.snapshot, |actor, velocity| {
-                if self.player_ac.get(&actor).is_some() {
-                    return;
-                }
+        // Compute new velocities, skipping no-op updates so the sequential
+        // `insert` pass below avoids redundant per-snapshot bookkeeping.
+        let updates: Vec<(Actor, Velocity)> = self
+            .velocity_ac
+            .par_iter()
+            .filter(|(actor, _)| self.player_ac.get(actor).is_none())
+            .filter_map(|(actor, velocity)| {
+                let position = self.position_ac.get(&actor)?;
+                let actor_class = self.class_ac.get(&actor)?;
 
-                let Some(position) = self.position_ac.get(&actor) else {
-                    return;
-                };
-                let Some(actor_class) = self.class_ac.get(&actor) else {
-                    return;
-                };
-
-                let scalar = self
-                    .dimension_acceleration_acc
-                    .get(actor_class, &actor)
-                    .0;
+                let scalar = self.dimension_acceleration_acc.get(actor_class, &actor).0;
 
                 let dv = self
                     .acceleration_dkc
                     .get(&position.chunk.dimension.kind)
                     .into_velocity(dt);
 
-                *velocity = *velocity
+                let new_velocity = *velocity
                     + Velocity {
                         vector: dv.vector * scalar,
                     };
-            });
+
+                (new_velocity != *velocity).then_some((actor, new_velocity))
+            })
+            .collect();
+
+        for (actor, new_velocity) in updates {
+            self.velocity_ac.insert(actor, new_velocity, snapshot);
+        }
     }
 }

@@ -1,7 +1,7 @@
 use crate::component::actor::{
-    ActorComponentCleanup,
     ActorComponentPack,
     ActorComponentPackable,
+    ActorComponentPreparePacking,
     ComponentPackerSlot,
     WithUpdate,
 };
@@ -48,12 +48,12 @@ impl<T> PackableOverridableActorClassComponent<T> {
     }
 }
 
-impl<T> ActorComponentCleanup for PackableOverridableActorClassComponent<T>
+impl<T> ActorComponentPreparePacking for PackableOverridableActorClassComponent<T>
 where
-    T: 'static + Send,
+    T: 'static + PartialEq + Send,
 {
-    fn cleanup(&mut self, snapshot: ServerSnapshot) {
-        self.overrides.cleanup(snapshot);
+    fn prepare_packing(&mut self, snapshot: ServerSnapshot) {
+        self.overrides.prepare_packing(snapshot);
     }
 }
 

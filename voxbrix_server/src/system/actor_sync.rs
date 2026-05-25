@@ -7,8 +7,8 @@ use crate::{
             orientation::OrientationActorComponent,
             position::PositionActorComponent,
             velocity::VelocityActorComponent,
-            ActorComponentCleanup,
             ActorComponentPack,
+            ActorComponentPreparePacking,
             ComponentPackerSlot,
         },
         actor_class::{
@@ -125,11 +125,11 @@ impl ActorSyncSystemData<'_> {
             player_chunk_view_dkc,
         } = self;
 
-        let snapshot_for_cleanup = *snapshot;
+        let snapshot_for_preparation = *snapshot;
 
         rayon::join(
             || {
-                let cleanups: [&mut dyn ActorComponentCleanup; TOTAL_COMPONENT_COUNT] = [
+                let preparers: [&mut dyn ActorComponentPreparePacking; TOTAL_COMPONENT_COUNT] = [
                     position_ac,
                     effect_ac,
                     equipment_ac,
@@ -141,9 +141,9 @@ impl ActorSyncSystemData<'_> {
                     drag_acc,
                     dimension_acceleration_acc,
                 ];
-                cleanups
+                preparers
                     .into_par_iter()
-                    .for_each(|c| c.cleanup(snapshot_for_cleanup));
+                    .for_each(|c| c.prepare_packing(snapshot_for_preparation));
             },
             || {
                 dispatches_packer_pc

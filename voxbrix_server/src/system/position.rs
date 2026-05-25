@@ -111,8 +111,7 @@ impl PositionSystemData<'_> {
             self.velocity_ac
                 .insert(actor, change.next_velocity, *self.snapshot);
 
-            // `stands_on_surface` corresponds to collision on the z_negative
-            // side (index 4 in `collision_sides`).
+            // collision_sides[4] = z_negative side blocked.
             self.movement_metadata_ac.insert(
                 actor,
                 MovementMetadata {

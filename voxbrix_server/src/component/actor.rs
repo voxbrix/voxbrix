@@ -121,8 +121,9 @@ pub trait ActorComponentPack: Send + Sync {
     ) -> Update;
 }
 
-pub trait ActorComponentCleanup: Send {
-    fn cleanup(&mut self, snapshot: ServerSnapshot);
+/// Must be called once per tick before any per-client packing.
+pub trait ActorComponentPreparePacking: Send {
+    fn prepare_packing(&mut self, snapshot: ServerSnapshot);
 }
 
 /// Component that can be packed into State and distributed to clients
@@ -134,6 +135,11 @@ where
     last_packed_snapshot: ServerSnapshot,
     changes: IntMap<Actor, ServerSnapshot>,
     storage: IntMap<Actor, T>,
+    /// Pre-mutation `(storage_value, changes_entry)` per actor, set on the
+    /// first mutation each snapshot. Used by [`Self::prepare_packing`] to
+    /// detect and suppress round-trip-canceled changes. Cleared on every
+    /// `prepare_packing`.
+    pre_snapshot: IntMap<Actor, (Option<T>, Option<ServerSnapshot>)>,
 }
 
 impl<'a, T> ActorComponentPackable<T>
@@ -213,26 +219,22 @@ impl<T> ActorComponentPackable<T>
 where
     T: PartialEq,
 {
-    pub fn insert(&mut self, actor: Actor, new: T, snapshot: ServerSnapshot) -> Option<T> {
-        let (changed, prev_value) = match self.storage.entry(actor) {
-            hash_map::Entry::Occupied(mut slot) => {
-                let prev_value = slot.insert(new);
-                let value = slot.get();
-
-                (&prev_value != value, Some(prev_value))
-            },
-            hash_map::Entry::Vacant(slot) => {
-                slot.insert(new);
-
-                (true, None)
-            },
-        };
-
-        if changed {
-            self.changes.insert(actor, snapshot);
+    /// On the first mutation of `actor` this snapshot, moves the prior
+    /// `(storage, changes)` state into `pre_snapshot`. No-op on subsequent
+    /// same-snapshot mutations.
+    fn save_pre_snapshot(&mut self, actor: Actor) {
+        if let hash_map::Entry::Vacant(slot) = self.pre_snapshot.entry(actor) {
+            let prev_value = self.storage.remove(&actor);
+            let prev_change = self.changes.get(&actor).copied();
+            slot.insert((prev_value, prev_change));
         }
+    }
 
-        prev_value
+    pub fn insert(&mut self, actor: Actor, new: T, snapshot: ServerSnapshot) {
+        self.save_pre_snapshot(actor);
+
+        self.storage.insert(actor, new);
+        self.changes.insert(actor, snapshot);
     }
 
     // pub fn get_writable(&mut self, actor: &Actor, snapshot: Snapshot) -> Option<Writable<T>> {
@@ -244,18 +246,14 @@ where
     // })
     // }
 
-    // pub fn iter(&self) -> impl Iterator<Item = (Actor, &T)> {
-    // self.storage.iter().map(|(k, v)| (*k, v))
-    // }
-
-    pub fn remove(&mut self, actor: &Actor, snapshot: ServerSnapshot) -> Option<T> {
-        let removed = self.storage.remove(actor);
-
-        if removed.is_some() {
-            self.changes.insert(*actor, snapshot);
+    pub fn remove(&mut self, actor: &Actor, snapshot: ServerSnapshot) {
+        if !self.storage.contains_key(actor) {
+            return;
         }
 
-        removed
+        self.save_pre_snapshot(*actor);
+        self.storage.remove(actor);
+        self.changes.insert(*actor, snapshot);
     }
 }
 
@@ -268,45 +266,33 @@ where
     }
 }
 
-impl<T> ActorComponentPackable<T>
-where
-    T: 'static + Clone + PartialEq + Send + Sync,
-{
-    /// Parallel iteration with mutable access to each stored value.
-    ///
-    /// After the closure runs for each actor, the new value is compared
-    /// against the previous one; actors whose value actually changed are
-    /// bulk-recorded as changed at `snapshot` (matching the bookkeeping
-    /// done by [`Self::insert`]).
-    pub fn par_for_each_mut(
-        &mut self,
-        snapshot: ServerSnapshot,
-        f: impl Fn(Actor, &mut T) + Send + Sync,
-    ) {
-        let changed_actors = self
-            .storage
-            .par_iter_mut()
-            .filter_map(|(actor, value)| {
-                let prev = value.clone();
-                f(*actor, value);
-                (*value != prev).then_some((*actor, snapshot))
-            });
-
-        self.changes.par_extend(changed_actors);
-    }
-}
-
 impl<T> ActorComponentPackable<T> {
     pub fn get(&self, actor: &Actor) -> Option<&T> {
         self.storage.get(actor)
     }
 }
 
-impl<T> ActorComponentCleanup for ActorComponentPackable<T>
+impl<T> ActorComponentPreparePacking for ActorComponentPackable<T>
 where
-    T: 'static + Send,
+    T: 'static + PartialEq + Send,
 {
-    fn cleanup(&mut self, snapshot: ServerSnapshot) {
+    fn prepare_packing(&mut self, snapshot: ServerSnapshot) {
+        // Suppress round-trip-canceled changes: if current state matches the
+        // pre-snapshot state, restore the prior `changes` entry.
+        for (actor, (pre_value, prev_change_snapshot)) in self.pre_snapshot.drain() {
+            let current = self.storage.get(&actor);
+            if current == pre_value.as_ref() {
+                match prev_change_snapshot {
+                    Some(prev) => {
+                        self.changes.insert(actor, prev);
+                    },
+                    None => {
+                        self.changes.remove(&actor);
+                    },
+                }
+            }
+        }
+
         if snapshot.0 > self.last_packed_snapshot.0 {
             self.changes
                 .retain(move |_, past_snapshot| snapshot.0 - past_snapshot.0 <= MAX_SNAPSHOT_DIFF);
@@ -382,6 +368,7 @@ where
             last_packed_snapshot: ServerSnapshot(0),
             changes: IntMap::default(),
             storage: IntMap::default(),
+            pre_snapshot: IntMap::default(),
         })
     }
 }

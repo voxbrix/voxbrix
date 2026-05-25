@@ -1,5 +1,5 @@
 use crate::component::actor::{
-    ActorComponentCleanup,
+    ActorComponentPreparePacking,
     ComponentPackerSlot,
 };
 use anyhow::Error;
@@ -407,8 +407,8 @@ impl PositionActorComponent {
     }
 }
 
-impl ActorComponentCleanup for PositionActorComponent {
-    fn cleanup(&mut self, snapshot: ServerSnapshot) {
+impl ActorComponentPreparePacking for PositionActorComponent {
+    fn prepare_packing(&mut self, snapshot: ServerSnapshot) {
         if snapshot.0 > self.last_packed_snapshot.0 {
             self.changes.retain(move |_, change_snapshot| {
                 snapshot.0 - change_snapshot.0 <= MAX_SNAPSHOT_DIFF
