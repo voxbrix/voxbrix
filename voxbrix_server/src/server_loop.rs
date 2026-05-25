@@ -10,6 +10,7 @@ use crate::{
             effect::EffectActorComponent,
             equipment::EquipmentActorComponent,
             movement_change::MovementChangeActorComponent,
+            movement_metadata::MovementMetadataActorComponent,
             orientation::OrientationActorComponent,
             player::PlayerActorComponent,
             position::PositionActorComponent,
@@ -57,6 +58,7 @@ use crate::{
     },
     storage::StorageThread,
     system::{
+        actor_acceleration::ActorAccelerationSystem,
         chunk_activation::ChunkActivationSystem,
         chunk_add::ChunkAddSystem,
         chunk_generation::ChunkGenerationSystem,
@@ -96,7 +98,10 @@ use tokio::{
 use voxbrix_common::{
     component::{
         block_class::collision::CollisionBlockClassComponent,
-        dimension_kind::player_chunk_view::PlayerChunkViewDimensionKindComponent,
+        dimension_kind::{
+            acceleration::AccelerationDimensionKindComponent,
+            player_chunk_view::PlayerChunkViewDimensionKindComponent,
+        },
     },
     compute,
     entity::{
@@ -233,6 +238,7 @@ impl ServerLoop {
         init_add::<ComponentMap<DimensionKind>>(&mut world).await?;
         init_add::<BoundaryDimensionKindComponent>(&mut world).await?;
         init_add::<PlayerChunkViewDimensionKindComponent>(&mut world).await?;
+        init_add::<AccelerationDimensionKindComponent>(&mut world).await?;
 
         let mut engine_config = wasmtime::Config::new();
 
@@ -282,6 +288,7 @@ impl ServerLoop {
         world.add(ChunkSendQueuePlayerComponent::new());
 
         init_add::<MovementChangeActorComponent>(&mut world).await?;
+        init_add::<MovementMetadataActorComponent>(&mut world).await?;
         init_add::<ProjectileActorComponent>(&mut world).await?;
 
         world.add(ProjectileActorCollisions::new());
@@ -308,6 +315,7 @@ impl ServerLoop {
         world.add(chunk_generation_system);
 
         world.add(PositionSystem);
+        world.add(ActorAccelerationSystem);
         world.add(ChunkActivationSystem::new());
 
         world.add(script_registry);

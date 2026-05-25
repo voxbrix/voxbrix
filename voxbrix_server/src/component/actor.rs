@@ -37,6 +37,7 @@ pub mod class;
 pub mod effect;
 pub mod equipment;
 pub mod movement_change;
+pub mod movement_metadata;
 pub mod orientation;
 pub mod player;
 pub mod position;
@@ -264,6 +265,34 @@ where
 {
     pub fn par_iter(&self) -> impl ParallelIterator<Item = (Actor, &T)> {
         self.storage.par_iter().map(|(k, v)| (*k, v))
+    }
+}
+
+impl<T> ActorComponentPackable<T>
+where
+    T: 'static + Clone + PartialEq + Send + Sync,
+{
+    /// Parallel iteration with mutable access to each stored value.
+    ///
+    /// After the closure runs for each actor, the new value is compared
+    /// against the previous one; actors whose value actually changed are
+    /// bulk-recorded as changed at `snapshot` (matching the bookkeeping
+    /// done by [`Self::insert`]).
+    pub fn par_for_each_mut(
+        &mut self,
+        snapshot: ServerSnapshot,
+        f: impl Fn(Actor, &mut T) + Send + Sync,
+    ) {
+        let changed_actors = self
+            .storage
+            .par_iter_mut()
+            .filter_map(|(actor, value)| {
+                let prev = value.clone();
+                f(*actor, value);
+                (*value != prev).then_some((*actor, snapshot))
+            });
+
+        self.changes.par_extend(changed_actors);
     }
 }
 

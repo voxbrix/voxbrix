@@ -5,6 +5,10 @@ use crate::component::{
             MovementChange,
             MovementChangeActorComponent,
         },
+        movement_metadata::{
+            MovementMetadata,
+            MovementMetadataActorComponent,
+        },
         player::PlayerActorComponent,
         position::PositionActorComponent,
         velocity::VelocityActorComponent,
@@ -43,6 +47,7 @@ pub struct PositionSystemData<'a> {
     position_ac: &'a mut PositionActorComponent,
     velocity_ac: &'a mut VelocityActorComponent,
     movement_change_ac: &'a mut MovementChangeActorComponent,
+    movement_metadata_ac: &'a mut MovementMetadataActorComponent,
     player_ac: &'a PlayerActorComponent,
     block_collision_acc: &'a BlockCollisionActorClassComponent,
 }
@@ -64,7 +69,7 @@ impl PositionSystemData<'_> {
             let position::ProcessActorResult {
                 position: next_pos,
                 velocity: next_vel,
-                collision_sides: _,
+                collision_sides,
             } = position::process_actor(
                 dt,
                 self.class_bc,
@@ -89,6 +94,7 @@ impl PositionSystemData<'_> {
                     prev_velocity: *velocity,
                     next_velocity: next_vel,
                     collides_with_block,
+                    collision_sides,
                 },
             ))
         });
@@ -104,6 +110,15 @@ impl PositionSystemData<'_> {
                 .insert(actor, change.next_position, *self.snapshot);
             self.velocity_ac
                 .insert(actor, change.next_velocity, *self.snapshot);
+
+            // `stands_on_surface` corresponds to collision on the z_negative
+            // side (index 4 in `collision_sides`).
+            self.movement_metadata_ac.insert(
+                actor,
+                MovementMetadata {
+                    stands_on_surface: change.collision_sides[4],
+                },
+            );
         }
     }
 }

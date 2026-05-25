@@ -1,3 +1,4 @@
+pub mod actor_acceleration;
 pub mod actor_pruning;
 pub mod actor_sync;
 pub mod block_sync;
