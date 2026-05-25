@@ -11,5 +11,6 @@
   "hitbox": {
     "kind": "Sphere",
     "radius_blocks": 0.75
-  }
+  },
+  "density": 1.0
 }

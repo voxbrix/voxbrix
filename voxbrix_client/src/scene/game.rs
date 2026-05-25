@@ -13,6 +13,7 @@ use crate::{
         },
         actor_class::{
             block_collision::BlockCollisionActorClassComponent,
+            density::DensityActorClassComponent,
             dimension_acceleration::DimensionAccelerationActorClassComponent,
             drag::DragActorClassComponent,
             health::HealthActorClassComponent,
@@ -131,6 +132,7 @@ use voxbrix_common::{
             collision::CollisionBlockClassComponent,
             opacity::OpacityBlockClassComponent,
         },
+        block_environment::density::DensityBlockEnvironmentComponent,
         chunk::status::StatusChunkComponent,
         dimension_kind::{
             acceleration::AccelerationDimensionKindComponent,
@@ -502,6 +504,7 @@ impl GameScene {
 
         init_add::<ModelBlockClassComponent>(&mut world).await?;
         init_add::<ModelBlockEnvironmentComponent>(&mut world).await?;
+        init_add::<DensityBlockEnvironmentComponent>(&mut world).await?;
         init_add::<CollisionBlockClassComponent>(&mut world).await?;
         init_add::<OpacityBlockClassComponent>(&mut world).await?;
 
@@ -543,6 +546,7 @@ impl GameScene {
         init_add::<BlockCollisionActorClassComponent>(&mut world).await?;
         init_add::<DragActorClassComponent>(&mut world).await?;
         init_add::<DimensionAccelerationActorClassComponent>(&mut world).await?;
+        init_add::<DensityActorClassComponent>(&mut world).await?;
         init_add::<BuilderActorModelComponent>(&mut world).await?;
 
         position_ac.insert(

@@ -33,3 +33,12 @@ impl FromDescriptor for Acceleration {
 }
 
 pub type AccelerationDimensionKindComponent = DimensionKindComponent<Acceleration>;
+
+// `d / sqrt(1 + d * d)` is a smooth alternative to `d.clamp(-1.0, 1.0)` and `tanh`:
+// * Has slope 1 at 0 and saturates smoothly to -1 and 1;
+// * It uses only IEEE-754 correctly-rounded operations (`+`, `*`, `sqrt`), so it
+//   is deterministic across platforms/Rust versions, unlike `tanh`.
+pub fn density_acceleration_scale(actor_density: f32, environment_density: f32) -> f32 {
+    let d = actor_density - environment_density;
+    d / (1.0 + d * d).sqrt()
+}

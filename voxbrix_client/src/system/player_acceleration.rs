@@ -6,16 +6,27 @@ use crate::{
             velocity::VelocityActorComponent,
             WritableTrait,
         },
-        actor_class::dimension_acceleration::DimensionAccelerationActorClassComponent,
+        actor_class::{
+            density::DensityActorClassComponent,
+            dimension_acceleration::DimensionAccelerationActorClassComponent,
+        },
+        block::environment::EnvironmentBlockComponent,
     },
     resource::player_actor::PlayerActor,
 };
 use voxbrix_common::{
     component::{
         actor::velocity::Velocity,
-        dimension_kind::acceleration::AccelerationDimensionKindComponent,
+        block_environment::density::DensityBlockEnvironmentComponent,
+        dimension_kind::acceleration::{
+            density_acceleration_scale,
+            AccelerationDimensionKindComponent,
+        },
     },
-    entity::snapshot::ClientSnapshot,
+    entity::{
+        block::Block,
+        snapshot::ClientSnapshot,
+    },
     resource::process_timer::ProcessTimer,
 };
 use voxbrix_world::{
@@ -37,6 +48,9 @@ pub struct PlayerAccelerationSystemData<'a> {
     position_ac: &'a PositionActorComponent,
     class_ac: &'a ClassActorComponent,
     dimension_acceleration_acc: &'a DimensionAccelerationActorClassComponent,
+    density_acc: &'a DensityActorClassComponent,
+    environment_bc: &'a EnvironmentBlockComponent,
+    density_bec: &'a DensityBlockEnvironmentComponent,
     acceleration_dkc: &'a AccelerationDimensionKindComponent,
     velocity_ac: &'a mut VelocityActorComponent,
 }
@@ -54,7 +68,20 @@ impl PlayerAccelerationSystemData<'_> {
             .get_writable(&actor, *self.snapshot)
             .zip(self.position_ac.get(&actor))
         {
-            let scalar = self.dimension_acceleration_acc.get(actor_class, &actor).0;
+            let dim_acc_scalar = self.dimension_acceleration_acc.get(actor_class, &actor).0;
+
+            let env_density = Block::from_position(position.chunk, position.offset)
+                .and_then(|(chunk, block)| {
+                    let env = self.environment_bc.get_chunk(&chunk)?.get(block);
+                    Some(self.density_bec.get(env))
+                })
+                .copied()
+                .unwrap_or_default();
+
+            let density_scale = density_acceleration_scale(
+                self.density_acc.get(actor_class, &actor).0,
+                env_density.0,
+            );
 
             let dv = self
                 .acceleration_dkc
@@ -63,7 +90,7 @@ impl PlayerAccelerationSystemData<'_> {
 
             let new_velocity = *writable_velocity
                 + Velocity {
-                    vector: dv.vector * scalar,
+                    vector: dv.vector * dim_acc_scalar * density_scale,
                 };
 
             writable_velocity.update(new_velocity);

@@ -1,3 +1,4 @@
 {
-  "model": "water"
+  "model": "water",
+  "density": 1.0
 }

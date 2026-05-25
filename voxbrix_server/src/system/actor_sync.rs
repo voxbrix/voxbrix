@@ -12,6 +12,7 @@ use crate::{
             ComponentPackerSlot,
         },
         actor_class::{
+            density::DensityActorClassComponent,
             dimension_acceleration::DimensionAccelerationActorClassComponent,
             drag::DragActorClassComponent,
             health::HealthActorClassComponent,
@@ -64,7 +65,7 @@ impl System for ActorSyncSystem {
 }
 
 const POSITION_COMPONENT_COUNT: usize = 1;
-const SERVER_CONTROLLED_COMPONENT_COUNT: usize = 7;
+const SERVER_CONTROLLED_COMPONENT_COUNT: usize = 8;
 const CLIENT_CONTROLLED_COMPONENT_COUNT: usize = 2;
 const TOTAL_COMPONENT_COUNT: usize = POSITION_COMPONENT_COUNT
     + SERVER_CONTROLLED_COMPONENT_COUNT
@@ -100,6 +101,7 @@ pub struct ActorSyncSystemData<'a> {
     health_acc: &'a mut HealthActorClassComponent,
     drag_acc: &'a mut DragActorClassComponent,
     dimension_acceleration_acc: &'a mut DimensionAccelerationActorClassComponent,
+    density_acc: &'a mut DensityActorClassComponent,
 
     player_chunk_view_dkc: &'a PlayerChunkViewDimensionKindComponent,
 }
@@ -122,6 +124,7 @@ impl ActorSyncSystemData<'_> {
             health_acc,
             drag_acc,
             dimension_acceleration_acc,
+            density_acc,
             player_chunk_view_dkc,
         } = self;
 
@@ -140,6 +143,7 @@ impl ActorSyncSystemData<'_> {
                     health_acc,
                     drag_acc,
                     dimension_acceleration_acc,
+                    density_acc,
                 ];
                 preparers
                     .into_par_iter()
@@ -165,6 +169,7 @@ impl ActorSyncSystemData<'_> {
             equipment_ac,
             drag_acc,
             dimension_acceleration_acc,
+            density_acc,
         ];
         let client_controlled: [&dyn ActorComponentPack; CLIENT_CONTROLLED_COMPONENT_COUNT] =
             [velocity_ac, orientation_ac];

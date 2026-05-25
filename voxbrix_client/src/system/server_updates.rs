@@ -11,6 +11,7 @@ use crate::component::{
         TargetQueue,
     },
     actor_class::{
+        density::DensityActorClassComponent,
         dimension_acceleration::DimensionAccelerationActorClassComponent,
         drag::DragActorClassComponent,
         health::HealthActorClassComponent,
@@ -56,6 +57,7 @@ pub struct ServerUpdatesSystemData<'a> {
     health_acc: &'a mut HealthActorClassComponent,
     drag_acc: &'a mut DragActorClassComponent,
     dimension_acceleration_acc: &'a mut DimensionAccelerationActorClassComponent,
+    density_acc: &'a mut DensityActorClassComponent,
     position_ac: &'a mut PositionActorComponent,
     target_position_ac: &'a mut TargetPositionActorComponent,
     orientation_ac: &'a mut OrientationActorComponent,
@@ -81,6 +83,7 @@ impl ServerUpdatesSystemData<'_> {
         self.health_acc.unpack(&updates);
         self.drag_acc.unpack(&updates);
         self.dimension_acceleration_acc.unpack(&updates);
+        self.density_acc.unpack(&updates);
         self.velocity_ac.unpack(&updates);
         self.orientation_ac.unpack_target(&updates);
         self.target_orientation_ac.unpack_convert(

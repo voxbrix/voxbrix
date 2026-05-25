@@ -1,6 +1,10 @@
 use crate::{
     entity::chunk::Chunk,
-    math::Vec3I32,
+    math::{
+        Round,
+        Vec3F32,
+        Vec3I32,
+    },
 };
 use serde::{
     de::{
@@ -255,6 +259,16 @@ impl Block {
         let block = Self::from_coords(coords);
 
         Some((actual_chunk, block))
+    }
+
+    pub fn from_position(chunk: Chunk, position: Vec3F32) -> Option<(Chunk, Block)> {
+        let offset = Vec3I32::new(
+            position.x.round_down(),
+            position.y.round_down(),
+            position.z.round_down(),
+        );
+
+        Block::from_chunk_offset(chunk, offset)
     }
 }
 
