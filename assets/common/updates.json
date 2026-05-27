@@ -11,5 +11,6 @@
   "actor_dimension_acceleration",
   "actor_drag",
   "actor_health",
-  "actor_hitbox"
+  "actor_hitbox",
+  "actor_propulsion"
 ]

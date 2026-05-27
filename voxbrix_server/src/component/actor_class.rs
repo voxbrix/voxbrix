@@ -30,6 +30,7 @@ pub mod drag;
 pub mod health;
 pub mod hitbox;
 pub mod model;
+pub mod propulsion;
 
 /// Works as both Actor update and ActorClass update.
 /// Actor update overrides update of its ActorClass.

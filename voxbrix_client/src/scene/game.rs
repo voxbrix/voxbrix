@@ -18,6 +18,7 @@ use crate::{
             drag::DragActorClassComponent,
             health::HealthActorClassComponent,
             model::ModelActorClassComponent,
+            propulsion::PropulsionActorClassComponent,
         },
         actor_model::builder::BuilderActorModelComponent,
         block::{
@@ -508,7 +509,7 @@ impl GameScene {
         init_add::<CollisionBlockClassComponent>(&mut world).await?;
         init_add::<OpacityBlockClassComponent>(&mut world).await?;
 
-        let player_input = PlayerInput::new(10.0, 0.4);
+        let player_input = PlayerInput::new(0.4);
         let sky_light_system = SkyLightSystem::new();
 
         let label_library = world.get_resource_ref::<LabelLibrary>();
@@ -547,6 +548,7 @@ impl GameScene {
         init_add::<DragActorClassComponent>(&mut world).await?;
         init_add::<DimensionAccelerationActorClassComponent>(&mut world).await?;
         init_add::<DensityActorClassComponent>(&mut world).await?;
+        init_add::<PropulsionActorClassComponent>(&mut world).await?;
         init_add::<BuilderActorModelComponent>(&mut world).await?;
 
         position_ac.insert(

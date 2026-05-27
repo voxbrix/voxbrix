@@ -12,5 +12,16 @@
     "kind": "Sphere",
     "radius_blocks": 0.75
   },
-  "density": 1.0
+  "density": 1.0,
+  "propulsion": {
+    "ground": {
+      "movement_speed": 10.0,
+      "jump_velocity": 8.0
+    },
+    "buoyant": {
+      "magnitude": 6.0,
+      "max_speed": 6.0,
+      "density_scalability": 1.0
+    }
+  }
 }

@@ -25,19 +25,19 @@ const PITCH_CLAMP_ANGLE: f32 = 0.001;
 
 pub struct PlayerInput {
     own_move: [bool; 6],
+    jump_requested: bool,
     rotate_horizontal: f32,
     rotate_vertical: f32,
-    speed: f32,
     sensitivity: f32,
 }
 
 impl PlayerInput {
-    pub fn new(speed: f32, sensitivity: f32) -> Self {
+    pub fn new(sensitivity: f32) -> Self {
         Self {
             own_move: [false; 6],
+            jump_requested: false,
             rotate_horizontal: 0.0,
             rotate_vertical: 0.0,
-            speed,
             sensitivity,
         }
     }
@@ -78,6 +78,9 @@ impl PlayerInput {
                 true
             },
             KeyCode::Space => {
+                if pressed && !self.own_move[5] {
+                    self.jump_requested = true;
+                }
                 self.own_move[5] = pressed;
                 true
             },
@@ -109,10 +112,26 @@ impl PlayerInput {
         orientation.rotation = orientation.rotation.normalize();
     }
 
-    pub fn velocity(&self, actor_orientation: Orientation) -> Vec3F32 {
-        let mut forward = actor_orientation.forward();
-        forward[2] = 0.0;
+    pub fn take_jump_request(&mut self) -> bool {
+        let jump_requested = self.jump_requested;
+        self.jump_requested = false;
+        jump_requested
+    }
 
+    pub fn horizontal_direction(&self, actor_orientation: Orientation) -> Option<Vec3F32> {
+        self.direction_internal(actor_orientation, Some(Vec3F32::UP))
+    }
+
+    pub fn direction(&self, actor_orientation: Orientation) -> Option<Vec3F32> {
+        self.direction_internal(actor_orientation, None)
+    }
+
+    fn direction_internal(
+        &self,
+        actor_orientation: Orientation,
+        flatten_axis: Option<Vec3F32>,
+    ) -> Option<Vec3F32> {
+        let forward = actor_orientation.forward();
         let forward = forward.normalize();
 
         let mut movement = [0.0; 3];
@@ -127,17 +146,20 @@ impl PlayerInput {
 
         let movement = Vec3F32::from_array(movement);
 
-        let direction = if forward.is_nan() {
+        let mut direction = if forward.is_nan() {
             Vec3F32::new(0.0, 0.0, movement[2])
         } else {
-            let right = Vec3F32::UP.cross(forward);
+            let right = actor_orientation.right();
 
             forward * movement[0] + right * movement[1] + Vec3F32::UP * movement[2]
         };
 
-        Some(direction.normalize())
-            .filter(|n| !n.is_nan())
-            .map(|d| d * self.speed)
-            .unwrap_or(Vec3F32::ZERO)
+        if let Some(flatten_axis) = flatten_axis {
+            let flatten_axis = flatten_axis.normalize();
+            // Vector rejection: remove movement along the axis to project onto its plane.
+            direction -= flatten_axis * direction.dot(flatten_axis);
+        }
+
+        Some(direction.normalize()).filter(|n| !n.is_nan())
     }
 }
