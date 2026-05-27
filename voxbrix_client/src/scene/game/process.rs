@@ -18,6 +18,7 @@ use crate::{
         movement_interpolation::MovementInterpolationSystem,
         player_acceleration::PlayerAccelerationSystem,
         player_control::PlayerControlSystem,
+        player_drag::PlayerDragSystem,
         player_position::PlayerPositionSystem,
         target_block_highlight::TargetBlockHightlightSystem,
         update_render_pool::UpdateRenderPoolSystem,
@@ -46,6 +47,8 @@ impl Process<'_> {
         world.get_data::<PlayerControlSystem>().run();
 
         world.get_data::<PlayerAccelerationSystem>().run();
+
+        world.get_data::<PlayerDragSystem>().run();
 
         world.get_data::<MovementInterpolationSystem>().run();
 

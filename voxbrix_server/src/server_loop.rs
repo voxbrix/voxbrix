@@ -61,6 +61,7 @@ use crate::{
     storage::StorageThread,
     system::{
         actor_acceleration::ActorAccelerationSystem,
+        actor_drag::ActorDragSystem,
         chunk_activation::ChunkActivationSystem,
         chunk_add::ChunkAddSystem,
         chunk_generation::ChunkGenerationSystem,
@@ -322,6 +323,7 @@ impl ServerLoop {
 
         world.add(PositionSystem);
         world.add(ActorAccelerationSystem);
+        world.add(ActorDragSystem);
         world.add(ChunkActivationSystem::new());
 
         world.add(script_registry);

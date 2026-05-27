@@ -27,13 +27,7 @@ pub struct BuoyantPropulsion {
 
 impl BuoyantPropulsion {
     pub fn acceleration(&self, environment_density: f32) -> f32 {
-        let scale = if self.density_scalability >= 0.0 {
-            1.0 - self.density_scalability + self.density_scalability * environment_density
-        } else {
-            1.0 + self.density_scalability * environment_density
-        };
-
-        self.magnitude * scale.clamp(0.0, 1.0)
+        self.magnitude * environment_density.powf(self.density_scalability)
     }
 }
 

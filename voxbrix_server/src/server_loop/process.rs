@@ -1,5 +1,6 @@
 use crate::system::{
     actor_acceleration::ActorAccelerationSystem,
+    actor_drag::ActorDragSystem,
     actor_pruning::ActorPruningSystem,
     actor_sync::ActorSyncSystem,
     block_sync::BlockSyncSystem,
@@ -34,6 +35,8 @@ impl Process<'_> {
         world.get_data::<PositionSystem>().run();
 
         world.get_data::<ActorAccelerationSystem>().run();
+
+        world.get_data::<ActorDragSystem>().run();
 
         world.get_data::<ProjectileHitboxCollisionSystem>().run();
 

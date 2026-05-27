@@ -13,6 +13,7 @@ pub mod inventory_window;
 pub mod movement_interpolation;
 pub mod player_acceleration;
 pub mod player_control;
+pub mod player_drag;
 pub mod player_position;
 pub mod send_changes;
 pub mod server_dispatches;
