@@ -17,6 +17,7 @@ use crate::component::{
         health::HealthActorClassComponent,
         model::ModelActorClassComponent,
         propulsion::PropulsionActorClassComponent,
+        sight::SightActorClassComponent,
     },
 };
 use std::time::Instant;
@@ -60,6 +61,7 @@ pub struct ServerUpdatesSystemData<'a> {
     dimension_acceleration_acc: &'a mut DimensionAccelerationActorClassComponent,
     density_acc: &'a mut DensityActorClassComponent,
     propulsion_acc: &'a mut PropulsionActorClassComponent,
+    sight_acc: &'a mut SightActorClassComponent,
     position_ac: &'a mut PositionActorComponent,
     target_position_ac: &'a mut TargetPositionActorComponent,
     orientation_ac: &'a mut OrientationActorComponent,
@@ -87,6 +89,7 @@ impl ServerUpdatesSystemData<'_> {
         self.dimension_acceleration_acc.unpack(&updates);
         self.density_acc.unpack(&updates);
         self.propulsion_acc.unpack(&updates);
+        self.sight_acc.unpack(&updates);
         self.velocity_ac.unpack(&updates);
         self.orientation_ac.unpack_target(&updates);
         self.target_orientation_ac.unpack_convert(

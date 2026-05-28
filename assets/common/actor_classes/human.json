@@ -13,6 +13,10 @@
     "radius_blocks": 0.75
   },
   "density": 1.1,
+  "sight": {
+    "view_offset": [0.0, 0.0, 0.6],
+    "view_angle": 1
+  },
   "drag": {
     "kind": "Uniform",
     "value": 1.0

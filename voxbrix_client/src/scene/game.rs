@@ -19,6 +19,7 @@ use crate::{
             health::HealthActorClassComponent,
             model::ModelActorClassComponent,
             propulsion::PropulsionActorClassComponent,
+            sight::SightActorClassComponent,
         },
         actor_model::builder::BuilderActorModelComponent,
         block::{
@@ -549,6 +550,7 @@ impl GameScene {
         init_add::<DimensionAccelerationActorClassComponent>(&mut world).await?;
         init_add::<DensityActorClassComponent>(&mut world).await?;
         init_add::<PropulsionActorClassComponent>(&mut world).await?;
+        init_add::<SightActorClassComponent>(&mut world).await?;
         init_add::<BuilderActorModelComponent>(&mut world).await?;
 
         position_ac.insert(

@@ -12,5 +12,6 @@
   "actor_drag",
   "actor_health",
   "actor_hitbox",
-  "actor_propulsion"
+  "actor_propulsion",
+  "actor_sight"
 ]

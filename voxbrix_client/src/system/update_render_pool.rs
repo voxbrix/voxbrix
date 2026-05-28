@@ -1,7 +1,11 @@
 use crate::{
-    component::actor::{
-        orientation::OrientationActorComponent,
-        position::PositionActorComponent,
+    component::{
+        actor::{
+            class::ClassActorComponent,
+            orientation::OrientationActorComponent,
+            position::PositionActorComponent,
+        },
+        actor_class::sight::SightActorClassComponent,
     },
     resource::{
         interface_state::InterfaceState,
@@ -30,8 +34,10 @@ pub struct UpdateRenderPoolSystemData<'a> {
     render_pool: &'a mut RenderPool,
     process_timer: &'a ProcessTimer,
     player_actor: &'a PlayerActor,
+    class_ac: &'a ClassActorComponent,
     position_ac: &'a PositionActorComponent,
     orientation_ac: &'a OrientationActorComponent,
+    sight_acc: &'a SightActorClassComponent,
     interface_state: &'a mut InterfaceState,
 }
 
@@ -55,9 +61,16 @@ impl UpdateRenderPoolSystemData<'_> {
             .get(&self.player_actor.0)
             .expect("player orientation is undefined");
 
+        let player_offset = if let Some(player_class) = self.class_ac.get(&self.player_actor.0) {
+            let player_sight = self.sight_acc.get(player_class, &self.player_actor.0);
+            player_position.offset + player_sight.view_offset
+        } else {
+            player_position.offset
+        };
+
         self.render_pool.update_camera(CameraUpdate {
             chunk: player_position.chunk.position,
-            offset: player_position.offset,
+            offset: player_offset,
             view_direction: player_orientation.forward(),
             dt: self.process_timer.elapsed(),
         });

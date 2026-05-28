@@ -29,6 +29,7 @@ pub mod drag;
 pub mod health;
 pub mod model;
 pub mod propulsion;
+pub mod sight;
 
 /// Works as both Actor component and ActorClass component.
 /// Actor component overrides component of its ActorClass.

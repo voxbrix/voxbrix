@@ -26,6 +26,7 @@ use crate::{
             hitbox::HitboxActorClassComponent,
             model::ModelActorClassComponent,
             propulsion::PropulsionActorClassComponent,
+            sight::SightActorClassComponent,
         },
         block::{
             class::ClassBlockComponent,
@@ -231,6 +232,7 @@ impl ServerLoop {
         init_add::<DimensionAccelerationActorClassComponent>(&mut world).await?;
         init_add::<DensityActorClassComponent>(&mut world).await?;
         init_add::<PropulsionActorClassComponent>(&mut world).await?;
+        init_add::<SightActorClassComponent>(&mut world).await?;
 
         init_add::<StatusChunkComponent>(&mut world).await?;
         init_add::<CacheChunkComponent>(&mut world).await?;
