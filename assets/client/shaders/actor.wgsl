@@ -71,7 +71,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let dimensions = textureDimensions(textures[in.texture_index]);
     let layers = textureNumLayers(textures[in.texture_index]);
 
-    let texture_position = vec2<u32>(vec2<f32>(dimensions) * in.texture_position);
+    let texture_position = min(
+        vec2<u32>(vec2<f32>(dimensions) * in.texture_position),
+        dimensions - vec2<u32>(1u, 1u)
+    );
 
     let parameters = texture_parameters[in.texture_index];
 
