@@ -6,6 +6,14 @@ use serde::{
 };
 use voxbrix_world::World;
 
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum PropulsionType {
+    #[default]
+    None,
+    Ground,
+    Buoyant,
+}
+
 #[derive(PartialEq, Serialize, Deserialize, Default, Debug)]
 pub struct Propulsion {
     pub ground: GroundPropulsion,

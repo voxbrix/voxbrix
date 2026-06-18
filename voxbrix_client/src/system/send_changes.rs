@@ -1,5 +1,6 @@
 use crate::{
     component::actor::{
+        locomotion::LocomotionActorComponent,
         orientation::OrientationActorComponent,
         position::PositionActorComponent,
         velocity::VelocityActorComponent,
@@ -43,6 +44,7 @@ pub struct SendChangesSystemData<'a> {
     position_ac: &'a mut PositionActorComponent,
     orientation_ac: &'a mut OrientationActorComponent,
     velocity_ac: &'a mut VelocityActorComponent,
+    locomotion_ac: &'a mut LocomotionActorComponent,
     player_chunk_view_dkc: &'a PlayerChunkViewDimensionKindComponent,
     packer: &'a mut Packer,
     updates_packer: &'a mut UpdatesPacker,
@@ -78,6 +80,7 @@ impl SendChangesSystemData<'_> {
         self.position_ac.pack_player(self.updates_packer, lcs);
         self.velocity_ac.pack_player(self.updates_packer, lcs);
         self.orientation_ac.pack_player(self.updates_packer, lcs);
+        self.locomotion_ac.pack_player(self.updates_packer, lcs);
 
         let packed = ServerAcceptMessage::pack_state(
             self.packer,

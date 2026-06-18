@@ -4,6 +4,7 @@ use crate::{
             class::ClassActorComponent,
             effect::EffectActorComponent,
             equipment::EquipmentActorComponent,
+            locomotion::LocomotionActorComponent,
             orientation::OrientationActorComponent,
             position::PositionActorComponent,
             velocity::VelocityActorComponent,
@@ -67,7 +68,7 @@ impl System for ActorSyncSystem {
 
 const POSITION_COMPONENT_COUNT: usize = 1;
 const SERVER_CONTROLLED_COMPONENT_COUNT: usize = 9;
-const CLIENT_CONTROLLED_COMPONENT_COUNT: usize = 2;
+const CLIENT_CONTROLLED_COMPONENT_COUNT: usize = 3;
 const TOTAL_COMPONENT_COUNT: usize = POSITION_COMPONENT_COUNT
     + SERVER_CONTROLLED_COMPONENT_COUNT
     + CLIENT_CONTROLLED_COMPONENT_COUNT;
@@ -97,6 +98,7 @@ pub struct ActorSyncSystemData<'a> {
     position_ac: &'a mut PositionActorComponent,
     velocity_ac: &'a mut VelocityActorComponent,
     orientation_ac: &'a mut OrientationActorComponent,
+    locomotion_ac: &'a mut LocomotionActorComponent,
 
     model_acc: &'a mut ModelActorClassComponent,
     health_acc: &'a mut HealthActorClassComponent,
@@ -122,6 +124,7 @@ impl ActorSyncSystemData<'_> {
             position_ac,
             velocity_ac,
             orientation_ac,
+            locomotion_ac,
             model_acc,
             health_acc,
             drag_acc,
@@ -142,6 +145,7 @@ impl ActorSyncSystemData<'_> {
                     class_ac,
                     velocity_ac,
                     orientation_ac,
+                    locomotion_ac,
                     model_acc,
                     health_acc,
                     drag_acc,
@@ -177,7 +181,7 @@ impl ActorSyncSystemData<'_> {
             propulsion_acc,
         ];
         let client_controlled: [&dyn ActorComponentPack; CLIENT_CONTROLLED_COMPONENT_COUNT] =
-            [velocity_ac, orientation_ac];
+            [velocity_ac, orientation_ac, locomotion_ac];
 
         // Reborrow as shared for concurrent access below.
         let dispatches_packer_pc: &DispatchesPackerPlayerComponent = dispatches_packer_pc;

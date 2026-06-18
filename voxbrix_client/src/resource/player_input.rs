@@ -118,22 +118,15 @@ impl PlayerInput {
         jump_requested
     }
 
-    pub fn horizontal_direction(&self, actor_orientation: Orientation) -> Option<Vec3F32> {
-        self.direction_internal(actor_orientation, Some(Vec3F32::UP))
+    pub fn direction(&self) -> Option<Vec3F32> {
+        self.direction_internal(None)
     }
 
-    pub fn direction(&self, actor_orientation: Orientation) -> Option<Vec3F32> {
-        self.direction_internal(actor_orientation, None)
+    pub fn surface_direction(&self, flatten_axis: Vec3F32) -> Option<Vec3F32> {
+        self.direction_internal(Some(flatten_axis))
     }
 
-    fn direction_internal(
-        &self,
-        actor_orientation: Orientation,
-        flatten_axis: Option<Vec3F32>,
-    ) -> Option<Vec3F32> {
-        let forward = actor_orientation.forward();
-        let forward = forward.normalize();
-
+    fn direction_internal(&self, flatten_axis: Option<Vec3F32>) -> Option<Vec3F32> {
         let mut movement = [0.0; 3];
 
         for (i, is_moving) in self.own_move.into_iter().enumerate() {
@@ -144,15 +137,7 @@ impl PlayerInput {
             }
         }
 
-        let movement = Vec3F32::from_array(movement);
-
-        let mut direction = if forward.is_nan() {
-            Vec3F32::new(0.0, 0.0, movement[2])
-        } else {
-            let right = actor_orientation.right();
-
-            forward * movement[0] + right * movement[1] + Vec3F32::UP * movement[2]
-        };
+        let mut direction = Vec3F32::from_array(movement);
 
         if let Some(flatten_axis) = flatten_axis {
             let flatten_axis = flatten_axis.normalize();

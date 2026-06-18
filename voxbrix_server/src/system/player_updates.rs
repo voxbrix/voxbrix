@@ -1,6 +1,7 @@
 use crate::{
     component::{
         actor::{
+            locomotion::LocomotionActorComponent,
             orientation::OrientationActorComponent,
             position::PositionActorComponent,
             velocity::VelocityActorComponent,
@@ -56,6 +57,7 @@ pub struct PlayerUpdatesSystemData<'a> {
     position_ac: &'a mut PositionActorComponent,
     velocity_ac: &'a mut VelocityActorComponent,
     orientation_ac: &'a mut OrientationActorComponent,
+    locomotion_ac: &'a mut LocomotionActorComponent,
 
     player_chunk_view_dkc: &'a PlayerChunkViewDimensionKindComponent,
 }
@@ -89,6 +91,8 @@ impl PlayerUpdatesSystemData<'_> {
         self.velocity_ac
             .unpack_player(actor, &updates, *self.snapshot);
         self.orientation_ac
+            .unpack_player(actor, &updates, *self.snapshot);
+        self.locomotion_ac
             .unpack_player(actor, &updates, *self.snapshot);
 
         self.position_ac.unpack_player_with(

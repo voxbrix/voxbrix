@@ -9,6 +9,7 @@ use crate::{
             class::ClassActorComponent,
             effect::EffectActorComponent,
             equipment::EquipmentActorComponent,
+            locomotion::LocomotionActorComponent,
             movement_change::MovementChangeActorComponent,
             movement_metadata::MovementMetadataActorComponent,
             orientation::OrientationActorComponent,
@@ -218,6 +219,7 @@ impl ServerLoop {
         init_add::<PositionActorComponent>(&mut world).await?;
         init_add::<VelocityActorComponent>(&mut world).await?;
         init_add::<OrientationActorComponent>(&mut world).await?;
+        init_add::<LocomotionActorComponent>(&mut world).await?;
         init_add::<PlayerActorComponent>(&mut world).await?;
         init_add::<EffectActorComponent>(&mut world).await?;
         init_add::<EquipmentActorComponent>(&mut world).await?;

@@ -3,6 +3,7 @@
   "actor_position",
   "actor_velocity",
   "actor_orientation",
+  "actor_locomotion",
   "actor_model",
   "actor_effect",
   "actor_equipment",

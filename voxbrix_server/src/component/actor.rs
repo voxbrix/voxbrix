@@ -36,6 +36,7 @@ use voxbrix_world::{
 pub mod class;
 pub mod effect;
 pub mod equipment;
+pub mod locomotion;
 pub mod movement_change;
 pub mod movement_metadata;
 pub mod orientation;

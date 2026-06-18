@@ -2,6 +2,7 @@ use crate::{
     component::{
         actor::{
             class::ClassActorComponent,
+            locomotion::LocomotionActorComponent,
             orientation::OrientationActorComponent,
             position::PositionActorComponent,
             velocity::VelocityActorComponent,
@@ -18,12 +19,21 @@ use crate::{
 };
 use voxbrix_common::{
     component::{
-        actor::velocity::Velocity,
+        actor::{
+            locomotion::Locomotion,
+            orientation::Orientation,
+            velocity::Velocity,
+        },
+        actor_class::propulsion::PropulsionType,
         block_environment::density::DensityBlockEnvironmentComponent,
     },
     entity::{
         block::Block,
         snapshot::ClientSnapshot,
+    },
+    math::{
+        Directions,
+        Vec3F32,
     },
     resource::process_timer::ProcessTimer,
 };
@@ -51,6 +61,7 @@ pub struct PlayerControlSystemData<'a> {
     environment_bc: &'a EnvironmentBlockComponent,
     density_bec: &'a DensityBlockEnvironmentComponent,
     velocity_ac: &'a mut VelocityActorComponent,
+    locomotion_ac: &'a mut LocomotionActorComponent,
     orientation_ac: &'a mut OrientationActorComponent,
 }
 
@@ -76,12 +87,31 @@ impl PlayerControlSystemData<'_> {
         };
         let propulsion = self.propulsion_acc.get(actor_class, &actor);
         let jump_requested = self.player_movement.take_jump_request();
+        let direction = if self.player_actor_mm.stands_on_surface {
+            self.player_movement.surface_direction(Vec3F32::UP)
+        } else {
+            self.player_movement.direction()
+        };
+        let locomotion = direction
+            .map(|direction| {
+                Locomotion {
+                    propulsion: if self.player_actor_mm.stands_on_surface {
+                        PropulsionType::Ground
+                    } else {
+                        PropulsionType::Buoyant
+                    },
+                    direction,
+                }
+            })
+            .unwrap_or_default();
+
+        if let Some(mut actor_locomotion) = self.locomotion_ac.get_writable(&actor, snapshot) {
+            actor_locomotion.update(locomotion);
+        }
 
         if let Some(mut actor_velocity) = self.velocity_ac.get_writable(&actor, snapshot) {
             if self.player_actor_mm.stands_on_surface {
-                let mut movement = self
-                    .player_movement
-                    .horizontal_direction(orientation)
+                let mut movement = surface_locomotion_to_world(locomotion.direction, orientation)
                     .map(|direction| direction * propulsion.ground.movement_speed)
                     .unwrap_or_default();
 
@@ -108,7 +138,7 @@ impl PlayerControlSystemData<'_> {
                 .copied()
                 .unwrap_or_default();
 
-            let Some(direction) = self.player_movement.direction(orientation) else {
+            let Some(direction) = locomotion_to_world(locomotion.direction, orientation) else {
                 return;
             };
 
@@ -134,4 +164,55 @@ impl PlayerControlSystemData<'_> {
             });
         }
     }
+}
+
+fn locomotion_to_world(direction: Vec3F32, orientation: Orientation) -> Option<Vec3F32> {
+    // Locomotion direction is stored in actor-local axes so it can be replicated
+    // independently from the actor orientation: x = forward intent, y = right
+    // intent, z = up/down intent.
+    let mut direction = orientation.forward() * direction.x
+        + orientation.right() * direction.y
+        + orientation.up() * direction.z;
+
+    if direction.is_nan() {
+        return None;
+    }
+
+    // Normalize after combining axes so diagonal input does not move faster than
+    // cardinal input.
+    direction = direction.normalize();
+    (!direction.is_nan()).then_some(direction)
+}
+
+fn surface_locomotion_to_world(direction: Vec3F32, orientation: Orientation) -> Option<Vec3F32> {
+    // Ground locomotion uses the same local forward/right intent, but projects
+    // those axes onto the current flat surface before applying movement speed.
+    // This keeps walking speed parallel to the ground even when the camera is
+    // pitched up or down. When wall/ceiling crawling is added, this should use
+    // the resolved surface normal instead of assuming Vec3F32::UP.
+    let mut forward = orientation.forward();
+    let mut right = orientation.right();
+
+    forward -= Vec3F32::UP * forward.dot(Vec3F32::UP);
+    right -= Vec3F32::UP * right.dot(Vec3F32::UP);
+
+    let forward = forward.normalize();
+    let right = right.normalize();
+
+    let mut direction = if forward.is_nan() || right.is_nan() {
+        // Looking straight along the surface normal makes horizontal movement
+        // undefined. Keep only local z movement in that degenerate case.
+        Vec3F32::new(0.0, 0.0, direction.z)
+    } else {
+        forward * direction.x + right * direction.y + Vec3F32::UP * direction.z
+    };
+
+    if direction.is_nan() {
+        return None;
+    }
+
+    // Normalize after combining axes so diagonal input does not move faster than
+    // cardinal input.
+    direction = direction.normalize();
+    (!direction.is_nan()).then_some(direction)
 }

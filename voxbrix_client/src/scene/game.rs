@@ -5,6 +5,7 @@ use crate::{
             class::ClassActorComponent,
             effect::EffectActorComponent,
             equipment::EquipmentActorComponent,
+            locomotion::LocomotionActorComponent,
             orientation::OrientationActorComponent,
             position::PositionActorComponent,
             target_orientation::TargetOrientationActorComponent,
@@ -530,6 +531,11 @@ impl GameScene {
             player_actor,
             true,
         );
+        let mut locomotion_ac = LocomotionActorComponent::new(
+            label_library.get("actor_locomotion").unwrap(),
+            player_actor,
+            true,
+        );
         let mut orientation_ac = OrientationActorComponent::new(
             label_library.get("actor_orientation").unwrap(),
             player_actor,
@@ -574,6 +580,7 @@ impl GameScene {
             },
             snapshot,
         );
+        locomotion_ac.insert(player_actor, Default::default(), snapshot);
         orientation_ac.insert(
             player_actor,
             Orientation {
@@ -662,6 +669,7 @@ impl GameScene {
         world.add(animation_state_ac);
         world.add(target_position_ac);
         world.add(target_orientation_ac);
+        world.add(locomotion_ac);
 
         world.add(class_bc);
         world.add(environment_bc);

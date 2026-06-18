@@ -3,6 +3,7 @@ use crate::component::{
         class::ClassActorComponent,
         effect::EffectActorComponent,
         equipment::EquipmentActorComponent,
+        locomotion::LocomotionActorComponent,
         orientation::OrientationActorComponent,
         position::PositionActorComponent,
         target_orientation::TargetOrientationActorComponent,
@@ -67,6 +68,7 @@ pub struct ServerUpdatesSystemData<'a> {
     orientation_ac: &'a mut OrientationActorComponent,
     target_orientation_ac: &'a mut TargetOrientationActorComponent,
     velocity_ac: &'a mut VelocityActorComponent,
+    locomotion_ac: &'a mut LocomotionActorComponent,
     actions_packer: &'a mut ClientActionsPacker,
     updates_unpacker: &'a mut UpdatesUnpacker,
 }
@@ -91,6 +93,7 @@ impl ServerUpdatesSystemData<'_> {
         self.propulsion_acc.unpack(&updates);
         self.sight_acc.unpack(&updates);
         self.velocity_ac.unpack(&updates);
+        self.locomotion_ac.unpack(&updates);
         self.orientation_ac.unpack_target(&updates);
         self.target_orientation_ac.unpack_convert(
             &updates,

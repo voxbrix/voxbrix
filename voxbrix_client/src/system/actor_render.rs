@@ -7,9 +7,9 @@ use crate::{
                 AnimationStateActorComponent,
             },
             class::ClassActorComponent,
+            locomotion::LocomotionActorComponent,
             orientation::OrientationActorComponent,
             position::PositionActorComponent,
-            velocity::VelocityActorComponent,
         },
         actor_class::model::ModelActorClassComponent,
         actor_model::builder::BuilderActorModelComponent,
@@ -34,9 +34,12 @@ use crate::{
 use nohash_hasher::IntMap;
 use std::time::Instant;
 use voxbrix_common::{
-    component::block::sky_light::{
-        SkyLight,
-        SkyLightBlockComponent,
+    component::{
+        actor_class::propulsion::PropulsionType,
+        block::sky_light::{
+            SkyLight,
+            SkyLightBlockComponent,
+        },
     },
     entity::block::Block,
     math::{
@@ -176,7 +179,7 @@ pub struct ActorRenderSystemData<'a> {
     player_actor: &'a PlayerActor,
     class_ac: &'a ClassActorComponent,
     position_ac: &'a PositionActorComponent,
-    velocity_ac: &'a VelocityActorComponent,
+    locomotion_ac: &'a LocomotionActorComponent,
     orientation_ac: &'a OrientationActorComponent,
     model_acc: &'a ModelActorClassComponent,
     builder_amc: &'a BuilderActorModelComponent,
@@ -231,9 +234,11 @@ impl ActorRenderSystemData<'_> {
             let walking_animation = crate::entity::actor_model::ActorAnimation(0);
             let walking_animation_duration_ms = 500;
             if self
-                .velocity_ac
+                .locomotion_ac
                 .get(&actor)
-                .filter(|vel| vel.vector.length() > f32::EPSILON)
+                .filter(|locomotion| {
+                    locomotion.propulsion == PropulsionType::Ground && locomotion.is_active()
+                })
                 .is_some()
             {
                 if model_builder.has_animation(&walking_animation) {
