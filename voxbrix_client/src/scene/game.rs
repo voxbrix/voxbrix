@@ -15,8 +15,8 @@ use crate::{
         actor_class::{
             block_collision::BlockCollisionActorClassComponent,
             density::DensityActorClassComponent,
-            dimension_acceleration::DimensionAccelerationActorClassComponent,
             drag::DragActorClassComponent,
+            gravity_sensitivity::GravitySensitivityActorClassComponent,
             health::HealthActorClassComponent,
             model::ModelActorClassComponent,
             propulsion::PropulsionActorClassComponent,
@@ -138,7 +138,7 @@ use voxbrix_common::{
         block_environment::density::DensityBlockEnvironmentComponent,
         chunk::status::StatusChunkComponent,
         dimension_kind::{
-            acceleration::AccelerationDimensionKindComponent,
+            gravity::GravityDimensionKindComponent,
             player_chunk_view::PlayerChunkViewDimensionKindComponent,
             sky_light_config::SkyLightConfigDimensionKindComponent,
         },
@@ -553,7 +553,7 @@ impl GameScene {
         init_add::<HealthActorClassComponent>(&mut world).await?;
         init_add::<BlockCollisionActorClassComponent>(&mut world).await?;
         init_add::<DragActorClassComponent>(&mut world).await?;
-        init_add::<DimensionAccelerationActorClassComponent>(&mut world).await?;
+        init_add::<GravitySensitivityActorClassComponent>(&mut world).await?;
         init_add::<DensityActorClassComponent>(&mut world).await?;
         init_add::<PropulsionActorClassComponent>(&mut world).await?;
         init_add::<SightActorClassComponent>(&mut world).await?;
@@ -589,7 +589,7 @@ impl GameScene {
             snapshot,
         );
 
-        init_add::<AccelerationDimensionKindComponent>(&mut world).await?;
+        init_add::<GravityDimensionKindComponent>(&mut world).await?;
         init_add::<SkyLightConfigDimensionKindComponent>(&mut world).await?;
         init_add::<PlayerChunkViewDimensionKindComponent>(&mut world).await?;
 

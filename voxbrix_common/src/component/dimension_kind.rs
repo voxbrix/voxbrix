@@ -3,7 +3,7 @@ use crate::{
     entity::chunk::DimensionKind,
 };
 
-pub mod acceleration;
+pub mod gravity;
 pub mod player_chunk_view;
 pub mod sky_light_config;
 

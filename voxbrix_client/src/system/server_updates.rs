@@ -13,8 +13,8 @@ use crate::component::{
     },
     actor_class::{
         density::DensityActorClassComponent,
-        dimension_acceleration::DimensionAccelerationActorClassComponent,
         drag::DragActorClassComponent,
+        gravity_sensitivity::GravitySensitivityActorClassComponent,
         health::HealthActorClassComponent,
         model::ModelActorClassComponent,
         propulsion::PropulsionActorClassComponent,
@@ -59,7 +59,7 @@ pub struct ServerUpdatesSystemData<'a> {
     model_acc: &'a mut ModelActorClassComponent,
     health_acc: &'a mut HealthActorClassComponent,
     drag_acc: &'a mut DragActorClassComponent,
-    dimension_acceleration_acc: &'a mut DimensionAccelerationActorClassComponent,
+    gravity_sensitivity_acc: &'a mut GravitySensitivityActorClassComponent,
     density_acc: &'a mut DensityActorClassComponent,
     propulsion_acc: &'a mut PropulsionActorClassComponent,
     sight_acc: &'a mut SightActorClassComponent,
@@ -88,7 +88,7 @@ impl ServerUpdatesSystemData<'_> {
         self.model_acc.unpack(&updates);
         self.health_acc.unpack(&updates);
         self.drag_acc.unpack(&updates);
-        self.dimension_acceleration_acc.unpack(&updates);
+        self.gravity_sensitivity_acc.unpack(&updates);
         self.density_acc.unpack(&updates);
         self.propulsion_acc.unpack(&updates);
         self.sight_acc.unpack(&updates);

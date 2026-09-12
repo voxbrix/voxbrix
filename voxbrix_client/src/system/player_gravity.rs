@@ -8,7 +8,7 @@ use crate::{
         },
         actor_class::{
             density::DensityActorClassComponent,
-            dimension_acceleration::DimensionAccelerationActorClassComponent,
+            gravity_sensitivity::GravitySensitivityActorClassComponent,
         },
         block::environment::EnvironmentBlockComponent,
     },
@@ -18,9 +18,9 @@ use voxbrix_common::{
     component::{
         actor::velocity::Velocity,
         block_environment::density::DensityBlockEnvironmentComponent,
-        dimension_kind::acceleration::{
-            density_acceleration_scale,
-            AccelerationDimensionKindComponent,
+        dimension_kind::gravity::{
+            density_gravity_scale,
+            GravityDimensionKindComponent,
         },
     },
     entity::{
@@ -34,28 +34,28 @@ use voxbrix_world::{
     SystemData,
 };
 
-pub struct PlayerAccelerationSystem;
+pub struct PlayerGravitySystem;
 
-impl System for PlayerAccelerationSystem {
-    type Data<'a> = PlayerAccelerationSystemData<'a>;
+impl System for PlayerGravitySystem {
+    type Data<'a> = PlayerGravitySystemData<'a>;
 }
 
 #[derive(SystemData)]
-pub struct PlayerAccelerationSystemData<'a> {
+pub struct PlayerGravitySystemData<'a> {
     snapshot: &'a ClientSnapshot,
     process_timer: &'a ProcessTimer,
     player_actor: &'a PlayerActor,
     position_ac: &'a PositionActorComponent,
     class_ac: &'a ClassActorComponent,
-    dimension_acceleration_acc: &'a DimensionAccelerationActorClassComponent,
+    gravity_sensitivity_acc: &'a GravitySensitivityActorClassComponent,
     density_acc: &'a DensityActorClassComponent,
     environment_bc: &'a EnvironmentBlockComponent,
     density_bec: &'a DensityBlockEnvironmentComponent,
-    acceleration_dkc: &'a AccelerationDimensionKindComponent,
+    gravity_dkc: &'a GravityDimensionKindComponent,
     velocity_ac: &'a mut VelocityActorComponent,
 }
 
-impl PlayerAccelerationSystemData<'_> {
+impl PlayerGravitySystemData<'_> {
     pub fn run(self) {
         let actor = self.player_actor.0;
 
@@ -68,7 +68,7 @@ impl PlayerAccelerationSystemData<'_> {
             .get_writable(&actor, *self.snapshot)
             .zip(self.position_ac.get(&actor))
         {
-            let dim_acc_scalar = self.dimension_acceleration_acc.get(actor_class, &actor).0;
+            let gravity_sensitivity = self.gravity_sensitivity_acc.get(actor_class, &actor).0;
 
             let env_density = Block::from_position(position.chunk, position.offset)
                 .and_then(|(chunk, block)| {
@@ -78,19 +78,17 @@ impl PlayerAccelerationSystemData<'_> {
                 .copied()
                 .unwrap_or_default();
 
-            let density_scale = density_acceleration_scale(
-                self.density_acc.get(actor_class, &actor).0,
-                env_density.0,
-            );
+            let density_scale =
+                density_gravity_scale(self.density_acc.get(actor_class, &actor).0, env_density.0);
 
             let dv = self
-                .acceleration_dkc
+                .gravity_dkc
                 .get(&position.chunk.dimension.kind)
                 .into_velocity(self.process_timer.elapsed());
 
             let new_velocity = *writable_velocity
                 + Velocity {
-                    vector: dv.vector * dim_acc_scalar * density_scale,
+                    vector: dv.vector * gravity_sensitivity * density_scale,
                 };
 
             writable_velocity.update(new_velocity);

@@ -21,8 +21,8 @@ use crate::{
         actor_class::{
             block_collision::BlockCollisionActorClassComponent,
             density::DensityActorClassComponent,
-            dimension_acceleration::DimensionAccelerationActorClassComponent,
             drag::DragActorClassComponent,
+            gravity_sensitivity::GravitySensitivityActorClassComponent,
             health::HealthActorClassComponent,
             hitbox::HitboxActorClassComponent,
             model::ModelActorClassComponent,
@@ -62,8 +62,8 @@ use crate::{
     },
     storage::StorageThread,
     system::{
-        actor_acceleration::ActorAccelerationSystem,
         actor_drag::ActorDragSystem,
+        actor_gravity::ActorGravitySystem,
         chunk_activation::ChunkActivationSystem,
         chunk_add::ChunkAddSystem,
         chunk_generation::ChunkGenerationSystem,
@@ -105,7 +105,7 @@ use voxbrix_common::{
         block_class::collision::CollisionBlockClassComponent,
         block_environment::density::DensityBlockEnvironmentComponent,
         dimension_kind::{
-            acceleration::AccelerationDimensionKindComponent,
+            gravity::GravityDimensionKindComponent,
             player_chunk_view::PlayerChunkViewDimensionKindComponent,
         },
     },
@@ -231,7 +231,7 @@ impl ServerLoop {
         init_add::<HitboxActorClassComponent>(&mut world).await?;
         init_add::<BlockCollisionActorClassComponent>(&mut world).await?;
         init_add::<DragActorClassComponent>(&mut world).await?;
-        init_add::<DimensionAccelerationActorClassComponent>(&mut world).await?;
+        init_add::<GravitySensitivityActorClassComponent>(&mut world).await?;
         init_add::<DensityActorClassComponent>(&mut world).await?;
         init_add::<PropulsionActorClassComponent>(&mut world).await?;
         init_add::<SightActorClassComponent>(&mut world).await?;
@@ -249,7 +249,7 @@ impl ServerLoop {
         init_add::<ComponentMap<DimensionKind>>(&mut world).await?;
         init_add::<BoundaryDimensionKindComponent>(&mut world).await?;
         init_add::<PlayerChunkViewDimensionKindComponent>(&mut world).await?;
-        init_add::<AccelerationDimensionKindComponent>(&mut world).await?;
+        init_add::<GravityDimensionKindComponent>(&mut world).await?;
 
         let mut engine_config = wasmtime::Config::new();
 
@@ -326,7 +326,7 @@ impl ServerLoop {
         world.add(chunk_generation_system);
 
         world.add(PositionSystem);
-        world.add(ActorAccelerationSystem);
+        world.add(ActorGravitySystem);
         world.add(ActorDragSystem);
         world.add(ChunkActivationSystem::new());
 

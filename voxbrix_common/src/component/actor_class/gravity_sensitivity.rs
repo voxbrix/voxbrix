@@ -7,18 +7,18 @@ use serde::{
 use voxbrix_world::World;
 
 #[derive(PartialEq, Serialize, Deserialize, Debug)]
-pub struct DimensionAcceleration(pub f32);
+pub struct GravitySensitivity(pub f32);
 
-impl Default for DimensionAcceleration {
+impl Default for GravitySensitivity {
     fn default() -> Self {
         Self(1.0)
     }
 }
 
-impl FromDescriptor for DimensionAcceleration {
-    type Descriptor = DimensionAcceleration;
+impl FromDescriptor for GravitySensitivity {
+    type Descriptor = GravitySensitivity;
 
-    const COMPONENT_NAME: &str = "dimension_acceleration";
+    const COMPONENT_NAME: &str = "gravity_sensitivity";
 
     fn from_descriptor(desc: Option<Self::Descriptor>, _world: &World) -> Result<Self, Error> {
         Ok(desc.unwrap_or_default())

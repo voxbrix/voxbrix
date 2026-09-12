@@ -19,7 +19,7 @@ impl From<server_loop_api::Block> for Block {
 
 impl From<Block> for server_loop_api::Block {
     fn from(value: Block) -> Self {
-        Self::from_usize(value.as_usize())
+        Self::from_usize(value.as_usize()).expect("incorrect block passed to script")
     }
 }
 

@@ -14,8 +14,8 @@ use crate::{
         },
         actor_class::{
             density::DensityActorClassComponent,
-            dimension_acceleration::DimensionAccelerationActorClassComponent,
             drag::DragActorClassComponent,
+            gravity_sensitivity::GravitySensitivityActorClassComponent,
             health::HealthActorClassComponent,
             model::ModelActorClassComponent,
             propulsion::PropulsionActorClassComponent,
@@ -103,7 +103,7 @@ pub struct ActorSyncSystemData<'a> {
     model_acc: &'a mut ModelActorClassComponent,
     health_acc: &'a mut HealthActorClassComponent,
     drag_acc: &'a mut DragActorClassComponent,
-    dimension_acceleration_acc: &'a mut DimensionAccelerationActorClassComponent,
+    gravity_sensitivity_acc: &'a mut GravitySensitivityActorClassComponent,
     density_acc: &'a mut DensityActorClassComponent,
     propulsion_acc: &'a mut PropulsionActorClassComponent,
 
@@ -128,7 +128,7 @@ impl ActorSyncSystemData<'_> {
             model_acc,
             health_acc,
             drag_acc,
-            dimension_acceleration_acc,
+            gravity_sensitivity_acc,
             density_acc,
             propulsion_acc,
             player_chunk_view_dkc,
@@ -149,7 +149,7 @@ impl ActorSyncSystemData<'_> {
                     model_acc,
                     health_acc,
                     drag_acc,
-                    dimension_acceleration_acc,
+                    gravity_sensitivity_acc,
                     density_acc,
                     propulsion_acc,
                 ];
@@ -176,7 +176,7 @@ impl ActorSyncSystemData<'_> {
             effect_ac,
             equipment_ac,
             drag_acc,
-            dimension_acceleration_acc,
+            gravity_sensitivity_acc,
             density_acc,
             propulsion_acc,
         ];

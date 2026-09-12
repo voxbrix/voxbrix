@@ -9,7 +9,7 @@
   "actor_equipment",
   "actor_block_collision",
   "actor_density",
-  "actor_dimension_acceleration",
+  "actor_gravity_sensitivity",
   "actor_drag",
   "actor_health",
   "actor_hitbox",
