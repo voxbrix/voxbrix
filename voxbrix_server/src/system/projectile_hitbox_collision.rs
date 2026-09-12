@@ -84,7 +84,7 @@ impl ProjectileHitboxCollisionSystemData<'_> {
                         }
 
                         let targ_class = self.class_ac.get(&targ_actor)?;
-                        let prev_targ_pos = self.position_ac.get(&targ_actor)?;
+                        let targ_position = self.position_ac.get(&targ_actor)?;
                         let hitbox = self.hitbox_acc.get(targ_class, &targ_actor);
 
                         if matches!(hitbox, Hitbox::None)
@@ -93,11 +93,11 @@ impl ProjectileHitboxCollisionSystemData<'_> {
                             return None;
                         }
 
-                        let next_targ_pos = self
+                        let (prev_targ_pos, next_targ_pos) = self
                             .movement_change_ac
                             .get(&targ_actor)
-                            .map(|mc| &mc.prev_position)
-                            .unwrap_or(prev_targ_pos);
+                            .map(|mc| (&mc.prev_position, &mc.next_position))
+                            .unwrap_or((targ_position, targ_position));
 
                         let prev_proj_pos = proj_movement_change.prev_position;
                         let next_proj_pos = proj_movement_change.next_position;
