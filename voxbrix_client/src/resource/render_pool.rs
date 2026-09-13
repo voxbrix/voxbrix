@@ -66,14 +66,15 @@ pub fn new_quad_index_buffer(
         .expect("unable to write index buffer");
 
     for (quad_idx, chunk) in index_writer
-        .as_mut()
-        .as_chunks_mut::<{ INDEX_FORMAT_BYTE_SIZE as usize * 6 }>()
+        .slice(..)
+        .into_chunks::<{ INDEX_FORMAT_BYTE_SIZE as usize * 6 }>()
         .0
-        .iter_mut()
+        .into_iter()
         .enumerate()
     {
         let quad_offset = quad_idx as IndexType * 4;
         let indices = [0, 1, 3, 2, 3, 1].map(|i| quad_offset + i);
+        let mut chunk: wgpu::WriteOnly<'_, [u8]> = chunk.into();
         chunk.copy_from_slice(bytemuck::cast_slice(&indices));
     }
 
@@ -173,6 +174,7 @@ impl<'a> Renderer<'a> {
             }),
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
 
         render_pass.set_pipeline(pipeline);

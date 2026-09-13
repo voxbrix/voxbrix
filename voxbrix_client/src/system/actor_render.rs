@@ -92,10 +92,10 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("actor_render_pipeline_layout"),
                     bind_group_layouts: &[
-                        camera_bind_group_layout,
-                        &actor_texture_bind_group_layout,
+                        Some(camera_bind_group_layout),
+                        Some(&actor_texture_bind_group_layout),
                     ],
-                    push_constant_ranges: &[],
+                    immediate_size: 0,
                 });
 
         let render_pipeline =
@@ -107,7 +107,7 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
                     vertex: wgpu::VertexState {
                         module: &shader,
                         entry_point: Some("vs_main"),
-                        buffers: &[Vertex::desc()],
+                        buffers: &[Some(Vertex::desc())],
                         compilation_options: Default::default(),
                     },
                     fragment: Some(wgpu::FragmentState {
@@ -131,8 +131,8 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
                     },
                     depth_stencil: Some(wgpu::DepthStencilState {
                         format: wgpu::TextureFormat::Depth32Float,
-                        depth_write_enabled: true,
-                        depth_compare: wgpu::CompareFunction::Less,
+                        depth_write_enabled: Some(true),
+                        depth_compare: Some(wgpu::CompareFunction::Less),
                         stencil: wgpu::StencilState::default(),
                         bias: wgpu::DepthBiasState::default(),
                     }),
@@ -141,7 +141,7 @@ impl<'a> ActorRenderSystemDescriptor<'a> {
                         mask: !0,
                         alpha_to_coverage_enabled: false,
                     },
-                    multiview: None,
+                    multiview_mask: None,
                     cache: None,
                 });
 
@@ -347,9 +347,7 @@ impl ActorRenderSystemData<'_> {
             vertex_buffer_byte_size,
         );
 
-        writer
-            .as_mut()
-            .copy_from_slice(bytemuck::cast_slice(self.system.vertices.as_slice()));
+        writer.copy_from_slice(bytemuck::cast_slice(self.system.vertices.as_slice()));
 
         drop(writer);
 

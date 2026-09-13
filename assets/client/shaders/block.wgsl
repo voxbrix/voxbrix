@@ -1,3 +1,5 @@
+enable wgpu_binding_array;
+
 const BLOCKS_IN_CHUNK_EDGE_F32: f32 = 32.0;
 const MAX_LIGHT_LEVEL_F32: f32 = 16.0;
 
@@ -20,7 +22,7 @@ struct VertexInput {
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
-    @location(0) texture_index: u32,
+    @location(0) @interpolate(flat) texture_index: u32,
     @location(1) texture_position: vec2<f32>,
     @location(2) sky_light_level: f32,
 };
@@ -29,7 +31,7 @@ struct VertexConstants {
     chunk: vec3<i32>,
 }
 
-var<push_constant> v_const: VertexConstants;
+var<immediate> v_const: VertexConstants;
 
 @vertex
 fn vs_main(

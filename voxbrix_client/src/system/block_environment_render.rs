@@ -61,13 +61,10 @@ impl<'a> BlockEnvironmentRenderSystemDescriptor<'a> {
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("environment_render_pipeline_layout"),
                     bind_group_layouts: &[
-                        camera_bind_group_layout,
-                        &block_texture_bind_group_layout,
+                        Some(camera_bind_group_layout),
+                        Some(&block_texture_bind_group_layout),
                     ],
-                    push_constant_ranges: &[wgpu::PushConstantRange {
-                        range: 0 .. VertexConstants::size_bytes(),
-                        stages: wgpu::ShaderStages::VERTEX,
-                    }],
+                    immediate_size: VertexConstants::size_bytes(),
                 });
 
         let render_pipeline =
@@ -79,7 +76,7 @@ impl<'a> BlockEnvironmentRenderSystemDescriptor<'a> {
                     vertex: wgpu::VertexState {
                         module: &shader,
                         entry_point: Some("vs_main"),
-                        buffers: &[Vertex::desc()],
+                        buffers: &[Some(Vertex::desc())],
                         compilation_options: Default::default(),
                     },
                     fragment: Some(wgpu::FragmentState {
@@ -103,8 +100,8 @@ impl<'a> BlockEnvironmentRenderSystemDescriptor<'a> {
                     },
                     depth_stencil: Some(wgpu::DepthStencilState {
                         format: wgpu::TextureFormat::Depth32Float,
-                        depth_write_enabled: true,
-                        depth_compare: wgpu::CompareFunction::Less,
+                        depth_write_enabled: Some(true),
+                        depth_compare: Some(wgpu::CompareFunction::Less),
                         stencil: wgpu::StencilState::default(),
                         bias: wgpu::DepthBiasState::default(),
                     }),
@@ -113,7 +110,7 @@ impl<'a> BlockEnvironmentRenderSystemDescriptor<'a> {
                         mask: !0,
                         alpha_to_coverage_enabled: false,
                     },
-                    multiview: None,
+                    multiview_mask: None,
                     cache: None,
                 });
 
@@ -153,8 +150,8 @@ impl<'a> BlockEnvironmentRenderSystemDescriptor<'a> {
                 .device()
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("overlay_render_pipeline_layout"),
-                    bind_group_layouts: &[&overlay_texture_bind_group_layout],
-                    push_constant_ranges: &[],
+                    bind_group_layouts: &[Some(&overlay_texture_bind_group_layout)],
+                    immediate_size: 0,
                 });
 
         let render_overlay_pipeline =
@@ -166,11 +163,11 @@ impl<'a> BlockEnvironmentRenderSystemDescriptor<'a> {
                     vertex: wgpu::VertexState {
                         module: &shader,
                         entry_point: Some("vs_main"),
-                        buffers: &[wgpu::VertexBufferLayout {
+                        buffers: &[Some(wgpu::VertexBufferLayout {
                             array_stride: std::mem::size_of::<u32>() as wgpu::BufferAddress,
                             step_mode: wgpu::VertexStepMode::Vertex,
                             attributes: &wgpu::vertex_attr_array![0 => Uint32],
-                        }],
+                        })],
                         compilation_options: Default::default(),
                     },
                     fragment: Some(wgpu::FragmentState {
@@ -198,7 +195,7 @@ impl<'a> BlockEnvironmentRenderSystemDescriptor<'a> {
                         mask: !0,
                         alpha_to_coverage_enabled: false,
                     },
-                    multiview: None,
+                    multiview_mask: None,
                     cache: None,
                 });
 
@@ -333,6 +330,7 @@ impl BlockEnvironmentRenderSystemData<'_> {
                 }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
 
         render_pass.set_pipeline(&self.system.render_pipeline);
@@ -341,8 +339,7 @@ impl BlockEnvironmentRenderSystemData<'_> {
         render_pass.set_bind_group(1, &self.system.block_texture_bind_group, &[]);
 
         for (chunk, vertex_buffer) in buffers_to_render {
-            render_pass.set_push_constants(
-                wgpu::ShaderStages::VERTEX,
+            render_pass.set_immediates(
                 0,
                 bytemuck::bytes_of(&VertexConstants {
                     chunk: chunk.position.into(),
@@ -378,6 +375,7 @@ impl BlockEnvironmentRenderSystemData<'_> {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
 
         render_pass.set_pipeline(&self.system.render_overlay_pipeline);

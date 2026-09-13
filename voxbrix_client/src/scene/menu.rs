@@ -123,8 +123,8 @@ impl MenuScene {
                 Event::Process(mut frame) => {
                     let input = frame.take_ui_input();
 
-                    let full_output = window.ui_context().run(input, |ctx| {
-                        CentralPanel::default().show(ctx, |ui| {
+                    let full_output = window.ui_context().run_ui(input, |ui| {
+                        CentralPanel::default().show(ui, |ui| {
                             ui.label("Voxbrix");
                             ui.label(&error_message);
                             ui.label("Server socket address:");
@@ -184,6 +184,7 @@ impl MenuScene {
                             depth_stencil_attachment: None,
                             timestamp_writes: None,
                             occlusion_query_set: None,
+                            multiview_mask: None,
                         },
                     );
 

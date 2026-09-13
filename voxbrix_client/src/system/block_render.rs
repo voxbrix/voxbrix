@@ -57,13 +57,10 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("block_render_pipeline_layout"),
                     bind_group_layouts: &[
-                        camera_bind_group_layout,
-                        &block_texture_bind_group_layout,
+                        Some(camera_bind_group_layout),
+                        Some(&block_texture_bind_group_layout),
                     ],
-                    push_constant_ranges: &[wgpu::PushConstantRange {
-                        range: 0 .. VertexConstants::size_bytes(),
-                        stages: wgpu::ShaderStages::VERTEX,
-                    }],
+                    immediate_size: VertexConstants::size_bytes(),
                 });
 
         let render_pipeline =
@@ -75,7 +72,7 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
                     vertex: wgpu::VertexState {
                         module: &shader,
                         entry_point: Some("vs_main"),
-                        buffers: &[Vertex::desc()],
+                        buffers: &[Some(Vertex::desc())],
                         compilation_options: Default::default(),
                     },
                     fragment: Some(wgpu::FragmentState {
@@ -99,8 +96,8 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
                     },
                     depth_stencil: Some(wgpu::DepthStencilState {
                         format: wgpu::TextureFormat::Depth32Float,
-                        depth_write_enabled: true,
-                        depth_compare: wgpu::CompareFunction::Less,
+                        depth_write_enabled: Some(true),
+                        depth_compare: Some(wgpu::CompareFunction::Less),
                         stencil: wgpu::StencilState::default(),
                         bias: wgpu::DepthBiasState::default(),
                     }),
@@ -109,7 +106,7 @@ impl<'a> BlockRenderSystemDescriptor<'a> {
                         mask: !0,
                         alpha_to_coverage_enabled: false,
                     },
-                    multiview: None,
+                    multiview_mask: None,
                     cache: None,
                 });
 
@@ -163,8 +160,7 @@ impl BlockRenderSystemData<'_> {
         render_pass.set_bind_group(1, &self.system.block_texture_bind_group, &[]);
 
         for (chunk, vertex_buffer) in buffers_to_render {
-            render_pass.set_push_constants(
-                wgpu::ShaderStages::VERTEX,
+            render_pass.set_immediates(
                 0,
                 bytemuck::bytes_of(&VertexConstants {
                     chunk: chunk.position.into(),

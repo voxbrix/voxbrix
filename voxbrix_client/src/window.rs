@@ -93,10 +93,9 @@ impl ApplicationHandler<Frame> for App {
                     .expect("unable to create window"),
             );
 
-            let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-                backends: wgpu::Backends::all(),
-                ..Default::default()
-            });
+            let mut instance_descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+            instance_descriptor.backends = wgpu::Backends::all();
+            let instance = wgpu::Instance::new(instance_descriptor);
 
             let surface = instance
                 .create_surface(window.clone())
@@ -104,19 +103,20 @@ impl ApplicationHandler<Frame> for App {
 
             let (input_tx, input_rx) = flume::bounded(32);
 
-            let adapter = instance
-                .enumerate_adapters(wgpu::Backends::VULKAN | wgpu::Backends::METAL)
-                .into_iter()
-                .find(|adapter| adapter.is_surface_supported(&surface))
-                .expect("no supported GPU adapters present");
+            let adapter = pollster::block_on(
+                instance.enumerate_adapters(wgpu::Backends::VULKAN | wgpu::Backends::METAL),
+            )
+            .into_iter()
+            .find(|adapter| adapter.is_surface_supported(&surface))
+            .expect("no supported GPU adapters present");
 
             let required_features = wgpu::Features::TEXTURE_BINDING_ARRAY
                 | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING
-                | wgpu::Features::PUSH_CONSTANTS;
+                | wgpu::Features::IMMEDIATES;
 
             let required_limits = wgpu::Limits {
                 max_binding_array_elements_per_shader_stage: 500000,
-                max_push_constant_size: 12,
+                max_immediate_size: 12,
                 ..Default::default()
             };
 
@@ -149,6 +149,7 @@ impl ApplicationHandler<Frame> for App {
             let surface_config = wgpu::SurfaceConfiguration {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                 format: surface_format,
+                color_space: wgpu::SurfaceColorSpace::Auto,
                 width: surface_size.width,
                 height: surface_size.height,
                 present_mode: wgpu::PresentMode::Fifo,
@@ -174,9 +175,11 @@ impl ApplicationHandler<Frame> for App {
 
             let shared = Arc::new(Shared { device, queue });
 
-            let surface_texture = surface
-                .get_current_texture()
-                .expect("unable to acquire next output texture");
+            let surface_texture = match surface.get_current_texture() {
+                wgpu::CurrentSurfaceTexture::Success(texture)
+                | wgpu::CurrentSurfaceTexture::Suboptimal(texture) => texture,
+                status => panic!("unable to acquire next output texture: {status:?}"),
+            };
 
             let cursor_visible = false;
             let _ = window
@@ -202,6 +205,7 @@ impl ApplicationHandler<Frame> for App {
                     shared: shared.clone(),
                     context: ui_context.clone(),
                     renderer,
+                    textures_to_free: Vec::new(),
                     size: surface_texture.texture.size(),
                     io: UiRendererIo::Input(ui_state.take_egui_input(&window)),
                 },
@@ -304,7 +308,13 @@ impl ApplicationHandler<Frame> for App {
             .queue
             .submit(encoders.drain(..).map(|enc| enc.finish()));
 
-        app.surface_texture.take().unwrap().present();
+        for texture_id in ui_renderer.textures_to_free.drain(..) {
+            ui_renderer.renderer.free_texture(&texture_id);
+        }
+
+        app.shared
+            .queue
+            .present(app.surface_texture.take().unwrap());
 
         if let UiRendererIo::Output(output) = mem::take(&mut ui_renderer.io) {
             app.ui_state
@@ -345,10 +355,11 @@ impl ApplicationHandler<Frame> for App {
 
         ui_renderer.io = UiRendererIo::Input(app.ui_state.take_egui_input(app.window.as_ref()));
 
-        let surface_texture = app
-            .surface
-            .get_current_texture()
-            .expect("unable to acquire next output texture");
+        let surface_texture = match app.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(texture)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(texture) => texture,
+            status => panic!("unable to acquire next output texture: {status:?}"),
+        };
 
         ui_renderer.size = surface_texture.texture.size();
 
@@ -387,6 +398,7 @@ pub struct UiRenderer {
     shared: Arc<Shared>,
     context: egui::Context,
     renderer: egui_wgpu::Renderer,
+    textures_to_free: Vec<egui::TextureId>,
     size: wgpu::Extent3d,
     io: UiRendererIo,
 }
@@ -421,10 +433,19 @@ impl UiRenderer {
             &screen_descriptor,
         );
 
-        for (id, image_delta) in &output.textures_delta.set {
-            self.renderer
-                .update_texture(&self.shared.device, &self.shared.queue, *id, image_delta);
+        for (id, image_deltas) in &output.textures_delta.set {
+            for image_delta in image_deltas {
+                self.renderer.update_texture(
+                    &self.shared.device,
+                    &self.shared.queue,
+                    *id,
+                    image_delta,
+                );
+            }
         }
+
+        self.textures_to_free
+            .extend(output.textures_delta.free.iter().copied());
 
         let mut render_pass = encoder
             .begin_render_pass(render_pass_descriptor)

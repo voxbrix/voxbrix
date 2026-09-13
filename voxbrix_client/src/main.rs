@@ -162,9 +162,7 @@ fn main() {
 
                             context.set_fonts(fonts);
 
-                            let mut style = (*context.style()).clone();
-
-                            style.text_styles = [
+                            let text_styles: std::collections::BTreeMap<_, _> = [
                                 (
                                     TextStyle::Heading,
                                     FontId::new(22.0, FontFamily::Proportional),
@@ -185,7 +183,11 @@ fn main() {
                             ]
                             .into();
 
-                            context.set_style(style);
+                            for theme in [egui::Theme::Dark, egui::Theme::Light] {
+                                context.style_mut_of(theme, |style| {
+                                    style.text_styles = text_styles.clone();
+                                });
+                            }
 
                             let scene_manager = SceneManager { window };
 
