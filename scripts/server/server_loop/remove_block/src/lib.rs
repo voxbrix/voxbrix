@@ -12,7 +12,7 @@ use server_loop_api::{
     SetClassOfBlockRequest,
 };
 
-static SCRIPT_NAME: &'static str = "remove_block";
+static SCRIPT_NAME: &str = "remove_block";
 
 #[derive(Serialize, Deserialize)]
 #[serde(crate = "self::serde")]

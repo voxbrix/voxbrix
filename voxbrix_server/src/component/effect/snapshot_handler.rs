@@ -98,7 +98,7 @@ enum ConditionDescriptor {
 }
 
 impl ConditionDescriptor {
-    #[allow(clippy::only_used_in_recursion)]
+    #[expect(clippy::only_used_in_recursion)]
     fn describe(&self, label_lib: &LabelLibrary) -> Result<Condition, Error> {
         Ok(match self {
             Self::Always => Condition::Always,

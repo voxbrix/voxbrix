@@ -2,8 +2,9 @@ use std::time::Duration;
 use voxbrix_common::{
     entity::block::BLOCKS_IN_CHUNK_EDGE_F32,
     math::{
+        look_to_mat4,
+        perspective_infinite,
         Directions,
-        Mat4F32,
         Vec3F32,
         Vec3I32,
     },
@@ -26,9 +27,9 @@ pub struct CameraParameters {
 
 impl CameraParameters {
     fn calc_uniform(&self, animation_timer: u32) -> CameraUniform {
-        let look_to = Mat4F32::look_to_lh(self.offset, self.view_direction, Vec3F32::UP);
+        let look_to = look_to_mat4(self.offset, self.view_direction, Vec3F32::UP);
 
-        let perspective = Mat4F32::perspective_infinite_lh(self.fovy, self.aspect, CAMERA_NEAR);
+        let perspective = perspective_infinite(self.fovy, self.aspect, CAMERA_NEAR);
 
         CameraUniform {
             chunk: self.chunk.into(),

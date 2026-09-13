@@ -13,7 +13,7 @@ use server_loop_api::{
     SetClassOfBlockRequest,
 };
 
-static SCRIPT_NAME: &'static str = "place_block";
+static SCRIPT_NAME: &str = "place_block";
 
 #[derive(Serialize, Deserialize)]
 #[serde(crate = "self::serde")]

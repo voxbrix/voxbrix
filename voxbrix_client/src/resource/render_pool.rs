@@ -67,7 +67,9 @@ pub fn new_quad_index_buffer(
 
     for (quad_idx, chunk) in index_writer
         .as_mut()
-        .chunks_exact_mut(const { INDEX_FORMAT_BYTE_SIZE as usize * 6 })
+        .as_chunks_mut::<{ INDEX_FORMAT_BYTE_SIZE as usize * 6 }>()
+        .0
+        .iter_mut()
         .enumerate()
     {
         let quad_offset = quad_idx as IndexType * 4;

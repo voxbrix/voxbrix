@@ -133,7 +133,7 @@ impl ClientLoop {
         let private_key = SigningKey::from_bytes((&[3; 32]).into()).unwrap();
         let public_key = private_key
             .verifying_key()
-            .to_encoded_point(true)
+            .to_sec1_point(true)
             .as_bytes()
             .try_into()
             .unwrap();

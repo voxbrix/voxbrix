@@ -21,9 +21,9 @@ wasmtime = { workspace = true }
 anyhow = { workspace = true }
 voxbrix_world = { path = "../voxbrix_world" }
 server_loop_api = { path = "../scripts/server/server_loop_api", default-features = false, features = ["host"], optional = true }
-glam = { version = "0.30", features = ["serde"] }
-futures-core = { version = "0.3", default-features = false }
-pin-project-lite = "0.2"
+glam = { version = "0.33", features = ["serde"] }
+futures-core = { version = "0.3.34", default-features = false }
+pin-project-lite = "0.2.17"
 
 [features]
 default = []

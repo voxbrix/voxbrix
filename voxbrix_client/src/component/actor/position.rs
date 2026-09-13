@@ -163,7 +163,7 @@ impl PositionActorComponent {
         }
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub fn get_actors_in_chunk(&self, chunk: &Chunk) -> impl Iterator<Item = Actor> + use<'_> {
         self.chunk_actor_component
             .range((*chunk, Actor::MIN) ..= (*chunk, Actor::MAX))

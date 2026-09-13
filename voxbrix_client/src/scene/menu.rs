@@ -383,7 +383,7 @@ impl Form {
                         username: self.username.clone(),
                         public_key: signing_key
                             .verifying_key()
-                            .to_encoded_point(true)
+                            .to_sec1_point(true)
                             .as_bytes()
                             .try_into()
                             .unwrap(),

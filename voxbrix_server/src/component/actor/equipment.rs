@@ -35,6 +35,7 @@ pub struct EquipmentActorComponent {
     update: Update,
 }
 
+#[expect(dead_code)]
 impl EquipmentActorComponent {
     pub fn insert(
         &mut self,

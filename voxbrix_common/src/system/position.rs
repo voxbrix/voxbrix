@@ -90,7 +90,7 @@ where
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn process_actor<C>(
     dt: Duration,
     class_bc: &C,

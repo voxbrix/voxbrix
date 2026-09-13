@@ -92,8 +92,9 @@ use flume::{
 };
 use k256::{
     ecdh::EphemeralSecret,
-    EncodedPoint,
+    elliptic_curve::Generate,
     PublicKey,
+    Sec1Point,
 };
 #[cfg(feature = "single")]
 use local_channel::{
@@ -105,7 +106,6 @@ use local_channel::{
     TryReceiveError,
 };
 use log::debug;
-use rand_core::OsRng;
 #[cfg(feature = "single")]
 use std::rc::Rc;
 #[cfg(feature = "multi")]
@@ -1238,7 +1238,7 @@ impl Server {
                                 continue;
                             };
 
-                            let keypair = EphemeralSecret::random(&mut OsRng);
+                            let keypair = EphemeralSecret::generate();
                             let mut secret = SECRET_BUFFER;
                             keypair
                                 .diffie_hellman(&deciphered_peer_key)
@@ -1266,7 +1266,7 @@ impl Server {
                                 },
                             };
 
-                            let self_key: Key = EncodedPoint::from(keypair.public_key())
+                            let self_key: Key = Sec1Point::from(keypair.public_key())
                                 .as_bytes()
                                 .try_into()
                                 .unwrap();

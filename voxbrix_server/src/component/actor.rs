@@ -109,7 +109,7 @@ impl ComponentPackerSlot {
 
 /// Component that can be packed into State and distributed to clients.
 pub trait ActorComponentPack: Send + Sync {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn pack(
         &self,
         full_data: bool,

@@ -85,8 +85,9 @@ use flume::{
 };
 use k256::{
     ecdh::EphemeralSecret,
-    EncodedPoint,
+    elliptic_curve::Generate,
     PublicKey,
+    Sec1Point,
 };
 #[cfg(feature = "single")]
 use local_channel::{
@@ -98,7 +99,6 @@ use local_channel::{
     TryReceiveError,
 };
 use log::debug;
-use rand_core::OsRng;
 #[cfg(feature = "single")]
 use std::rc::Rc;
 #[cfg(feature = "multi")]
@@ -213,8 +213,8 @@ impl Client {
 
         let (ack_sender, ack_receiver) = new_channel();
 
-        let keypair = EphemeralSecret::random(&mut OsRng);
-        let self_key: Key = EncodedPoint::from(keypair.public_key())
+        let keypair = EphemeralSecret::generate();
+        let self_key: Key = Sec1Point::from(keypair.public_key())
             .as_ref()
             .try_into()
             .unwrap();

@@ -52,6 +52,6 @@ impl FromDescriptor for BlockModel {
         world
             .get_resource_ref::<LabelLibrary>()
             .get(&label)
-            .ok_or_else(|| anyhow::anyhow!("block model \"{}\" is undefined", &label))
+            .ok_or_else(|| anyhow::anyhow!("block model \"{}\" is undefined", label))
     }
 }

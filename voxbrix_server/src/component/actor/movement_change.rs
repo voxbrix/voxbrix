@@ -5,10 +5,9 @@ use voxbrix_common::component::actor::{
 };
 
 pub struct MovementChange {
-    #[allow(dead_code)]
     pub prev_position: Position,
     pub next_position: Position,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub prev_velocity: Velocity,
     pub next_velocity: Velocity,
     pub collides_with_block: bool,

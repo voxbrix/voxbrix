@@ -35,7 +35,7 @@ pub enum Alteration {
     RemoveSelf,
 }
 
-#[allow(clippy::enum_variant_names)]
+#[expect(clippy::enum_variant_names)]
 #[derive(Clone, Copy, Deserialize)]
 pub enum Trigger {
     AnyCollision,
@@ -67,7 +67,7 @@ enum ConditionDescriptor {
 }
 
 impl ConditionDescriptor {
-    #[allow(clippy::only_used_in_recursion)]
+    #[expect(clippy::only_used_in_recursion)]
     fn describe(&self, label_lib: &LabelLibrary) -> Result<Condition, Error> {
         Ok(match self {
             Self::Always => Condition::Always,

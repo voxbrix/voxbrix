@@ -90,7 +90,7 @@ async fn unreliable_test_0() {
     let client_check = async |conn: &mut client::Connection| {
         let msg = conn.receiver.recv().await.expect("client message receive");
 
-        assert_eq!(msg.data().as_ref(), b"1HelloWorld1");
+        assert_eq!(msg.data(), b"1HelloWorld1");
 
         conn.sender
             .send_unreliable(b"2HelloWorld2")
@@ -108,8 +108,7 @@ async fn unreliable_test_1() {
     let _ = env_logger::try_init();
 
     let data_slice = &[1, 2, 3, 4, 5];
-    let data = iter::repeat(data_slice)
-        .take(300)
+    let data = iter::repeat_n(data_slice, 300)
         .flatten()
         .cloned()
         .collect::<Vec<_>>();
@@ -124,7 +123,7 @@ async fn unreliable_test_1() {
     let client_check = async |conn: &mut client::Connection| {
         let msg = conn.receiver.recv().await.expect("client message receive");
 
-        assert_eq!(msg.data().as_ref(), data.as_slice());
+        assert_eq!(msg.data(), data.as_slice());
     };
 
     let (server_task, client_task) = client_server_test(server_check, client_check).await;
@@ -137,8 +136,7 @@ async fn unreliable_test_2() {
     let _ = env_logger::try_init();
 
     let data_slice = &[1, 2, 3, 4, 5];
-    let data = iter::repeat(data_slice)
-        .take(300)
+    let data = iter::repeat_n(data_slice, 300)
         .flatten()
         .cloned()
         .collect::<Vec<_>>();
@@ -166,8 +164,7 @@ async fn unreliable_test_3() {
     let _ = env_logger::try_init();
 
     let data_slice = &[1, 2, 3, 4, 5];
-    let data = iter::repeat(data_slice)
-        .take(300)
+    let data = iter::repeat_n(data_slice, 300)
         .flatten()
         .cloned()
         .collect::<Vec<_>>();
@@ -199,8 +196,7 @@ async fn unreliable_test_4() {
     let _ = env_logger::try_init();
 
     let data_slice = &[1, 2, 3, 4, 5];
-    let data = iter::repeat(data_slice)
-        .take(300)
+    let data = iter::repeat_n(data_slice, 300)
         .flatten()
         .cloned()
         .collect::<Vec<_>>();
@@ -234,13 +230,13 @@ async fn unreliable_test_4() {
         for i in 20 .. 30 {
             let msg = conn.receiver.recv().await.expect("client received data");
 
-            assert_eq!(msg.data().as_ref(), &[data.as_slice(), &[i]].concat());
+            assert_eq!(msg.data(), &[data.as_slice(), &[i]].concat());
         }
 
         for i in 50 .. 60 {
             let msg = conn.receiver.recv().await.expect("client received data");
 
-            assert_eq!(msg.data().as_ref(), &[data.as_slice(), &[i]].concat());
+            assert_eq!(msg.data(), &[data.as_slice(), &[i]].concat());
         }
 
         for i in 0 .. 10 {

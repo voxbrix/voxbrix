@@ -217,7 +217,7 @@ pub enum NetworkMessage {
 }
 
 #[derive(Debug)]
-#[allow(dead_code, reason = "fields are read via Debug in error logging")]
+#[expect(dead_code, reason = "fields are read via Debug in error logging")]
 pub enum NetworkError {
     Transport(ClientError),
     Decode(UnpackError),

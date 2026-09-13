@@ -19,9 +19,9 @@
 
 use chacha20poly1305::{
     aead::{
-        rand_core::OsRng,
-        AeadCore,
-        AeadInPlace,
+        AeadInOut,
+        Generate,
+        Nonce,
     },
     ChaCha20Poly1305,
 };
@@ -207,7 +207,7 @@ where
 }
 
 fn encode_in_buffer(buffer: &mut [u8; MAX_PACKET_SIZE], cipher: &ChaCha20Poly1305, length: usize) {
-    let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
+    let nonce = Nonce::<ChaCha20Poly1305>::generate();
     buffer[NONCE_START .. ENCRYPTED_START].copy_from_slice(&nonce);
 
     let buffer = &mut buffer[.. length];
@@ -215,7 +215,7 @@ fn encode_in_buffer(buffer: &mut [u8; MAX_PACKET_SIZE], cipher: &ChaCha20Poly130
     let (buffer_pre_enc, buffer_enc) = buffer.split_at_mut(ENCRYPTED_START);
 
     let tag = cipher
-        .encrypt_in_place_detached(&nonce, &buffer_pre_enc[.. TAG_START], buffer_enc)
+        .encrypt_inout_detached(&nonce, &buffer_pre_enc[.. TAG_START], buffer_enc.into())
         .unwrap();
 
     buffer[TAG_START .. NONCE_START].copy_from_slice(&tag);
@@ -223,11 +223,12 @@ fn encode_in_buffer(buffer: &mut [u8; MAX_PACKET_SIZE], cipher: &ChaCha20Poly130
 
 /// Returns total data length.
 fn tag_sign_in_buffer(buffer: &mut [u8; MAX_PACKET_SIZE], cipher: &ChaCha20Poly1305) {
-    let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
+    let nonce = Nonce::<ChaCha20Poly1305>::generate();
     buffer[NONCE_START .. ENCRYPTED_START].copy_from_slice(&nonce);
 
+    let mut empty: [u8; 0] = [];
     let tag = cipher
-        .encrypt_in_place_detached(&nonce, &buffer[.. TAG_START], &mut [])
+        .encrypt_inout_detached(&nonce, &buffer[.. TAG_START], empty.as_mut_slice().into())
         .unwrap();
 
     buffer[TAG_START .. NONCE_START].copy_from_slice(&tag);
@@ -248,8 +249,11 @@ fn decode_in_buffer(
     let (tag, buffer) = buffer.split_at_mut(TAG_SIZE);
     let (nonce, encrypted) = buffer.split_at_mut(NONCE_SIZE);
 
+    let nonce: &[u8; NONCE_SIZE] = (&*nonce).try_into().unwrap();
+    let tag: &[u8; TAG_SIZE] = (&*tag).try_into().unwrap();
+
     cipher
-        .decrypt_in_place_detached((&*nonce).into(), acc_data, encrypted, (&*tag).into())
+        .decrypt_inout_detached(nonce.into(), acc_data, encrypted.into(), tag.into())
         .map_err(|_| ())?;
 
     Ok(())

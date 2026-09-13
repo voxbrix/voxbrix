@@ -26,12 +26,12 @@ impl EquipmentActorComponent {
         }
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub fn get(&self, actor: &Actor) -> Option<&Equipment> {
         self.storage.get(actor)
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub fn get_slot(&self, actor: &Actor, slot: usize) -> Option<&Item> {
         self.storage.get(actor)?.slots.get(slot)?.as_ref()
     }

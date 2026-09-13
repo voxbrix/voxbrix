@@ -41,7 +41,7 @@ const SURFACE_TEXTURE_FORMATS: &[wgpu::TextureFormat] = &[
 ];
 const SURFACE_TEXTURE_VIEW_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
 
-#[allow(clippy::large_enum_variant)]
+#[expect(clippy::large_enum_variant)]
 enum App {
     Initialized(Initialized),
     Uninitialized(Option<Args>),

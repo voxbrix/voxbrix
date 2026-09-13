@@ -87,8 +87,7 @@ pub extern "C" fn generate_chunk(seed: u64, phase: u64, chunk_x: i32, chunk_y: i
             } else if dist >= SPAWN_BLEND_RADIUS {
                 1.0
             } else {
-                let t = (dist - SPAWN_FLAT_RADIUS)
-                    / (SPAWN_BLEND_RADIUS - SPAWN_FLAT_RADIUS);
+                let t = (dist - SPAWN_FLAT_RADIUS) / (SPAWN_BLEND_RADIUS - SPAWN_FLAT_RADIUS);
                 // Smootherstep: 6t^5 - 15t^4 + 10t^3
                 t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
             };

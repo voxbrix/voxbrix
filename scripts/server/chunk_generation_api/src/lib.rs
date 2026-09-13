@@ -6,6 +6,7 @@ pub type BlockClass = u16;
 pub type BlockEnvironment = u8;
 
 mod import {
+    #[link(wasm_import_module = "env")]
     extern "C" {
         pub fn get_blocks_in_chunk_edge() -> u32;
         pub fn get_block_class(ptr: *const u8, len: u32) -> u32;

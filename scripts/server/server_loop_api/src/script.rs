@@ -12,10 +12,11 @@ use std::{
 };
 
 thread_local! {
-    static SHARED_BUFFER: RefCell<Vec<u8>> = RefCell::new(Vec::new());
+    static SHARED_BUFFER: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 
 mod import {
+    #[link(wasm_import_module = "env")]
     extern "C" {
         pub fn handle_panic(ptr: *const u8, len: u32);
         pub fn get_blocks_in_chunk_edge() -> u32;
@@ -119,7 +120,7 @@ where
     T: Serialize,
 {
     thread_local! {
-        static BROADCAST_BUFFER: RefCell<Vec<u8>> = RefCell::new(Vec::new());
+        static BROADCAST_BUFFER: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
     }
 
     BROADCAST_BUFFER.with_borrow_mut(|broadcast_buffer| {
@@ -298,7 +299,7 @@ macro_rules! block_class {
     ($name:ident) => {
         unsafe {
             server_loop_api::paste! {
-                static [<$name:upper _NAME>]: &'static str = stringify!($name);
+                static [<$name:upper _NAME>]: &str = stringify!($name);
                 static mut [<$name:upper>]: Option<BlockClass> = None;
                 if [<$name:upper>].is_none() {
                     [<$name:upper>] = Some(::server_loop_api::get_block_class_by_label(

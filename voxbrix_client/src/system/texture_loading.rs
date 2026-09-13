@@ -111,13 +111,13 @@ impl TextureLoadingSystem {
                         Path::new(TEXTURE_DESCRIPTION_DIR).join(format!("{}.json", texture_label));
 
                     let image_file = fs::read(&bitmap_path).with_context(|| {
-                        format!("reading texture bitmap file {:?}", &bitmap_path)
+                        format!("reading texture bitmap file {:?}", bitmap_path)
                     })?;
 
                     let description: TextureDescription = fs::read(&description_path)
                         .map(|file| {
                             serde_json::from_slice(&file).with_context(|| {
-                                format!("reading texture description from {:?}", &description_path)
+                                format!("reading texture description from {:?}", description_path)
                             })
                         })
                         .or_else(|err| {
@@ -128,16 +128,16 @@ impl TextureLoadingSystem {
                             }
                         })
                         .with_context(|| {
-                            format!("reading texture description file {:?}", &description_path)
+                            format!("reading texture description file {:?}", description_path)
                         })??;
 
                     let image = image::load_from_memory(&image_file)
-                        .with_context(|| format!("reading image from {:?}", &bitmap_path))?;
+                        .with_context(|| format!("reading image from {:?}", bitmap_path))?;
 
                     let layers = description.animation.frames.get();
 
                     let view = load_texture(&device, &queue, &image, &texture_label, layers)
-                        .with_context(|| format!("loading texture {}", &texture_label))?;
+                        .with_context(|| format!("loading texture {}", texture_label))?;
 
                     views.push(view);
                     parameters.push(TextureParameters::new(&description));

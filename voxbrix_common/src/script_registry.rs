@@ -170,8 +170,11 @@ impl<T> ScriptRegistryBuilder<T> {
                 .map(|file_name| {
                     let file_path = dir_path.as_ref().join(file_name).with_extension("wasm");
 
-                    Module::from_file(&engine_clone, &file_path).with_context(|| {
-                        format!("unable to load script module from \"{:?}\"", file_path)
+                    Module::from_file(&engine_clone, &file_path).map_err(|error| {
+                        anyhow::anyhow!(
+                            "unable to load script module from \"{:?}\": {error}",
+                            file_path
+                        )
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()

@@ -31,7 +31,7 @@ impl EffectActorComponent {
         }
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub fn has_effect(&self, actor: Actor, effect: Effect) -> bool {
         self.storage
             .range(
@@ -42,7 +42,7 @@ impl EffectActorComponent {
             .is_some()
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub fn actor_effects(
         &self,
         actor: &Actor,

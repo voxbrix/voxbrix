@@ -14,7 +14,7 @@ pub type ClientPlayerComponent = PlayerComponent<Client>;
 
 pub enum SendData {
     Owned(Vec<u8>),
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     Arc(Arc<[u8]>),
 }
 

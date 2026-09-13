@@ -193,7 +193,7 @@ async fn unreliable_address_migration() {
 
         for i in 0 .. amount {
             let msg = conn.receiver.recv().await.expect("client message receive");
-            assert_eq!(msg.data().as_ref(), format!("FromServer{}", i).as_bytes());
+            assert_eq!(msg.data(), format!("FromServer{}", i).as_bytes());
         }
     };
 
@@ -235,7 +235,7 @@ async fn reliable_address_migration() {
             async {
                 for i in 0 .. amount {
                     let msg = conn.receiver.recv().await.expect("client message receive");
-                    assert_eq!(msg.data().as_ref(), format!("FromServer{}", i).as_bytes());
+                    assert_eq!(msg.data(), format!("FromServer{}", i).as_bytes());
                 }
             },
         )

@@ -61,7 +61,7 @@ impl BlockModelBuilderDescriptor {
                         label_library.get(&desc.texture_label).ok_or_else(|| {
                             Error::msg(format!(
                                 "block texture label \"{}\" is undefined",
-                                &desc.texture_label
+                                desc.texture_label
                             ))
                         })?;
 

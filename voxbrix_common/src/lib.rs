@@ -70,9 +70,9 @@ pub fn parse_file<T>(path: impl AsRef<Path> + std::fmt::Debug) -> Result<T, anyh
 where
     T: DeserializeOwned,
 {
-    let bytes = fs::read(path.as_ref()).with_context(|| format!("reading {:?}", &path))?;
+    let bytes = fs::read(path.as_ref()).with_context(|| format!("reading {:?}", path))?;
     let data =
-        serde_json::from_slice::<T>(&bytes).with_context(|| format!("parsing {:?}", &path))?;
+        serde_json::from_slice::<T>(&bytes).with_context(|| format!("parsing {:?}", path))?;
 
     Ok(data)
 }
@@ -81,7 +81,7 @@ pub async fn read_file_async(
     path: impl AsRef<Path> + std::fmt::Debug + Send + 'static,
 ) -> Result<Vec<u8>, anyhow::Error> {
     task::spawn_blocking(move || {
-        fs::read(path.as_ref()).with_context(|| format!("reading {:?}", &path))
+        fs::read(path.as_ref()).with_context(|| format!("reading {:?}", path))
     })
     .await
     .expect("unable to join blocking task")
@@ -95,15 +95,13 @@ where
 {
     let bytes = {
         let path = path.as_ref().to_owned();
-        task::spawn_blocking(move || {
-            fs::read(&path).with_context(|| format!("reading {:?}", &path))
-        })
-        .await
-        .expect("unable to join blocking task")?
+        task::spawn_blocking(move || fs::read(&path).with_context(|| format!("reading {:?}", path)))
+            .await
+            .expect("unable to join blocking task")?
     };
 
     let data =
-        serde_json::from_slice::<T>(&bytes).with_context(|| format!("parsing {:?}", &path))?;
+        serde_json::from_slice::<T>(&bytes).with_context(|| format!("parsing {:?}", path))?;
 
     Ok(data)
 }

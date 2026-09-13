@@ -48,6 +48,6 @@ impl FromDescriptor for ActorModel {
         world
             .get_resource_ref::<LabelLibrary>()
             .get(&label)
-            .ok_or_else(|| anyhow::anyhow!("actor model \"{}\" is undefined", &label))
+            .ok_or_else(|| anyhow::anyhow!("actor model \"{}\" is undefined", label))
     }
 }

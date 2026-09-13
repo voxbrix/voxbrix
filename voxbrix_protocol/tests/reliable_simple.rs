@@ -152,7 +152,7 @@ async fn reliable_test_2() {
             }
         };
 
-        let ack_task = async { while let Ok(_) = conn.receiver.recv().await {} };
+        let ack_task = async { while conn.receiver.recv().await.is_ok() {} };
 
         send_task.or(ack_task).await;
     };
@@ -168,8 +168,7 @@ async fn reliable_test_3() {
 
     let data_slice = &[1, 2, 3, 4, 5];
 
-    let data = iter::repeat(data_slice)
-        .take(3000)
+    let data = iter::repeat_n(data_slice, 3000)
         .flatten()
         .cloned()
         .collect::<Vec<_>>();
@@ -203,7 +202,7 @@ async fn reliable_test_3() {
             }
         };
 
-        let ack_task = async { while let Ok(_) = conn.receiver.recv().await {} };
+        let ack_task = async { while conn.receiver.recv().await.is_ok() {} };
 
         send_task.or(ack_task).await;
     };

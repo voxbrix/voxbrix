@@ -257,8 +257,8 @@ impl ServerLoop {
             .wasm_multi_value(false)
             .wasm_multi_memory(false);
 
-        let engine =
-            wasmtime::Engine::new(&engine_config).context("wasm engine failed to start")?;
+        let engine = wasmtime::Engine::new(&engine_config)
+            .map_err(|error| anyhow::anyhow!("wasm engine failed to start: {error}"))?;
 
         let script_registry = script_shared_data::setup_script_registry(
             ScriptRegistryBuilder::load(engine, SERVER_LOOP_SCRIPT_LIST, SERVER_LOOP_SCRIPT_DIR)

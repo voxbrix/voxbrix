@@ -7,19 +7,18 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio = { version = "1", features = ["net", "time"] }
+tokio = { version = "1.53", features = ["net", "time"] }
 local_channel = { path = "../local_channel" , optional = true }
-flume = { version = "0.11", optional = true }
-k256 = { version = "0.13.4", default-features = false, features = ["ecdh"] }
-sha2 = { version = "0.10", default-features = false }
-chacha20poly1305 = { version = "0.10.1", default-features = false, features = ["getrandom"] }
-rand_core = { version = "0.6", default-features = false, features = ["getrandom"] }
-log = "0.4"
+flume = { version = "0.12", optional = true }
+k256 = { version = "0.14", default-features = false, features = ["ecdh", "getrandom"] }
+sha2 = { version = "0.11", default-features = false }
+chacha20poly1305 = { version = "0.11", default-features = false, features = ["getrandom"] }
+log = "0.4.34"
 
 [dev-dependencies]
-tokio = { version = "1", features = ["rt", "macros"] }
-futures-lite = { version = "2", default-features = false }
-env_logger = "0.11"
+tokio = { version = "1.53", features = ["rt", "macros"] }
+futures-lite = { version = "2.6", default-features = false }
+env_logger = "0.11.11"
 
 [features]
 default = []

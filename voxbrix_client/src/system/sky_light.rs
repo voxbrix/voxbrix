@@ -44,7 +44,7 @@ fn opposite_side(side: usize) -> usize {
 }
 
 pub struct SkyLightSystem {
-    #[allow(clippy::type_complexity)]
+    #[expect(clippy::type_complexity)]
     buffer: Vec<(
         Chunk,
         Option<BlocksVec<SkyLight>>,

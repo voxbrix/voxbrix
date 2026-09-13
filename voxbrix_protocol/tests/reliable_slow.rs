@@ -52,7 +52,7 @@ where
 
     let socket_addr: SocketAddr = ([127, 0, 0, 1], port).into();
 
-    let socket = UdpSocket::bind(&socket_addr).unwrap();
+    let socket = UdpSocket::bind(socket_addr).unwrap();
 
     thread::spawn(move || {
         let mut buf = [0u8; MAX_PACKET_SIZE];

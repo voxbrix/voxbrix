@@ -139,7 +139,7 @@ impl World {
     }
 
     #[must_use]
-    #[allow(clippy::needless_lifetimes)]
+    #[expect(clippy::needless_lifetimes)]
     pub fn get_resource_ref<'a, T>(&'a self) -> &'a T
     where
         T: 'static,

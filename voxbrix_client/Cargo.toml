@@ -26,14 +26,14 @@ voxbrix_protocol = { path = "../voxbrix_protocol", features = ["single", "client
 voxbrix_common = { path = "../voxbrix_common" }
 voxbrix_world = { path = "../voxbrix_world" }
 local_channel = { path = "../local_channel" }
-winit = "0.30"
-wgpu = { version = "27.0", default-features = false, features = ["vulkan", "metal", "wgsl"] }
-egui = { version = "0.33", default-features = false }
-egui-winit = { version = "0.33", default-features = false, features = ["clipboard", "wayland"] }
-egui-wgpu = "0.33"
-bytemuck = { version = "1", features = ["derive"] }
-image = { version = "0.25", default-features = false, features = ["png"] }
-bitflags = "2"
-argon2 = { version = "0.5.3", default-features = false, features = ["alloc"] }
+winit = "0.30.13"
+wgpu = { version = "27.0.1", default-features = false, features = ["vulkan", "metal", "wgsl"] }
+egui = { version = "0.33.3", default-features = false }
+egui-winit = { version = "0.33.3", default-features = false, features = ["clipboard", "wayland"] }
+egui-wgpu = "0.33.3"
+bytemuck = { version = "1.25", features = ["derive"] }
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+bitflags = "2.13"
+argon2 = { version = "0.6", default-features = false, features = ["alloc"] }
 rect_packer = "0.2.1"
-pollster = { version = "0.4", default-features = false }
+pollster = { version = "1.0", default-features = false }

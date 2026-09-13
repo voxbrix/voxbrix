@@ -7,7 +7,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-futures-core = { version = "0.3", default-features = false }
+futures-core = { version = "0.3.34", default-features = false }
 
 [dev-dependencies]
-futures-lite = "2"
+futures-lite = "2.6"
