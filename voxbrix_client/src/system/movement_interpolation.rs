@@ -1,10 +1,13 @@
-use crate::component::actor::{
-    orientation::OrientationActorComponent,
-    position::PositionActorComponent,
-    target_orientation::TargetOrientationActorComponent,
-    target_position::TargetPositionActorComponent,
-    TargetQueue,
-    WritableTrait,
+use crate::{
+    component::actor::{
+        orientation::OrientationActorComponent,
+        position::PositionActorComponent,
+        target_orientation::TargetOrientationActorComponent,
+        target_position::TargetPositionActorComponent,
+        TargetQueue,
+        WritableTrait,
+    },
+    resource::server_tick_interval::ServerTickInterval,
 };
 use std::time::{
     Duration,
@@ -26,9 +29,8 @@ use voxbrix_world::{
     SystemData,
 };
 
-const SERVER_TICK_INTERVAL: Duration = Duration::from_millis(50);
 pub const TARGET_QUEUE_LENGTH: usize = 2;
-pub const TARGET_QUEUE_LENGTH_U32: u32 = TARGET_QUEUE_LENGTH as u32;
+const TARGET_QUEUE_LENGTH_U32: u32 = TARGET_QUEUE_LENGTH as u32;
 
 pub struct MovementInterpolationSystem;
 
@@ -40,6 +42,7 @@ impl System for MovementInterpolationSystem {
 pub struct MovementInterpolationSystemData<'a> {
     snapshot: &'a ClientSnapshot,
     tick_timer: &'a TickTimer,
+    server_tick_interval: &'a ServerTickInterval,
     target_position_ac: &'a mut TargetPositionActorComponent,
     target_orientation_ac: &'a mut TargetOrientationActorComponent,
     position_ac: &'a mut PositionActorComponent,
@@ -48,7 +51,8 @@ pub struct MovementInterpolationSystemData<'a> {
 
 impl MovementInterpolationSystemData<'_> {
     pub fn run(self) {
-        let current_time = self.tick_timer.now() - SERVER_TICK_INTERVAL * TARGET_QUEUE_LENGTH_U32;
+        let server_tick_interval = self.server_tick_interval.0;
+        let current_time = self.tick_timer.now() - server_tick_interval * TARGET_QUEUE_LENGTH_U32;
 
         let snapshot = *self.snapshot;
 
@@ -58,11 +62,14 @@ impl MovementInterpolationSystemData<'_> {
                 None => continue,
             };
 
-            if let Some((target_position, time_left)) =
-                find_next_target(target_queue, &mut position, current_time)
-            {
-                let completion = (SERVER_TICK_INTERVAL - time_left).as_secs_f32()
-                    / SERVER_TICK_INTERVAL.as_secs_f32();
+            if let Some((target_position, time_left)) = find_next_target(
+                target_queue,
+                &mut position,
+                current_time,
+                server_tick_interval,
+            ) {
+                let completion = (server_tick_interval - time_left).as_secs_f32()
+                    / server_tick_interval.as_secs_f32();
 
                 let starting = target_queue.starting;
 
@@ -98,11 +105,14 @@ impl MovementInterpolationSystemData<'_> {
                 None => continue,
             };
 
-            if let Some((target_orientation, time_left)) =
-                find_next_target(target_queue, &mut orientation, current_time)
-            {
-                let completion = (SERVER_TICK_INTERVAL - time_left).as_secs_f32()
-                    / SERVER_TICK_INTERVAL.as_secs_f32();
+            if let Some((target_orientation, time_left)) = find_next_target(
+                target_queue,
+                &mut orientation,
+                current_time,
+                server_tick_interval,
+            ) {
+                let completion = (server_tick_interval - time_left).as_secs_f32()
+                    / server_tick_interval.as_secs_f32();
 
                 let rotation = target_queue
                     .starting
@@ -120,6 +130,7 @@ fn find_next_target<T>(
     target_queue: &mut TargetQueue<T>,
     value: &mut impl WritableTrait<T>,
     current_time: Instant,
+    server_tick_interval: Duration,
 ) -> Option<(T, Duration)>
 where
     T: PartialEq + Copy,
@@ -135,7 +146,7 @@ where
             .saturating_duration_since(current_time);
 
         if !time_left.is_zero() {
-            if time_left <= SERVER_TICK_INTERVAL {
+            if time_left <= server_tick_interval {
                 // This target is NOT too far in the future
                 return Some((target_orientation.value, time_left));
             }

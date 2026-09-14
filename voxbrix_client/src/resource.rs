@@ -7,3 +7,4 @@ pub mod player_actor_movement_metadata;
 pub mod player_input;
 pub mod render_pool;
 pub mod server_sender;
+pub mod server_tick_interval;

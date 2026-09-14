@@ -12,6 +12,7 @@ use crate::{
     },
     CLIENT_CONNECTION_TIMEOUT,
     PLAYER_TABLE,
+    TICK_INTERVAL,
     USERNAME_TABLE,
 };
 use futures_lite::{
@@ -434,11 +435,13 @@ impl ClientLoop {
                 .rr_ff(unrel_send_task.or_ff(rel_send_task)),
         );
 
+        let init_data = InitData {
+            actor,
+            tick_interval: TICK_INTERVAL,
+        };
         let init_data_response = match request {
-            InitRequest::Login => packer.pack_to_vec(&LoginResult::Success(InitData { actor })),
-            InitRequest::Register => {
-                packer.pack_to_vec(&RegisterResult::Success(InitData { actor }))
-            },
+            InitRequest::Login => packer.pack_to_vec(&LoginResult::Success(init_data)),
+            InitRequest::Register => packer.pack_to_vec(&RegisterResult::Success(init_data)),
         };
 
         // Finalize successful connection

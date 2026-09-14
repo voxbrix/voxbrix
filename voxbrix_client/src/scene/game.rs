@@ -63,6 +63,7 @@ use crate::{
             RenderPoolDescriptor,
         },
         server_sender::ServerSender,
+        server_tick_interval::ServerTickInterval,
     },
     scene::{
         menu::MenuSceneParameters,
@@ -202,8 +203,6 @@ mod local_input;
 mod network_input;
 mod tick;
 
-const SERVER_TICK_INTERVAL: Duration = Duration::from_millis(50);
-
 enum Event {
     Tick(Option<Frame>),
     SendState,
@@ -282,6 +281,7 @@ pub struct GameSceneParameters {
     pub window: Window,
     pub connection: (Sender, Receiver),
     pub player_actor: Actor,
+    pub tick_interval: Duration,
 }
 
 pub struct GameScene {
@@ -296,6 +296,7 @@ impl GameScene {
                     mut window,
                     connection,
                     player_actor,
+                    tick_interval,
                 },
         } = self;
 
@@ -316,6 +317,7 @@ impl GameScene {
         world.add(label_library);
 
         world.add(PlayerActor(player_actor));
+        world.add(ServerTickInterval(tick_interval));
 
         let (_reliable_tx, reliable_rx) = flume::unbounded::<Vec<u8>>();
         let (unreliable_tx, unreliable_rx) = flume::unbounded::<Vec<u8>>();
@@ -717,10 +719,10 @@ impl GameScene {
 
         world.add(RemovalQueue::<Actor>::new());
 
-        let mut send_state_interval = time::interval(Duration::from_millis(50));
+        let mut send_state_interval = time::interval(tick_interval);
         send_state_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
-        let mut fallback_tick_interval = time::interval(SERVER_TICK_INTERVAL);
+        let mut fallback_tick_interval = time::interval(tick_interval);
         fallback_tick_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
         fallback_tick_interval.reset();
 

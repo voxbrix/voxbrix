@@ -30,6 +30,7 @@ use serde::{
 use std::{
     marker::PhantomData,
     sync::Arc,
+    time::Duration,
 };
 
 #[derive(Serialize, Deserialize)]
@@ -59,6 +60,7 @@ pub enum RegisterFailure {
 #[derive(Serialize, Deserialize)]
 pub struct InitData {
     pub actor: Actor,
+    pub tick_interval: Duration,
     // position: Position,
 }
 
