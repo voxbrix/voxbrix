@@ -31,12 +31,12 @@ use voxbrix_world::World;
 
 pub struct Tick<'a> {
     pub world: &'a mut World,
-    pub frame: Frame,
+    pub frame: Option<Frame>,
 }
 
 impl Tick<'_> {
     pub fn run(self) -> Transition {
-        let Tick { world, mut frame } = self;
+        let Tick { world, frame } = self;
 
         world.get_resource_mut::<TickTimer>().record_next();
 
@@ -52,18 +52,24 @@ impl Tick<'_> {
 
         world.get_data::<MovementInterpolationSystem>().run();
 
-        world.get_resource_mut::<Interface>().initialize(&mut frame);
+        if let Some(mut frame) = frame {
+            world.get_resource_mut::<Interface>().initialize(&mut frame);
 
-        let (inventory, hud) = world.get_data::<(InventoryWindowSystem, HUDSystem)>();
+            let (inventory, hud) = world.get_data::<(InventoryWindowSystem, HUDSystem)>();
 
-        rayon::join(|| inventory.run(), || hud.run());
+            rayon::join(|| inventory.run(), || hud.run());
 
-        world.get_data::<UpdateRenderPoolSystem>().run(frame);
+            world.get_data::<UpdateRenderPoolSystem>().run(frame);
 
-        let mut render_pool = world.take_resource::<RenderPool>();
+            let mut render_pool = world.take_resource::<RenderPool>();
 
-        let (mut block_rd, mut target_block_hl, mut actor_rd, mut block_env_rd, mut interface_rd) =
-            world.get_data::<(
+            let (
+                mut block_rd,
+                mut target_block_hl,
+                mut actor_rd,
+                mut block_env_rd,
+                mut interface_rd,
+            ) = world.get_data::<(
                 BlockRenderSystem,
                 TargetBlockHightlightSystem,
                 ActorRenderSystem,
@@ -71,36 +77,37 @@ impl Tick<'_> {
                 InterfaceRenderSystem,
             )>();
 
-        const RENDER_LENGTH: usize = 5;
+            const RENDER_LENGTH: usize = 5;
 
-        let render_systems: [&mut (dyn FnMut(Renderer) + Send); RENDER_LENGTH] = [
-            &mut |renderer| {
-                block_rd.run(renderer);
-            },
-            &mut |renderer| {
-                target_block_hl.run(renderer);
-            },
-            &mut |renderer| {
-                actor_rd.run(renderer);
-            },
-            &mut |renderer| {
-                block_env_rd.run(renderer);
-            },
-            &mut |renderer| {
-                // Interface must be the last because only the last renderer has UI renderer:
-                interface_rd.run(renderer);
-            },
-        ];
+            let render_systems: [&mut (dyn FnMut(Renderer) + Send); RENDER_LENGTH] = [
+                &mut |renderer| {
+                    block_rd.run(renderer);
+                },
+                &mut |renderer| {
+                    target_block_hl.run(renderer);
+                },
+                &mut |renderer| {
+                    actor_rd.run(renderer);
+                },
+                &mut |renderer| {
+                    block_env_rd.run(renderer);
+                },
+                &mut |renderer| {
+                    // Interface must be the last because only the last renderer has UI renderer:
+                    interface_rd.run(renderer);
+                },
+            ];
 
-        render_pool
-            .get_renderers::<RENDER_LENGTH>()
-            .into_iter()
-            .zip(render_systems)
-            .par_bridge()
-            .for_each(|(renderer, system)| system(renderer));
+            render_pool
+                .get_renderers::<RENDER_LENGTH>()
+                .into_iter()
+                .zip(render_systems)
+                .par_bridge()
+                .for_each(|(renderer, system)| system(renderer));
 
-        render_pool.finish_render();
-        world.return_resource(render_pool);
+            render_pool.finish_render();
+            world.return_resource(render_pool);
+        }
 
         Transition::None
     }

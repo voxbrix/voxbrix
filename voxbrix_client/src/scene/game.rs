@@ -202,8 +202,10 @@ mod local_input;
 mod network_input;
 mod tick;
 
+const SERVER_TICK_INTERVAL: Duration = Duration::from_millis(50);
+
 enum Event {
-    Tick(Frame),
+    Tick(Option<Frame>),
     SendState,
     LocalInput(InputEvent),
     NetworkInput(Result<NetworkMessage, NetworkError>),
@@ -718,6 +720,22 @@ impl GameScene {
         let mut send_state_interval = time::interval(Duration::from_millis(50));
         send_state_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
+        let mut fallback_tick_interval = time::interval(SERVER_TICK_INTERVAL);
+        fallback_tick_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        fallback_tick_interval.reset();
+
+        let mut frame_stream = frame_source.stream();
+        let tick_stream = stream::poll_fn(move |cx| {
+            if let Poll::Ready(frame) = frame_stream.poll_next(cx) {
+                fallback_tick_interval.reset();
+                Poll::Ready(frame.map(|frame| Event::Tick(Some(frame))))
+            } else {
+                fallback_tick_interval
+                    .poll_tick(cx)
+                    .map(|_| Some(Event::Tick(None)))
+            }
+        });
+
         let mut stream = stream::poll_fn(|cx| {
             send_state_interval
                 .poll_tick(cx)
@@ -725,12 +743,7 @@ impl GameScene {
         })
         .or_ff(event_high_prio_rx.stream())
         .or_ff(input_source.stream().map(Event::LocalInput))
-        .or_ff(
-            frame_source
-                .stream()
-                .map(Event::Tick)
-                .rr_ff(event_low_prio_rx.stream()),
-        );
+        .or_ff(tick_stream.rr_ff(event_low_prio_rx.stream()));
 
         while let Some(event) = stream
             .next()
