@@ -20,7 +20,7 @@ use voxbrix_common::{
         block::Block,
         snapshot::ClientSnapshot,
     },
-    resource::process_timer::ProcessTimer,
+    resource::tick_timer::TickTimer,
 };
 use voxbrix_world::{
     System,
@@ -36,7 +36,7 @@ impl System for PlayerDragSystem {
 #[derive(SystemData)]
 pub struct PlayerDragSystemData<'a> {
     snapshot: &'a ClientSnapshot,
-    process_timer: &'a ProcessTimer,
+    tick_timer: &'a TickTimer,
     player_actor: &'a PlayerActor,
     position_ac: &'a PositionActorComponent,
     class_ac: &'a ClassActorComponent,
@@ -71,7 +71,7 @@ impl PlayerDragSystemData<'_> {
                 vector: self.drag_acc.get(actor_class, &actor).apply(
                     writable_velocity.vector,
                     env_density.0,
-                    self.process_timer.elapsed(),
+                    self.tick_timer.elapsed(),
                 ),
             };
 

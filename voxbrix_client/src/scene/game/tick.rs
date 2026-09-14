@@ -26,19 +26,19 @@ use crate::{
     window::Frame,
 };
 use rayon::prelude::*;
-use voxbrix_common::resource::process_timer::ProcessTimer;
+use voxbrix_common::resource::tick_timer::TickTimer;
 use voxbrix_world::World;
 
-pub struct Process<'a> {
+pub struct Tick<'a> {
     pub world: &'a mut World,
     pub frame: Frame,
 }
 
-impl Process<'_> {
+impl Tick<'_> {
     pub fn run(self) -> Transition {
-        let Process { world, mut frame } = self;
+        let Tick { world, mut frame } = self;
 
-        world.get_resource_mut::<ProcessTimer>().record_next();
+        world.get_resource_mut::<TickTimer>().record_next();
 
         world.get_data::<ChunkPresenceSystem>().run();
 

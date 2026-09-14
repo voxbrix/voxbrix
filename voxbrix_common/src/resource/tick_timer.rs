@@ -3,12 +3,12 @@ use std::time::{
     Instant,
 };
 
-pub struct ProcessTimer {
+pub struct TickTimer {
     last: Instant,
     elapsed: Duration,
 }
 
-impl ProcessTimer {
+impl TickTimer {
     pub fn start() -> Self {
         Self {
             last: Instant::now(),

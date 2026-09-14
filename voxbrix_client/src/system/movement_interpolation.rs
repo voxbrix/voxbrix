@@ -19,7 +19,7 @@ use voxbrix_common::{
         block::BLOCKS_IN_CHUNK_EDGE_F32,
         snapshot::ClientSnapshot,
     },
-    resource::process_timer::ProcessTimer,
+    resource::tick_timer::TickTimer,
 };
 use voxbrix_world::{
     System,
@@ -39,7 +39,7 @@ impl System for MovementInterpolationSystem {
 #[derive(SystemData)]
 pub struct MovementInterpolationSystemData<'a> {
     snapshot: &'a ClientSnapshot,
-    process_timer: &'a ProcessTimer,
+    tick_timer: &'a TickTimer,
     target_position_ac: &'a mut TargetPositionActorComponent,
     target_orientation_ac: &'a mut TargetOrientationActorComponent,
     position_ac: &'a mut PositionActorComponent,
@@ -48,8 +48,7 @@ pub struct MovementInterpolationSystemData<'a> {
 
 impl MovementInterpolationSystemData<'_> {
     pub fn run(self) {
-        let current_time =
-            self.process_timer.now() - SERVER_TICK_INTERVAL * TARGET_QUEUE_LENGTH_U32;
+        let current_time = self.tick_timer.now() - SERVER_TICK_INTERVAL * TARGET_QUEUE_LENGTH_U32;
 
         let snapshot = *self.snapshot;
 

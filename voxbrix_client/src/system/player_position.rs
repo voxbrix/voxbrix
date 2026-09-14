@@ -20,7 +20,7 @@ use voxbrix_common::{
         block_class::collision::CollisionBlockClassComponent,
     },
     entity::snapshot::ClientSnapshot,
-    resource::process_timer::ProcessTimer,
+    resource::tick_timer::TickTimer,
     system::position,
 };
 use voxbrix_world::{
@@ -37,7 +37,7 @@ impl System for PlayerPositionSystem {
 #[derive(SystemData)]
 pub struct PlayerPositionSystemData<'a> {
     snapshot: &'a ClientSnapshot,
-    process_timer: &'a ProcessTimer,
+    tick_timer: &'a TickTimer,
     player_actor: &'a PlayerActor,
     class_bc: &'a ClassBlockComponent,
     collision_bcc: &'a CollisionBlockClassComponent,
@@ -72,7 +72,7 @@ impl PlayerPositionSystemData<'_> {
                 collision_sides,
                 velocity: new_vel,
             } = position::process_actor(
-                self.process_timer.elapsed(),
+                self.tick_timer.elapsed(),
                 self.class_bc,
                 self.collision_bcc,
                 &position,

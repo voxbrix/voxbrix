@@ -19,7 +19,7 @@ use voxbrix_common::{
         block::Block,
         snapshot::ServerSnapshot,
     },
-    resource::process_timer::ProcessTimer,
+    resource::tick_timer::TickTimer,
 };
 use voxbrix_world::{
     System,
@@ -35,7 +35,7 @@ impl System for ActorDragSystem {
 #[derive(SystemData)]
 pub struct ActorDragSystemData<'a> {
     snapshot: &'a ServerSnapshot,
-    process_timer: &'a ProcessTimer,
+    tick_timer: &'a TickTimer,
     class_ac: &'a ClassActorComponent,
     player_ac: &'a PlayerActorComponent,
     position_ac: &'a PositionActorComponent,
@@ -47,7 +47,7 @@ pub struct ActorDragSystemData<'a> {
 
 impl ActorDragSystemData<'_> {
     pub fn run(self) {
-        let dt = self.process_timer.elapsed();
+        let dt = self.tick_timer.elapsed();
         let snapshot = *self.snapshot;
 
         let updates: Vec<(Actor, Velocity)> = self

@@ -105,13 +105,13 @@ use futures_lite::{
 };
 use local_input::LocalInput;
 use network_input::NetworkInput;
-use process::Process;
 use std::{
     any,
     io::ErrorKind as StdIoErrorKind,
     task::Poll,
     time::Duration,
 };
+use tick::Tick;
 use tokio::{
     task,
     time::{
@@ -178,8 +178,8 @@ use voxbrix_common::{
     },
     resource::{
         component_map::ComponentMap,
-        process_timer::ProcessTimer,
         removal_queue::RemovalQueue,
+        tick_timer::TickTimer,
     },
     ChunkData,
     LabelLibrary,
@@ -200,10 +200,10 @@ use voxbrix_world::{
 mod chunk_calculation;
 mod local_input;
 mod network_input;
-mod process;
+mod tick;
 
 enum Event {
-    Process(Frame),
+    Tick(Frame),
     SendState,
     LocalInput(InputEvent),
     NetworkInput(Result<NetworkMessage, NetworkError>),
@@ -704,7 +704,7 @@ impl GameScene {
         world.add(ClientActionsPacker::new());
         world.add(DispatchesUnpacker::new());
 
-        world.add(ProcessTimer::start());
+        world.add(TickTimer::start());
 
         world.add(ChunkCalculationData { turn: 0 });
 
@@ -728,7 +728,7 @@ impl GameScene {
         .or_ff(
             frame_source
                 .stream()
-                .map(Event::Process)
+                .map(Event::Tick)
                 .rr_ff(event_low_prio_rx.stream()),
         );
 
@@ -768,8 +768,8 @@ impl GameScene {
             }
 
             let transition = match event {
-                Event::Process(frame) => {
-                    compute!((world) Process {
+                Event::Tick(frame) => {
+                    compute!((world) Tick {
                     world: &mut world,
                     frame,
                 }.run())

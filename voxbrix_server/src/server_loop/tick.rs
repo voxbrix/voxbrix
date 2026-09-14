@@ -14,19 +14,19 @@ use crate::system::{
 };
 use voxbrix_common::{
     entity::snapshot::ServerSnapshot,
-    resource::process_timer::ProcessTimer,
+    resource::tick_timer::TickTimer,
 };
 use voxbrix_world::World;
 
-pub struct Process<'a> {
+pub struct Tick<'a> {
     pub world: &'a mut World,
 }
 
-impl Process<'_> {
+impl Tick<'_> {
     pub fn run(self) {
         let Self { world } = self;
 
-        world.get_resource_mut::<ProcessTimer>().record_next();
+        world.get_resource_mut::<TickTimer>().record_next();
 
         world.get_data::<ChunkSendingSystem>().run();
 

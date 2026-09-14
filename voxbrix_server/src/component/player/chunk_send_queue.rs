@@ -2,7 +2,7 @@ use crate::component::player::PlayerComponent;
 use ahash::AHashSet;
 use voxbrix_common::entity::chunk::Chunk;
 
-// List of chunk changes for the player during interval between `World::process()` calls.
+// List of chunk changes for the player during the interval between ticks.
 pub type ChunkSendQueuePlayerComponent = PlayerComponent<ChunkSendQueue>;
 
 pub struct ChunkSendQueue(AHashSet<Chunk>);

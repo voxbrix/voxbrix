@@ -27,7 +27,7 @@ use voxbrix_common::{
         block::Block,
         snapshot::ClientSnapshot,
     },
-    resource::process_timer::ProcessTimer,
+    resource::tick_timer::TickTimer,
 };
 use voxbrix_world::{
     System,
@@ -43,7 +43,7 @@ impl System for PlayerGravitySystem {
 #[derive(SystemData)]
 pub struct PlayerGravitySystemData<'a> {
     snapshot: &'a ClientSnapshot,
-    process_timer: &'a ProcessTimer,
+    tick_timer: &'a TickTimer,
     player_actor: &'a PlayerActor,
     position_ac: &'a PositionActorComponent,
     class_ac: &'a ClassActorComponent,
@@ -84,7 +84,7 @@ impl PlayerGravitySystemData<'_> {
             let dv = self
                 .gravity_dkc
                 .get(&position.chunk.dimension.kind)
-                .into_velocity(self.process_timer.elapsed());
+                .into_velocity(self.tick_timer.elapsed());
 
             let new_velocity = *writable_velocity
                 + Velocity {

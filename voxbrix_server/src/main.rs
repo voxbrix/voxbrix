@@ -45,7 +45,7 @@ use voxbrix_common::{
 };
 use voxbrix_protocol::server::ServerParameters;
 
-const PROCESS_INTERVAL: Duration = Duration::from_millis(50);
+const TICK_INTERVAL: Duration = Duration::from_millis(50);
 const CLIENT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 const BLOCK_CLASS_TABLE: TableDefinition<DataSized<Chunk>, Data<BlocksVec<BlockClass>>> =
     TableDefinition::new("block_class");

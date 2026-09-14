@@ -26,7 +26,7 @@ use voxbrix_common::{
         block::Block,
         snapshot::ServerSnapshot,
     },
-    resource::process_timer::ProcessTimer,
+    resource::tick_timer::TickTimer,
 };
 use voxbrix_world::{
     System,
@@ -42,7 +42,7 @@ impl System for ActorGravitySystem {
 #[derive(SystemData)]
 pub struct ActorGravitySystemData<'a> {
     snapshot: &'a ServerSnapshot,
-    process_timer: &'a ProcessTimer,
+    tick_timer: &'a TickTimer,
     class_ac: &'a ClassActorComponent,
     player_ac: &'a PlayerActorComponent,
     position_ac: &'a PositionActorComponent,
@@ -56,7 +56,7 @@ pub struct ActorGravitySystemData<'a> {
 
 impl ActorGravitySystemData<'_> {
     pub fn run(self) {
-        let dt = self.process_timer.elapsed();
+        let dt = self.tick_timer.elapsed();
         let snapshot = *self.snapshot;
 
         // Compute new velocities, skipping no-op updates so the sequential

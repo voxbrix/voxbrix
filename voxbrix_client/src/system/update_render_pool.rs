@@ -17,7 +17,7 @@ use crate::{
     },
     window::Frame,
 };
-use voxbrix_common::resource::process_timer::ProcessTimer;
+use voxbrix_common::resource::tick_timer::TickTimer;
 use voxbrix_world::{
     System,
     SystemData,
@@ -32,7 +32,7 @@ impl System for UpdateRenderPoolSystem {
 #[derive(SystemData)]
 pub struct UpdateRenderPoolSystemData<'a> {
     render_pool: &'a mut RenderPool,
-    process_timer: &'a ProcessTimer,
+    tick_timer: &'a TickTimer,
     player_actor: &'a PlayerActor,
     class_ac: &'a ClassActorComponent,
     position_ac: &'a PositionActorComponent,
@@ -72,7 +72,7 @@ impl UpdateRenderPoolSystemData<'_> {
             chunk: player_position.chunk.position,
             offset: player_offset,
             view_direction: player_orientation.forward(),
-            dt: self.process_timer.elapsed(),
+            dt: self.tick_timer.elapsed(),
         });
 
         self.render_pool.start_render(frame);

@@ -35,7 +35,7 @@ use voxbrix_common::{
         Directions,
         Vec3F32,
     },
-    resource::process_timer::ProcessTimer,
+    resource::tick_timer::TickTimer,
 };
 use voxbrix_world::{
     System,
@@ -51,7 +51,7 @@ impl System for PlayerControlSystem {
 #[derive(SystemData)]
 pub struct PlayerControlSystemData<'a> {
     snapshot: &'a ClientSnapshot,
-    process_timer: &'a ProcessTimer,
+    tick_timer: &'a TickTimer,
     player_actor: &'a PlayerActor,
     player_movement: &'a mut PlayerInput,
     player_actor_mm: &'a PlayerActorMovementMetadata,
@@ -69,7 +69,7 @@ impl PlayerControlSystemData<'_> {
     pub fn run(self) {
         let actor = self.player_actor.0;
         let snapshot = *self.snapshot;
-        let dt = self.process_timer.elapsed();
+        let dt = self.tick_timer.elapsed();
 
         let Some(mut actor_orientation) = self.orientation_ac.get_writable(&actor, snapshot) else {
             return;

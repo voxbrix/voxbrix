@@ -74,7 +74,7 @@ enum ActionType {
 }
 
 enum Event {
-    Process(Frame),
+    Frame(Frame),
     Input(InputEvent),
 }
 
@@ -95,7 +95,7 @@ impl MenuScene {
 
         let mut stream = frame_source
             .stream()
-            .map(Event::Process)
+            .map(Event::Frame)
             .or_ff(input_source.stream().map(Event::Input));
 
         let mut error_message = String::new();
@@ -120,7 +120,7 @@ impl MenuScene {
                 prev_form = form.clone();
             }
             match event {
-                Event::Process(mut frame) => {
+                Event::Frame(mut frame) => {
                     let input = frame.take_ui_input();
 
                     let full_output = window.ui_context().run_ui(input, |ui| {

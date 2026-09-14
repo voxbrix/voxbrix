@@ -77,7 +77,7 @@ use crate::{
         },
         position::PositionSystem,
     },
-    PROCESS_INTERVAL,
+    TICK_INTERVAL,
 };
 use anyhow::Context as _;
 use flume::Sender as SharedSender;
@@ -87,12 +87,12 @@ use futures_lite::stream::{
 };
 use local_channel::mpsc::Receiver;
 use player_event::PlayerEvent;
-use process::Process;
 use redb::Database;
 use std::{
     any,
     sync::Arc,
 };
+use tick::Tick;
 use tokio::{
     runtime::Handle,
     time::{
@@ -130,8 +130,8 @@ use voxbrix_common::{
     pack::Packer,
     resource::{
         component_map::ComponentMap,
-        process_timer::ProcessTimer,
         removal_queue::RemovalQueue,
+        tick_timer::TickTimer,
     },
     script_registry::ScriptRegistryBuilder,
     ChunkData,
@@ -145,7 +145,7 @@ use voxbrix_world::{
 };
 
 mod player_event;
-mod process;
+mod tick;
 
 async fn label_load<T>(label_library: &mut LabelLibrary) -> Result<(), anyhow::Error>
 where
@@ -169,7 +169,7 @@ where
 
 // Server loop input
 pub enum ServerEvent {
-    Process,
+    Tick,
     AddPlayer {
         player: Player,
         client_tx: SharedSender<ClientEvent>,
@@ -274,16 +274,13 @@ impl ServerLoop {
 
         let shared_event_tx_clone = shared_event_tx.clone();
 
-        let mut send_status_interval = time::interval(PROCESS_INTERVAL);
-        send_status_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        let mut tick_interval = time::interval(TICK_INTERVAL);
+        tick_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
-        let mut stream = stream::poll_fn(|cx| {
-            send_status_interval
-                .poll_tick(cx)
-                .map(|_| Some(ServerEvent::Process))
-        })
-        .or(event_rx)
-        .or(shared_event_rx.stream().map(ServerEvent::SharedEvent));
+        let mut stream =
+            stream::poll_fn(|cx| tick_interval.poll_tick(cx).map(|_| Some(ServerEvent::Tick)))
+                .or(event_rx)
+                .or(shared_event_rx.stream().map(ServerEvent::SharedEvent));
 
         let storage = StorageThread::new();
 
@@ -340,7 +337,7 @@ impl ServerLoop {
         world.add(UpdatesUnpacker::new());
         world.add(ClientActionsUnpacker::new());
 
-        world.add(ProcessTimer::start());
+        world.add(TickTimer::start());
 
         world.add(RemovalQueue::<Actor>::new());
         world.add(RemovalQueue::<Player>::new());
@@ -352,8 +349,8 @@ impl ServerLoop {
             }
 
             match event {
-                ServerEvent::Process => {
-                    compute!((world) Process {
+                ServerEvent::Tick => {
+                    compute!((world) Tick {
                         world: &mut world,
                     }.run());
                 },
