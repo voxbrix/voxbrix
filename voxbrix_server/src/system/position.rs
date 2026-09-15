@@ -1,20 +1,23 @@
-use crate::component::{
-    actor::{
-        class::ClassActorComponent,
-        movement_change::{
-            MovementChange,
-            MovementChangeActorComponent,
+use crate::{
+    component::{
+        actor::{
+            class::ClassActorComponent,
+            movement_change::{
+                MovementChange,
+                MovementChangeActorComponent,
+            },
+            movement_metadata::{
+                MovementMetadata,
+                MovementMetadataActorComponent,
+            },
+            player::PlayerActorComponent,
+            position::PositionActorComponent,
+            velocity::VelocityActorComponent,
         },
-        movement_metadata::{
-            MovementMetadata,
-            MovementMetadataActorComponent,
-        },
-        player::PlayerActorComponent,
-        position::PositionActorComponent,
-        velocity::VelocityActorComponent,
+        actor_class::block_collision::BlockCollisionActorClassComponent,
+        block::class::ClassBlockComponent,
     },
-    actor_class::block_collision::BlockCollisionActorClassComponent,
-    block::class::ClassBlockComponent,
+    resource::tick_timer::TickTimer,
 };
 use rayon::prelude::*;
 use voxbrix_common::{
@@ -23,7 +26,6 @@ use voxbrix_common::{
         block_class::collision::CollisionBlockClassComponent,
     },
     entity::snapshot::ServerSnapshot,
-    resource::tick_timer::TickTimer,
     system::position,
 };
 use voxbrix_world::{

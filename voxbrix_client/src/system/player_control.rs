@@ -15,6 +15,7 @@ use crate::{
         player_actor::PlayerActor,
         player_actor_movement_metadata::PlayerActorMovementMetadata,
         player_input::PlayerInput,
+        tick_timer::TickTimer,
     },
 };
 use voxbrix_common::{
@@ -35,7 +36,6 @@ use voxbrix_common::{
         Directions,
         Vec3F32,
     },
-    resource::tick_timer::TickTimer,
 };
 use voxbrix_world::{
     System,

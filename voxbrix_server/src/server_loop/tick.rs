@@ -1,21 +1,21 @@
-use crate::system::{
-    actor_drag::ActorDragSystem,
-    actor_gravity::ActorGravitySystem,
-    actor_pruning::ActorPruningSystem,
-    actor_sync::ActorSyncSystem,
-    block_sync::BlockSyncSystem,
-    chunk_activation::ChunkActivationSystem,
-    chunk_sending::ChunkSendingSystem,
-    effect_snapshot::EffectSnapshotSystem,
-    position::PositionSystem,
-    projectile_actor_handling::ProjectileActorHandlingSystem,
-    projectile_block_handling::ProjectileBlockHandlingSystem,
-    projectile_hitbox_collision::ProjectileHitboxCollisionSystem,
-};
-use voxbrix_common::{
-    entity::snapshot::ServerSnapshot,
+use crate::{
     resource::tick_timer::TickTimer,
+    system::{
+        actor_drag::ActorDragSystem,
+        actor_gravity::ActorGravitySystem,
+        actor_pruning::ActorPruningSystem,
+        actor_sync::ActorSyncSystem,
+        block_sync::BlockSyncSystem,
+        chunk_activation::ChunkActivationSystem,
+        chunk_sending::ChunkSendingSystem,
+        effect_snapshot::EffectSnapshotSystem,
+        position::PositionSystem,
+        projectile_actor_handling::ProjectileActorHandlingSystem,
+        projectile_block_handling::ProjectileBlockHandlingSystem,
+        projectile_hitbox_collision::ProjectileHitboxCollisionSystem,
+    },
 };
+use voxbrix_common::entity::snapshot::ServerSnapshot;
 use voxbrix_world::World;
 
 pub struct Tick<'a> {

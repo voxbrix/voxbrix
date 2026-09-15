@@ -7,7 +7,10 @@ use crate::{
         TargetQueue,
         WritableTrait,
     },
-    resource::server_tick_interval::ServerTickInterval,
+    resource::{
+        server_tick_interval::ServerTickInterval,
+        tick_timer::TickTimer,
+    },
 };
 use std::time::{
     Duration,
@@ -22,7 +25,6 @@ use voxbrix_common::{
         block::BLOCKS_IN_CHUNK_EDGE_F32,
         snapshot::ClientSnapshot,
     },
-    resource::tick_timer::TickTimer,
 };
 use voxbrix_world::{
     System,

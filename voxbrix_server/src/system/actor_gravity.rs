@@ -1,15 +1,18 @@
-use crate::component::{
-    actor::{
-        class::ClassActorComponent,
-        player::PlayerActorComponent,
-        position::PositionActorComponent,
-        velocity::VelocityActorComponent,
+use crate::{
+    component::{
+        actor::{
+            class::ClassActorComponent,
+            player::PlayerActorComponent,
+            position::PositionActorComponent,
+            velocity::VelocityActorComponent,
+        },
+        actor_class::{
+            density::DensityActorClassComponent,
+            gravity_sensitivity::GravitySensitivityActorClassComponent,
+        },
+        block::environment::EnvironmentBlockComponent,
     },
-    actor_class::{
-        density::DensityActorClassComponent,
-        gravity_sensitivity::GravitySensitivityActorClassComponent,
-    },
-    block::environment::EnvironmentBlockComponent,
+    resource::tick_timer::TickTimer,
 };
 use rayon::prelude::*;
 use voxbrix_common::{
@@ -26,7 +29,6 @@ use voxbrix_common::{
         block::Block,
         snapshot::ServerSnapshot,
     },
-    resource::tick_timer::TickTimer,
 };
 use voxbrix_world::{
     System,

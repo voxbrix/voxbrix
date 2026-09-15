@@ -14,10 +14,10 @@ use crate::{
             CameraUpdate,
             RenderPool,
         },
+        tick_timer::TickTimer,
     },
     window::Frame,
 };
-use voxbrix_common::resource::tick_timer::TickTimer;
 use voxbrix_world::{
     System,
     SystemData,

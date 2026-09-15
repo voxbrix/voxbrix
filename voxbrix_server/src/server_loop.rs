@@ -59,6 +59,7 @@ use crate::{
         projectile_actor_collisions::ProjectileActorCollisions,
         script_shared_data,
         shared_event::SharedEvent,
+        tick_timer::TickTimer,
     },
     storage::StorageThread,
     system::{
@@ -93,13 +94,7 @@ use std::{
     sync::Arc,
 };
 use tick::Tick;
-use tokio::{
-    runtime::Handle,
-    time::{
-        self,
-        MissedTickBehavior,
-    },
-};
+use tokio::runtime::Handle;
 use voxbrix_common::{
     component::{
         block_class::collision::CollisionBlockClassComponent,
@@ -131,7 +126,6 @@ use voxbrix_common::{
     resource::{
         component_map::ComponentMap,
         removal_queue::RemovalQueue,
-        tick_timer::TickTimer,
     },
     script_registry::ScriptRegistryBuilder,
     ChunkData,
@@ -274,8 +268,8 @@ impl ServerLoop {
 
         let shared_event_tx_clone = shared_event_tx.clone();
 
-        let mut tick_interval = time::interval(TICK_INTERVAL);
-        tick_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        let tick_timer = TickTimer::new(TICK_INTERVAL);
+        let mut tick_interval = tick_timer.async_timer();
 
         let mut stream =
             stream::poll_fn(|cx| tick_interval.poll_tick(cx).map(|_| Some(ServerEvent::Tick)))
@@ -337,7 +331,7 @@ impl ServerLoop {
         world.add(UpdatesUnpacker::new());
         world.add(ClientActionsUnpacker::new());
 
-        world.add(TickTimer::start());
+        world.add(tick_timer);
 
         world.add(RemovalQueue::<Actor>::new());
         world.add(RemovalQueue::<Player>::new());

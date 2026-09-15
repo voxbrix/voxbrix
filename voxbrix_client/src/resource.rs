@@ -8,3 +8,4 @@ pub mod player_input;
 pub mod render_pool;
 pub mod server_sender;
 pub mod server_tick_interval;
+pub mod tick_timer;

@@ -64,6 +64,7 @@ use crate::{
         },
         server_sender::ServerSender,
         server_tick_interval::ServerTickInterval,
+        tick_timer::TickTimer,
     },
     scene::{
         menu::MenuSceneParameters,
@@ -180,7 +181,6 @@ use voxbrix_common::{
     resource::{
         component_map::ComponentMap,
         removal_queue::RemovalQueue,
-        tick_timer::TickTimer,
     },
     ChunkData,
     LabelLibrary,

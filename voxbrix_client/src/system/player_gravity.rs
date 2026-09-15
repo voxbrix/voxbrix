@@ -12,7 +12,10 @@ use crate::{
         },
         block::environment::EnvironmentBlockComponent,
     },
-    resource::player_actor::PlayerActor,
+    resource::{
+        player_actor::PlayerActor,
+        tick_timer::TickTimer,
+    },
 };
 use voxbrix_common::{
     component::{
@@ -27,7 +30,6 @@ use voxbrix_common::{
         block::Block,
         snapshot::ClientSnapshot,
     },
-    resource::tick_timer::TickTimer,
 };
 use voxbrix_world::{
     System,

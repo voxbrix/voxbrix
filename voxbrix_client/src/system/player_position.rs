@@ -12,6 +12,7 @@ use crate::{
     resource::{
         player_actor::PlayerActor,
         player_actor_movement_metadata::PlayerActorMovementMetadata,
+        tick_timer::TickTimer,
     },
 };
 use voxbrix_common::{
@@ -20,7 +21,6 @@ use voxbrix_common::{
         block_class::collision::CollisionBlockClassComponent,
     },
     entity::snapshot::ClientSnapshot,
-    resource::tick_timer::TickTimer,
     system::position,
 };
 use voxbrix_world::{

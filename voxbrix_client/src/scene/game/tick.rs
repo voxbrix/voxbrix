@@ -6,6 +6,7 @@ use crate::{
             RenderPool,
             Renderer,
         },
+        tick_timer::TickTimer,
     },
     system::{
         actor_render::ActorRenderSystem,
@@ -26,7 +27,6 @@ use crate::{
     window::Frame,
 };
 use rayon::prelude::*;
-use voxbrix_common::resource::tick_timer::TickTimer;
 use voxbrix_world::World;
 
 pub struct Tick<'a> {
